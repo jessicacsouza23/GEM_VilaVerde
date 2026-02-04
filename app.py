@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 
 # --- CONFIGURAÇÕES SUPABASE ---
+# Verifique se os nomes das colunas na tabela 'usuarios' são exatamente: usuario, senha, perfil
 SUPABASE_URL = "https://hnpxvxbimkbcxtyniryx.supabase.co"
 SUPABASE_KEY = "sb_publishable_sZ7i2TMEbrF2-jCIHj5Edw_8kqvYU2P"
 HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
@@ -16,7 +17,7 @@ if "autenticado" not in st.session_state:
     st.session_state.user = None
     st.session_state.perfil = None
 
-# --- DADOS MESTRES (LISTAS OFICIAIS) ---
+# --- DADOS MESTRES ---
 ALUNAS = [
     "Amanda S. - Parque do Carmo II", "Ana Marcela S. - Vila Verde", "Caroline C. - Vila Ré",
     "Elisa F. - Vila Verde", "Emilly O. - Vila Curuçá Velha", "Gabrielly V. - Vila Verde",
@@ -32,7 +33,6 @@ PROFESSORAS_LISTA = ["Ester", "Jéssica", "Larissa", "Lourdes", "Natasha"]
 MATERIAS = ["Prática", "Teoria", "Solfejo", "FOLGA"]
 LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
 
-# --- ESCALA PADRÃO (RODÍZIO) ---
 ESCALA_PADRAO = [
     {"prof": "Ester", "materia": "Prática", "sala": "Sala 1"},
     {"prof": "Jéssica", "materia": "Prática", "sala": "Sala 2"},
@@ -60,14 +60,22 @@ if not st.session_state.autenticado:
         u = st.text_input("Usuário")
         p = st.text_input("Senha", type="password")
         if st.button("Entrar", use_container_width=True):
+            # Busca ignorando maiúsculas/minúsculas no filtro se necessário
             url = f"{SUPABASE_URL}/rest/v1/usuarios?usuario=eq.{u}&senha=eq.{p}&select=*"
             res = requests.get(url, headers=HEADERS).json()
-            if res:
-                st.session_state.autenticado = True
-                st.session_state.user = res[0]['usuario']
-                st.session_state.perfil = res[0]['perfil']
-                st.rerun()
-            else: st.error("Acesso negado.")
+            
+            if res and isinstance(res, list) and len(res) > 0:
+                try:
+                    # Tenta ler as chaves. Se der erro, avisa qual chave falta.
+                    # Use .get() para evitar o erro de KeyError: trava o app.
+                    st.session_state.user = res[0].get('usuario', u)
+                    st.session_state.perfil = res[0].get('perfil', 'Professora')
+                    st.session_state.autenticado = True
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao ler dados do perfil. Verifique as colunas no Supabase.")
+            else:
+                st.error("Usuário ou senha incorretos.")
     st.stop()
 
 # --- BARRA LATERAL ---
@@ -77,6 +85,7 @@ if st.session_state.perfil == "Master":
     visao = st.sidebar.radio("Visão de Acesso:", ["Secretaria", "Professora"])
 else:
     visao = st.session_state.perfil
+
 if st.sidebar.button("Sair"):
     st.session_state.autenticado = False
     st.rerun()
@@ -91,7 +100,7 @@ if visao == "Secretaria":
     with aba[0]:
         st.subheader("Chamada")
         st.date_input("Data da Presença", format="DD/MM/YYYY")
-        presentes = st.multiselect("Alunas Presentes:", ALUNAS)
+        st.multiselect("Alunas Presentes:", ALUNAS)
         if st.button("Salvar Chamada"): st.success("Presença registrada!")
 
     with aba[1]:
@@ -101,7 +110,7 @@ if visao == "Secretaria":
         st.divider()
         st.text_area("Realizadas (OK)")
         st.text_area("Refazer (Pendência)")
-        st.button("Salvar Lições")
+        if st.button("Salvar Lições"): st.success("Lições salvas!")
 
     with aba[2]:
         st.subheader("Escala e Rodízio")
@@ -140,7 +149,6 @@ elif visao == "Professora":
         else: st.info("Nenhuma agenda encontrada para você hoje.")
 
     with tab2:
-        # Lógica de Matéria Ativa (Master simula, Prof segue agenda)
         if st.session_state.perfil == "Master":
             mat_ativa = st.radio("Simular Aula de:", ["Prática", "Teoria", "Solfejo"], horizontal=True)
         else:
@@ -155,7 +163,6 @@ elif visao == "Professora":
             st.info(f"Frente: **{mat_ativa}**")
             alu_nome = st.selectbox("Aluna:", ALUNAS, key="p_alu")
             
-            # --- FORMULÁRIO DE PRÁTICA (25 ITENS) ---
             if mat_ativa == "Prática":
                 st.selectbox("Lição/Volume Atual *", LICOES_NUM, key="p_v")
                 st.write("**Dificuldades Identificadas:**")
@@ -173,27 +180,9 @@ elif visao == "Professora":
                 for i, d in enumerate(difs_p):
                     (c1 if i < 13 else c2).checkbox(d, key=f"chk_p_{i}")
 
-            # --- FORMULÁRIO DE TEORIA / SOLFEJO (15 ITENS) ---
             elif mat_ativa in ["Teoria", "Solfejo"]:
                 st.selectbox("Módulo/Lição/Volume *", LICOES_NUM, key="ts_v")
                 st.write("**Dificuldades Identificadas:**")
                 difs_ts = [
                     "Não assistiu vídeos complementares", "Clave de sol", "Clave de fá",
-                    "Uso do metrônomo", "Estuda sem metrônomo", "Não realizou atividades",
-                    "Leitura rítmica", "Leitura métrica", "Solfejo (afinação)",
-                    "Movimento da mão", "Ordem das notas (asc/desc)", "Atividades da apostila",
-                    "Não estudou nada", "Estudou insatisfatoriamente", "Não apresentou dificuldades"
-                ]
-                c1, c2 = st.columns(2)
-                for i, d in enumerate(difs_ts):
-                    (c1 if i < 8 else c2).checkbox(d, key=f"chk_ts_{i}")
-
-            st.divider()
-            st.subheader("🏠 Lição de Casa")
-            st.selectbox("Volume/Lição (Prática):", LICOES_NUM, key="h_p")
-            st.text_input("Tarefa Teoria/Apostila:", key="h_o")
-            st.text_area("Observações Finais")
-            
-            if st.button("Finalizar Registro"):
-                st.balloons()
-                st.success("Avaliação enviada com sucesso!")
+                    "Uso do metrônomo", "Estuda sem metrônomo", "
