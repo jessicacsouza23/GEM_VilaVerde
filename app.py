@@ -16,7 +16,7 @@ if "autenticado" not in st.session_state:
     st.session_state.user = None
     st.session_state.perfil = None
 
-# --- DADOS MESTRES ---
+# --- DADOS MESTRES (LISTAS OFICIAIS) ---
 ALUNAS = [
     "Amanda S. - Parque do Carmo II", "Ana Marcela S. - Vila Verde", "Caroline C. - Vila Ré",
     "Elisa F. - Vila Verde", "Emilly O. - Vila Curuçá Velha", "Gabrielly V. - Vila Verde",
@@ -26,6 +26,9 @@ ALUNAS = [
     "Rebecca A. - Vila Verde", "Rebeka S. - Jardim Lígia", "Sarah S. - Vila Verde",
     "Stephany O. - Vila Curuçá Velha", "Vitória A. - Vila Verde", "Vitória Bella T. - Vila Verde"
 ]
+# Nomes permitidos para criação de conta
+NOMES_PERMITIDOS = ["Ester", "Jéssica", "Larissa", "Lourdes", "Natasha", "Secretaria", "Subst. Teoria", "Subst. Solfejo", "Master"]
+
 CATEGORIAS = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila", "Folhas avulsas (teoria)"]
 SALAS = ["Sala 1", "Sala 2", "Sala 3", "Sala 4", "Teoria Coletiva"]
 PROFESSORAS_LISTA = ["Ester", "Jéssica", "Larissa", "Lourdes", "Natasha"]
@@ -52,6 +55,11 @@ def buscar_agenda_prof(nome_prof):
         return res if isinstance(res, list) else []
     except: return []
 
+def criar_novo_usuario(nome, senha, perfil):
+    url = f"{SUPABASE_URL}/rest/v1/usuarios"
+    payload = {"usuario": nome, "senha": senha, "perfil": perfil}
+    return requests.post(url, json=payload, headers=HEADERS)
+
 # --- LOGIN ---
 if not st.session_state.autenticado:
     st.title("🎼 GEM Vila Verde")
@@ -72,37 +80,51 @@ if not st.session_state.autenticado:
 # --- BARRA LATERAL ---
 st.sidebar.title("🎼 GEM Vila Verde")
 st.sidebar.write(f"👤 **{st.session_state.user}**")
-visao = st.sidebar.radio("Visão:", ["Secretaria", "Professora"]) if st.session_state.perfil == "Master" else st.session_state.perfil
+
+opcoes_visao = ["Secretaria", "Professora"]
+if st.session_state.perfil == "Master":
+    opcoes_visao.append("Gerenciar Usuários")
+    visao = st.sidebar.radio("Ir para:", opcoes_visao)
+else:
+    visao = st.session_state.perfil
+
 if st.sidebar.button("Sair"):
     st.session_state.autenticado = False
     st.rerun()
 
 # ==========================================
+#          MÓDULO GERENCIAR USUÁRIOS (MASTER)
+# ==========================================
+if visao == "Gerenciar Usuários":
+    st.title("👥 Gerenciamento de Acessos")
+    st.info("Atenção: Você só pode criar usuários com nomes que constam na lista oficial do GEM.")
+    
+    with st.form("form_novo_user"):
+        novo_nome = st.selectbox("Selecione o Nome (Lista Oficial):", NOMES_PERMITIDOS)
+        nova_senha = st.text_input("Defina a Senha:", type="password")
+        novo_perfil = st.selectbox("Perfil de Acesso:", ["Professora", "Secretaria", "Master"])
+        
+        if st.form_submit_button("Criar Usuário"):
+            if novo_nome and nova_senha:
+                res = criar_novo_usuario(novo_nome, nova_senha, novo_perfil)
+                if res.status_code in [200, 201]:
+                    st.success(f"Usuário {novo_nome} criado com sucesso!")
+                else:
+                    st.error("Erro ao criar usuário. Verifique se ele já existe no banco.")
+            else:
+                st.warning("Preencha todos os campos.")
+
+# ==========================================
 #              MÓDULO SECRETARIA
 # ==========================================
-if visao == "Secretaria":
+elif visao == "Secretaria":
     st.title("📋 Painel da Secretaria")
     aba = st.tabs(["📍 Presença", "✅ Lições", "🗓️ Gerar Escalas"])
-
-    with aba[0]:
-        st.subheader("Chamada")
-        st.date_input("Data da Presença", format="DD/MM/YYYY", key="data_pres")
-        st.multiselect("Alunas Presentes:", ALUNAS, key="list_pres")
-        if st.button("Salvar Chamada"): st.success("Presença registrada!")
-
-    with aba[1]:
-        st.subheader("Correção de Lições")
-        st.selectbox("Aluna:", ALUNAS, key="s_aluna")
-        st.multiselect("Material:", CATEGORIAS, key="s_material")
-        st.divider()
-        st.text_area("Realizadas (OK)", key="s_txt_ok")
-        st.text_area("Refazer (Pendência)", key="s_txt_ref")
-        if st.button("Salvar Lições"): st.success("Dados de correção salvos!")
 
     with aba[2]:
         st.subheader("Configuração de Escala e Rodízio")
         tipo_escala = st.selectbox("Período:", ["Diária", "Bimestral", "Trimestral", "Semestral", "Anual"])
-        data_escala = st.date_input("Data Inicial:", format="DD/MM/YYYY", key="data_esc")
+        data_escala = st.date_input("Data Inicial:", format="DD/MM/YYYY")
         
         agenda_lote = []
         for i, item in enumerate(ESCALA_PADRAO):
@@ -116,11 +138,9 @@ if visao == "Secretaria":
                 if pres and alu != "Selecione...":
                     agenda_lote.append({"data": str(data_escala), "professor": prof, "materia": mat, "sala": item['sala'], "aluna": alu, "periodo": tipo_escala})
 
-        if st.button("Publicar Escala Atualizada", use_container_width=True):
-            if agenda_lote:
-                salvar_agenda_lote(agenda_lote)
-                st.success("Escala publicada com sucesso!")
-            else: st.warning("Nenhuma aluna vinculada na escala.")
+        if st.button("Publicar Escala", use_container_width=True):
+            salvar_agenda_lote(agenda_lote)
+            st.success("Escala publicada com sucesso!")
 
 # ==========================================
 #              MÓDULO PROFESSORA
@@ -134,7 +154,7 @@ elif visao == "Professora":
         agenda_dados = buscar_agenda_prof(st.session_state.user)
         if agenda_dados:
             st.dataframe(pd.DataFrame(agenda_dados)[['data', 'aluna', 'materia', 'sala']], use_container_width=True)
-        else: st.info("Nenhuma escala encontrada para você.")
+        else: st.info("Nenhuma escala encontrada.")
 
     with tab2:
         if st.session_state.perfil == "Master":
@@ -143,9 +163,7 @@ elif visao == "Professora":
             agenda_atual = buscar_agenda_prof(st.session_state.user)
             mat_ativa = agenda_atual[-1]['materia'] if agenda_atual else "Nenhuma"
 
-        if mat_ativa in ["Nenhuma", "FOLGA"]:
-            st.warning("Sem aulas atribuídas para o momento.")
-        else:
+        if mat_ativa not in ["Nenhuma", "FOLGA"]:
             st.info(f"Frente Atual: **{mat_ativa}**")
             alu_nome = st.selectbox("Selecione a Aluna atendida:", ALUNAS, key="p_alu_atend")
             st.divider()
@@ -153,9 +171,6 @@ elif visao == "Professora":
             if mat_ativa == "Prática":
                 st.subheader("Formulário de Aula Prática")
                 st.selectbox("Lição/Volume Atual *", LICOES_NUM, key="prat_licao")
-                st.write("**Dificuldades Técnicas:**")
-                
-                # Lista completa dos 25 itens de Prática
                 difs_p = [
                     "Não estudou nada", "Estudou de forma insatisfatória", "Não assistiu os vídeos",
                     "Dificuldade rítmica", "Nomes das figuras rítmicas", "Adentrando às teclas",
@@ -173,9 +188,6 @@ elif visao == "Professora":
             elif mat_ativa in ["Teoria", "Solfejo"]:
                 st.subheader(f"Formulário de {mat_ativa}")
                 st.selectbox("Módulo/Lição *", LICOES_NUM, key="teor_licao")
-                st.write("**Dificuldades Identificadas:**")
-                
-                # Lista completa dos 15 itens de Teoria/Solfejo
                 difs_ts = [
                     "Não assistiu vídeos complementares", "Clave de sol", "Clave de fá",
                     "Uso do metrônomo", "Estuda sem metrônomo", "Não realizou atividades",
@@ -190,9 +202,9 @@ elif visao == "Professora":
             st.divider()
             st.subheader("🏠 Próxima Aula")
             st.selectbox("Lição de Casa (Prática):", LICOES_NUM, key="casa_prat")
-            st.text_input("Lição de Casa (Apostila/Teoria):", key="casa_teor")
+            st.text_input("Tarefa Teoria/Apostila:", key="casa_teor")
             st.text_area("Observações Adicionais", key="obs_finais")
             
             if st.button("Finalizar e Salvar Registro", use_container_width=True):
                 st.balloons()
-                st.success(f"Aula de {mat_ativa} registrada para {alu_nome}!")
+                st.success(f"Aula de {mat_ativa} registrada com sucesso!")
