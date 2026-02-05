@@ -1,36 +1,31 @@
 import streamlit as st
 import pandas as pd
-import random
 from datetime import datetime
 
 # --- CONFIGURAÇÕES DE PÁGINA ---
-st.set_page_config(page_title="GEM Vila Verde - Pro", layout="wide", page_icon="🎼")
+st.set_page_config(page_title="GEM Vila Verde - Sistema Integrado", layout="wide", page_icon="🎼")
 
 # --- ESTILIZAÇÃO CUSTOMIZADA (CSS) ---
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stButton>button { width: 100%; border-radius: 10px; height: 3em; background-color: #4CAF50; color: white; }
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #ffffff; border-radius: 5px; padding: 10px; }
-    .card-pratica { padding: 20px; border-radius: 10px; background-color: #e3f2fd; border-left: 5px solid #2196f3; }
-    .card-teoria { padding: 20px; border-radius: 10px; background-color: #fff3e0; border-left: 5px solid #ff9800; }
-    .card-solfejo { padding: 20px; border-radius: 10px; background-color: #f3e5f5; border-left: 5px solid #9c27b0; }
+    .stApp { background-color: #f8f9fa; }
+    .main-card { padding: 20px; border-radius: 15px; margin-bottom: 20px; color: white; }
+    .pratica-card { background: linear-gradient(135deg, #1e3a8a, #3b82f6); border-left: 10px solid #000033; }
+    .teoria-card { background: linear-gradient(135deg, #b45309, #f59e0b); border-left: 10px solid #451a03; }
+    .solfejo-card { background: linear-gradient(135deg, #6d28d9, #8b5cf6); border-left: 10px solid #2e1065; }
+    .igreja-card { background: linear-gradient(135deg, #059669, #10b981); border-left: 10px solid #064e3b; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- BANCO DE DADOS MESTRE ---
+# --- BANCO DE DADOS ---
 if "calendario_anual" not in st.session_state:
     st.session_state.calendario_anual = {}
-if "chamada_data" not in st.session_state:
-    st.session_state.chamada_data = {}
 
 TURMAS = {
     "Turma 1": ["Rebecca A.", "Amanda S.", "Ingrid M.", "Rebeka S.", "Mellina S.", "Rebeca R.", "Caroline C."],
     "Turma 2": ["Vitória A.", "Elisa F.", "Sarah S.", "Gabrielly C. V.", "Emily O.", "Julya O.", "Stephany O."],
     "Turma 3": ["Heloísa R.", "Ana Marcela S.", "Vitória Bella T.", "Júlia G. S.", "Micaelle S.", "Raquel L.", "Júlia Cristina"]
 }
-TODAS_ALUNAS = sorted([aluna for lista in TURMAS.values() for aluna in lista])
 PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
 HORARIOS_LABELS = [
     "08h45 às 09h30 (1ª Aula - Igreja)", 
@@ -39,177 +34,135 @@ HORARIOS_LABELS = [
     "10h45 às 11h15 (4ª Aula)"
 ]
 
-# --- INTERFACE LATERAL ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3844/3844724.png", width=100)
-    st.title("GEM Vila Verde")
-    perfil = st.radio("Módulo:", ["🏠 Início / Secretaria", "👩‍🏫 Portal Instrutora"])
+    st.header("⚙️ Painel de Controle")
+    perfil = st.radio("Selecione o Perfil:", ["Secretaria", "Instrutora"])
     st.divider()
-    st.caption("Sistema de Gestão GEM v2.0")
+    st.info("💡 Lembrete: O rodízio garante que alunas e professoras não repitam salas.")
 
 # ==========================================
 #              MÓDULO SECRETARIA
 # ==========================================
-if perfil == "🏠 Início / Secretaria":
-    tab_gerar, tab_chamada, tab_correcao, tab_admin = st.tabs([
-        "🗓️ Planejar Sábado", "📍 Chamada Geral", "✅ Correção de Exercícios", "⚠️ Configurações"
-    ])
+if perfil == "Secretaria":
+    tab_gerar, tab_presenca, tab_correcao = st.tabs(["🗓️ Gerar Escala", "📍 Chamada", "✅ Correção de Exercícios"])
 
     with tab_gerar:
-        st.subheader("Configuração do Rodízio")
-        data_sel = st.date_input("Escolha o Sábado:", value=datetime.now())
+        st.subheader("Configuração Semanal")
+        data_sel = st.date_input("Data do Sábado:", value=datetime.now())
         data_str = data_sel.strftime("%d/%m/%Y")
-        offset_semana = (data_sel.day // 7) % 7
+        offset = (data_sel.day // 7) % 7
 
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("### 📚 Teoria (Sala 8)")
-            pt2 = st.selectbox("Instrutora H2 (T1):", PROFESSORAS_LISTA, index=0)
-            pt3 = st.selectbox("Instrutora H3 (T2):", PROFESSORAS_LISTA, index=1)
-            pt4 = st.selectbox("Instrutora H4 (T3):", PROFESSORAS_LISTA, index=2)
+            st.markdown("#### 📚 Sala 8 (Teoria)")
+            pt2 = st.selectbox("Prof. H2 (T1):", PROFESSORAS_LISTA, index=0)
+            pt3 = st.selectbox("Prof. H3 (T2):", PROFESSORAS_LISTA, index=1)
+            pt4 = st.selectbox("Prof. H4 (T3):", PROFESSORAS_LISTA, index=2)
         with col2:
-            st.markdown("### 🔊 Solfejo (Sala 9)")
-            st2 = st.selectbox("Instrutora H2 (T2):", PROFESSORAS_LISTA, index=3)
-            st3 = st.selectbox("Instrutora H3 (T3):", PROFESSORAS_LISTA, index=4)
-            st4 = st.selectbox("Instrutora H4 (T1):", PROFESSORAS_LISTA, index=5)
+            st.markdown("#### 🔊 Sala 9 (Solfejo/MSA)")
+            st2 = st.selectbox("Prof. H2 (T2):", PROFESSORAS_LISTA, index=3)
+            st3 = st.selectbox("Prof. H3 (T3):", PROFESSORAS_LISTA, index=4)
+            st4 = st.selectbox("Prof. H4 (T1):", PROFESSORAS_LISTA, index=5)
         
-        folgas = st.multiselect("Folgas do Dia:", PROFESSORAS_LISTA)
+        folgas = st.multiselect("Professoras de Folga:", PROFESSORAS_LISTA)
 
-        if st.button("🚀 Gerar e Publicar Escala Colorida"):
+        if st.button("🚀 Gerar Rodízio Colorido", use_container_width=True):
             fluxo = {
                 HORARIOS_LABELS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "Pra": "Turma 3", "ITeo": pt2, "ISol": st2},
                 HORARIOS_LABELS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "Pra": "Turma 1", "ITeo": pt3, "ISol": st3},
                 HORARIOS_LABELS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "Pra": "Turma 2", "ITeo": pt4, "ISol": st4}
             }
-            escala_final = []
+            grade = []
             for t_nome, alunas in TURMAS.items():
                 for i, aluna in enumerate(alunas):
-                    ag = {"Aluna": aluna, "Turma": t_nome, HORARIOS_LABELS[0]: "IGREJA (Solfejo Melódico)"}
+                    row = {"Aluna": aluna, "Turma": t_nome, HORARIOS_LABELS[0]: "IGREJA (Solfejo Melódico)"}
                     for h_idx in [1, 2, 3]:
                         h_lab = HORARIOS_LABELS[h_idx]
                         conf = fluxo[h_lab]
-                        if conf["Teo"] == t_nome: ag[h_lab] = f"SALA 8 | Teoria ({conf['ITeo']})"
-                        elif conf["Sol"] == t_nome: ag[h_lab] = f"SALA 9 | Solfejo/MSA ({conf['ISol']})"
+                        if conf["Teo"] == t_nome: row[h_lab] = f"SALA 8 | Teoria ({conf['ITeo']})"
+                        elif conf["Sol"] == t_nome: row[h_lab] = f"SALA 9 | Solfejo/MSA ({conf['ISol']})"
                         else:
-                            p_ocup = [conf["ITeo"], conf["ISol"]] + folgas
-                            p_disp = [p for p in PROFESSORAS_LISTA if p not in p_ocup]
-                            sala_p = (i + offset_semana + h_idx) % 7 + 1
-                            inst_p = p_disp[i % len(p_disp)] if p_disp else "Vago"
-                            ag[h_lab] = f"SALA {sala_p} | Prática ({inst_p})"
-                    escala_final.append(ag)
-            st.session_state.calendario_anual[data_str] = {"tabela": escala_final}
-            st.balloons()
+                            p_disp = [p for p in PROFESSORAS_LISTA if p not in [conf["ITeo"], conf["ISol"]] + folgas]
+                            sala_p = (i + offset + h_idx) % 7 + 1
+                            prof_p = p_disp[i % len(p_disp)] if p_disp else "Vago"
+                            row[h_lab] = f"SALA {sala_p} | Prática ({prof_p})"
+                    grade.append(row)
+            st.session_state.calendario_anual[data_str] = {"tabela": grade}
+            st.success("Escala gerada com sucesso!")
 
-        if data_str in st.session_state.calendario_anual:
-            st.divider()
-            st.dataframe(pd.DataFrame(st.session_state.calendario_anual[data_str]["tabela"]), use_container_width=True)
-
-    with tab_chamada:
-        st.subheader(f"📍 Presença: {data_str if 'data_str' in locals() else ''}")
-        col_c1, col_c2 = st.columns([2, 1])
-        for aluna in TODAS_ALUNAS:
-            c = st.container()
-            c1, c2, c3 = c.columns([3, 1, 1])
-            c1.write(f"**{aluna}**")
+    with tab_presenca:
+        st.subheader("📍 Chamada das Alunas")
+        for aluna in sorted([a for l in TURMAS.values() for a in l]):
+            c1, c2 = st.columns([3, 1])
+            c1.write(aluna)
             c2.checkbox("Presente", key=f"pres_{aluna}")
-            c3.checkbox("Justificado", key=f"just_{aluna}")
-        st.button("Salvar Chamada Geral")
+        st.button("Salvar Chamada")
 
     with tab_correcao:
-        st.subheader("✅ Correção de Exercícios (Secretaria/Instrutora)")
-        sel_alu = st.selectbox("Selecione a Aluna para Validar:", TODAS_ALUNAS)
-        col_v1, col_v2 = st.columns(2)
-        with col_v1:
-            st.markdown("**Materiais Entregues**")
-            st.checkbox("Caderno de Pauta", key="v1")
-            st.checkbox("Apostila de Teoria", key="v2")
-            st.checkbox("Método MSA", key="v3")
-        with col_v2:
-            st.markdown("**Status dos Exercícios**")
-            st.radio("Resultado:", ["Tudo Correto", "Corrigir Erros", "Não Fez"], horizontal=True)
-        st.text_area("Observações da Correção:")
-        st.button("Registrar Validação")
-
-    with tab_admin:
-        if st.button("🔥 RESET TOTAL DO SISTEMA"):
-            st.session_state.clear()
-            st.rerun()
+        st.subheader("📝 Formulário de Correção de Atividades")
+        aluna_corr = st.selectbox("Selecione a aluna para corrigir exercícios:", sorted([a for l in TURMAS.values() for a in l]))
+        c1, c2 = st.columns(2)
+        with c1:
+            st.checkbox("Caderno de Pauta em dia?", key="corr_1")
+            st.checkbox("Apostila de Teoria preenchida?", key="corr_2")
+        with c2:
+            st.checkbox("Lições do MSA feitas?", key="corr_3")
+            st.checkbox("Vídeos de auxílio assistidos?", key="corr_4")
+        st.radio("Status da Atividade:", ["Aprovado", "Corrigir Erros", "Incompleto"], horizontal=True)
+        st.text_area("Notas da Correção:")
+        st.button("Salvar Correção")
 
 # ==========================================
 #              MÓDULO PROFESSORA
 # ==========================================
 else:
     st.subheader("👩‍🏫 Portal da Instrutora")
-    data_aula = st.date_input("Data da Aula:", value=datetime.now(), key="p_data")
-    d_str = data_aula.strftime("%d/%m/%Y")
+    data_p = st.date_input("Data:", value=datetime.now())
+    d_str = data_p.strftime("%d/%m/%Y")
 
     if d_str in st.session_state.calendario_anual:
-        instr_sel = st.selectbox("Selecione seu Nome:", PROFESSORAS_LISTA)
-        hr_sel = st.select_slider("Horário da Aula:", options=HORARIOS_LABELS)
-        
+        p_nome = st.selectbox("Seu Nome:", PROFESSORAS_LISTA)
+        h_sel = st.select_slider("Horário:", options=HORARIOS_LABELS)
         info = st.session_state.calendario_anual[d_str]
-        aluna_atend, local_atend, mat_atend = "---", "---", "---"
+        
+        atend, local, mat = "---", "---", "---"
 
-        if hr_sel == HORARIOS_LABELS[0]:
-            local_atend, aluna_atend, mat_atend = "Igreja", "Todas", "Solfejo Melódico"
+        if h_sel == HORARIOS_LABELS[0]:
+            atend, local, mat = "Todas as Alunas", "Igreja", "Solfejo Melódico"
+            st.markdown(f'<div class="main-card igreja-card"><h2>⛪ {mat}</h2><p>{local} | Atendendo: {atend}</p></div>', unsafe_allow_html=True)
         else:
             for linha in info["tabela"]:
-                if f"({instr_sel})" in linha.get(hr_sel, ""):
-                    aluna_atend = linha["Aluna"]
-                    local_atend = linha[hr_sel].split(" | ")[0]
-                    mat_atend = "Teoria" if "SALA 8" in local_atend else "Solfejo/MSA" if "SALA 9" in local_atend else "Prática"
-
-        # --- CABEÇALHO COLORIDO DO ATENDIMENTO ---
-        if mat_atend == "Prática":
-            st.markdown(f'<div class="card-pratica"><h3>🎸 Aula Prática: {aluna_atend}</h3><p>Local: {local_atend}</p></div>', unsafe_allow_html=True)
-        elif mat_atend == "Teoria":
-            st.markdown(f'<div class="card-teoria"><h3>📖 Aula de Teoria: {aluna_atend}</h3><p>Local: {local_atend}</p></div>', unsafe_allow_html=True)
-        elif mat_atend == "Solfejo/MSA":
-            st.markdown(f'<div class="card-solfejo"><h3>🔊 Solfejo/MSA: {aluna_atend}</h3><p>Local: {local_atend}</p></div>', unsafe_allow_html=True)
-        else:
-            st.info(f"📍 Local: {local_atend} | Matéria: {mat_atend}")
+                if f"({p_nome})" in linha.get(h_sel, ""):
+                    atend, local = linha["Aluna"], linha[h_sel].split(" | ")[0]
+                    mat = "Teoria" if "SALA 8" in local else "Solfejo/MSA" if "SALA 9" in local else "Prática"
+            
+            card_class = "pratica-card" if mat == "Prática" else "teoria-card" if mat == "Teoria" else "solfejo-card"
+            icon = "🎹" if mat == "Prática" else "📚" if mat == "Teoria" else "🔊"
+            st.markdown(f'<div class="main-card {card_class}"><h2>{icon} {mat}: {atend}</h2><p>{local}</p></div>', unsafe_allow_html=True)
 
         st.divider()
 
-        # --- FORMULÁRIOS DINÂMICOS ---
-        if mat_atend == "Prática":
-            st.markdown("#### 📋 Checklist de Técnica (25 Itens)")
-            itens = [
-                "Não estudou", "Estudo insatisfatório", "Não assistiu vídeos", "Dificuldade rítmica",
-                "Nomes figuras rítmicas", "Adentrando às teclas", "Postura (Costas/Braços)", "Punho (Alto/Baixo)",
-                "Não senta no centro", "Quebrando falanges", "Unhas compridas", "Dedos arredondados",
-                "Pé no pedal expressão", "Movimentos pé esquerdo", "Uso do metrônomo", "Estuda sem metrônomo",
-                "Clave de sol", "Clave de fá", "Atividades apostila", "Articulação ligada/semiligada",
-                "Respirações", "Respirações passagem", "Recurso de dedilhado", "Nota de apoio", "Sem dificuldades"
-            ]
-            col_f1, col_f2 = st.columns(2)
+        # FORMULÁRIO DINÂMICO DE ACORDO COM A MATÉRIA
+        if mat == "Prática":
+            st.subheader("📋 Avaliação Prática (25 Itens Técnicos)")
+            itens = ["Não estudou nada", "Estudo insatisfatório", "Não assistiu os vídeos", "Dificuldade rítmica", "Nomes figuras rítmicas", "Adentrando às teclas", "Postura", "Punho", "Centro", "Falanges", "Unhas", "Dedos arredondados", "Pedal expressão", "Pé esquerdo", "Metrônomo", "Estuda sem metrônomo", "Clave de sol", "Clave de fá", "Apostila", "Articulação", "Respiração", "Passagem de dedos", "Dedilhado", "Nota de apoio", "Técnica"]
+            col1, col2 = st.columns(2)
             for i, item in enumerate(itens):
-                (col_f1 if i < 13 else col_f2).checkbox(item, key=f"p_item_{i}")
+                (col1 if i < 13 else col2).checkbox(item, key=f"pra_{i}")
+        
+        elif mat == "Teoria":
+            st.subheader("📋 Avaliação de Teoria (Sala 8)")
+            for t in ["Explicação Teórica", "Correção de Pauta", "Aplicação de Teste", "Comportamento"]:
+                st.checkbox(t, key=f"teo_{t}")
 
-        elif mat_atend == "Teoria":
-            st.markdown("#### 📖 Avaliação de Teoria")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.checkbox("Explicou Matéria Nova", key="t_new")
-                st.checkbox("Corrigiu Exercícios", key="t_corr")
-            with c2:
-                st.checkbox("Aplicou Teste", key="t_test")
-                st.checkbox("Dificuldade em Claves", key="t_clav")
+        elif "Solfejo" in mat:
+            st.subheader("📋 Avaliação de Solfejo (Sala 9 ou Igreja)")
+            for s in ["Linguagem Rítmica", "Afinação Melódica", "Marcação Mão", "MSA Módulo"]:
+                st.checkbox(s, key=f"sol_{s}")
 
-        elif mat_atend == "Solfejo/MSA":
-            st.markdown("#### 🔊 Avaliação de Solfejo/MSA")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.checkbox("Linguagem Rítmica OK", key="s_rit")
-                st.checkbox("Afinação Melódica OK", key="s_afin")
-            with c2:
-                st.checkbox("Marcação de Compasso", key="s_comp")
-                st.checkbox("Módulo MSA Concluído", key="s_msa")
-
-        st.divider()
-        st.text_input("🏠 Lição para Casa:", placeholder="Digite as páginas ou lições...")
-        st.text_area("📝 Observações Gerais:")
-        if st.button("💾 Salvar Registro de Aula"):
-            st.success("Registro salvo com sucesso!")
+        st.text_input("🏠 Lição para Casa:")
+        st.text_area("📝 Observações da Aula:")
+        st.button("✅ Salvar Atendimento")
     else:
-        st.warning("⚠️ Escala não encontrada para esta data. Peça para a Secretaria gerar o planejamento.")
+        st.error("A Secretaria ainda não gerou a escala para este sábado.")
