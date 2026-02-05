@@ -197,4 +197,17 @@ else:
                 st.checkbox("Respeito Metrônomo", key="s3")
             with col2:
                 st.markdown("**Melódica**")
-                st.checkbox
+                st.checkbox("Afinação/Solfejo", key="s4")
+                st.checkbox("Acentuação Métrica", key="s5")
+                st.checkbox("Leitura de Claves", key="s6")
+            with col3:
+                st.markdown("**Geral**")
+                st.checkbox("Marcação Manual", key="s7")
+                st.checkbox("Postura Corporal", key="s8")
+                st.checkbox("Respirações", key="s9")
+
+        st.divider()
+        st.text_input("🏠 Próxima Lição / Lição para Casa:")
+        st.text_area("📝 Observações Gerais da Instrutora:")
+        if st.button("💾 Finalizar e Salvar Aula", use_container_width=True):
+            st.success("Registro de aula salvo com sucesso!")
