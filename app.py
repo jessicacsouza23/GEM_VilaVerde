@@ -6,7 +6,12 @@ from datetime import datetime
 # --- CONFIGURAÇÕES SUPABASE ---
 SUPABASE_URL = "https://hnpxvxbimkbcxtyniryx.supabase.co"
 SUPABASE_KEY = "sb_publishable_sZ7i2TMEbrF2-jCIHj5Edw_8kqvYU2P"
-HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+HEADERS = {
+    "apikey": SUPABASE_KEY, 
+    "Authorization": f"Bearer {SUPABASE_KEY}", 
+    "Content-Type": "application/json",
+    "Prefer": "return=representation"
+}
 
 st.set_page_config(page_title="GEM Vila Verde - Gestão Integrada", layout="wide")
 
@@ -64,7 +69,6 @@ if not st.session_state.autenticado:
     st.title("🎼 GEM Vila Verde")
     if st.session_state.tela_cadastro:
         with st.container(border=True):
-            st.subheader("Criar Nova Conta")
             n_user = st.selectbox("Selecione seu Nome Oficial:", NOMES_PERMITIDOS)
             n_pass = st.text_input("Defina uma Senha:", type="password")
             n_perf = st.selectbox("Seu Perfil:", ["Professora", "Secretaria", "Master"])
@@ -72,8 +76,8 @@ if not st.session_state.autenticado:
                 if n_pass:
                     res = criar_novo_usuario(n_user, n_pass, n_perf)
                     if res.status_code in [200, 201]:
-                        st.success("Cadastrado! Faça o login."); st.session_state.tela_cadastro = False; st.rerun()
-                    else: st.error("Erro no cadastro.")
+                        st.success("Cadastro realizado! Faça o login."); st.session_state.tela_cadastro = False; st.rerun()
+                    else: st.error("Erro ao cadastrar. Verifique a tabela no banco.")
                 else: st.warning("Senha obrigatória.")
             if st.button("Voltar"): st.session_state.tela_cadastro = False; st.rerun()
     else:
@@ -103,24 +107,24 @@ if visao == "Secretaria":
     tab_chamada, tab_correcao, tab_escala = st.tabs(["📍 Chamada", "✅ Correção de Atividades", "🗓️ Rodízio Automático"])
 
     with tab_correcao:
-        st.subheader("Registro de Atividades e Lição de Casa")
+        st.subheader("Correção de Materiais (Lição de Casa)")
         c1, c2 = st.columns(2)
         with c1:
             alu_corr = st.selectbox("Aluna:", ALUNAS, key="corr_alu")
-            cat_corr = st.multiselect("Materiais Corrigidos:", CATEGORIAS_LICAO)
+            st.multiselect("Materiais Corrigidos:", CATEGORIAS_LICAO)
             st.checkbox("Trouxe a apostila?")
             st.checkbox("Fez os exercícios de pauta?")
         with c2:
-            st.text_area("Lições Realizadas (OK):", placeholder="Descreva o que foi corrigido e aprovado", key="corr_ok")
-            st.text_area("Pendências / Para Refazer:", placeholder="Descreva o que precisa ser refeito ou estudado novamente", key="corr_pend")
-        if st.button("Salvar Registro de Correção"): st.success("Correção salva no histórico da aluna!")
+            st.text_area("Lições Realizadas (OK):", placeholder="Ex: MSA Lição 1 a 5 aprovadas", key="corr_ok")
+            st.text_area("Pendências (Para Refazer):", placeholder="Ex: MSA Lição 6 - Ritmo incompleto", key="corr_pend")
+        if st.button("Salvar Correção"): st.success("Registro de correção salvo!")
 
     with tab_escala:
-        st.subheader("Gerar Rodízio Automático")
+        st.subheader("Gerar Rodízio por Folga")
         data_aula = st.date_input("Data da Aula:", format="DD/MM/YYYY")
-        folgas = st.multiselect("Selecione as professoras de FOLGA:", PROFESSORAS_LISTA)
+        folgas = st.multiselect("Quem está de FOLGA hoje?", PROFESSORAS_LISTA)
         
-        if st.button("Publicar Escala do Dia", use_container_width=True):
+        if st.button("Publicar Escala Automática", use_container_width=True):
             disponiveis = [p for p in PROFESSORAS_LISTA if p not in folgas]
             if not disponiveis: st.error("Nenhuma professora disponível!")
             else:
@@ -133,7 +137,7 @@ if visao == "Secretaria":
                             "materia": mat, "sala": sala, "aluna": ALUNAS[i % len(ALUNAS)]
                         })
                 publicar_escala_banco(nova_agenda)
-                st.success("Rodízio publicado!"); st.dataframe(pd.DataFrame(nova_agenda)[['professor', 'sala', 'aluna']])
+                st.success("Rodízio publicado!"); st.table(pd.DataFrame(nova_agenda)[['professor', 'sala', 'aluna']])
 
 # ==========================================
 #              MÓDULO PROFESSORA
@@ -149,9 +153,8 @@ elif visao == "Professora":
         st.info(f"📍 Sala: **{aula['sala']}** | Aluna: **{aula['aluna']}** | Matéria: **{aula['materia']}**")
         st.divider()
 
-        # --- FORMULÁRIO DE PRÁTICA (COMPLETO) ---
         if aula['materia'] == "Prática":
-            st.subheader("Avaliação Técnica - Prática")
+            st.subheader("Formulário de Prática")
             st.selectbox("Lição/Volume Atual *", LICOES_NUM, key="p_v")
             difs_p = [
                 "Não estudou nada", "Estudo insatisfatório", "Não assistiu os vídeos",
@@ -166,9 +169,8 @@ elif visao == "Professora":
             c1, c2 = st.columns(2)
             for i, d in enumerate(difs_p): (c1 if i < 13 else c2).checkbox(d, key=f"p_{i}")
 
-        # --- FORMULÁRIO DE TEORIA (COMPLETO) ---
         elif aula['materia'] == "Teoria":
-            st.subheader("Avaliação Técnica - Teoria")
+            st.subheader("Formulário de Teoria")
             st.selectbox("Módulo/Página *", LICOES_NUM, key="t_v")
             difs_t = [
                 "Não assistiu vídeos complementares", "Clave de sol", "Clave de fá", 
@@ -180,9 +182,8 @@ elif visao == "Professora":
             c1, c2 = st.columns(2)
             for i, d in enumerate(difs_t): (c1 if i < 7 else c2).checkbox(d, key=f"t_{i}")
 
-        # --- FORMULÁRIO DE SOLFEJO (COMPLETO) ---
         elif aula['materia'] == "Solfejo":
-            st.subheader("Avaliação Técnica - Solfejo")
+            st.subheader("Formulário de Solfejo")
             st.selectbox("Lição Solfejo *", LICOES_NUM, key="s_v")
             difs_s = [
                 "Não assistiu vídeos", "Afinação (altura das notas)", 
@@ -195,10 +196,7 @@ elif visao == "Professora":
             for i, d in enumerate(difs_s): (c1 if i < 7 else c2).checkbox(d, key=f"s_{i}")
 
         st.divider()
-        st.subheader("🏠 Tarefa para Casa")
-        st.text_input("Lição de Prática para próxima aula:", key="casa_p")
+        st.text_input("Tarefa de Prática para Casa:", key="casa_p")
         st.text_input("Tarefa de Teoria/Apostila:", key="casa_t")
-        st.text_area("Observações Finais da Aula:", key="obs_final")
-        
-        if st.button("Finalizar e Salvar Registro"):
-            st.balloons(); st.success("Aula registrada e salva com sucesso!")
+        st.text_area("Observações Finais:", key="obs_final")
+        if st.button("Finalizar e Salvar"): st.balloons(); st.success("Salvo!")
