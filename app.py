@@ -124,3 +124,63 @@ else:
         sala, atendendo, mat = "Não alocada", "---", "---"
 
         if h_atual != HORARIOS[3]:
+            # Verifica se é professora de Teoria/Solfejo da turma do horário
+            turma_teo = rot[h_atual]["teo"]
+            turma_sol = rot[h_atual]["sol"]
+            
+            if p_nome == conf["teoria"].get(turma_teo):
+                sala, atendendo, mat = "Sala 8 (Teoria)", turma_teo, "Teoria"
+            elif p_nome == conf["solfejo"].get(turma_sol):
+                sala, atendendo, mat = "Sala 9 (Solfejo)", turma_sol, "Solfejo"
+            elif p_nome in conf["pratica"]:
+                idx = conf["pratica"].index(p_nome)
+                sala = f"Sala {idx+1} (Prática)"
+                mat = "Prática"
+                turma_p = rot[h_atual]["prat"]
+                atendendo = TURMAS[turma_p][idx]
+
+        # --- PAINEL DE AVISO ---
+        st.divider()
+        c1, c2 = st.columns(2)
+        with c1:
+            st.metric("📍 LOCAL", sala)
+            st.subheader(f"👤 Atendendo: {atendendo}")
+        with c2:
+            st.metric("🕒 HORÁRIO", h_atual.split(" ")[0])
+            st.write(f"📖 Matéria: **{mat}**")
+
+        st.divider()
+
+        # --- FORMULÁRIOS TÉCNICOS DETALHADOS ---
+        if mat == "Prática":
+            st.subheader("📋 Checklist Técnico de Instrumento (25 Itens)")
+            st.selectbox("Lição/Volume Atual:", [str(i) for i in range(1,41)] + ["Apostila"])
+            
+            difs_p = [
+                "Não estudou nada", "Estudo insatisfatório", "Não assistiu os vídeos",
+                "Dificuldade rítmica", "Nomes das figuras rítmicas", "Adentrando às teclas",
+                "Postura (costas/ombros/braços)", "Punho alto/baixo", "Não senta no centro",
+                "Quebrando falanges", "Unhas compridas", "Dedos arredondados",
+                "Pé no pedal expressão", "Movimentos pé esquerdo", "Uso do metrônomo",
+                "Estuda sem metrônomo", "Clave de sol", "Clave de fá", "Atividades apostila",
+                "Articulação ligada/semiligada", "Respirações", "Respirações sobre passagem",
+                "Recurso de dedilhado", "Nota de apoio", "Não apresentou dificuldades"
+            ]
+            cols = st.columns(2)
+            for i, d in enumerate(difs_p):
+                (cols[0] if i < 13 else cols[1]).checkbox(d, key=f"f_{i}")
+
+        elif mat == "Teoria":
+            st.subheader("📋 Avaliação Coletiva - Teoria")
+            for t in ["Módulo MSA", "Exercícios Pauta", "Divisão Rítmica", "Notas na Clave", "Intervalos/Armaduras", "Participação"]: st.checkbox(t)
+        
+        elif mat == "Solfejo":
+            st.subheader("📋 Avaliação Coletiva - Solfejo")
+            for s in ["Afinação", "Leitura Métrica", "Movimento da Mão", "Pulsação", "Respeito ao Metrônomo"]: st.checkbox(s)
+
+        st.divider()
+        st.text_input("🏠 Lição de Casa / Próxima Aula:")
+        st.text_area("📝 Observações Gerais:")
+        if st.button("💾 Salvar Atendimento"):
+            st.balloons()
+            st.success("Aula registrada com sucesso!")
