@@ -4,9 +4,9 @@ import random
 from datetime import datetime
 
 # --- CONFIGURAÇÕES ---
-st.set_page_config(page_title="GEM Vila Verde - Rodízio por Turmas", layout="wide")
+st.set_page_config(page_title="GEM Vila Verde - Sistema 9 Salas", layout="wide")
 
-# --- DEFINIÇÃO DAS TURMAS FIXAS ---
+# --- BANCO DE DADOS DE ALUNAS POR TURMA ---
 TURMAS = {
     "Turma 1": ["Rebecca A.", "Amanda S.", "Ingrid M.", "Rebeka S.", "Mellina S.", "Rebeca R.", "Caroline C."],
     "Turma 2": ["Vitória A.", "Elisa F.", "Sarah S.", "Gabrielly C. V.", "Emily O.", "Julya O.", "Stephany O."],
@@ -16,130 +16,111 @@ TURMAS = {
 PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
 HORARIOS = ["08h45 (1ª Aula)", "09h35 (2ª Aula)", "10h10 (3ª Aula)", "10h45 (Aula Final)"]
 
-if "config_oficial" not in st.session_state:
-    st.session_state.config_oficial = None
+# --- ESTADO GLOBAL ---
+if "grade_publicada" not in st.session_state:
+    st.session_state.grade_publicada = None
 
 # --- INTERFACE ---
-st.title("🎼 GEM Vila Verde - Escala de Teoria/Solfejo por Turma")
-perfil = st.sidebar.radio("Navegação:", ["Secretaria", "Professora"])
+st.title("🎼 GEM Vila Verde - Gestão Integrada de Rodízio")
+perfil = st.sidebar.radio("Selecione sua Visão:", ["Secretaria", "Professora"])
 
 # ==========================================
 #              MÓDULO SECRETARIA
 # ==========================================
 if perfil == "Secretaria":
-    tab_conf, tab_chamada, tab_corr = st.tabs(["⚙️ Definir Professoras", "📍 Chamada", "✅ Correção"])
+    tab_gerar, tab_chamada, tab_corr = st.tabs(["🗓️ Gerar Rodízio 9 Salas", "📍 Chamada", "✅ Correção de Atividades"])
 
-    with tab_conf:
-        st.subheader("Atribuição das Salas Coletivas")
-        
+    with tab_gerar:
+        st.subheader("Configuração das Salas Coletivas")
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("#### 📚 Teoria")
-            p_t1 = st.selectbox("Professor Teoria - Turma 1:", PROFESSORAS_LISTA, index=0)
-            p_t2 = st.selectbox("Professor Teoria - Turma 2:", PROFESSORAS_LISTA, index=1)
-            p_t3 = st.selectbox("Professor Teoria - Turma 3:", PROFESSORAS_LISTA, index=2)
-        
+            st.markdown("#### 📚 Sala 8 - Teoria")
+            pt1 = st.selectbox("Prof. Teoria - Turma 1:", PROFESSORAS_LISTA, index=0)
+            pt2 = st.selectbox("Prof. Teoria - Turma 2:", PROFESSORAS_LISTA, index=1)
+            pt3 = st.selectbox("Prof. Teoria - Turma 3:", PROFESSORAS_LISTA, index=2)
         with c2:
-            st.markdown("#### 🔊 Solfejo")
-            s_t1 = st.selectbox("Professor Solfejo - Turma 1:", PROFESSORAS_LISTA, index=3)
-            s_t2 = st.selectbox("Professor Solfejo - Turma 2:", PROFESSORAS_LISTA, index=4)
-            s_t3 = st.selectbox("Professor Solfejo - Turma 3:", PROFESSORAS_LISTA, index=5)
-            
+            st.markdown("#### 🔊 Sala 9 - Solfejo")
+            st1 = st.selectbox("Prof. Solfejo - Turma 1:", PROFESSORAS_LISTA, index=3)
+            st2 = st.selectbox("Prof. Solfejo - Turma 2:", PROFESSORAS_LISTA, index=4)
+            st3 = st.selectbox("Prof. Solfejo - Turma 3:", PROFESSORAS_LISTA, index=5)
+        
         folgas = st.multiselect("Professoras de FOLGA:", PROFESSORAS_LISTA)
 
-        if st.button("🚀 Gerar Grade de Rotação", use_container_width=True):
-            # Identifica quem sobrou para as salas de prática 1 a 7
-            fixas = [p_t1, p_t2, p_t3, s_t1, s_t2, s_t3]
-            profs_pratica = [p for p in PROFESSORAS_LISTA if p not in folgas and p not in fixas]
+        if st.button("🚀 Gerar e Publicar Grade Oficial", use_container_width=True):
+            fixas = [pt1, pt2, pt3, st1, st2, st3]
+            prat_disp = [p for p in PROFESSORAS_LISTA if p not in folgas and p not in fixas]
+            random.shuffle(prat_disp)
             
-            st.session_state.config_oficial = {
-                "teoria": {"Turma 1": p_t1, "Turma 2": p_t2, "Turma 3": p_t3},
-                "solfejo": {"Turma 1": s_t1, "Turma 2": s_t2, "Turma 3": s_t3},
-                "pratica": profs_pratica,
-                "data": datetime.now().strftime("%d/%m/%Y")
+            tabela_mestre = []
+            # Gerando dados para a visualização da grade
+            for i in range(7):
+                prof_p = prat_disp[i] if i < len(prat_disp) else "Vago"
+                tabela_mestre.append({
+                    "Sala": f"Sala {i+1} (Prática)",
+                    "Instrutora": prof_p,
+                    "08h45 (H1)": TURMAS["Turma 3"][i],
+                    "09h35 (H2)": TURMAS["Turma 1"][i],
+                    "10h10 (H3)": TURMAS["Turma 2"][i]
+                })
+            
+            # Adicionando Teoria e Solfejo na tabela visual
+            tabela_mestre.append({"Sala": "Sala 8 (Teoria)", "Instrutora": "Por Turma", "08h45 (H1)": f"T1 ({pt1})", "09h35 (H2)": f"T2 ({pt2})", "10h10 (H3)": f"T3 ({pt3})"})
+            tabela_mestre.append({"Sala": "Sala 9 (Solfejo)", "Instrutora": "Por Turma", "08h45 (H1)": f"T2 ({st2})", "09h35 (H2)": f"T3 ({st3})", "10h10 (H3)": f"T1 ({st1})"})
+
+            st.session_state.grade_publicada = {
+                "tabela": tabela_mestre,
+                "config": {
+                    "teoria": {"Turma 1": pt1, "Turma 2": pt2, "Turma 3": pt3},
+                    "solfejo": {"Turma 1": st1, "Turma 2": st2, "Turma 3": st3},
+                    "pratica": prat_disp
+                }
             }
-            st.success("Escala Publicada! As professoras já podem visualizar seus atendimentos.")
+            st.success("Grade de 9 salas gerada e visível abaixo!")
+
+        if st.session_state.grade_publicada:
+            st.divider()
+            st.subheader("📋 Grade de Aulas Gerada")
+            st.table(pd.DataFrame(st.session_state.grade_publicada["tabela"]))
 
     with tab_chamada:
-        st.subheader("📍 Lista de Presença")
-        turma_sel = st.selectbox("Turma:", ["Turma 1", "Turma 2", "Turma 3"])
-        for aluna in TURMAS[turma_sel]:
-            st.checkbox(aluna, key=f"pres_{aluna}")
+        st.subheader("📍 Controle de Presença")
+        t_sel = st.selectbox("Selecione a Turma:", ["Turma 1", "Turma 2", "Turma 3"])
+        for aluna in TURMAS[t_sel]:
+            st.checkbox(aluna, key=f"cham_{aluna}")
 
     with tab_corr:
-        st.subheader("✅ Correção de Atividades")
-        st.selectbox("Aluna:", [a for lista in TURMAS.values() for a in lista])
-        st.multiselect("Materiais:", ["MSA", "Apostila", "Pauta"])
-        st.text_area("Observações de Correção:")
-        st.button("Salvar")
+        st.subheader("✅ Formulário de Correção de Atividades")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.selectbox("Selecionar Aluna:", [a for l in TURMAS.values() for a in l], key="sel_alu")
+            st.multiselect("Materiais Corrigidos:", ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila", "Folhas avulsas"])
+            st.radio("Trouxe a apostila?", ["Sim", "Não", "Esqueceu"], horizontal=True)
+        with c2:
+            st.radio("Assistiu os vídeos da semana?", ["Sim", "Não", "Em parte"], horizontal=True)
+            st.radio("Fez exercícios de pauta?", ["Sim", "Não", "Incompleto"], horizontal=True)
+            st.text_area("Lições de Casa OK / Pendências:")
+        st.button("Salvar Correção")
 
 # ==========================================
 #              MÓDULO PROFESSORA
 # ==========================================
 else:
-    st.header("🎹 Diário da Professora")
-    
-    if not st.session_state.config_oficial:
-        st.warning("Aguardando a Secretaria configurar as professoras de cada turma.")
+    st.header("🎹 Portal da Instrutora")
+    if not st.session_state.grade_publicada:
+        st.warning("⚠️ O rodízio ainda não foi gerado pela Secretaria.")
     else:
-        conf = st.session_state.config_oficial
+        conf = st.session_state.grade_publicada["config"]
         p_nome = st.selectbox("Selecione seu Nome:", PROFESSORAS_LISTA)
-        h_atual = st.select_slider("Horário da Aula:", options=HORARIOS)
+        h_atual = st.select_slider("Selecione o Horário Atual:", options=HORARIOS)
 
-        # Lógica de Rotação (Qual turma está onde em cada hora)
-        rotacao = {
-            HORARIOS[0]: {"Teoria": "Turma 1", "Solfejo": "Turma 2", "Prática": "Turma 3"},
-            HORARIOS[1]: {"Teoria": "Turma 2", "Solfejo": "Turma 3", "Prática": "Turma 1"},
-            HORARIOS[2]: {"Teoria": "Turma 3", "Solfejo": "Turma 1", "Prática": "Turma 2"},
-            HORARIOS[3]: {"Teoria": "Final", "Solfejo": "Final", "Prática": "Final"}
+        # Lógica de Rotação de Turmas
+        rot = {
+            HORARIOS[0]: {"teo": "Turma 1", "sol": "Turma 2", "prat": "Turma 3"},
+            HORARIOS[1]: {"teo": "Turma 2", "sol": "Turma 3", "prat": "Turma 1"},
+            HORARIOS[2]: {"teo": "Turma 3", "sol": "Turma 1", "prat": "Turma 2"},
+            HORARIOS[3]: {"teo": "Geral", "sol": "Geral", "prat": "Encerrado"}
         }
 
-        # Determinar local e aluna
-        local = "Folga / Auxílio"
-        atend = "---"
-        materia = "---"
-        turma_da_hora_teoria = rotacao[h_atual]["Teoria"]
-        turma_da_hora_solfejo = rotacao[h_atual]["Solfejo"]
+        sala, atendendo, mat = "Não alocada", "---", "---"
 
-        # Verifica se ela é a prof de Teoria da turma que está em aula agora
         if h_atual != HORARIOS[3]:
-            if p_nome == conf["teoria"].get(turma_da_hora_teoria):
-                local = "Sala 8 (Teoria)"
-                atend = turma_da_hora_teoria
-                materia = "Teoria"
-            elif p_nome == conf["solfejo"].get(turma_da_hora_solfejo):
-                local = "Sala 9 (Solfejo)"
-                atend = turma_da_hora_solfejo
-                materia = "Solfejo"
-            elif p_nome in conf["pratica"]:
-                idx = conf["pratica"].index(p_nome)
-                local = f"Sala {idx + 1} (Prática)"
-                turma_prat = rotacao[h_atual]["Prática"]
-                atend = TURMAS[turma_prat][idx] if idx < len(TURMAS[turma_prat]) else "Extra"
-                materia = "Prática"
-
-        # --- EXIBIÇÃO ---
-        st.divider()
-        c1, c2 = st.columns(2)
-        with c1:
-            st.metric("📍 LOCAL", local)
-            st.subheader(f"👤 Atendendo: {atend}")
-        with c2:
-            st.metric("⏱️ TURNO", h_atual.split(" ")[0])
-            st.write(f"📖 **Matéria:** {materia}")
-
-        st.divider()
-
-        # --- FORMULÁRIOS TÉCNICOS ---
-        if materia == "Prática":
-            st.subheader("Checklist Prática (25 Itens)")
-            difs = ["Não estudou", "Insatisfatório", "Sem vídeos", "Rítmica", "Figuras", "Teclas", "Postura", "Punho", "Centro", "Falanges", "Unhas", "Dedos", "Pedal", "Pé Esq", "Metrônomo", "Clave Sol", "Clave Fá", "Apostila", "Articulação", "Respiração", "Passagem", "Dedilhado", "Nota Apoio", "Dificuldades"]
-            cols = st.columns(3)
-            for i, d in enumerate(difs): cols[i%3].checkbox(d, key=f"p_{i}")
-        elif materia in ["Teoria", "Solfejo"]:
-            st.subheader(f"Avaliação de {materia} - {atend}")
-            for item in ["Presença", "Participação", "Exercícios", "Vídeos", "Comportamento"]: st.checkbox(item)
-
-        st.text_input("Tarefa para Casa:")
-        st.text_area("Observações da Aula:")
-        if st.button("Salvar Aula"): st.success("Aula registrada com sucesso!")
