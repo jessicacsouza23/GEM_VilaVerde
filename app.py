@@ -24,14 +24,9 @@ HORARIOS_LABELS = [
 ]
 
 # --- INICIALIZAÇÃO DE MEMÓRIA (PERSISTÊNCIA) ---
-if "calendario_anual" not in st.session_state:
-    st.session_state.calendario_anual = {}
-if "historico_geral" not in st.session_state:
-    st.session_state.historico_geral = []
-if "presenca_temp" not in st.session_state:
-    st.session_state.presenca_temp = {}
-if "controle_licoes" not in st.session_state:
-    st.session_state.controle_licoes = []
+for key in ["calendario_anual", "historico_geral", "presenca_temp", "controle_licoes"]:
+    if key not in st.session_state:
+        st.session_state[key] = [] if "historico" in key or "controle" in key else {}
 
 # --- FUNÇÃO PARA EXPORTAR ---
 def baixar_tabela_como_html(df, titulo):
@@ -132,11 +127,6 @@ if perfil == "🏠 Secretaria":
             })
             st.success("Salvo com sucesso!")
 
-    with tab_admin:
-        if st.button("🔥 RESETAR SISTEMA"):
-            st.session_state.clear()
-            st.rerun()
-
 # ==========================================
 #              MÓDULO PROFESSORA
 # ==========================================
@@ -156,14 +146,7 @@ elif perfil == "👩‍🏫 Professora":
         lic_aula = st.selectbox("Lição/Volume (1 a 40):", [str(i) for i in range(1, 41)] + ["MSA", "Hino"])
         
         st.markdown("**Checklist de Dificuldades Técnicas:**")
-        dif_itens = [
-            "Não estudou nada", "Estudou de forma insatisfatória", "Não assistiu os vídeos",
-            "Dificuldade ritmica", "Dificuldade nomes figuras", "Adentrando às teclas", 
-            "Postura", "Punho alto/baixo", "Posição banqueta", "Quebrando falanges", 
-            "Unhas compridas", "Dedos arredondados", "Pedal de expressão", "Pé esquerdo", 
-            "Metrônomo", "Estuda sem metrônomo", "Clave sol", "Clave fá", "Apostila", 
-            "Articulação", "Respirações", "Respiração passagem", "Dedilhado", "Nota de apoio", "Sem dificuldades"
-        ]
+        dif_itens = ["Não estudou nada", "Estudou insatisfatório", "Não assistiu os vídeos", "Dificuldade ritmica", "Dificuldade nomes figuras", "Adentrando às teclas", "Postura", "Punho alto/baixo", "Posição banqueta", "Quebrando falanges", "Unhas compridas", "Dedos arredondados", "Pedal de expressão", "Pé esquerdo", "Metrônomo", "Estuda sem metrônomo", "Clave sol", "Clave fá", "Apostila", "Articulação", "Respirações", "Respiração passagem", "Dedilhado", "Nota de apoio", "Sem dificuldades"]
         c1, c2 = st.columns(2)
         selecionadas = []
         for i, d in enumerate(dif_itens):
@@ -171,19 +154,16 @@ elif perfil == "👩‍🏫 Professora":
         
         obs_aula = st.text_area("📝 Evolução Detalhada desta Aula:")
         if st.button("💾 SALVAR REGISTRO DE AULA", use_container_width=True):
-            st.session_state.historico_geral.append({
-                "Data": d_str, "Aluna": atend, "Tipo": "Aula", "Licao": lic_aula, 
-                "Dificuldades": selecionadas, "Obs": obs_aula, "Instrutora": instr_sel
-            })
+            st.session_state.historico_geral.append({"Data": d_str, "Aluna": atend, "Tipo": "Aula", "Licao": lic_aula, "Dificuldades": selecionadas, "Obs": obs_aula, "Instrutora": instr_sel})
             st.success(f"Aula de {atend} salva!")
     else:
-        st.warning("⚠️ Peça para a Secretaria gerar o rodízio de hoje.")
+        st.warning("⚠️ Rodízio não gerado.")
 
 # ==========================================
 #              MÓDULO ANALÍTICO IA
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.header("📊 Análise de Desempenho e Diário Diário")
+    st.header("📊 Analítico de Performance")
     alu_an = st.selectbox("Selecione a Aluna:", sorted([a for l in TURMAS.values() for a in l]))
     
     df_h = pd.DataFrame(st.session_state.historico_geral)
@@ -191,33 +171,44 @@ elif perfil == "📊 Analítico IA":
     if not df_h.empty:
         df_aluna = df_h[df_h["Aluna"] == alu_an]
         df_aulas = df_aluna[df_aluna["Tipo"] == "Aula"]
-        
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Aulas Realizadas", len(df_aulas))
-        
-        # Proteção contra coluna inexistente ou vazia
-        num_licoes = 0
-        if "Licao" in df_aulas.columns:
-            num_licoes = df_aulas["Licao"].nunique()
-        m3.metric("Lições Únicas", num_licoes)
-        
+        df_faltas = df_aluna[df_aluna["Tipo"] == "Chamada"]
+
+        # --- 📈 GRÁFICOS ---
+        st.subheader("🔍 Visualização de Dados")
+        g1, g2 = st.columns(2)
+
+        with g1:
+            st.write("**Dificuldades Técnicas Acumuladas**")
+            # Extrair todas as dificuldades marcadas
+            todas_dif = []
+            for d_list in df_aulas.get('Dificuldades', []):
+                if isinstance(d_list, list): todas_dif.extend(d_list)
+            
+            if todas_dif:
+                dif_counts = pd.Series(todas_dif).value_counts()
+                st.bar_chart(dif_counts)
+            else: st.write("Nenhuma dificuldade técnica registrada ainda.")
+
+        with g2:
+            st.write("**Frequência (Presença vs Falta)**")
+            if not df_faltas.empty:
+                freq_counts = df_faltas["Status"].value_counts()
+                st.bar_chart(freq_counts)
+            else: st.write("Nenhuma chamada registrada.")
+
+        # --- 📅 DIÁRIO DETALHADO ---
         st.divider()
-        st.subheader("📅 Diário Detalhado (Evolução Diária)")
+        st.subheader("📅 Diário de Evolução Diária")
         if not df_aulas.empty:
             for _, row in df_aulas.sort_index(ascending=False).iterrows():
-                # CORREÇÃO DO TYPE ERROR: Garantindo que dificuldades seja uma lista válida para o join
                 lista_dif = row.get('Dificuldades', [])
-                if not isinstance(lista_dif, list):
-                    lista_dif = []
+                texto_dif = ", ".join(lista_dif) if (isinstance(lista_dif, list) and lista_dif) else "Nenhuma"
                 
-                texto_dif = ", ".join(lista_dif) if lista_dif else "Nenhuma"
-                
-                with st.expander(f"Data: {row.get('Data', '---')} | Lição: {row.get('Licao', 'S/L')} | Instrutora: {row.get('Instrutora', '---')}"):
+                with st.expander(f"Data: {row.get('Data', '---')} | Lição: {row.get('Licao', 'S/L')}"):
+                    st.write(f"**Instrutora:** {row.get('Instrutora', '---')}")
                     st.write(f"**Dificuldades:** {texto_dif}")
-                    st.info(f"**Evolução:** {row.get('Obs', '')}")
+                    st.info(f"**Obs:** {row.get('Obs', '')}")
             
-            st.markdown(baixar_tabela_como_html(df_aulas, f"Relatorio_Diario_{alu_an}"), unsafe_allow_html=True)
-        else:
-            st.write("Nenhuma aula registrada.")
+            st.markdown(baixar_tabela_como_html(df_aulas, f"Relatorio_Full_{alu_an}"), unsafe_allow_html=True)
     else:
-        st.write("Sem dados no sistema.")
+        st.write("Sem dados para análise.")
