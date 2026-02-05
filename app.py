@@ -23,7 +23,7 @@ if "autenticado" not in st.session_state:
 if "tela_cadastro" not in st.session_state:
     st.session_state.tela_cadastro = False
 
-# --- DADOS MESTRES ---
+# --- DADOS MESTRES (FECHADOS) ---
 ALUNAS = [
     "Amanda S. - Parque do Carmo II", "Ana Marcela S. - Vila Verde", "Caroline C. - Vila Ré",
     "Elisa F. - Vila Verde", "Emilly O. - Vila Curuçá Velha", "Gabrielly V. - Vila Verde",
@@ -69,6 +69,7 @@ if not st.session_state.autenticado:
     st.title("🎼 GEM Vila Verde")
     if st.session_state.tela_cadastro:
         with st.container(border=True):
+            st.subheader("Criar Nova Conta")
             n_user = st.selectbox("Selecione seu Nome Oficial:", NOMES_PERMITIDOS)
             n_pass = st.text_input("Defina uma Senha:", type="password")
             n_perf = st.selectbox("Seu Perfil:", ["Professora", "Secretaria", "Master"])
@@ -77,7 +78,7 @@ if not st.session_state.autenticado:
                     res = criar_novo_usuario(n_user, n_pass, n_perf)
                     if res.status_code in [200, 201]:
                         st.success("Cadastro realizado! Faça o login."); st.session_state.tela_cadastro = False; st.rerun()
-                    else: st.error("Erro ao cadastrar. Verifique a tabela no banco.")
+                    else: st.error("Erro ao cadastrar. Verifique se o usuário já existe no banco.")
                 else: st.warning("Senha obrigatória.")
             if st.button("Voltar"): st.session_state.tela_cadastro = False; st.rerun()
     else:
@@ -107,16 +108,16 @@ if visao == "Secretaria":
     tab_chamada, tab_correcao, tab_escala = st.tabs(["📍 Chamada", "✅ Correção de Atividades", "🗓️ Rodízio Automático"])
 
     with tab_correcao:
-        st.subheader("Correção de Materiais (Lição de Casa)")
+        st.subheader("Registro de Atividades (Lição de Casa)")
         c1, c2 = st.columns(2)
         with c1:
             alu_corr = st.selectbox("Aluna:", ALUNAS, key="corr_alu")
             st.multiselect("Materiais Corrigidos:", CATEGORIAS_LICAO)
-            st.checkbox("Trouxe a apostila?")
-            st.checkbox("Fez os exercícios de pauta?")
+            st.checkbox("Trouxe a apostila?", key="check_ap")
+            st.checkbox("Fez os exercícios de pauta?", key="check_pa")
         with c2:
-            st.text_area("Lições Realizadas (OK):", placeholder="Ex: MSA Lição 1 a 5 aprovadas", key="corr_ok")
-            st.text_area("Pendências (Para Refazer):", placeholder="Ex: MSA Lição 6 - Ritmo incompleto", key="corr_pend")
+            st.text_area("Lições Realizadas (OK):", placeholder="O que foi aprovado?", key="corr_ok")
+            st.text_area("Pendências (Para Refazer):", placeholder="O que precisa de correção?", key="corr_pend")
         if st.button("Salvar Correção"): st.success("Registro de correção salvo!")
 
     with tab_escala:
@@ -153,6 +154,7 @@ elif visao == "Professora":
         st.info(f"📍 Sala: **{aula['sala']}** | Aluna: **{aula['aluna']}** | Matéria: **{aula['materia']}**")
         st.divider()
 
+        # FORMULÁRIO DE PRÁTICA (OS 25 ITENS)
         if aula['materia'] == "Prática":
             st.subheader("Formulário de Prática")
             st.selectbox("Lição/Volume Atual *", LICOES_NUM, key="p_v")
@@ -169,6 +171,7 @@ elif visao == "Professora":
             c1, c2 = st.columns(2)
             for i, d in enumerate(difs_p): (c1 if i < 13 else c2).checkbox(d, key=f"p_{i}")
 
+        # FORMULÁRIO DE TEORIA
         elif aula['materia'] == "Teoria":
             st.subheader("Formulário de Teoria")
             st.selectbox("Módulo/Página *", LICOES_NUM, key="t_v")
@@ -182,6 +185,7 @@ elif visao == "Professora":
             c1, c2 = st.columns(2)
             for i, d in enumerate(difs_t): (c1 if i < 7 else c2).checkbox(d, key=f"t_{i}")
 
+        # FORMULÁRIO DE SOLFEJO
         elif aula['materia'] == "Solfejo":
             st.subheader("Formulário de Solfejo")
             st.selectbox("Lição Solfejo *", LICOES_NUM, key="s_v")
@@ -196,7 +200,9 @@ elif visao == "Professora":
             for i, d in enumerate(difs_s): (c1 if i < 7 else c2).checkbox(d, key=f"s_{i}")
 
         st.divider()
+        st.subheader("🏠 Próxima Aula")
         st.text_input("Tarefa de Prática para Casa:", key="casa_p")
         st.text_input("Tarefa de Teoria/Apostila:", key="casa_t")
-        st.text_area("Observações Finais:", key="obs_final")
-        if st.button("Finalizar e Salvar"): st.balloons(); st.success("Salvo!")
+        st.text_area("Observações Finais da Aula:", key="obs_final")
+        if st.button("Finalizar e Salvar Registro"):
+            st.balloons(); st.success("Aula registrada com sucesso!")
