@@ -62,13 +62,13 @@ if perfil == "🏠 Secretaria":
         offset_semana = (data_sel.day // 7) % 7
         c1, c2 = st.columns(2)
         with c1:
-            pt2 = st.selectbox("Instrutora Teoria H2 (T1):", PROFESSORAS_LISTA, index=0, key="pt2")
-            pt3 = st.selectbox("Instrutora Teoria H3 (T2):", PROFESSORAS_LISTA, index=1, key="pt3")
-            pt4 = st.selectbox("Instrutora Teoria H4 (T3):", PROFESSORAS_LISTA, index=2, key="pt4")
+            pt2 = st.selectbox("Instrutora Teoria H2 (T1):", PROFESSORAS_LISTA, index=0)
+            pt3 = st.selectbox("Instrutora Teoria H3 (T2):", PROFESSORAS_LISTA, index=1)
+            pt4 = st.selectbox("Instrutora Teoria H4 (T3):", PROFESSORAS_LISTA, index=2)
         with c2:
-            st2 = st.selectbox("Instrutora Solfejo H2 (T2):", PROFESSORAS_LISTA, index=3, key="st2")
-            st3 = st.selectbox("Instrutora Solfejo H3 (T3):", PROFESSORAS_LISTA, index=4, key="st3")
-            st4 = st.selectbox("Instrutora Solfejo H4 (T1):", PROFESSORAS_LISTA, index=5, key="st4")
+            st2 = st.selectbox("Instrutora Solfejo H2 (T2):", PROFESSORAS_LISTA, index=3)
+            st3 = st.selectbox("Instrutora Solfejo H3 (T3):", PROFESSORAS_LISTA, index=4)
+            st4 = st.selectbox("Instrutora Solfejo H4 (T1):", PROFESSORAS_LISTA, index=5)
         folgas = st.multiselect("Instrutoras de FOLGA:", PROFESSORAS_LISTA)
 
         if st.button("🚀 Gerar e Salvar Rodízio", use_container_width=True):
@@ -132,6 +132,11 @@ if perfil == "🏠 Secretaria":
             })
             st.success("Salvo com sucesso!")
 
+    with tab_admin:
+        if st.button("🔥 RESETAR SISTEMA"):
+            st.session_state.clear()
+            st.rerun()
+
 # ==========================================
 #              MÓDULO PROFESSORA
 # ==========================================
@@ -187,22 +192,32 @@ elif perfil == "📊 Analítico IA":
         df_aluna = df_h[df_h["Aluna"] == alu_an]
         df_aulas = df_aluna[df_aluna["Tipo"] == "Aula"]
         
-        # --- MÉTRICAS ---
         m1, m2, m3 = st.columns(3)
         m1.metric("Aulas Realizadas", len(df_aulas))
-        m2.metric("Lições Únicas", df_aulas["Licao"].nunique() if "Licao" in df_aulas.columns else 0)
         
-        # --- DIÁRIO DETALHADO (AULA POR AULA) ---
+        # Proteção contra coluna inexistente ou vazia
+        num_licoes = 0
+        if "Licao" in df_aulas.columns:
+            num_licoes = df_aulas["Licao"].nunique()
+        m3.metric("Lições Únicas", num_licoes)
+        
         st.divider()
         st.subheader("📅 Diário Detalhado (Evolução Diária)")
         if not df_aulas.empty:
             for _, row in df_aulas.sort_index(ascending=False).iterrows():
-                with st.expander(f"Data: {row['Data']} | Lição: {row.get('Licao', 'S/L')} | Instrutora: {row.get('Instrutora', '---')}"):
-                    st.write(f"**Dificuldades:** {', '.join(row.get('Dificuldades', []))}")
+                # CORREÇÃO DO TYPE ERROR: Garantindo que dificuldades seja uma lista válida para o join
+                lista_dif = row.get('Dificuldades', [])
+                if not isinstance(lista_dif, list):
+                    lista_dif = []
+                
+                texto_dif = ", ".join(lista_dif) if lista_dif else "Nenhuma"
+                
+                with st.expander(f"Data: {row.get('Data', '---')} | Lição: {row.get('Licao', 'S/L')} | Instrutora: {row.get('Instrutora', '---')}"):
+                    st.write(f"**Dificuldades:** {texto_dif}")
                     st.info(f"**Evolução:** {row.get('Obs', '')}")
             
             st.markdown(baixar_tabela_como_html(df_aulas, f"Relatorio_Diario_{alu_an}"), unsafe_allow_html=True)
         else:
-            st.write("Nenhuma aula registrada para esta aluna.")
+            st.write("Nenhuma aula registrada.")
     else:
         st.write("Sem dados no sistema.")
