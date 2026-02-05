@@ -27,6 +27,8 @@ if "calendario_anual" not in st.session_state:
     st.session_state.calendario_anual = {}
 if "historico_geral" not in st.session_state:
     st.session_state.historico_geral = []
+if "presenca_temp" not in st.session_state:
+    st.session_state.presenca_temp = {}
 
 # --- INTERFACE ---
 st.title("🎼 GEM Vila Verde - Gestão com Inteligência Analítica")
@@ -85,18 +87,48 @@ if perfil == "🏠 Secretaria":
 
         if data_str in st.session_state.calendario_anual:
             st.divider()
-            st.subheader(f"📊 Visualização do Rodízio - {data_str}")
             st.table(pd.DataFrame(st.session_state.calendario_anual[data_str]["tabela"]))
 
     with tab_chamada:
-        st.subheader("📍 Chamada")
+        st.subheader("📍 Chamada Geral")
+        data_ch = st.date_input("Data da Chamada:", value=datetime.now(), key="dt_ch")
+        data_ch_str = data_ch.strftime("%d/%m/%Y")
+        
+        col_btn1, col_btn2 = st.columns([1, 4])
+        if col_btn1.button("✅ Todas Presentes"):
+            for aluna in sorted([a for l in TURMAS.values() for a in l]):
+                st.session_state.presenca_temp[aluna] = "Presente"
+        
+        st.divider()
+        chamada_lista = []
         for aluna in sorted([a for l in TURMAS.values() for a in l]):
-            c_a, c_b = st.columns([3, 2])
-            c_a.write(f"👤 {aluna}")
-            status = c_b.radio("Frequência:", ["Presente", "Falta", "Justificada"], key=f"freg_{aluna}", horizontal=True)
-            if st.button(f"Confirmar Presença: {aluna}"):
-                st.session_state.historico_geral.append({"Data": data_str, "Aluna": aluna, "Tipo": "Presença", "Status": status})
-                st.toast(f"Frequência de {aluna} salva!")
+            c_a, c_b, c_c = st.columns([2, 2, 2])
+            c_a.write(f"👤 **{aluna}**")
+            
+            # Recupera estado anterior ou define Presente como padrão
+            val_padrao = st.session_state.presenca_temp.get(aluna, "Presente")
+            idx_padrao = ["Presente", "Falta", "Justificada"].index(val_padrao)
+            
+            status = c_b.radio(f"Status para {aluna}:", ["Presente", "Falta", "Justificada"], 
+                               index=idx_padrao, key=f"rad_{aluna}", horizontal=True, label_visibility="collapsed")
+            
+            motivo = ""
+            if status == "Justificada":
+                motivo = c_c.text_input("Motivo:", key=f"mot_{aluna}", placeholder="Ex: Doença")
+            
+            chamada_lista.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
+
+        st.divider()
+        if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
+            for registro in chamada_lista:
+                st.session_state.historico_geral.append({
+                    "Data": data_ch_str, 
+                    "Aluna": registro["Aluna"], 
+                    "Tipo": "Presença", 
+                    "Status": registro["Status"],
+                    "Motivo": registro["Motivo"]
+                })
+            st.success(f"Chamada de {len(chamada_lista)} alunas salva com sucesso!")
 
     with tab_controle:
         st.subheader("📋 Controle de Lições (Secretaria)")
@@ -113,6 +145,7 @@ if perfil == "🏠 Secretaria":
         if st.button("🔥 LIMPAR SISTEMA"):
             st.session_state.calendario_anual = {}
             st.session_state.historico_geral = []
+            st.session_state.presenca_temp = {}
             st.rerun()
 
 # ==========================================
@@ -144,12 +177,10 @@ else:
             elif "SALA 9" in local: st.success(f"🔊 {local} | 👤 Atendimento: **{atend}**")
             else: st.error(f"🎹 {local} | 👤 Atendimento: **{atend}**")
 
-            # IA FEEDBACK EM TEMPO REAL
-            st.info(f"🤖 **Analítico IA para {atend}:** Verifique a postura. Na última aula prática, foi relatado 'Dificuldade com as falanges'.")
+            st.info(f"🤖 **Analítico IA para {atend}:** Verifique a postura e respiração conforme registros anteriores.")
 
             st.divider()
             
-            # --- FORMULÁRIOS COMPLETOS ---
             if mat == "Prática":
                 st.subheader("🎹 Controle de Desempenho - Aula Prática")
                 st.selectbox("Lição/Volume (Prática):", [str(i) for i in range(1, 41)] + ["Outro"], key="lic_pr")
@@ -194,10 +225,7 @@ else:
                 st.session_state.historico_geral.append({
                     "Data": d_str, "Aluna": atend, "Materia": mat, "Dificuldades": selecionadas, "Obs": obs_final
                 })
-                st.balloons()
                 st.success("Aula registrada com sucesso!")
-        else:
-            st.error("⚠️ Gere o rodízio na Secretaria primeiro.")
 
 # ==========================================
 #              MÓDULO ANALÍTICO IA
@@ -213,7 +241,6 @@ else:
         col_m2.metric("Lições Concluídas", "14", "+2")
         col_m3.metric("Nível de Dificuldade", "Baixo", "-10%")
 
-        # --- GRÁFICO DE BARRAS (FALTAS E PRESENÇAS) ---
         st.subheader(f"📈 Gráfico de Frequência {per_an}")
         chart_data = pd.DataFrame({
             "Mês": ["Jan", "Fev", "Mar", "Abr"],
@@ -223,15 +250,11 @@ else:
         })
         st.bar_chart(chart_data, x="Mês", y=["Presenças", "Faltas", "Justificadas"], color=["#2ecc71", "#e74c3c", "#f1c40f"])
         
-        
-
         st.divider()
-        st.subheader("🤖 Recomendação da IA para a próxima Instrutora")
-        st.success(f"**Análise para {alu_an}:** A aluna apresenta um padrão de dificuldade na transição para a Clave de Fá. Sugere-se que na próxima aula de Solfejo (Sala 9), a instrutora dedique 10 minutos exclusivos para leitura métrica descendente.")
+        st.subheader("🤖 Recomendação da IA")
+        st.success(f"**Análise para {alu_an}:** Evolução constante. Focar em Clave de Fá na próxima aula.")
         
-        st.subheader("📋 Histórico de Observações (IA)")
+        st.subheader("📋 Histórico de Observações e Motivos de Falta")
         if st.session_state.historico_geral:
             df_hist = pd.DataFrame(st.session_state.historico_geral)
             st.dataframe(df_hist[df_hist["Aluna"] == alu_an], use_container_width=True)
-        else:
-            st.write("Ainda não há dados suficientes para esta aluna.")
