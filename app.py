@@ -4,7 +4,7 @@ import random
 from datetime import datetime
 
 # --- CONFIGURAÇÕES DE PÁGINA ---
-st.set_page_config(page_title="GEM Vila Verde - Sistema Completo", layout="wide")
+st.set_page_config(page_title="GEM Vila Verde - Sistema Oficial", layout="wide")
 
 # --- BANCO DE DADOS MESTRE ---
 TURMAS = {
@@ -21,8 +21,8 @@ if "calendario_anual" not in st.session_state:
     st.session_state.calendario_anual = {}
 
 # --- INTERFACE ---
-st.title("🎼 GEM Vila Verde - Gestão e Rodízio")
-perfil = st.sidebar.radio("Navegação:", ["Secretaria", "Professora"])
+st.title("🎼 GEM Vila Verde - Gestão de Rodízio")
+perfil = st.sidebar.radio("Navegação de Perfil:", ["Secretaria", "Professora"])
 
 # ==========================================
 #              MÓDULO SECRETARIA
@@ -56,10 +56,11 @@ if perfil == "Secretaria":
             prat_disp = [p for p in PROFESSORAS_LISTA if p not in folgas and p not in fixas]
             random.shuffle(prat_disp)
             
+            # LÓGICA DE ROTAÇÃO: Criação da Tabela com alunas mudando de sala
             grade_dia = []
             for i in range(7):
                 instrutora = prat_disp[i] if i < len(prat_disp) else "Vago"
-                # ROTAÇÃO: H1(T3), H2(T1), H3(T2) - Alunas mudam de sala
+                # Rotação: H1(T3), H2(T1 deslocada), H3(T2 deslocada)
                 grade_dia.append({
                     "Sala": f"Sala {i+1} (Prática)",
                     "Instrutora": instrutora,
@@ -68,6 +69,7 @@ if perfil == "Secretaria":
                     "10h10 (H3)": TURMAS["Turma 2"][(i + 2) % 7]
                 })
             
+            # Adiciona Teoria e Solfejo
             grade_dia.append({"Sala": "Sala 8 (Teo)", "Instrutora": "Múltiplas", "08h45 (H1)": f"T1 ({pt1})", "09h35 (H2)": f"T2 ({pt2})", "10h10 (H3)": f"T3 ({pt3})"})
             grade_dia.append({"Sala": "Sala 9 (Sol)", "Instrutora": "Múltiplas", "08h45 (H1)": f"T2 ({st2})", "09h35 (H2)": f"T3 ({st3})", "10h10 (H3)": f"T1 ({st1})"})
 
@@ -77,7 +79,7 @@ if perfil == "Secretaria":
                            "solfejo": {"Turma 1": st1, "Turma 2": st2, "Turma 3": st3},
                            "pratica": prat_disp}
             }
-            st.success(f"Escala salva!")
+            st.success(f"Escala de {data_str} salva!")
 
         if data_str in st.session_state.calendario_anual:
             st.divider()
@@ -90,20 +92,19 @@ if perfil == "Secretaria":
             c1.write(aluna)
             c2.checkbox("P", key=f"p_{aluna}_{data_str}")
             c3.checkbox("J", key=f"j_{aluna}_{data_str}")
-        st.button("Salvar Chamada")
+        st.button("💾 Salvar Chamada", key="save_chamada")
 
     with tab_corr:
-        st.subheader("✅ FORMULÁRIO DE CORREÇÃO (SECRETARIA)")
+        st.subheader("✅ CORREÇÃO (SECRETARIA)")
         sel_alu = st.selectbox("Aluna:", TODAS_ALUNAS)
-        col1, col2 = st.columns(2)
-        with col1:
-            st.multiselect("Materiais Conferidos:", ["MSA Verde", "MSA Preto", "Pauta", "Apostila"])
-            st.radio("Trouxe Apostila?", ["Sim", "Não", "Esqueceu"], horizontal=True)
-        with col2:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.multiselect("Materiais:", ["MSA Verde", "MSA Preto", "Pauta", "Apostila"])
+            st.radio("Trouxe Apostila?", ["Sim", "Não"], horizontal=True)
+        with c2:
             st.radio("Vídeos?", ["Sim", "Não"], horizontal=True)
-            st.radio("Pauta?", ["Sim", "Não"], horizontal=True)
-        st.text_area("Notas da Secretaria:")
-        st.button("Salvar Correção Secretaria")
+            st.radio("Exercícios?", ["Sim", "Não"], horizontal=True)
+        st.button("Salvar Registro de Correção")
 
     with tab_admin:
         st.subheader("⚠️ Administração")
@@ -116,16 +117,17 @@ if perfil == "Secretaria":
 # ==========================================
 else:
     st.header("🎹 Portal da Instrutora")
-    data_aula = st.date_input("Data da Aula:", value=datetime.now())
+    data_aula = st.date_input("Data da Aula:", value=datetime.now(), key="prof_date")
     d_str = data_aula.strftime("%d/%m/%Y")
 
     if d_str not in st.session_state.calendario_anual:
-        st.warning(f"Rodízio não encontrado.")
+        st.warning(f"Rodízio não planejado para {d_str}.")
     else:
         info_dia = st.session_state.calendario_anual[d_str]
         p_nome = st.selectbox("Selecione seu Nome:", PROFESSORAS_LISTA)
         h_atual = st.select_slider("Horário Atual:", options=HORARIOS_LABELS)
 
+        # Lógica para Teoria e Solfejo (Por Turma)
         rot_logic = {
             HORARIOS_LABELS[0]: {"teo": "Turma 1", "sol": "Turma 2"},
             HORARIOS_LABELS[1]: {"teo": "Turma 2", "sol": "Turma 3"},
@@ -137,30 +139,34 @@ else:
         
         if h_atual != HORARIOS_LABELS[3]:
             conf = info_dia["config"]
+            # 1. Busca em Teoria/Solfejo
             if p_nome == conf["teoria"].get(rot_logic[h_atual]["teo"]):
                 sala, atendendo, mat = "Sala 8 (Teoria)", rot_logic[h_atual]["teo"], "Teoria"
             elif p_nome == conf["solfejo"].get(rot_logic[h_atual]["sol"]):
                 sala, atendendo, mat = "Sala 9 (Solfejo)", rot_logic[h_atual]["sol"], "Solfejo"
+            
+            # 2. Busca nas salas de Prática (CORREÇÃO DA ROTAÇÃO AQUI)
             elif p_nome in conf["pratica"]:
                 idx_prof = conf["pratica"].index(p_nome)
-                sala = f"Sala {idx_prof+1}"
+                sala = f"Sala {idx_prof+1} (Prática)"
                 mat = "Prática"
+                # Acessa a linha correta da tabela salva e a coluna do horário atual
                 atendendo = info_dia["tabela"][idx_prof][h_atual]
 
         st.info(f"📍 **Local:** {sala} | 👤 **Atendendo Agora:** {atendendo}")
         st.divider()
 
-        # --- FORMULÁRIO COMPLETO: PRÁTICA (25 ITENS) ---
         if mat == "Prática":
-            st.subheader("📋 FORMULÁRIO DE AULA PRÁTICA")
-            st.selectbox("Lição Atual:", [str(i) for i in range(1,41)] + ["Apostila"])
-            difs = ["Não estudou nada", "Estudo insatisfatório", "Não assistiu os vídeos",
-                    "Dificuldade rítmica", "Nomes figuras rítmicas", "Adentrando às teclas",
-                    "Postura (costas/ombros/braços)", "Punho alto/baixo", "Não senta no centro",
-                    "Quebrando falanges", "Unhas compridas", "Dedos arredondados",
-                    "Pé no pedal expressão", "Movimentos pé esquerdo", "Uso do metrônomo",
-                    "Estuda sem metrônomo", "Clave de sol", "Clave de fá", "Atividades apostila",
-                    "Articulação ligada/semiligada", "Respirações", "Respirações passagem",
-                    "Recurso de dedilhado", "Nota de apoio", "Não apresentou dificuldades"]
+            st.subheader("📋 AULA PRÁTICA (25 ITENS)")
+            difs = ["Não estudou", "Insatisfatório", "Sem vídeos", "Rítmica", "Figuras", "Teclas", "Postura", "Punho", "Centro", "Falanges", "Unhas", "Dedos", "Pedal", "Pé Esq", "Metrônomo", "Clave Sol", "Clave Fá", "Apostila", "Articulação", "Respiração", "Passagem", "Dedilhado", "Nota Apoio", "Sem dificuldades"]
             cols = st.columns(2)
-            for i, d in enumerate(difs): (cols[0] if i < 13 else cols[1]).checkbox
+            for i, d in enumerate(difs): (cols[0] if i < 13 else cols[1]).checkbox(d, key=f"pchk_{i}")
+        elif mat == "Teoria":
+            st.subheader(f"📋 FORMULÁRIO TEORIA - {atendendo}")
+            for t in ["MSA", "Pauta", "Exercícios"]: st.checkbox(t, key=f"tchk_{t}")
+        elif mat == "Solfejo":
+            st.subheader(f"📋 FORMULÁRIO SOLFEJO - {atendendo}")
+            for s in ["Rítmica", "Melódica", "Mão", "Pulsação"]: st.checkbox(s, key=f"schk_{s}")
+
+        st.text_input("Próxima Lição:")
+        st.button("Salvar Aula")
