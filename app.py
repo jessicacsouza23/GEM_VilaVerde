@@ -67,7 +67,7 @@ if perfil == "🏠 Secretaria":
             escala_final = []
             fluxo = {
                 HORARIOS_LABELS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "Pra": "Turma 3", "ITeo": pt2, "ISol": st2},
-                HORARIOS_LABELS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "Pra": "Turma 1", "ITeo": pt3, "ISol": pt3},
+                HORARIOS_LABELS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "Pra": "Turma 1", "ITeo": pt3, "ISol": st3},
                 HORARIOS_LABELS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "Pra": "Turma 2", "ITeo": pt4, "ISol": st4}
             }
             for t_nome, alunas in TURMAS.items():
@@ -114,15 +114,15 @@ if perfil == "🏠 Secretaria":
             st.success("Chamada salva!")
 
     with tab_controle:
-        st.subheader("✅ Controle de Correções")
+        st.subheader("✅ Correção de Atividades")
         c_sec1, c_sec2 = st.columns(2)
         with c_sec1:
-            sec_resp = st.selectbox("Secretária Responsável:", SECRETARIAS)
+            sec_resp = st.selectbox("Secretária Responsável pela Correção:", SECRETARIAS)
             alu_sec = st.selectbox("Aluna:", alunas_lista)
             cat_sec = st.multiselect("Livro/Apostila:", ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila"])
         with c_sec2:
             status_corr = st.radio("Status da Atividade:", ["Realizada", "Não Realizada", "Devolvida para Correção"])
-            detalhe_atv = st.text_input("Lições/Páginas (Ex: 1 a 5)")
+            detalhe_atv = st.text_input("Lições/Páginas corrigidas")
             obs_sec = st.text_area("Observações da Secretaria")
             
         if st.button("💾 Salvar Registro de Correção", use_container_width=True):
@@ -136,7 +136,7 @@ if perfil == "🏠 Secretaria":
 #              MÓDULO PROFESSORA
 # ==========================================
 elif perfil == "👩‍🏫 Professora":
-    st.header("👩‍🏫 Registro de Aula (Coletivo ou Individual)")
+    st.header("👩‍🏫 Registro de Aula")
     instr_sel = st.selectbox("👤 Identifique-se (Instrutora):", PROFESSORAS_LISTA)
     data_p = st.date_input("Data:", value=datetime.now())
     d_str = data_p.strftime("%d/%m/%Y")
@@ -144,52 +144,63 @@ elif perfil == "👩‍🏫 Professora":
     if d_str in st.session_state.calendario_anual:
         h_sel = st.radio("⏰ Horário:", HORARIOS_LABELS, horizontal=True)
         
-        # BUSCA DA TURMA NO RODÍZIO
-        turma_atendida = "---"
+        # Identificação automática do tipo de aula (Teoria/Solfejo ou Prática)
+        conteudo_rodizio = ""
+        aluna_pratica = "---"
+        turma_teoria = "---"
+        tipo_aula = "Prática" # Default
+        
         for linha in st.session_state.calendario_anual[d_str]["tabela"]:
-            if f"({instr_sel})" in str(linha.get(h_sel, "")):
-                turma_atendida = linha["Turma"]
+            celula = str(linha.get(h_sel, ""))
+            if f"({instr_sel})" in celula:
+                conteudo_rodizio = celula
+                if "Teoria" in celula or "Solfejo" in celula:
+                    tipo_aula = "Grupo"
+                    turma_teoria = linha["Turma"]
+                else:
+                    tipo_aula = "Individual"
+                    aluna_pratica = linha["Aluna"]
                 break
-        
-        st.info(f"📍 Turma vinculada ao seu horário: **{turma_atendida}**")
-        
-        # SELEÇÃO DE ALUNAS (Grupo ou Individual)
-        st.markdown("### 👥 Selecione as Alunas que participaram desta explicação:")
-        alunas_da_turma = TURMAS.get(turma_atendida, []) if turma_atendida != "---" else []
-        
-        if alunas_da_turma:
-            check_alunas = []
-            c_alu1, c_alu2 = st.columns(2)
-            for i, aluna in enumerate(alunas_da_turma):
-                if (c_alu1 if i < len(alunas_da_turma)/2 else c_alu2).checkbox(aluna, value=True, key=f"aula_check_{aluna}"):
-                    check_alunas.append(aluna)
+
+        # EXIBIÇÃO DINÂMICA
+        if tipo_aula == "Individual":
+            st.error(f"🎹 AULA INDIVIDUAL | Aluna: **{aluna_pratica}** | {conteudo_rodizio}")
+            check_alunas = [aluna_pratica] if aluna_pratica != "---" else []
         else:
-            st.warning("Nenhuma turma localizada para você neste horário no rodízio.")
+            st.info(f"📚 AULA EM GRUPO | Turma: **{turma_teoria}** | {conteudo_rodizio}")
+            st.markdown("### 👥 Selecione as alunas presentes nesta explicação:")
+            alunas_da_turma = TURMAS.get(turma_teoria, [])
             check_alunas = []
+            if alunas_da_turma:
+                cols = st.columns(4)
+                for i, aluna in enumerate(alunas_da_turma):
+                    if cols[i % 4].checkbox(aluna, value=True, key=f"chk_{aluna}"):
+                        check_alunas.append(aluna)
 
         st.divider()
-        lic_aula = st.selectbox("Lição/Volume abordado:", [str(i) for i in range(1, 41)] + ["MSA", "Hino"])
+        lic_aula = st.selectbox("Lição/Volume:", [str(i) for i in range(1, 41)] + ["MSA", "Hino"])
         
-        st.markdown("**Checklist de Dificuldades (Geral para as selecionadas):**")
-        dif_itens = ["Não estudou", "Estudou insatisfatório", "Sem vídeos", "Rítmica", "Nomes figuras", "Adentrando teclas", "Postura", "Punho", "Banqueta", "Falanges", "Unhas", "Dedos", "Pedal", "Pé esquerdo", "Metrônomo", "Clave sol", "Clave fá", "Articulação", "Respirações", "Dedilhado", "Sem dificuldades"]
-        c1, c2 = st.columns(2)
+        st.markdown("**Checklist de Dificuldades Técnicas:**")
+        dif_itens = ["Não estudou", "Estudou insatisfatório", "Sem vídeos", "Rítmica", "Nomes figuras", "Postura", "Punho", "Banqueta", "Falanges", "Unhas", "Dedos", "Pedal", "Pé esquerdo", "Metrônomo", "Clave sol", "Clave fá", "Articulação", "Dedilhado", "Sem dificuldades"]
+        c1, c2, c3 = st.columns(3)
         selecionadas_dif = []
         for i, d in enumerate(dif_itens):
-            if (c1 if i < 10 else c2).checkbox(d, key=f"dif_aula_{i}"): selecionadas_dif.append(d)
+            target = c1 if i < 7 else (c2 if i < 14 else c3)
+            if target.checkbox(d, key=f"dif_aula_{i}"): selecionadas_dif.append(d)
         
-        obs_aula = st.text_area("📝 Observações Gerais (O que foi ensinado hoje):")
+        obs_aula = st.text_area("📝 Evolução Detalhada:")
         
         if st.button("💾 SALVAR REGISTRO", use_container_width=True):
-            if check_alunas:
+            if check_alunas and "---" not in check_alunas:
                 for aluna in check_alunas:
                     st.session_state.historico_geral.append({
-                        "Data": d_str, "Aluna": aluna, "Turma": turma_atendida, "Tipo": "Aula",
-                        "Licao": lic_aula, "Dificuldades": selecionadas_dif, "Obs": obs_aula, "Instrutora": instr_sel
+                        "Data": d_str, "Aluna": aluna, "Tipo": "Aula", "Licao": lic_aula, 
+                        "Dificuldades": selecionadas_dif, "Obs": obs_aula, "Instrutora": instr_sel
                     })
                 st.balloons()
-                st.success(f"Registro salvo para {len(check_alunas)} aluna(s)!")
+                st.success("Salvo com sucesso!")
             else:
-                st.error("Selecione pelo menos uma aluna para salvar.")
+                st.error("Não há aluna identificada para este horário.")
     else:
         st.warning("⚠️ Rodízio não encontrado.")
 
@@ -197,50 +208,32 @@ elif perfil == "👩‍🏫 Professora":
 #              MÓDULO ANALÍTICO IA
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.header("📊 Análise de Desempenho")
-    
-    st.sidebar.subheader("📅 Período")
-    tipo_p = st.sidebar.selectbox("Filtro:", ["Personalizado", "Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
-    fim = datetime.now()
-    if tipo_p == "Diário": ini = fim
-    elif tipo_p == "Mensal": ini = fim - timedelta(days=30)
-    elif tipo_p == "Bimestral": ini = fim - timedelta(days=60)
-    elif tipo_p == "Semestral": ini = fim - timedelta(days=180)
-    elif tipo_p == "Anual": ini = fim - timedelta(days=365)
-    else:
-        ini = st.sidebar.date_input("Início:", value=fim - timedelta(days=30))
-        fim = st.sidebar.date_input("Fim:", value=fim)
-
-    alu_an = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]))
+    st.header("📊 Inteligência e Filtros")
+    alu_an = st.selectbox("Selecione a Aluna:", sorted([a for l in TURMAS.values() for a in l]))
     df = pd.DataFrame(st.session_state.historico_geral)
     
     if not df.empty:
-        df['Dt_Obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y')
-        mask = (df['Aluna'] == alu_an) & (df['Dt_Obj'] >= pd.Timestamp(ini)) & (df['Dt_Obj'] <= pd.Timestamp(fim))
-        df_f = df.loc[mask]
+        df_f = df[df["Aluna"] == alu_an]
         df_aulas = df_f[df_f["Tipo"] == "Aula"]
 
-        st.subheader("🤖 Parecer IA")
         if not df_aulas.empty:
+            st.subheader("🤖 Diagnóstico IA")
             todas_dif = [d for sub in df_aulas["Dificuldades"].tolist() if isinstance(sub, list) for d in sub]
             if todas_dif:
                 mais_c = pd.Series(todas_dif).value_counts().idxmax()
-                st.warning(f"**Análise:** Foco recorrente em '{mais_c}' no período.")
-                st.info(f"**IA Sugere:** Revisar fundamentos de {mais_c} com a aluna.")
+                st.warning(f"**Atenção:** A aluna apresenta dificuldades recorrentes em: **{mais_c}**.")
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.write("**Evolução Técnica**")
+                if todas_dif: st.bar_chart(pd.Series(todas_dif).value_counts())
+            with c2:
+                st.write("**Frequência**")
+                df_ch = df_f[df_f["Tipo"] == "Chamada"]
+                if not df_ch.empty: st.bar_chart(df_ch["Status"].value_counts())
 
-        c1, c2 = st.columns(2)
-        with c1:
-            st.write("**Desempenho Técnico**")
-            if not df_aulas.empty and todas_dif: st.bar_chart(pd.Series(todas_dif).value_counts())
-        with c2:
-            st.write("**Assiduidade**")
-            df_ch = df_f[df_f["Tipo"] == "Chamada"]
-            if not df_ch.empty: st.bar_chart(df_ch["Status"].value_counts())
-
-        st.divider()
-        st.subheader("📅 Histórico")
-        for _, row in df_aulas.sort_index(ascending=False).iterrows():
-            with st.expander(f"Aula {row['Data']} | Lição {row.get('Licao', '')}"):
-                st.write(f"**Instrutora:** {row.get('Instrutora', '---')}")
-                st.write(f"**Dificuldades:** {', '.join(row.get('Dificuldades', []))}")
-                st.info(f"**Obs:** {row.get('Obs', '')}")
+            st.divider()
+            for _, row in df_aulas.sort_index(ascending=False).iterrows():
+                with st.expander(f"Aula {row['Data']} - Lição {row.get('Licao', '')}"):
+                    st.write(f"**Checklist:** {', '.join(row.get('Dificuldades', []))}")
+                    st.info(f"**Obs:** {row.get('Obs', '')}")
