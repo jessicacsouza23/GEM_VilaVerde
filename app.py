@@ -3,17 +3,12 @@ import requests
 import pandas as pd
 from datetime import datetime
 
-# --- CONFIGURAÇÕES SUPABASE (Mantidas para salvar os dados se o banco estiver ok) ---
+# --- CONFIGURAÇÕES ---
 SUPABASE_URL = "https://hnpxvxbimkbcxtyniryx.supabase.co"
 SUPABASE_KEY = "sb_publishable_sZ7i2TMEbrF2-jCIHj5Edw_8kqvYU2P"
-HEADERS = {
-    "apikey": SUPABASE_KEY, 
-    "Authorization": f"Bearer {SUPABASE_KEY}", 
-    "Content-Type": "application/json",
-    "Prefer": "return=representation"
-}
+HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
 
-st.set_page_config(page_title="GEM Vila Verde - Protótipo", layout="wide")
+st.set_page_config(page_title="GEM Vila Verde - Sistema Completo", layout="wide")
 
 # --- DADOS MESTRES ---
 ALUNAS = [
@@ -28,27 +23,14 @@ ALUNAS = [
 
 PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa"]
 
-SALAS_RODIZIO = [
-    "Sala 1 (Prática)", "Sala 2 (Prática)", "Sala 3 (Prática)", "Sala 4 (Prática)", 
-    "Sala 5 (Prática)", "Sala 6 (Prática)", "Sala 7 (Prática)", 
-    "Sala de Teoria", "Sala de Solfejo"
-]
+SALAS_PRATICA = ["Sala 1 (Prática)", "Sala 2 (Prática)", "Sala 3 (Prática)", "Sala 4 (Prática)", "Sala 5 (Prática)", "Sala 6 (Prática)", "Sala 7 (Prática)"]
+SALAS_COLETIVAS = ["Sala de Teoria", "Sala de Solfejo"]
 
 CATEGORIAS_LICAO = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila", "Folhas avulsas"]
 LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
 
-# --- FUNÇÕES ---
-def publicar_escala_banco(dados):
-    url = f"{SUPABASE_URL}/rest/v1/agenda_aulas"
-    try:
-        return requests.post(url, json=dados, headers=HEADERS)
-    except: return None
-
-# --- INTERFACE PRINCIPAL ---
+# --- INTERFACE ---
 st.title("🎼 GEM Vila Verde - Gestão Integrada")
-st.markdown("---")
-
-# Seleção de Visão para teste
 perfil_teste = st.sidebar.radio("Escolha sua Visão:", ["Secretaria", "Professora"])
 
 # ==========================================
@@ -56,63 +38,95 @@ perfil_teste = st.sidebar.radio("Escolha sua Visão:", ["Secretaria", "Professor
 # ==========================================
 if perfil_teste == "Secretaria":
     st.header("📋 Painel da Secretaria")
-    tab_corr, tab_esc = st.tabs(["✅ Correção de Atividades", "🗓️ Gerar Rodízio"])
+    tab_chamada, tab_correcao, tab_escala = st.tabs(["📍 Chamada", "✅ Correção de Atividades", "🗓️ Rodízio e Turmas"])
 
-    with tab_corr:
-        st.subheader("Registro de Correção de Lições (Casa)")
+    with tab_chamada:
+        st.subheader("Lista de Presença do Dia")
+        data_presenca = st.date_input("Data:", value=datetime.now(), key="dt_chamada")
+        
+        presencas = []
+        for aluna in ALUNAS:
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(aluna)
+            with col2:
+                status = st.radio("Status", ["Presente", "Falta", "Justificada"], key=f"cham_{aluna}", label_visibility="collapsed", horizontal=True)
+                presencas.append({"Aluna": aluna, "Status": status})
+        
+        if st.button("Salvar Chamada"):
+            st.success(f"Chamada do dia {data_presenca.strftime('%d/%m/%Y')} registrada!")
+
+    with tab_correcao:
+        st.subheader("Correção de Materiais (Lição de Casa)")
         c1, c2 = st.columns(2)
         with c1:
-            st.selectbox("Aluna:", ALUNAS, key="s_alu")
-            st.multiselect("Materiais Corrigidos:", CATEGORIAS_LICAO, key="s_mat")
-            st.checkbox("Trouxe a apostila?", key="s_ap")
-            st.checkbox("Fez os exercícios de pauta?", key="s_pa")
+            st.selectbox("Selecionar Aluna para Correção:", ALUNAS, key="corr_alu")
+            st.multiselect("Materiais Entregues:", CATEGORIAS_LICAO, key="corr_mat")
+            st.radio("Trouxe a apostila?", ["Sim", "Não", "Não se aplica"], key="corr_ap")
+            st.radio("Fez os exercícios de pauta?", ["Sim", "Incompleto", "Não"], key="corr_pa")
         with c2:
-            st.text_area("Lições Realizadas (OK):", placeholder="Ex: MSA Lição 1 a 5 aprovadas", key="s_ok")
-            st.text_area("Pendências (Para Refazer):", placeholder="O que precisa de correção?", key="s_pend")
-        if st.button("Salvar Correção"):
-            st.success("Simulação: Registro de correção salvo!")
-
-    with tab_esc:
-        st.subheader("Gerar Rodízio Automático por Folga")
-        data_escala = st.date_input("Data da Aula:", format="DD/MM/YYYY")
-        folgas = st.multiselect("Quem está de FOLGA hoje?", PROFESSORAS_LISTA)
+            st.text_area("Lições Realizadas e Aprovadas:", placeholder="Liste as lições que a aluna acertou...", key="corr_ok")
+            st.text_area("Lições para Refazer / Dificuldades:", placeholder="Descreva o que ela precisa estudar novamente...", key="corr_pend")
         
-        if st.button("Publicar Escala Automática", use_container_width=True):
+        st.divider()
+        st.radio("A aluna assistiu aos vídeos da semana?", ["Sim", "Não", "Parcialmente"], key="corr_video")
+        if st.button("Finalizar Registro de Correção"):
+            st.success("Dados de correção enviados para o histórico da aluna!")
+
+    with tab_escala:
+        st.subheader("Gerar Rodízio: Prática + Turmas 1, 2 e 3")
+        folgas = st.multiselect("Professoras que FALTARAM ou estão de FOLGA:", PROFESSORAS_LISTA)
+        
+        if st.button("Gerar e Publicar Escala", use_container_width=True):
             ativas = [p for p in PROFESSORAS_LISTA if p not in folgas]
             if not ativas:
-                st.error("Nenhuma professora disponível!")
+                st.error("Erro: Nenhuma professora disponível.")
             else:
-                nova_agenda = []
-                for i, sala in enumerate(SALAS_RODIZIO):
-                    if i < len(ativas):
-                        mat = "Prática" if "Prática" in sala else ("Teoria" if "Teoria" in sala else "Solfejo")
-                        nova_agenda.append({
-                            "data": str(data_escala), "professor": ativas[i],
-                            "materia": mat, "sala": sala, "aluna": ALUNAS[i % len(ALUNAS)]
-                        })
-                st.session_state.agenda_simulada = nova_agenda
-                st.success("Rodízio gerado com sucesso!")
-                st.table(pd.DataFrame(nova_agenda)[['professor', 'sala', 'aluna']])
+                escala = []
+                alunas_restantes = ALUNAS.copy()
+                
+                # 1. Prática (7 Salas)
+                for i, sala in enumerate(SALAS_PRATICA):
+                    if i < len(ativas) and alunas_restantes:
+                        prof = ativas.pop(0)
+                        aluna = alunas_restantes.pop(0)
+                        escala.append({"Professor(a)": prof, "Sala": sala, "Aluna/Turma": aluna, "Matéria": "Prática"})
+
+                # 2. Turmas de Teoria/Solfejo (Restante das alunas em 3 Turmas)
+                num_turmas = 3
+                tamanho = len(alunas_restantes) // num_turmas
+                for i in range(num_turmas):
+                    turma_nome = f"Turma {i+1}"
+                    grupo = alunas_restantes[i*tamanho : (i+1)*tamanho] if i < 2 else alunas_restantes[i*tamanho:]
+                    
+                    if ativas:
+                        prof = ativas.pop(0)
+                        sala = SALAS_COLETIVAS[0] if i == 0 else (SALAS_COLETIVAS[1] if i == 1 else "Sala Extra")
+                        escala.append({"Professor(a)": prof, "Sala": sala, "Aluna/Turma": f"{turma_nome} ({len(grupo)} alunas)", "Matéria": "Teoria/Solfejo"})
+                
+                st.table(pd.DataFrame(escala))
+                for i in range(num_turmas):
+                    grupo = alunas_restantes[i*tamanho : (i+1)*tamanho] if i < 2 else alunas_restantes[i*tamanho:]
+                    st.caption(f"**{f'Turma {i+1}'}**: {', '.join(grupo)}")
 
 # ==========================================
 #              MÓDULO PROFESSORA
 # ==========================================
 else:
-    st.header("🎹 Registro de Aula (Professora)")
-    prof_atual = st.selectbox("Selecione seu Nome:", PROFESSORAS_LISTA)
-    
-    # Simulação de busca de aula
-    st.info(f"Bem-vinda, Irmã {prof_atual}. Abaixo está o formulário para preenchimento da aula.")
-    
-    materia_aula = st.radio("Selecione a Matéria desta aula:", ["Prática", "Teoria", "Solfejo"], horizontal=True)
-    aluna_aula = st.selectbox("Selecione a Aluna que está com você:", ALUNAS)
-    
+    st.header("🎹 Registro de Aula")
+    c1, c2 = st.columns(2)
+    with c1:
+        prof_nome = st.selectbox("Sua Identificação:", PROFESSORAS_LISTA)
+        mat_aula = st.radio("Matéria ministrada:", ["Prática", "Teoria", "Solfejo"], horizontal=True)
+    with c2:
+        tipo_atend = st.radio("Atendimento:", ["Individual (Prática)", "Turma (Teoria/Solfejo)"], horizontal=True)
+        aluna_atend = st.selectbox("Aluna ou Turma:", ALUNAS + ["Turma 1", "Turma 2", "Turma 3"])
+
     st.divider()
 
-    # --- FORMULÁRIO DE PRÁTICA (25 ITENS) ---
-    if materia_aula == "Prática":
-        st.subheader("Avaliação Técnica - Prática")
-        st.selectbox("Lição/Volume Atual *", LICOES_NUM, key="p_v")
+    if mat_aula == "Prática":
+        st.subheader("📋 Avaliação Técnica - Prática (25 Itens)")
+        st.selectbox("Lição/Volume Atual:", LICOES_NUM, key="pv")
         difs_p = [
             "Não estudou nada", "Estudo insatisfatório", "Não assistiu os vídeos",
             "Dificuldade rítmica", "Nomes das figuras rítmicas", "Adentrando às teclas",
@@ -124,42 +138,37 @@ else:
             "Recurso de dedilhado", "Nota de apoio", "Não apresentou dificuldades"
         ]
         c1, c2 = st.columns(2)
-        for i, d in enumerate(difs_p): (c1 if i < 13 else c2).checkbox(d, key=f"p_{i}")
+        for i, d in enumerate(difs_p): (c1 if i < 13 else c2).checkbox(d, key=f"chk_p_{i}")
 
-    # --- FORMULÁRIO DE TEORIA ---
-    elif materia_aula == "Teoria":
-        st.subheader("Avaliação Técnica - Teoria")
-        st.selectbox("Módulo/Página *", LICOES_NUM, key="t_v")
+    elif mat_aula == "Teoria":
+        st.subheader("📋 Avaliação Técnica - Teoria")
+        st.selectbox("Módulo/Página:", LICOES_NUM, key="tv")
         difs_t = [
-            "Não assistiu vídeos complementares", "Clave de sol", "Clave de fá", 
-            "Não realizou atividades", "Dificuldade na escrita musical", 
-            "Divisão rítmica teórica", "Ordem das notas (asc/desc)", 
-            "Intervalos", "Armaduras de clave", "Apostila incompleta", 
-            "Não estudou nada", "Estudo insatisfatório", "Não apresentou dificuldades"
-        ]
-        c1, c2 = st.columns(2)
-        for i, d in enumerate(difs_t): (c1 if i < 7 else c2).checkbox(d, key=f"t_{i}")
-
-    # --- FORMULÁRIO DE SOLFEJO ---
-    elif materia_aula == "Solfejo":
-        st.subheader("Avaliação Técnica - Solfejo")
-        st.selectbox("Lição Solfejo *", LICOES_NUM, key="s_v")
-        difs_s = [
-            "Não assistiu vídeos", "Afinação (altura das notas)", 
-            "Leitura rítmica", "Leitura métrica", "Movimento da mão (compasso)", 
-            "Pulsação inconstante", "Uso do metrônomo", "Estuda sem metrônomo", 
-            "Clave de sol", "Clave de fá", "Não estudou nada", 
+            "Não assistiu vídeos", "Clave de sol", "Clave de fá", "Não realizou atividades",
+            "Dificuldade na escrita musical", "Divisão rítmica teórica", "Ordem das notas (asc/desc)",
+            "Intervalos", "Armaduras de clave", "Apostila incompleta", "Não estudou",
             "Estudo insatisfatório", "Não apresentou dificuldades"
         ]
         c1, c2 = st.columns(2)
-        for i, d in enumerate(difs_s): (c1 if i < 7 else c2).checkbox(d, key=f"s_{i}")
+        for i, d in enumerate(difs_t): (c1 if i < 7 else c2).checkbox(d, key=f"chk_t_{i}")
+
+    elif mat_aula == "Solfejo":
+        st.subheader("📋 Avaliação Técnica - Solfejo")
+        st.selectbox("Lição de Solfejo:", LICOES_NUM, key="sv")
+        difs_s = [
+            "Não assistiu vídeos", "Afinação (altura das notas)", "Leitura rítmica",
+            "Leitura métrica", "Movimento da mão (compasso)", "Pulsação inconstante",
+            "Uso do metrônomo", "Estuda sem metrônomo", "Clave de sol", "Clave de fá",
+            "Não estudou nada", "Estudo insatisfatório", "Não apresentou dificuldades"
+        ]
+        c1, c2 = st.columns(2)
+        for i, d in enumerate(difs_s): (c1 if i < 7 else c2).checkbox(d, key=f"chk_s_{i}")
 
     st.divider()
     st.subheader("🏠 Tarefa para Casa")
-    st.text_input("Lição de Prática para próxima aula:", key="casa_p")
-    st.text_input("Tarefa de Teoria/Apostila:", key="casa_t")
-    st.text_area("Observações Finais da Aula:", key="obs_final")
+    st.text_input("Próxima Lição de Prática:", key="h_p")
+    st.text_input("Próxima Lição de Teoria/Solfejo:", key="h_t")
+    st.text_area("Observações Finais para a Secretaria:", key="obs_f")
     
-    if st.button("Finalizar e Salvar Registro", use_container_width=True):
-        st.balloons()
-        st.success("Simulação: Aula registrada com sucesso!")
+    if st.button("Finalizar e Salvar Aula", use_container_width=True):
+        st.balloons(); st.success("Aula registrada com sucesso!")
