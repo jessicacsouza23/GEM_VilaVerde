@@ -118,14 +118,21 @@ if perfil == "🏠 Secretaria":
 # ==========================================
 else:
     st.header("👩‍🏫 Portal da Instrutora")
-    data_p = st.date_input("Data da Aula:", value=datetime.now())
-    d_str = data_p.strftime("%d/%m/%Y")
-
+    
+    # Substituindo a barra por campos de seleção para facilitar o clique
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        data_p = st.date_input("📅 Data da Aula:", value=datetime.now())
+        d_str = data_p.strftime("%d/%m/%Y")
+    
     if d_str in st.session_state.calendario_anual:
-        instr_sel = st.selectbox("Selecione seu Nome:", PROFESSORAS_LISTA)
-        h_sel = st.select_slider("Horário:", options=HORARIOS_LABELS)
-        info = st.session_state.calendario_anual[d_str]
+        with col_p2:
+            instr_sel = st.selectbox("👤 Selecione seu Nome:", PROFESSORAS_LISTA)
         
+        # Seleção de horário por botões (Radio) ao invés de barra deslizante
+        h_sel = st.radio("⏰ Selecione o Horário da Aula:", options=HORARIOS_LABELS, horizontal=True)
+        
+        info = st.session_state.calendario_anual[d_str]
         atend, local, mat = "---", "---", "---"
 
         if h_sel == HORARIOS_LABELS[0]:
@@ -136,33 +143,30 @@ else:
                     atend, local = linha["Aluna"], linha[h_sel].split(" | ")[0]
                     mat = "Teoria" if "SALA 8" in local else "Solfejo" if "SALA 9" in local else "Prática"
 
-        if "SALA 8" in local: st.warning(f"📚 {local} | 👤 Aluna: {atend}")
-        elif "SALA 9" in local: st.success(f"🔊 {local} | 👤 Aluna: {atend}")
-        elif "Igreja" in local: st.info(f"⛪ {local} | 👤 Aluna: {atend}")
-        else: st.error(f"🎹 {local} | 👤 Aluna: {atend}")
+        st.divider()
+        if "SALA 8" in local: st.warning(f"📚 {local} | 👤 Atendimento: **{atend}**")
+        elif "SALA 9" in local: st.success(f"🔊 {local} | 👤 Atendimento: **{atend}**")
+        elif "Igreja" in local: st.info(f"⛪ {local} | 👤 Atendimento: **{atend}**")
+        else: st.error(f"🎹 {local} | 👤 Atendimento: **{atend}**")
 
         st.divider()
 
-        # --- FORMULÁRIO DE ACORDO COM A MATÉRIA ---
+        # --- FORMULÁRIOS CONFORME DADOS ENVIADOS ---
         if mat == "Prática":
             st.subheader("🎹 Controle de Desempenho - Aula Prática")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.selectbox("Lição/Volume (Prática):", [str(i) for i in range(1, 41)] + ["Outro"], key="lic_pr")
+            st.selectbox("Lição/Volume (Prática):", [str(i) for i in range(1, 41)] + ["Outro"], key="lic_pr")
             
-            st.markdown("**Dificuldades (Marque todas que se aplicam):**")
+            st.markdown("**Dificuldades:**")
             dif_pr = [
                 "Não estudou nada", "Estudou de forma insatisfatória", "Não assistiu os vídeos dos métodos",
                 "Dificuldade ritmica", "Dificuldade em distinguir os nomes das figuras ritmicas",
-                "Está adentrando às teclas", "Dificuldade com a postura (costas, ombros e braços)",
-                "Está deixando o punho alto ou baixo", "Não senta no centro da banqueta", "Está quebrando as falanges",
-                "Unhas muito compridas", "Dificuldade em deixar os dedos arredondados",
-                "Esquece de colocar o pé direito no pedal de expressão", "Faz movimentos desnecessários com o pé esquerdo na pedaleira",
-                "Dificuldade com o uso do metrônomo", "Estuda sem o metrônomo", "Dificuldades em ler as notas na clave de sol",
-                "Dificuldades em ler as notas na clave de fá", "Não realizou as atividades da apostila",
-                "Dificuldade em fazer a articulação ligada e semiligada", "Dificuldade com as respirações",
-                "Dificuldade com as respirações sobre passagem", "Dificuldades em recurso de dedilhado",
-                "Dificuldade em fazer nota de apoio", "Não apresentou dificuldades"
+                "Está adentrando às teclas", "Dificuldade com a postura", "Está deixando o punho alto ou baixo",
+                "Não senta no centro da banqueta", "Está quebrando as falanges", "Unhas muito compridas",
+                "Dificuldade em deixar os dedos arredondados", "Esquece o pé no pedal de expressão",
+                "Movimentos desnecessários com o pé esquerdo", "Dificuldade com metrônomo", "Estuda sem metrônomo",
+                "Dificuldades clave de sol", "Dificuldades clave de fá", "Não realizou atividades apostila",
+                "Dificuldade articulação", "Dificuldade respirações", "Dificuldade respirações passagem",
+                "Dificuldades recurso de dedilhado", "Dificuldade nota de apoio", "Não apresentou dificuldades"
             ]
             c_a, c_b = st.columns(2)
             for i, d in enumerate(dif_pr): (c_a if i < 13 else c_b).checkbox(d, key=f"d_pr_{i}")
@@ -174,14 +178,11 @@ else:
         elif mat == "Teoria":
             st.subheader("📚 Controle de Desempenho - Aula Teoria")
             st.text_input("Lição/Volume (Teoria):")
-            
-            st.markdown("**Dificuldades:**")
             dif_te = [
-                "Não assistiu os vídeos complementares", "Dificuldades em ler as notas na clave de sol",
-                "Dificuldades em ler as notas na clave de fá", "Dificuldade no uso do metrônomo", "Estuda sem metrônomo",
-                "Não realizou as atividades", "Dificuldade em leitura ritmica", "Dificuldades em leitura métrica",
-                "Dificuldade em solfejo (afinação)", "Dificuldades no movimento da mão",
-                "Dificuldades na ordem das notas", "Não realizou as atividades da apostila",
+                "Não assistiu vídeos complementares", "Dificuldades clave de sol", "Dificuldades clave de fá",
+                "Dificuldade metrônomo", "Estuda sem metrônomo", "Não realizou as atividades",
+                "Dificuldade leitura ritmica", "Dificuldades leitura métrica", "Dificuldade solfejo (afinação)",
+                "Dificuldades movimento da mão", "Dificuldades ordem das notas", "Não realizou atividades apostila",
                 "Não estudou nada", "Estudou de forma insatisfatória", "Não apresentou dificuldades"
             ]
             c_te1, c_te2 = st.columns(2)
@@ -191,14 +192,11 @@ else:
         elif "Solfejo" in mat:
             st.subheader("🔊 Controle de Desempenho - Aula Solfejo")
             st.text_input("Lição/Volume (Solfejo):")
-            
-            st.markdown("**Dificuldades:**")
             dif_so = [
-                "Não assistiu os vídeos complementares", "Dificuldades em ler as notas na clave de sol",
-                "Dificuldades em ler as notas na clave de fá", "Dificuldade no uso do metrônomo", "Estuda sem metrônomo",
-                "Não realizou as atividades", "Dificuldade em leitura ritmica", "Dificuldades em leitura métrica",
-                "Dificuldade em solfejo (afinação)", "Dificuldades no movimento da mão",
-                "Dificuldades na ordem das notas", "Não realizou as atividades da apostila",
+                "Não assistiu vídeos complementares", "Dificuldades clave de sol", "Dificuldades clave de fá",
+                "Dificuldade metrônomo", "Estuda sem metrônomo", "Não realizou as atividades",
+                "Dificuldade leitura ritmica", "Dificuldades leitura métrica", "Dificuldade solfejo (afinação)",
+                "Dificuldades movimento da mão", "Dificuldades ordem das notas", "Não realizou atividades apostila",
                 "Não estudou nada", "Estudou de forma insatisfatória", "Não apresentou dificuldades"
             ]
             c_so1, c_so2 = st.columns(2)
@@ -207,6 +205,6 @@ else:
 
         st.divider()
         st.text_area("📝 Observações finais:")
-        st.button("💾 Salvar Registro de Aula")
+        st.button("💾 Salvar Registro de Aula", use_container_width=True)
     else:
-        st.error("Escala não gerada para hoje.")
+        st.error("⚠️ Escala não encontrada para esta data. Gere o rodízio na Secretaria primeiro.")
