@@ -225,4 +225,22 @@ elif perfil == "📊 Analítico IA":
             todas_dif = [d for sub in df_aulas["Dificuldades"].tolist() if isinstance(sub, list) for d in sub]
             if todas_dif:
                 mais_c = pd.Series(todas_dif).value_counts().idxmax()
-                st.warning(f"**Análise:** Foco recorrente em '{mais
+                st.warning(f"**Análise:** Foco recorrente em '{mais_c}' no período.")
+                st.info(f"**IA Sugere:** Revisar fundamentos de {mais_c} com a aluna.")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.write("**Desempenho Técnico**")
+            if not df_aulas.empty and todas_dif: st.bar_chart(pd.Series(todas_dif).value_counts())
+        with c2:
+            st.write("**Assiduidade**")
+            df_ch = df_f[df_f["Tipo"] == "Chamada"]
+            if not df_ch.empty: st.bar_chart(df_ch["Status"].value_counts())
+
+        st.divider()
+        st.subheader("📅 Histórico")
+        for _, row in df_aulas.sort_index(ascending=False).iterrows():
+            with st.expander(f"Aula {row['Data']} | Lição {row.get('Licao', '')}"):
+                st.write(f"**Instrutora:** {row.get('Instrutora', '---')}")
+                st.write(f"**Dificuldades:** {', '.join(row.get('Dificuldades', []))}")
+                st.info(f"**Obs:** {row.get('Obs', '')}")
