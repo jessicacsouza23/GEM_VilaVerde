@@ -4,7 +4,7 @@ import random
 from datetime import datetime
 
 # --- CONFIGURAÇÕES DE PÁGINA ---
-st.set_page_config(page_title="GEM Vila Verde - Rotação Universal", layout="wide")
+st.set_page_config(page_title="GEM Vila Verde - Rotação Total", layout="wide")
 
 # --- BANCO DE DADOS MESTRE ---
 TURMAS = {
@@ -21,80 +21,67 @@ if "calendario_anual" not in st.session_state:
     st.session_state.calendario_anual = {}
 
 # --- INTERFACE ---
-st.title("🎼 GEM Vila Verde - Gestão de Ciclos Dinâmicos")
+st.title("🎼 GEM Vila Verde - Rotação Universal")
 perfil = st.sidebar.radio("Navegação de Perfil:", ["Secretaria", "Professora"])
 
 # ==========================================
 #              MÓDULO SECRETARIA
 # ==========================================
 if perfil == "Secretaria":
-    tab_gerar, tab_chamada, tab_corr, tab_admin = st.tabs([
-        "🗓️ Planejar Sábados", "📍 Chamada Geral", "✅ Correção (Secretaria)", "⚠️ Administração"
-    ])
+    tab_gerar, tab_chamada, tab_admin = st.tabs(["🗓️ Planejar Sábados", "📍 Chamada", "⚠️ Administração"])
 
     with tab_gerar:
-        st.subheader("Configuração de Rodízio Semanal")
+        st.subheader("Configuração de Rodízio")
         data_sel = st.date_input("Escolha o Sábado:", value=datetime.now())
         data_str = data_sel.strftime("%d/%m/%Y")
-        # Usamos o dia para criar uma semente de rotação (semana 1 é diferente da semana 2)
-        semana_offset = data_sel.day % 7 
-
+        
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("#### 📚 Teoria (Sala 8)")
+            st.markdown("#### 📚 Teoria (Responsáveis)")
             pt1 = st.selectbox("Prof. T1:", PROFESSORAS_LISTA, index=0, key=f"pt1_{data_str}")
             pt2 = st.selectbox("Prof. T2:", PROFESSORAS_LISTA, index=1, key=f"pt2_{data_str}")
             pt3 = st.selectbox("Prof. T3:", PROFESSORAS_LISTA, index=2, key=f"pt3_{data_str}")
         with c2:
-            st.markdown("#### 🔊 Solfejo (Sala 9)")
+            st.markdown("#### 🔊 Solfejo (Responsáveis)")
             st1 = st.selectbox("Prof. S1:", PROFESSORAS_LISTA, index=3, key=f"st1_{data_str}")
             st2 = st.selectbox("Prof. S2:", PROFESSORAS_LISTA, index=4, key=f"st2_{data_str}")
             st3 = st.selectbox("Prof. S3:", PROFESSORAS_LISTA, index=5, key=f"st3_{data_str}")
         
         folgas = st.multiselect("Professoras de FOLGA:", PROFESSORAS_LISTA, key=f"fol_{data_str}")
 
-        if st.button(f"🚀 Gerar Grade com Rotação de Matéria e Sala", use_container_width=True):
-            fixas_dia = [pt1, pt2, pt3, st1, st2, st3]
-            prat_disp = [p for p in PROFESSORAS_LISTA if p not in folgas and p not in fixas_dia]
-            # Shuffle baseado na data para garantir que a ordem das professoras de prática mude toda semana
-            random.seed(data_sel.toordinal())
+        if st.button(f"🚀 Gerar Rodízio 100% Dinâmico para {data_str}", use_container_width=True):
+            fixas = [pt1, pt2, pt3, st1, st2, st3]
+            prat_disp = [p for p in PROFESSORAS_LISTA if p not in folgas and p not in fixas]
             random.shuffle(prat_disp)
             
-            # ROTAÇÃO DE MATÉRIA POR TURMA (Teoria -> Solfejo -> Prática)
-            # A cada semana, a Turma 1 começa em uma matéria diferente
-            ordem_materias = {
-                "Turma 1": [HORARIOS_LABELS[semana_offset % 3], HORARIOS_LABELS[(semana_offset + 1) % 3], HORARIOS_LABELS[(semana_offset + 2) % 3]],
-                "Turma 2": [HORARIOS_LABELS[(semana_offset + 1) % 3], HORARIOS_LABELS[(semana_offset + 2) % 3], HORARIOS_LABELS[semana_offset % 3]],
-                "Turma 3": [HORARIOS_LABELS[(semana_offset + 2) % 3], HORARIOS_LABELS[semana_offset % 3], HORARIOS_LABELS[(semana_offset + 1) % 3]]
-            }
-
+            # CRIANDO A GRADE ONDE TUDO MUDA
             grade_dia = []
             for i in range(7):
-                instrutora_base = prat_disp[i] if i < len(prat_disp) else "Vago"
-                
-                # Aluna fixa a linha, mas a SALA e a PROFESSORA mudam de acordo com o horário (i + offset)
+                instrutora = prat_disp[i] if i < len(prat_disp) else "Vago"
+                # Lógica: Sala e Instrutora acompanham o deslocamento da aluna
                 grade_dia.append({
-                    "Aluna": TURMAS["Turma 3"][i],
-                    HORARIOS_LABELS[0]: f"Sala {(i + semana_offset)%7 + 1} | Prof. {prat_disp[(i + semana_offset)%len(prat_disp)] if prat_disp else 'Vago'}",
-                    HORARIOS_LABELS[1]: f"Sala {(i + semana_offset + 1)%7 + 1} | Prof. {prat_disp[(i + semana_offset + 1)%len(prat_disp)] if prat_disp else 'Vago'}",
-                    HORARIOS_LABELS[2]: f"Sala {(i + semana_offset + 2)%7 + 1} | Prof. {prat_disp[(i + semana_offset + 2)%len(prat_disp)] if prat_disp else 'Vago'}"
+                    "Ref. Aluna": TURMAS["Turma 3"][i],
+                    "08h45 (H1)": f"Sala {i+1} | Prof. {instrutora}",
+                    "09h35 (H2)": f"Sala {(i+1)%7 + 1} | Prof. {prat_disp[(i+1)%len(prat_disp)] if prat_disp else 'Vago'}",
+                    "10h10 (H3)": f"Sala {(i+2)%7 + 1} | Prof. {prat_disp[(i+2)%len(prat_disp)] if prat_disp else 'Vago'}"
                 })
-
+            
             st.session_state.calendario_anual[data_str] = {
                 "tabela": grade_dia,
                 "config": {
-                    "teoria": {ordem_materias["Turma 1"][0]: pt1, ordem_materias["Turma 2"][0]: pt2, ordem_materias["Turma 3"][0]: pt3},
-                    "solfejo": {ordem_materias["Turma 1"][1]: st1, ordem_materias["Turma 2"][1]: st2, ordem_materias["Turma 3"][1]: st3},
-                    "ordem": ordem_materias
+                    "teoria": {HORARIOS_LABELS[0]: pt1, HORARIOS_LABELS[1]: pt2, HORARIOS_LABELS[2]: pt3},
+                    "solfejo": {HORARIOS_LABELS[0]: st1, HORARIOS_LABELS[1]: st2, HORARIOS_LABELS[2]: st3}
                 }
             }
-            st.success("Nova Grade Gerada!")
+            st.success(f"Escala de {data_str} salva com sucesso!")
 
         if data_str in st.session_state.calendario_anual:
+            st.divider()
             st.table(pd.DataFrame(st.session_state.calendario_anual[data_str]["tabela"]))
 
     with tab_admin:
-        if st.button("🔥 LIMPAR BANCO"):
+        st.subheader("⚠️ Limpeza de Dados")
+        if st.button("🔥 LIMPAR TODO O BANCO DE DADOS"):
             st.session_state.calendario_anual = {}
             st.rerun()
 
@@ -111,34 +98,46 @@ else:
         p_nome = st.selectbox("Selecione seu Nome:", PROFESSORAS_LISTA)
         h_atual = st.select_slider("Horário:", options=HORARIOS_LABELS)
         
-        atendendo, sala, mat = "---", "---", "---"
+        atendendo, sala, mat = "Não alocada", "---", "---"
 
-        # 1. Busca na Teoria/Solfejo
+        # RASTREAMENTO DINÂMICO
+        # 1. Busca na Prática (Carrossel)
+        for linha in info["tabela"]:
+            if p_nome in linha.get(h_atual, ""):
+                atendendo = linha["Ref. Aluna"]
+                sala = linha[h_atual].split(" | ")[0]
+                mat = "Prática"
+
+        # 2. Busca na Teoria/Solfejo (Rotativo)
         if p_nome == info["config"]["teoria"].get(h_atual):
-            sala, atendendo, mat = "Sala 8", "Turma Teoria", "Teoria"
+            sala, atendendo, mat = "Sala 8", "Turma Rotativa", "Teoria"
         elif p_nome == info["config"]["solfejo"].get(h_atual):
-            sala, atendendo, mat = "Sala 9", "Turma Solfejo", "Solfejo"
-        else:
-            # 2. Busca na Prática (Onde a professora está agora?)
-            for linha in info["tabela"]:
-                if f"Prof. {p_nome}" in linha.get(h_atual, ""):
-                    atendendo = linha["Aluna"]
-                    sala = linha[h_atual].split(" | ")[0]
-                    mat = "Prática"
+            sala, atendendo, mat = "Sala 9", "Turma Rotativa", "Solfejo"
 
-        st.info(f"📍 **{sala}** | 👤 **Atendendo:** {atendendo} | 📖 **Matéria:** {mat}")
+        st.info(f"📍 **{sala}** | 👤 **Atendimento:** {atendendo} | 📖 **Matéria:** {mat}")
         st.divider()
 
         if mat == "Prática":
             st.subheader("📋 FORMULÁRIO DE PRÁTICA (25 ITENS)")
-            difs = ["Não estudou", "Insatisfatório", "Sem vídeos", "Rítmica", "Figuras", "Teclas", "Postura", "Punho", "Centro", "Falanges", "Unhas", "Dedos", "Pedal", "Pé Esq", "Metrônomo", "Clave Sol", "Clave Fá", "Apostila", "Articulação", "Respiração", "Passagem", "Dedilhado", "Nota Apoio", "Dificuldade Técnica", "Sem dificuldades"]
-            c1, c2 = st.columns(2)
-            for i, d in enumerate(difs): (c1 if i < 13 else c2).checkbox(d, key=f"p_{i}")
+            difs = ["Não estudou nada", "Estudo insatisfatório", "Não assistiu os vídeos",
+                    "Dificuldade rítmica", "Nomes figuras rítmicas", "Adentrando às teclas",
+                    "Postura (costas/ombros/braços)", "Punho alto/baixo", "Não senta no centro",
+                    "Quebrando falanges", "Unhas compridas", "Dedos arredondados",
+                    "Pé no pedal expressão", "Movimentos pé esquerdo", "Uso do metrônomo",
+                    "Estuda sem metrônomo", "Clave de sol", "Clave de fá", "Atividades apostila",
+                    "Articulação ligada/semiligada", "Respirações", "Respirações passagem",
+                    "Recurso de dedilhado", "Nota de apoio", "Não apresentou dificuldades"]
+            cols = st.columns(2)
+            for i, d in enumerate(difs): (cols[0] if i < 13 else cols[1]).checkbox(d, key=f"pra_{i}")
+
         elif mat == "Teoria":
             st.subheader("📋 FORMULÁRIO DE TEORIA")
-            for t in ["MSA", "Exercícios Pauta", "Aplicação de Teste"]: st.checkbox(t, key=f"t_{t}")
+            for t in ["MSA", "Exercícios Pauta", "Aplicação de Teste", "Leitura de Notas"]: st.checkbox(t, key=f"teo_{t}")
+
         elif mat == "Solfejo":
             st.subheader("📋 FORMULÁRIO DE SOLFEJO")
-            for s in ["Linguagem Rítmica", "Pulsação", "Afinação", "Marcação Manual"]: st.checkbox(s, key=f"s_{s}")
+            for s in ["Linguagem Rítmica", "Pulsação", "Afinação", "Marcação Manual", "Postura"]: st.checkbox(s, key=f"sol_{s}")
 
+        st.text_input("🏠 Lição de Casa:")
+        st.text_area("📝 Observações:")
         st.button("💾 Salvar Atendimento")
