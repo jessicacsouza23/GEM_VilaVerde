@@ -91,16 +91,46 @@ if perfil == "🏠 Secretaria":
                         st.rerun()
 
     with tab_chamada:
-        st.subheader("📍 Chamada")
-        data_ch_sel = st.selectbox("Data:", [s.strftime("%d/%m/%Y") for s in sabados])
+        st.subheader("📍 Chamada Geral")
+        data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_chamada_unica")
+        
+        presenca_padrao = st.toggle("Marcar todas como Presente por padrão", value=True)
+        
+        st.write("---")
+        registros_chamada = []
         alunas_lista = sorted([a for l in TURMAS.values() for a in l])
+        
         for aluna in alunas_lista:
-            c1, c2 = st.columns([2, 3])
-            c1.write(f"👤 **{aluna}**")
-            status = c2.radio(f"Status_{aluna}", ["Presente", "Falta", "Justificada"], key=f"ch_{aluna}_{data_ch_sel}", horizontal=True, label_visibility="collapsed")
-            if st.button(f"Salvar {aluna}", key=f"save_ch_{aluna}"):
-                st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": aluna, "Tipo": "Chamada", "Status": status})
-                st.toast(f"Salvo!")
+            col1, col2, col3 = st.columns([2, 3, 3])
+            col1.write(f"**{aluna}**")
+            
+            status = col2.radio(
+                f"Status {aluna}", 
+                ["Presente", "Falta", "Justificada"], 
+                index=0 if presenca_padrao else 1,
+                key=f"status_{aluna}_{data_ch_sel}",
+                horizontal=True,
+                label_visibility="collapsed"
+            )
+            
+            motivo = ""
+            if status == "Justificada":
+                motivo = col3.text_input(f"Motivo justificativa", key=f"motivo_{aluna}_{data_ch_sel}", placeholder="Informe o motivo...", label_visibility="collapsed")
+            
+            registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
+
+        st.divider()
+        if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
+            for reg in registros_chamada:
+                st.session_state.historico_geral.append({
+                    "Data": data_ch_sel, 
+                    "Aluna": reg["Aluna"], 
+                    "Tipo": "Chamada", 
+                    "Status": reg["Status"], 
+                    "Motivo": reg["Motivo"]
+                })
+            st.success(f"Chamada do dia {data_ch_sel} salva com sucesso!")
+            st.balloons()
 
     with tab_correcao:
         st.subheader("✅ Correção de Atividades")
@@ -236,3 +266,4 @@ elif perfil == "📊 Analítico IA":
             st.write("**Correções da Secretaria:**")
             st.table(pd.DataFrame(st.session_state.correcoes_secretaria))
     else: st.info("Sem dados.")
+
