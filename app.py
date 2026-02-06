@@ -209,6 +209,68 @@ elif perfil == "👩‍🏫 Professora":
     else:
         st.warning("Rodízio não encontrado.")
 
+# --- FORMULÁRIO DE ACORDO COM A MATÉRIA ---
+        if mat == "Prática":
+            st.subheader("🎹 Controle de Desempenho - Aula Prática")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.selectbox("Lição/Volume (Prática):", [str(i) for i in range(1, 41)] + ["Outro"], key="lic_pr")
+            
+            st.markdown("**Dificuldades (Marque todas que se aplicam):**")
+            dif_pr = [
+                "Não estudou nada", "Estudou de forma insatisfatória", "Não assistiu os vídeos dos métodos",
+                "Dificuldade ritmica", "Dificuldade em distinguir os nomes das figuras ritmicas",
+                "Está adentrando às teclas", "Dificuldade com a postura (costas, ombros e braços)",
+                "Está deixando o punho alto ou baixo", "Não senta no centro da banqueta", "Está quebrando as falanges",
+                "Unhas muito compridas", "Dificuldade em deixar os dedos arredondados",
+                "Esquece de colocar o pé direito no pedal de expressão", "Faz movimentos desnecessários com o pé esquerdo na pedaleira",
+                "Dificuldade com o uso do metrônomo", "Estuda sem o metrônomo", "Dificuldades em ler as notas na clave de sol",
+                "Dificuldades em ler as notas na clave de fá", "Não realizou as atividades da apostila",
+                "Dificuldade em fazer a articulação ligada e semiligada", "Dificuldade com as respirações",
+                "Dificuldade com as respirações sobre passagem", "Dificuldades em recurso de dedilhado",
+                "Dificuldade em fazer nota de apoio", "Não apresentou dificuldades"
+            ]
+            c_a, c_b = st.columns(2)
+            for i, d in enumerate(dif_pr): (c_a if i < 13 else c_b).checkbox(d, key=f"d_pr_{i}")
+            
+            st.divider()
+            st.selectbox("Lição de casa - Volume prática:", [str(i) for i in range(1, 41)] + ["Outro"], key="home_pr")
+            st.text_input("Lição de casa - Apostila:")
+
+        elif mat == "Teoria":
+            st.subheader("📚 Controle de Desempenho - Aula Teoria")
+            st.text_input("Lição/Volume (Teoria):")
+            
+            st.markdown("**Dificuldades:**")
+            dif_te = [
+                "Não assistiu os vídeos complementares", "Dificuldades em ler as notas na clave de sol",
+                "Dificuldades em ler as notas na clave de fá", "Dificuldade no uso do metrônomo", "Estuda sem metrônomo",
+                "Não realizou as atividades", "Dificuldade em leitura ritmica", "Dificuldades em leitura métrica",
+                "Dificuldade em solfejo (afinação)", "Dificuldades no movimento da mão",
+                "Dificuldades na ordem das notas", "Não realizou as atividades da apostila",
+                "Não estudou nada", "Estudou de forma insatisfatória", "Não apresentou dificuldades"
+            ]
+            c_te1, c_te2 = st.columns(2)
+            for i, d in enumerate(dif_te): (c_te1 if i < 8 else c_te2).checkbox(d, key=f"d_te_{i}")
+            st.text_input("Lição de casa (Teoria):")
+
+        elif "Solfejo" in mat:
+            st.subheader("🔊 Controle de Desempenho - Aula Solfejo")
+            st.text_input("Lição/Volume (Solfejo):")
+            
+            st.markdown("**Dificuldades:**")
+            dif_so = [
+                "Não assistiu os vídeos complementares", "Dificuldades em ler as notas na clave de sol",
+                "Dificuldades em ler as notas na clave de fá", "Dificuldade no uso do metrônomo", "Estuda sem metrônomo",
+                "Não realizou as atividades", "Dificuldade em leitura ritmica", "Dificuldades em leitura métrica",
+                "Dificuldade em solfejo (afinação)", "Dificuldades no movimento da mão",
+                "Dificuldades na ordem das notas", "Não realizou as atividades da apostila",
+                "Não estudou nada", "Estudou de forma insatisfatória", "Não apresentou dificuldades"
+            ]
+            c_so1, c_so2 = st.columns(2)
+            for i, d in enumerate(dif_so): (c_so1 if i < 8 else c_so2).checkbox(d, key=f"d_so_{i}")
+            st.text_input("Lição de casa (Solfejo):")
+
 # ==========================================
 #              MÓDULO ANALÍTICO IA
 # ==========================================
@@ -238,3 +300,4 @@ elif perfil == "📊 Analítico IA":
                 if not df_ch.empty: st.bar_chart(df_ch["Status"].value_counts())
     else:
         st.info("Aguardando registros para análise.")
+
