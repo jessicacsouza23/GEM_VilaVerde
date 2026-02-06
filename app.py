@@ -234,6 +234,10 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.header("📊 Inteligência Pedagógica - Vila Verde")
 
+    # CORREÇÃO DO ERRO: Inicializa a lista se ela não existir
+    if "analises_salvas" not in st.session_state:
+        st.session_state.analises_salvas = []
+
     if not st.session_state.historico_geral:
         st.info("Aguardando dados para iniciar as análises.")
     else:
@@ -243,9 +247,9 @@ elif perfil == "📊 Analítico IA":
         c1, c2, c3 = st.columns([2, 2, 2])
         aluna_sel = c1.selectbox("Selecione a Aluna:", todas_alunas)
         periodo_tipo = c2.selectbox("Período da Análise:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
-        data_ini_ref = c3.date_input("Data Inicial da Análise:") # Ajustado para ser a data inicial
+        data_ini_ref = c3.date_input("Data Inicial da Análise:") 
 
-        # 1. Lógica de Filtro de Datas (Data Inicial + Período)
+        # 1. Lógica de Filtro de Datas
         df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y').dt.date
         d_ini = data_ini_ref
         delta = {"Diário":0, "Mensal":30, "Bimestral":60, "Semestral":180, "Anual":365}[periodo_tipo]
@@ -256,12 +260,11 @@ elif perfil == "📊 Analítico IA":
         if df_f.empty:
             st.warning(f"Sem registros de {d_ini.strftime('%d/%m/%Y')} até {d_fim.strftime('%d/%m/%Y')}.")
         else:
-            # --- GRÁFICO DE DESENVOLTURA TÉCNICA ---
+            # --- GRÁFICO DE DESENVOLTURA ---
             st.subheader("📈 Desempenho e Desenvoltura")
             df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
             
             if not df_aulas.empty:
-                # Cálculo de Desenvoltura (0 a 100%)
                 def calcular_nota(lista_difs):
                     if not isinstance(lista_difs, list) or not lista_difs: return 100.0
                     if "Não apresentou dificuldades" in lista_difs: return 100.0
@@ -273,7 +276,6 @@ elif perfil == "📊 Analítico IA":
             
             # --- BOTÃO DE GERAR ANÁLISE ---
             if st.button("✨ PROCESSAR ANÁLISE PEDAGÓGICA COMPLETA"):
-                # Cálculos de Apoio
                 df_ch = df_f[df_f["Tipo"] == "Chamada"]
                 freq = (len(df_ch[df_ch["Status"] == "Presente"]) / len(df_ch) * 100) if len(df_ch) > 0 else 0
                 total_licoes = df_aulas['Licao'].nunique()
@@ -282,62 +284,53 @@ elif perfil == "📊 Analítico IA":
                 st.markdown(f"# 📜 RELATÓRIO PEDAGÓGICO - {aluna_sel.upper()}")
                 st.caption(f"Período Avaliado: {d_ini.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')}")
 
-                # DASHBOARD DE DADOS INTERESSANTES
+                # DASHBOARD
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Frequência", f"{freq:.0f}%")
                 col2.metric("Aulas no Período", len(df_aulas))
                 col3.metric("Conteúdos Vistos", total_licoes)
                 col4.metric("Média Geral", f"{df_aulas['Nota_Desenv'].mean():.0f}%")
 
-                # --- RESUMO POR DISCIPLINA (O QUE MELHORAR E DICAS) ---
+                # --- ANÁLISE DETALHADA ---
                 st.subheader("📝 Avaliação por Disciplina")
-                
                 for mat in ["Prática", "Teoria", "Solfejo"]:
                     df_m = df_aulas[df_aulas["Materia"] == mat]
                     if not df_m.empty:
                         with st.expander(f"Ver Detalhes de {mat}"):
-                            # Identificar Dificuldades Recorrentes
                             todas_difs = [d for lista in df_m["Dificuldades"] for d in lista]
                             difs_unicas = list(set(todas_difs)) if todas_difs else []
                             
-                            st.write(f"**Desenvolvimento em {mat}:** A aluna demonstrou um aproveitamento de {df_m['Nota_Desenv'].mean():.0f}% nesta matéria.")
+                            st.write(f"**Evolução:** {df_m['Nota_Desenv'].mean():.0f}% de aproveitamento.")
                             
                             if difs_unicas and "Não apresentou dificuldades" not in difs_unicas:
                                 st.error("⚠️ **O que precisa melhorar:**")
                                 for d in difs_unicas: st.write(f"- {d}")
                                 
                                 st.info("💡 **Dicas para as próximas aulas:**")
-                                if mat == "Prática":
-                                    st.write("Reforçar o uso do metrónomo em andamentos lentos e focar na independência das mãos antes de aumentar a velocidade.")
-                                elif mat == "Teoria":
-                                    st.write("Rever os conceitos básicos de figuras de valor e realizar exercícios de escrita para fixação.")
-                                else:
-                                    st.write("Praticar a leitura rítmica apenas com palmas antes de incluir a altura das notas.")
+                                if mat == "Prática": st.write("Focar na postura das falanges e uso do pedal de expressão.")
+                                elif mat == "Teoria": st.write("Reforçar leitura rítmica com figuras de maior pontuação.")
+                                else: st.write("Treinar solfejo melódico com foco na clave de Fá.")
                             else:
-                                st.success("🌟 **Destaque:** Aluna sem dificuldades recorrentes registradas no período.")
+                                st.success("🌟 Aluna com ótimo desempenho nesta disciplina.")
 
-                # --- SEÇÃO 6: ANÁLISE DE COMPORTAMENTO ---
-                st.subheader("🧠 Perfil e Postura")
-                observacoes_texto = " ".join(df_aulas['Obs'].dropna().unique())
-                if observacoes_texto:
-                    st.write(f"**Análise das Professoras:** {observacoes_texto}")
-                else:
-                    st.write("Sem observações comportamentais específicas registradas no período.")
+                st.subheader("🚀 Resumo Pedagógico Final")
+                # Coleta observações das professoras
+                obs_final = " ".join(df_aulas['Obs'].dropna().unique())
+                st.write(obs_final if obs_final else "Sem observações críticas.")
 
-                # --- DADO EXTRA: PROGRESSÃO DE LIÇÕES ---
-                st.subheader("🚀 Trilho de Progresso")
-                st.write(f"A aluna trabalhou as seguintes lições/conteúdos: {', '.join(df_aulas['Licao'].unique())}")
-                
                 st.divider()
-                st.warning("🔔 **Atenção:** Análise concluída. Por favor, apresente este relatório à instrutora responsável pela próxima semana.")
+                st.warning("📋 **Instrução:** Este relatório deve ser consultado pela instrutora da próxima semana no início da aula.")
                 
-                # Guardar no "banco"
+                # Salva a análise para não dar mais o erro de AttributeError
                 st.session_state.analises_salvas.append({
                     "Aluna": aluna_sel, 
-                    "Data_Analise": datetime.now().strftime("%d/%m/%Y"),
-                    "Media": df_aulas['Nota_Desenv'].mean()
+                    "Data_Geracao": datetime.now().strftime("%d/%m/%Y"),
+                    "Periodo": periodo_tipo
                 })
 
             with st.expander("📂 Histórico de Dados Brutos"):
                 st.dataframe(df_f)
+            with st.expander("📂 Histórico de Dados Brutos"):
+                st.dataframe(df_f)
+
 
