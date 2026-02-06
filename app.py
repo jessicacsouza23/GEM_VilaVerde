@@ -9,10 +9,9 @@ from google.oauth2 import service_account
 # --- CONFIGURAÇÕES DE PÁGINA ---
 st.set_page_config(page_title="GEM Vila Verde - Sistema 2026", layout="wide", page_icon="🎼")
 
-# --- CONEXÃO COM BANCO DE DADOS (FIRESTORE) ---
+# --- CONEXÃO COM BANCO DE DADOS ---
 def init_connection():
     try:
-        # Garantindo a leitura correta da chave privada dos Secrets
         pk = st.secrets["private_key"].replace("\\n", "\n").strip()
         creds_dict = {
             "type": st.secrets["type"],
@@ -30,19 +29,26 @@ def init_connection():
         creds = service_account.Credentials.from_service_account_info(creds_dict)
         return firestore.Client(credentials=creds, project=st.secrets["project_id"])
     except Exception as e:
-        st.error(f"⚠️ Erro de Conexão: Verifique os Secrets. Detalhe: {e}")
+        st.error(f"⚠️ Erro de Configuração de Credenciais: {e}")
         return None
 
 db = init_connection()
 
-# --- FUNÇÕES DE PERSISTÊNCIA (REPLACING SESSION STATE) ---
+# --- FUNÇÕES DE PERSISTÊNCIA ---
 def db_save(colecao, documento, dados):
     if db:
-        db.collection(colecao).document(documento).set(dados)
+        try:
+            db.collection(colecao).document(documento).set(dados)
+        except Exception as e:
+            st.error(f"Erro ao salvar: {e}")
 
 def db_get_all(colecao):
     if db:
-        return [doc.to_dict() for doc in db.collection(colecao).stream()]
+        try:
+            return [doc.to_dict() for doc in db.collection(colecao).stream()]
+        except Exception as e:
+            st.warning(f"Atenção: A coleção '{colecao}' está inacessível ou vazia. Verifique se o Firestore está em 'Modo de Teste'.")
+            return []
     return []
 
 # --- BANCO DE DADOS MESTRE ---
@@ -54,24 +60,22 @@ TURMAS = {
 
 PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
 SECRETARIAS = ["Ester", "Jéssica", "Larissa", "Lourdes", "Natasha", "Roseli"]
-HORARIOS_LABELS = [
-    "08h45 às 09h30 (1ª Aula - Igreja)", 
-    "09h35 às 10h05 (2ª Aula)", 
-    "10h10 às 10h40 (3ª Aula)", 
-    "10h45 às 11h15 (4ª Aula)"
-]
+HORARIOS_LABELS = ["08h45 às 09h30 (1ª Aula - Igreja)", "09h35 às 10h05 (2ª Aula)", "10h10 às 10h40 (3ª Aula)", "10h45 às 11h15 (4ª Aula)"]
+
+# --- CARREGAMENTO INICIAL PROTEGIDO ---
+try:
+    calendario_anual = {doc['id']: doc['escala'] for doc in db_get_all("calendario") if 'id' in doc}
+    historico_geral = db_get_all("historico")
+    correcoes_secretaria = db_get_all("correcoes")
+    analises_fixas_salvas = {doc['id']: doc['analise'] for doc in db_get_all("analises") if 'id' in doc}
+except Exception:
+    calendario_anual, historico_geral, correcoes_secretaria, analises_fixas_salvas = {}, [], [], {}
 
 # --- FUNÇÕES AUXILIARES ---
 def get_sabados_do_mes(ano, mes):
     cal = calendar.Calendar(firstweekday=calendar.SUNDAY)
     dias = cal.monthdatescalendar(ano, mes)
     return [dia for semana in dias for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
-
-# --- CARREGAMENTO DE DADOS DO BANCO ---
-calendario_anual = {doc['id']: doc['escala'] for doc in db_get_all("calendario")}
-historico_geral = db_get_all("historico")
-correcoes_secretaria = db_get_all("correcoes")
-analises_fixas_salvas = {doc['id']: doc['analise'] for doc in db_get_all("analises")}
 
 # --- INTERFACE ---
 st.title("🎼 GEM Vila Verde - Gestão 2026")
@@ -161,7 +165,7 @@ if perfil == "🏠 Secretaria":
             df_alu = df_h[(df_h["Aluna"] == alu_corr) & (df_h["Tipo"] == "Aula")]
             if not df_alu.empty:
                 ult = df_alu.iloc[-1]
-                liçao_info = f"Matéria: {ult['Materia']} | Lição: {ult.get('Home_M','')} | Apostila: {ult.get('Home_A','')}"
+                liçao_info = f"Matéria: {ult.get('Materia','')} | Lição: {ult.get('Home_M','')} | Apostila: {ult.get('Home_A','')}"
         st.info(f"📋 **Lição registrada pela Professora:** {liçao_info}")
         status_corr = st.radio("Status:", ["Realizada", "Não Realizada", "Devolvida para Correção"], horizontal=True)
         obs_sec = st.text_area("Notas da Secretaria:")
@@ -193,8 +197,7 @@ elif perfil == "👩‍🏫 Professora":
             mat = "Teoria" if "Teoria" in texto_aula else ("Solfejo" if "Solfejo" in texto_aula else "Prática")
             check_alunas = [atend['Aluna']] if mat == "Prática" else [a for a in TURMAS[atend['Turma']] if st.checkbox(a, value=True, key=f"p_{a}")]
             
-            selecionadas = []
-            home_m, home_a, lic_aula = "", "", ""
+            selecionadas, home_m, home_a, lic_aula = [], "", "", ""
 
             if mat == "Prática":
                 st.subheader("🎹 Controle de Desempenho - Aula Prática")
@@ -219,13 +222,8 @@ elif perfil == "👩‍🏫 Professora":
             if st.button("💾 SALVAR REGISTRO"):
                 for aluna in check_alunas:
                     doc_id = f"AULA_{datetime.now().timestamp()}_{aluna}"
-                    db_save("historico", doc_id, {
-                        "Data": d_str, "Aluna": aluna, "Tipo": "Aula", "Materia": mat,
-                        "Licao": lic_aula, "Dificuldades": selecionadas, "Obs": obs, 
-                        "Home_M": home_m, "Home_A": home_a, "Instrutora": instr_sel
-                    })
+                    db_save("historico", doc_id, {"Data": d_str, "Aluna": aluna, "Tipo": "Aula", "Materia": mat, "Licao": lic_aula, "Dificuldades": selecionadas, "Obs": obs, "Home_M": home_m, "Home_A": home_a, "Instrutora": instr_sel})
                 st.success("Aula salva!")
-                st.balloons()
         else: st.warning("Sem escala para você.")
     else: st.warning("Rodízio pendente.")
 
@@ -233,97 +231,18 @@ elif perfil == "👩‍🏫 Professora":
 #              MÓDULO ANALÍTICO
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.header("📊 Inteligência Pedagógica - Vila Verde")
-
+    st.header("📊 Inteligência Pedagógica")
     if not historico_geral:
-        st.info("Aguardando registros no histórico para iniciar as análises.")
+        st.info("Aguardando registros.")
     else:
         df_geral = pd.DataFrame(historico_geral)
         todas_alunas = sorted(df_geral["Aluna"].unique())
+        aluna_sel = st.selectbox("Selecione a Aluna:", todas_alunas)
+        df_f = df_geral[df_geral["Aluna"] == aluna_sel]
         
-        c1, c2, c3 = st.columns([2, 2, 2])
-        aluna_sel = c1.selectbox("Selecione a Aluna:", todas_alunas)
-        periodo_tipo = c2.selectbox("Tipo de Período:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
-        data_ini_ref = c3.date_input("Data Inicial do Período:") 
-
-        id_analise = f"{aluna_sel}_{data_ini_ref}_{periodo_tipo}".replace(" ", "_")
-        df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y').dt.date
-        delta = {"Diário":0, "Mensal":30, "Bimestral":60, "Semestral":180, "Anual":365}[periodo_tipo]
-        d_fim = data_ini_ref + timedelta(days=delta)
-        df_f = df_geral[(df_geral["Aluna"] == aluna_sel) & (df_geral["dt_obj"] >= data_ini_ref) & (df_geral["dt_obj"] <= d_fim)]
-
         if not df_f.empty:
-            st.subheader("📈 Visão Geral de Desempenho")
             df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
-            df_ch = df_f[df_f["Tipo"] == "Chamada"]
-
-            col_g1, col_g2 = st.columns(2)
-            with col_g1:
-                if not df_aulas.empty and 'Dificuldades' in df_aulas.columns:
-                    df_aulas['Nota_Desenv'] = df_aulas['Dificuldades'].apply(lambda l: max(0.0, 100.0 - (len(l) * 10.0)) if isinstance(l, list) else 100.0)
-                    st.write("**Desenvoltura Técnica**")
-                    st.bar_chart(df_aulas.groupby('Materia')['Nota_Desenv'].mean())
-            
-            with col_g2:
-                if not df_ch.empty:
-                    st.write("**Frequência**")
-                    st.bar_chart(df_ch["Status"].value_counts())
-
-            st.divider()
-
-            if id_analise in analises_fixas_salvas:
-                d = analises_fixas_salvas[id_analise]
-                st.subheader(f"📜 Relatório Consolidado - {aluna_sel}")
-                
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Média Geral", f"{d.get('media', 0):.0f}%")
-                m2.metric("Aulas", d.get('qtd_aulas', 0))
-                m3.metric("Frequência", f"{d.get('freq', 0):.0f}%")
-                m4.metric("Atividades", d.get('status_sec', 'N/A'))
-
-                st.markdown("---")
-                st.error(f"**⚠️ Técnica e Postura:**\n{d.get('difs_tecnica', '')}")
-                st.warning(f"**🎵 Ritmo e Teoria:**\n{d.get('difs_ritmo', '')}")
-                st.info(f"**💡 Dica para a Próxima Aula:**\n{d.get('dicas', '')}")
-                
-                if periodo_tipo in ["Semestral", "Anual"]:
-                    st.success(f"**🎯 Sugestões para Banca:**\n{d.get('banca', '')}")
-
-                # WHATSAPP INTEGRATION
-                st.subheader("📲 Enviar para Instrutora")
-                tel_instrutora = st.text_input("WhatsApp da Instrutora (com DDD):", key="tel_whats_fixed")
-                if tel_instrutora:
-                    import urllib.parse
-                    texto_whats = f"*RELATÓRIO PEDAGÓGICO*\n*Aluna:* {aluna_sel}\n*Técnica:* {d.get('difs_tecnica','')}\n*Ritmo:* {d.get('difs_ritmo','')}"
-                    st.link_button("🚀 Enviar Relatório", f"https://wa.me/55{tel_instrutora}?text={urllib.parse.quote(texto_whats)}")
-                
-                if st.button("🗑️ Gerar Nova Análise"):
-                    db.collection("analises").document(id_analise).delete()
-                    st.rerun()
-            else:
-                if st.button("✨ GERAR E FIXAR ANÁLISE PEDAGÓGICA COMPLETA"):
-                    df_sec = pd.DataFrame(correcoes_secretaria)
-                    df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel] if not df_sec.empty else pd.DataFrame()
-                    t_difs = [d for l in df_aulas['Dificuldades'] for d in l] if not df_aulas.empty else []
-                    difs_set = set(t_difs)
-                    tecnica = [d for d in difs_set if any(w in d.lower() for w in ["postura", "punho", "dedos", "falange", "articulação", "pedal"])]
-                    ritmo_teoria = [d for d in difs_set if any(w in d.lower() for w in ["metrônomo", "ritmica", "clave", "solfejo", "teoria"])]
-                    
-                    nova_analise = {
-                        "id": id_analise,
-                        "analise": {
-                            "media": df_aulas['Nota_Desenv'].mean() if not df_aulas.empty else 0,
-                            "qtd_aulas": len(df_aulas),
-                            "freq": (len(df_ch[df_ch["Status"] == "Presente"]) / len(df_ch) * 100) if len(df_ch) > 0 else 0,
-                            "status_sec": df_sec_f['Status'].iloc[-1] if not df_sec_f.empty else "Sem registros",
-                            "difs_tecnica": ", ".join(tecnica) if tecnica else "Nenhuma registrada.",
-                            "difs_ritmo": ", ".join(ritmo_teoria) if ritmo_teoria else "Sem pendências.",
-                            "dicas": "Trabalhar independência de mãos e leitura na Clave de Fá.",
-                            "banca": "Conferir articulação e postura de punho/falanges."
-                        }
-                    }
-                    db_save("analises", id_analise, nova_analise)
-                    st.rerun()
-
-    with st.expander("📂 Histórico Bruto"):
-        if not df_f.empty: st.dataframe(df_f)
+            if not df_aulas.empty and 'Dificuldades' in df_aulas.columns:
+                df_aulas['Nota'] = df_aulas['Dificuldades'].apply(lambda l: max(0.0, 100.0 - (len(l)*10)) if isinstance(l, list) else 100.0)
+                st.bar_chart(df_aulas.groupby('Materia')['Nota'].mean())
+            st.dataframe(df_f)
