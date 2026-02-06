@@ -7,17 +7,17 @@ from google.oauth2 import service_account
 # --- CONFIGURAÇÕES DE PÁGINA ---
 st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide", page_icon="🎼")
 
-# --- CONEXÃO COM FIRESTORE (COM LIMPEZA DE BASE64) ---
+# --- CONEXÃO COM BANCO DE DADOS (FIRESTORE) ---
 def init_connection():
     try:
-        # Puxa os segredos e garante que a chave privada seja lida corretamente
-        key_data = st.secrets["private_key"].replace("\\n", "\n").strip()
+        # Puxa a chave e garante que as quebras de linha sejam interpretadas corretamente
+        pk = st.secrets["private_key"].replace("\\n", "\n").strip()
         
         creds_dict = {
             "type": st.secrets["type"],
             "project_id": st.secrets["project_id"],
             "private_key_id": st.secrets["private_key_id"],
-            "private_key": key_data,
+            "private_key": pk,
             "client_email": st.secrets["client_email"],
             "client_id": st.secrets["client_id"],
             "auth_uri": st.secrets["auth_uri"],
@@ -29,12 +29,12 @@ def init_connection():
         creds = service_account.Credentials.from_service_account_info(creds_dict)
         return firestore.Client(credentials=creds, project=st.secrets["project_id"])
     except Exception as e:
-        st.error(f"⚠️ Erro de Conexão: {e}")
+        st.error(f"⚠️ Erro de Conexão: Verifique os Secrets. Detalhe: {e}")
         return None
 
 db = init_connection()
 
-# --- FUNÇÕES DE BANCO ---
+# --- FUNÇÕES DE PERSISTÊNCIA ---
 def db_save(colecao, documento, dados):
     if db:
         try:
@@ -50,14 +50,13 @@ def db_get_all(colecao):
         except: return []
     return []
 
-# --- LISTAS MESTRE (RESTAURADAS 100%) ---
+# --- LISTAS E BANCO DE DADOS MESTRE ---
 TURMAS = {
     "Turma 1": ["Rebecca A.", "Amanda S.", "Ingrid M.", "Rebeka S.", "Mellina S.", "Rebeca R.", "Caroline C."],
     "Turma 2": ["Vitória A.", "Elisa F.", "Sarah S.", "Gabrielly C. V.", "Emily O.", "Julya O.", "Stephany O."],
     "Turma 3": ["Heloísa R.", "Ana Marcela S.", "Vitória Bella T.", "Júlia G. S.", "Micaelle S.", "Raquel L.", "Júlia Cristina"]
 }
 PROFESSORAS = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
-SECRETARIAS = ["Ester", "Jéssica", "Larissa", "Lourdes", "Natasha", "Roseli"]
 HORARIOS = ["08h45 às 09h30", "09h35 às 10h05", "10h10 às 10h40", "10h45 às 11h15"]
 
 DIFICULDADES_PRATICA = [
@@ -74,98 +73,102 @@ DIFICULDADES_PRATICA = [
     "Dificuldade em fazer nota de apoio", "Não apresentou dificuldades"
 ]
 
-# --- MENU LATERAL ---
+# --- MENU ---
 st.sidebar.title("🎹 GEM Vila Verde 2026")
 perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
 
-# ================= MÓDULO SECRETARIA =================
+# --- MODULO SECRETARIA ---
 if perfil == "🏠 Secretaria":
     st.header("🏠 Gestão da Secretaria")
-    tab1, tab2 = st.tabs(["🗓️ Rodízio Semanal", "📋 Resumo Administrativo"])
+    tab1, tab2 = st.tabs(["🗓️ Rodízio", "📋 Resumo de Aulas"])
     
     with tab2:
-        st.subheader("📋 Relatório da Secretaria")
+        st.subheader("📋 Resumo Geral (Consultivo)")
         registros = db_get_all("historico_geral")
         if registros:
             df_sec = pd.DataFrame(registros)
             st.dataframe(df_sec[["Data", "Aluna", "Materia", "Instrutora", "Horario"]].sort_values("Data", ascending=False))
 
-# ================= MÓDULO PROFESSORA =================
+# --- MODULO PROFESSORA ---
 elif perfil == "👩‍🏫 Professora":
-    st.header("👩‍🏫 Registro Pedagógico Detalhado")
+    st.header("👩‍🏫 Diário de Classe Pedagógico")
     
-    with st.expander("📝 Registrar Nova Aula", expanded=True):
-        c1, c2 = st.columns(2)
-        with c1:
+    with st.expander("📝 Lançar Nova Aula", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
             instr = st.selectbox("Instrutora:", PROFESSORAS)
             aluna = st.selectbox("Aluna:", sorted([a for t in TURMAS.values() for a in t]))
-        with c2:
+        with col2:
             horario = st.selectbox("Horário:", HORARIOS)
-            materia = st.selectbox("Matéria:", ["Prática", "Teoria", "Solfejo"])
+            mat = st.selectbox("Matéria:", ["Prática", "Teoria", "Solfejo"])
 
         st.divider()
         st.subheader("⚠️ Dificuldades Técnicas")
-        difs = st.multiselect("Marque as dificuldades:", DIFICULDADES_PRATICA)
+        difs_selecionadas = st.multiselect("Selecione as dificuldades observadas:", DIFICULDADES_PRATICA)
         
         st.divider()
-        st.subheader("🎯 Planejamento e Banca (Análise Congelada)")
-        obs_ped = st.text_area("Relato Pedagógico Completo (Histórico):")
-        prox_metas = st.text_area("Dicas e Metas para a Próxima Aula:")
-        dicas_banca = st.text_area("Dicas Específicas para a Banca Semestral:")
+        st.subheader("🎯 Planejamento e Banca")
+        obs_geral = st.text_area("Relato Pedagógico (O que foi visto):")
+        meta_aula = st.text_area("Metas para a Próxima Aula:")
+        foco_banca = st.text_area("Dicas Específicas para a Banca Semestral:")
 
-        if st.button("💾 SALVAR REGISTRO COMPLETO"):
+        if st.button("💾 SALVAR E CONGELAR ANÁLISE"):
             doc_id = f"{aluna}_{datetime.now().timestamp()}".replace(".","")
-            dados_aula = {
-                "Data": datetime.now().strftime("%d/%m/%Y"), "Aluna": aluna, "Materia": materia,
-                "Dificuldades": difs, "Obs": obs_ped, "Metas": prox_metas,
-                "Banca": dicas_banca, "Instrutora": instr, "Horario": horario
+            dados = {
+                "Data": datetime.now().strftime("%d/%m/%Y"),
+                "Aluna": aluna,
+                "Materia": mat,
+                "Dificuldades": difs_selecionadas,
+                "Relato": obs_geral,
+                "Meta": meta_aula,
+                "Banca": foco_banca,
+                "Instrutora": instr,
+                "Horario": horario
             }
-            if db_save("historico_geral", doc_id, dados_aula):
-                st.success(f"✅ Análise de {aluna} salva e congelada!")
+            if db_save("historico_geral", doc_id, dados):
+                st.success(f"✅ Registro de {aluna} congelado com sucesso!")
 
-# ================= MÓDULO ANALÍTICO IA =================
+# --- MODULO ANALÍTICO (ANÁLISE POR ÁREAS) ---
 elif perfil == "📊 Analítico IA":
-    st.header("📊 Análise Pedagógica Completa")
-    hist_raw = db_get_all("historico_geral")
+    st.header("📊 Análise Pedagógica para Banca")
+    hist = db_get_all("historico_geral")
     
-    if hist_raw:
-        df = pd.DataFrame(hist_raw)
-        aluna_sel = st.selectbox("Selecionar Aluna para Auditoria:", sorted(df["Aluna"].unique()))
+    if hist:
+        df = pd.DataFrame(hist)
+        aluna_sel = st.selectbox("Selecione a Aluna:", sorted(df["Aluna"].unique()))
         df_alu = df[df["Aluna"] == aluna_sel].sort_values("Data", ascending=False)
         
-        # --- SEPARAÇÃO POR ÁREAS (POSTURA, TÉCNICA, RITMO, TEORIA) ---
-        difs_list = [d for lista in df_alu["Dificuldades"] for d in lista]
+        # --- SEPARAÇÃO POR ÁREAS ---
+        todas_difs = [d for lista in df_alu["Dificuldades"] for d in lista]
         
-        st.subheader(f"📈 Diagnóstico Pedagógico: {aluna_sel}")
-        col1, col2 = st.columns(2)
+        st.subheader(f"📈 Evolução de {aluna_sel}")
+        col_p, col_t = st.columns(2)
         
-        with col1:
+        with col_p:
             st.error("🧘 **POSTURA**")
-            p = [d for d in set(difs_list) if any(x in d.lower() for x in ["postura", "punho", "falange", "unha", "banqueta", "teclas", "dedo"])]
+            p = [d for d in set(todas_difs) if any(x in d.lower() for x in ["postura", "punho", "falange", "unha", "banqueta", "tecla", "dedo"])]
             for i in p: st.write(f"- {i}")
             
             st.warning("🎹 **TÉCNICA**")
-            t = [d for d in set(difs_list) if any(x in d.lower() for x in ["articulação", "respiração", "dedilhado", "apoio", "clave"])]
+            t = [d for d in set(todas_difs) if any(x in d.lower() for x in ["articulação", "respiração", "dedilhado", "apoio", "clave"])]
             for i in t: st.write(f"- {i}")
 
-        with col2:
+        with col_t:
             st.info("⏳ **RITMO**")
-            r = [d for d in set(difs_list) if any(x in d.lower() for x in ["metrônomo", "ritmica", "métrica", "figuras"])]
+            r = [d for d in set(todas_difs) if any(x in d.lower() for x in ["metrônomo", "ritmica", "figura"])]
             for i in r: st.write(f"- {i}")
             
             st.success("📖 **TEORIA**")
-            te = [d for d in set(difs_list) if any(x in d.lower() for x in ["vídeos", "apostila", "atividades", "estudou"])]
+            te = [d for d in set(todas_difs) if any(x in d.lower() for x in ["vídeo", "apostila", "atividade", "estudou"])]
             for i in te: st.write(f"- {i}")
 
         st.divider()
-        st.subheader("🏛️ Preparação para a Banca Semestral")
-        c_meta, c_banca = st.columns(2)
-        with c_meta:
-            st.markdown(f"**🎯 Metas Próxima Aula:**\n\n{df_alu['Metas'].iloc[0]}")
-        with c_banca:
-            st.markdown(f"**💡 Dicas para a Banca:**\n\n{df_alu['Banca'].iloc[0]}")
-            
-        st.subheader("📜 Histórico de Observações (Congelado)")
-        st.write(df_alu[["Data", "Instrutora", "Obs"]])
+        st.subheader("🎯 Foco Estratégico")
+        st.write(f"**Próxima Aula:** {df_alu['Meta'].iloc[0]}")
+        st.warning(f"**Dica para a Banca:** {df_alu['Banca'].iloc[0]}")
+        
+        st.divider()
+        st.subheader("📜 Histórico de Relatos (Congelado)")
+        st.dataframe(df_alu[["Data", "Instrutora", "Relato"]])
     else:
-        st.info("Nenhum registro encontrado para gerar análise.")
+        st.info("Aguardando registros para análise.")
