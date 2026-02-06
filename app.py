@@ -155,62 +155,67 @@ if perfil == "🏠 Secretaria":
                         db_save_historico({"Data": dt_ch, "Aluna": aluna, "Tipo": "Chamada", "Status": st_ch})
                         st.toast(f"Presença de {aluna} salva!")
 
-    # --- ABA 3: CORREÇÃO DE ATIVIDADES ---
+    # --- ABA 3: CORREÇÃO DE ATIVIDADES (VERSÃO INSTRUTORAS) ---
     with tab_correcao:
-        st.subheader("🏢 Gestão e Correção de Atividades")
+        st.subheader("🏢 Auditoria e Correção Detalhada")
         
         if not historico_geral:
-            st.info("Nenhum registro encontrado para correção.")
+            st.info("Nenhum registro pedagógico para corrigir.")
         else:
             df_edit = pd.DataFrame(historico_geral)
             
-            st.markdown("### 🔍 Localizar Registro")
-            c1, c2, c3 = st.columns(3)
-            aluna_f = c1.selectbox("Filtrar Aluna:", ["Todas"] + sorted(df_edit["Aluna"].unique().tolist()), key="f_al_corr")
-            data_f = c2.date_input("Filtrar Data:", value=None, key="f_dt_corr")
-            tipo_f = c3.selectbox("Tipo:", ["Todos", "Aula", "Chamada"], key="f_tp_corr")
+            # Filtros para facilitar a vida da secretaria
+            c_f1, c_f2 = st.columns(2)
+            f_aluna = c_f1.selectbox("Aluna:", ["Todas"] + sorted(df_edit["Aluna"].unique().tolist()), key="sec_f_aluna")
+            f_tipo = c_f2.selectbox("Filtrar por:", ["Todas as Aulas", "Somente Chamadas"], key="sec_f_tipo")
 
-            df_filtrado = df_edit.copy()
-            if aluna_f != "Todas":
-                df_filtrado = df_filtrado[df_filtrado["Aluna"] == aluna_f]
-            if data_f:
-                d_str_f = data_f.strftime("%d/%m/%Y")
-                df_filtrado = df_filtrado[df_filtrado["Data"] == d_str_f]
-            if tipo_f != "Todos":
-                df_filtrado = df_filtrado[df_filtrado["Tipo"] == tipo_f]
+            df_f = df_edit.copy()
+            if f_aluna != "Todas": df_f = df_f[df_f["Aluna"] == f_aluna]
+            if f_tipo == "Somente Chamadas": df_f = df_f[df_f["Tipo"] == "Chamada"]
+            else: df_f = df_f[df_f["Tipo"] == "Aula"]
 
-            st.write(f"Exibindo **{len(df_filtrado)}** registros:")
+            for idx, row in df_f.iterrows():
+                with st.expander(f"📝 {row['Data']} - {row['Aluna']} (Instrutora: {row.get('Instrutora', 'N/A')})"):
+                    # Layout igual ao das instrutoras para facilitar a correção
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**📖 Conteúdo em Aula**")
+                        licao_v = st.text_input("Lição/Hino:", value=row.get('Licao', ''), key=f"sec_lic_{idx}")
+                        mat_v = st.text_input("Matéria:", value=row.get('Materia', ''), key=f"sec_mat_{idx}")
+                        instr_v = st.text_input("Instrutora:", value=row.get('Instrutora', ''), key=f"sec_ins_{idx}")
+                    
+                    with col2:
+                        st.markdown("**🏠 Atividades para Casa**")
+                        home_m_v = st.text_input("Casa (MSA/Método):", value=row.get('Home_M', ''), key=f"sec_hm_{idx}")
+                        home_a_v = st.text_input("Casa (Apostila):", value=row.get('Home_A', ''), key=f"sec_ha_{idx}")
+                        status_v = st.selectbox("Presença:", ["P", "F", "J"], 
+                                              index=["P", "F", "J"].index(row['Status']) if row.get('Status') in ["P", "F", "J"] else 0,
+                                              key=f"sec_st_{idx}")
 
-            for index, row in df_filtrado.iterrows():
-                with st.expander(f"📝 {row['Data']} - {row['Aluna']} ({row.get('Materia', row['Tipo'])})"):
-                    col_ed1, col_ed2 = st.columns(2)
+                    st.divider()
+                    st.markdown("**🎯 Dificuldades Técnicas (Postura, Ritmo, Teoria)**")
+                    dif_v = st.text_area("Descreva as dificuldades observadas:", value=row.get('Dificuldades', ''), key=f"sec_dif_{idx}")
                     
-                    with col_ed1:
-                        nova_licao = st.text_input("Lição Dada:", value=row.get('Licao', ''), key=f"lic_{index}")
-                        nova_instr = st.text_input("Instrutora:", value=row.get('Instrutora', ''), key=f"ins_{index}")
-                    
-                    with col_ed2:
-                        nova_mat = st.text_input("Matéria:", value=row.get('Materia', ''), key=f"mat_{index}")
-                        novo_status = st.selectbox("Status:", ["P", "F", "J"], 
-                                                 index=["P", "F", "J"].index(row['Status']) if row.get('Status') in ["P", "F", "J"] else 0,
-                                                 key=f"st_{index}")
-                    
-                    novas_difs = st.text_area("Dificuldades:", value=row.get('Dificuldades', ''), key=f"dif_{index}")
-                    nova_obs = st.text_area("Relato Pedagógico:", value=row.get('Obs', ''), key=f"obs_{index}")
-                    
-                    b_ed1, b_ed2 = st.columns([1, 4])
-                    if b_ed1.button("✅ ATUALIZAR", key=f"save_{index}", type="primary"):
-                        st.session_state.historico_geral[index].update({
-                            "Licao": nova_licao, "Instrutora": nova_instr, "Materia": nova_mat,
-                            "Dificuldades": novas_difs, "Obs": nova_obs, "Status": novo_status
+                    st.markdown("**📝 Relato Pedagógico (Análise Gemini)**")
+                    obs_v = st.text_area("Observações da Instrutora:", value=row.get('Obs', ''), key=f"sec_obs_{idx}")
+
+                    # Botões de Ação
+                    b_c1, b_c2 = st.columns([1, 4])
+                    if b_c1.button("💾 ATUALIZAR", key=f"sec_save_{idx}", type="primary"):
+                        st.session_state.historico_geral[idx].update({
+                            "Licao": licao_v, "Materia": mat_v, "Instrutora": instr_v,
+                            "Home_M": home_m_v, "Home_A": home_a_v, "Status": status_v,
+                            "Dificuldades": dif_v, "Obs": obs_v
                         })
-                        st.success("Salvo!")
+                        st.success("Registro corrigido com sucesso!")
                         st.rerun()
-
-                    if b_ed2.button("🗑️ EXCLUIR", key=f"del_{index}"):
-                        st.session_state.historico_geral.pop(index)
+                    
+                    if b_c2.button("🗑️ EXCLUIR REGISTRO", key=f"sec_del_{idx}"):
+                        st.session_state.historico_geral.pop(idx)
+                        st.warning("Registro removido.")
                         st.rerun()
-# ==========================================
+# ========================================
 #              MÓDULO PROFESSORA
 # ==========================================
 elif perfil == "👩‍🏫 Professora":
@@ -468,6 +473,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
