@@ -265,13 +265,16 @@ elif perfil == "📊 Analítico IA":
 
             col_g1, col_g2 = st.columns(2)
             with col_g1:
-                if not df_aulas.empty:
+                if not df_aulas.empty and 'Dificuldades' in df_aulas.columns:
                     def calc_nota(l):
                         if not isinstance(l, list) or not l: return 100.0
                         return max(0.0, 100.0 - (len(l) * 10.0))
                     df_aulas['Nota_Desenv'] = df_aulas['Dificuldades'].apply(calc_nota)
                     st.write("**Desenvoltura Técnica**")
                     st.bar_chart(df_aulas.groupby('Materia')['Nota_Desenv'].mean())
+                else:
+                    st.write("Sem dados de aulas para o gráfico técnico.")
+            
             with col_g2:
                 if not df_ch.empty:
                     st.write("**Frequência**")
@@ -292,7 +295,6 @@ elif perfil == "📊 Analítico IA":
             # --- 3. EXIBIÇÃO DA ANÁLISE ---
             if id_analise in st.session_state.analises_fixas_salvas:
                 d = st.session_state.analises_fixas_salvas[id_analise]
-                
                 st.subheader(f"📜 Relatório Consolidado - {aluna_sel}")
                 
                 if proxima_inst:
@@ -314,12 +316,9 @@ elif perfil == "📊 Analítico IA":
                 if periodo_tipo in ["Semestral", "Anual"]:
                     st.success(f"**🎯 Sugestões para Banca:**\n{d.get('banca', '')}")
 
-                # --- ENVIO WHATSAPP ---
                 if proxima_inst:
                     st.subheader(f"📲 Enviar para {proxima_inst}")
-                    label_tel = f"WhatsApp de {proxima_inst} (com DDD):"
-                    tel_instrutora = st.text_input(label_tel, key="tel_whats")
-                    
+                    tel_instrutora = st.text_input(f"WhatsApp de {proxima_inst} (com DDD):", key="tel_whats_fixed")
                     if tel_instrutora:
                         import urllib.parse
                         texto_whats = (
@@ -331,8 +330,8 @@ elif perfil == "📊 Analítico IA":
                             f"*RITMO E TEORIA:*\n{d.get('difs_ritmo', '')}\n\n"
                             f"*DICA PRÓXIMA AULA:*\n{d.get('dicas', '')}"
                         )
-                        link_whatsapp = f"https://wa.me/55{tel_instrutora}?text={urllib.parse.quote(texto_whats)}"
-                        st.link_button("🚀 Abrir WhatsApp e Enviar", link_whatsapp)
+                        link_w = f"https://wa.me/55{tel_instrutora}?text={urllib.parse.quote(texto_whats)}"
+                        st.link_button("🚀 Abrir WhatsApp e Enviar", link_w)
                 
                 if st.button("🗑️ Gerar Nova Análise"):
                     del st.session_state.analises_fixas_salvas[id_analise]
@@ -342,14 +341,18 @@ elif perfil == "📊 Analítico IA":
                 if st.button("✨ GERAR E FIXAR ANÁLISE PEDAGÓGICA COMPLETA"):
                     df_sec = pd.DataFrame(st.session_state.correcoes_secretaria)
                     df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel] if not df_sec.empty else pd.DataFrame()
-                    t_difs = [d for l in df_aulas['Dificuldades'] for d in l if l]
-                    difs_set = set(t_difs)
                     
+                    # Proteção para evitar o KeyError se não houver coluna 'Dificuldades'
+                    t_difs = []
+                    if not df_aulas.empty and 'Dificuldades' in df_aulas.columns:
+                        t_difs = [d for l in df_aulas['Dificuldades'] if isinstance(l, list) for d in l if d]
+                    
+                    difs_set = set(t_difs)
                     tecnica = [d for d in difs_set if any(w in d.lower() for w in ["postura", "punho", "dedos", "falange", "articulação", "pedal"])]
                     ritmo_teoria = [d for d in difs_set if any(w in d.lower() for w in ["metrônomo", "ritmica", "clave", "solfejo", "teoria"])]
                     
-                    status_sec_atual = df_sec_f['Status'].iloc[-1] if not df_sec_f.empty else "Sem pendências"
-                    media_val = df_aulas['Nota_Desenv'].mean() if not df_aulas.empty else 0
+                    status_sec_atual = df_sec_f['Status'].iloc[-1] if not df_sec_f.empty else "Sem registros"
+                    media_val = df_aulas['Nota_Desenv'].mean() if (not df_aulas.empty and 'Nota_Desenv' in df_aulas.columns) else 0
                     freq_val = (len(df_ch[df_ch["Status"] == "Presente"]) / len(df_ch) * 100) if len(df_ch) > 0 else 0
 
                     st.session_state.analises_fixas_salvas[id_analise] = {
@@ -358,8 +361,8 @@ elif perfil == "📊 Analítico IA":
                         "qtd_aulas": len(df_aulas),
                         "freq": freq_val,
                         "status_sec": status_sec_atual,
-                        "difs_tecnica": ", ".join(tecnica) if tecnica else "Normal.",
-                        "difs_ritmo": ", ".join(ritmo_teoria) if ritmo_teoria else "Em dia.",
+                        "difs_tecnica": ", ".join(tecnica) if tecnica else "Nenhuma dificuldade técnica registrada.",
+                        "difs_ritmo": ", ".join(ritmo_teoria) if ritmo_teoria else "Sem pendências rítmicas/teóricas.",
                         "dicas": "Trabalhar independência de mãos e leitura na Clave de Fá.",
                         "banca": "Conferir articulação e postura de punho/falanges."
                     }
@@ -367,5 +370,4 @@ elif perfil == "📊 Analítico IA":
 
     with st.expander("📂 Histórico Bruto"):
         st.dataframe(df_f)
-
 
