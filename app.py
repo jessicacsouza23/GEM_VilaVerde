@@ -391,4 +391,3 @@ elif perfil == "📊 Analítico IA":
             st.subheader("📂 Logs de Atividades (Histórico Detalhado)")
             if not df_aulas.empty:
                 st.dataframe(df_aulas[['Data', 'Materia', 'Licao', 'Dificuldades', 'Instrutora', 'Obs']], use_container_width=True)
-
