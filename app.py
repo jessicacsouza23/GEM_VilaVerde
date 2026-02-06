@@ -114,10 +114,24 @@ if perfil == "🏠 Secretaria":
             with st.expander(f"📅 SÁBADO: {d_str}"):
                 if d_str not in st.session_state.calendario_anual:
                     c1, c2 = st.columns(2)
+                    
+                    # CORREÇÃO DO ERRO: Proteção com 'min()' para o index não estourar a lista
                     with c1:
-                        pt2, pt3, pt4 = [st.selectbox(f"Teoria H{i} ({d_str}):", PROFESSORAS_LISTA, index=i-2, key=f"pt{i}_{d_str}") for i in range(2, 5)]
+                        pt_campos = []
+                        for i in range(2, 5):
+                            idx_seguro = min(i-2, len(PROFESSORAS_LISTA)-1)
+                            sel = st.selectbox(f"Teoria H{i} ({d_str}):", PROFESSORAS_LISTA, index=idx_seguro, key=f"pt{i}_{d_str}")
+                            pt_campos.append(sel)
+                        pt2, pt3, pt4 = pt_campos
+                        
                     with c2:
-                        st2, st3, st4 = [st.selectbox(f"Solfejo H{i} ({d_str}):", PROFESSORAS_LISTA, index=i+1, key=f"st{i}_{d_str}") for i in range(2, 5)]
+                        st_campos = []
+                        for i in range(2, 5):
+                            idx_seguro = min(i+1, len(PROFESSORAS_LISTA)-1)
+                            sel = st.selectbox(f"Solfejo H{i} ({d_str}):", PROFESSORAS_LISTA, index=idx_seguro, key=f"st{i}_{d_str}")
+                            st_campos.append(sel)
+                        st2, st3, st4 = st_campos
+
                     folgas = st.multiselect(f"Folgas ({d_str}):", PROFESSORAS_LISTA, key=f"f_{d_str}")
 
                     if st.button(f"🚀 Gerar Rodízio para {d_str}", key=f"btn_{d_str}"):
@@ -150,7 +164,7 @@ if perfil == "🏠 Secretaria":
                         del st.session_state.calendario_anual[d_str]
                         st.rerun()
 
-    # --- ABA 2: CHAMADA GERAL ---
+    # --- ABA 2: CHAMADA GERAL (MANTIDA) ---
     with tab_chamada:
         st.subheader("📍 Chamada Geral")
         data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_chamada_unica")
@@ -167,10 +181,9 @@ if perfil == "🏠 Secretaria":
                 st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": reg["Aluna"], "Tipo": "Chamada", "Status": reg["Status"]})
             st.success("Chamada salva!")
 
-    # --- ABA 3: CORREÇÃO (MSA, APOSTILA E MATÉRIA) ---
+    # --- ABA 3: CORREÇÃO (CONFORME SOLICITADO) ---
     with tab_correcao:
         st.subheader("✅ Correção de Atividades")
-        # Aqui estava o erro: garantindo que SECRETARIAS exista
         sec_resp = st.selectbox("Secretária Responsável:", SECRETARIAS)
         alu_corr = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]))
         
@@ -196,8 +209,7 @@ if perfil == "🏠 Secretaria":
                 "Obs": obs_sec,
                 "Secretaria": sec_resp
             })
-            st.success("Corrigido!")
-            
+            st.success("Corrigido!")            
 # ========================================
 #              MÓDULO PROFESSORA
 # ==========================================
@@ -456,6 +468,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
