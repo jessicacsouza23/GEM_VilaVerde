@@ -234,11 +234,10 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.header("📊 Inteligência Pedagógica - Vila Verde")
 
-    # Inicialização da memória de análises fixas e variáveis de segurança
     if "analises_fixas_salvas" not in st.session_state:
         st.session_state.analises_fixas_salvas = {}
     
-    df_f = pd.DataFrame() # Segurança para evitar NameError
+    df_f = pd.DataFrame()
 
     if not st.session_state.historico_geral:
         st.info("Aguardando registros no histórico para iniciar as análises.")
@@ -251,92 +250,92 @@ elif perfil == "📊 Analítico IA":
         periodo_tipo = c2.selectbox("Tipo de Período:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
         data_ini_ref = c3.date_input("Data Inicial do Período:") 
 
-        # ID único para congelar a análise
         id_analise = f"{aluna_sel}_{data_ini_ref}_{periodo_tipo}"
 
-        # Lógica de Filtro
         df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y').dt.date
         delta = {"Diário":0, "Mensal":30, "Bimestral":60, "Semestral":180, "Anual":365}[periodo_tipo]
         d_fim = data_ini_ref + timedelta(days=delta)
         df_f = df_geral[(df_geral["Aluna"] == aluna_sel) & (df_geral["dt_obj"] >= data_ini_ref) & (df_geral["dt_obj"] <= d_fim)]
 
-        # VERIFICAÇÃO: Se já existe análise salva, mostra ela e ignora o resto
-        if id_analise in st.session_state.analises_fixas_salvas:
-            st.success(f"✅ Análise Congelada: Carregada do registro de {st.session_state.analises_fixas_salvas[id_analise]['data_geracao']}")
-            st.markdown(st.session_state.analises_fixas_salvas[id_analise]['conteudo'], unsafe_allow_html=True)
-        
-        elif df_f.empty:
-            st.warning(f"Nenhum dado encontrado para {aluna_sel} neste período.")
-        
-        else:
-            # Botão para gerar a nova análise baseada nos dados atuais
-            if st.button("✨ GERAR E SALVAR ANÁLISE PEDAGÓGICA"):
-                df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
-                df_sec = pd.DataFrame(st.session_state.correcoes_secretaria)
-                df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel] if not df_sec.empty else pd.DataFrame()
-                
-                # Cálculo de aproveitamento
-                def calc_nota(lista):
-                    if not isinstance(lista, list) or not lista: return 100.0
-                    return max(0.0, 100.0 - (len(lista) * 12.0))
-                
+        if not df_f.empty:
+            # --- SEÇÃO DE GRÁFICOS (SEMPRE VISÍVEL) ---
+            st.subheader("📈 Indicadores de Performance")
+            col_g1, col_g2 = st.columns(2)
+            
+            df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
+            df_ch = df_f[df_f["Tipo"] == "Chamada"]
+
+            with col_g1:
                 if not df_aulas.empty:
-                    df_aulas['Nota_Desenv'] = df_aulas['Dificuldades'].apply(calc_nota)
-                    media = df_aulas['Nota_Desenv'].mean()
-                else:
-                    media = 0
+                    st.write("**Desenvoltura por Disciplina**")
+                    def calc_nota(l):
+                        if not isinstance(l, list) or not l: return 100.0
+                        if "Não apresentou dificuldades" in l: return 100.0
+                        return max(0.0, 100.0 - (len(l) * 10.0))
+                    df_aulas['Nota'] = df_aulas['Dificuldades'].apply(calc_nota)
+                    st.bar_chart(df_aulas.groupby('Materia')['Nota'].mean())
+            
+            with col_g2:
+                if not df_ch.empty:
+                    st.write("**Frequência e Assiduidade**")
+                    st.bar_chart(df_ch["Status"].value_counts())
 
-                # --- MONTAGEM DO RELATÓRIO HTML ---
-                # Aqui juntamos todas as disciplinas e correções
-                estilo_caixa = "border: 2px solid #2E7D32; padding: 20px; border-radius: 12px; background-color: #f9fdf9;"
-                
-                conteudo = f"""
-                <div style="{estilo_caixa}">
-                    <h2 style="text-align: center; color: #1B5E20;">🎼 PARECER PEDAGÓGICO INTEGRADO</h2>
-                    <p style="text-align: center;"><b>Aluna:</b> {aluna_sel} | <b>Período:</b> {periodo_tipo}</p>
-                    <hr>
-                    <h4>📊 DESENVOLVIMENTO GLOBAL</h4>
-                    <p>Após analisar as aulas de <b>Prática, Teoria e Solfejo</b>, a aluna apresenta um índice de aproveitamento médio de <b>{media:.0f}%</b>.</p>
+            st.divider()
+
+            # --- VERIFICAÇÃO DE ANÁLISE SALVA ---
+            if id_analise in st.session_state.analises_fixas_salvas:
+                st.markdown(st.session_state.analises_fixas_salvas[id_analise]['conteudo'], unsafe_allow_html=True)
+            else:
+                if st.button("✨ GERAR E SALVAR PARECER PEDAGÓGICO"):
+                    df_sec = pd.DataFrame(st.session_state.correcoes_secretaria)
+                    df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel] if not df_sec.empty else pd.DataFrame()
                     
-                    <h4>📚 ATIVIDADES E SECRETARIA</h4>
-                    <p>No período, foram registradas {len(df_sec_f)} correções de atividades pela secretaria. O status geral das tarefas é: 
-                    <b>{df_sec_f['Status'].iloc[-1] if not df_sec_f.empty else 'Sem registros'}</b>.</p>
+                    # Organizar dificuldades por categorias para leitura "bonita"
+                    todas_difs = [d for l in df_aulas['Dificuldades'] for d in l if l]
+                    difs_set = set(todas_difs)
+                    
+                    # Filtros inteligentes de texto
+                    tecnica = [d for d in difs_set if "postura" in d.lower() or "punho" in d.lower() or "articulação" in d.lower()]
+                    ritmo = [d for d in difs_set if "metrônomo" in d.lower() or "ritmica" in d.lower()]
+                    teoria = [d for d in difs_set if "clave" in d.lower() or "notas" in d.lower()]
 
-                    <h4>🔍 O QUE MELHORAR</h4>
-                    <p>Com base nas dificuldades recorrentes, a aluna deve focar em: 
-                    <i>{", ".join(list(set([d for l in df_aulas['Dificuldades'] for d in l if l]))) if not df_aulas.empty else 'Evolução constante sem bloqueios técnicos'}</i>.</p>
-                """
+                    # Montagem do HTML Pedagógico
+                    conteudo = f"""
+                    <div style="background-color: #ffffff; padding: 25px; border: 1px solid #e0e0e0; border-radius: 15px; font-family: sans-serif; color: #333;">
+                        <h2 style="color: #2e7d32; border-bottom: 2px solid #2e7d32; padding-bottom: 10px;">📋 Relatório de Evolução Musical</h2>
+                        
+                        <div style="display: flex; justify-content: space-between; margin-top: 15px;">
+                            <span><b>Aluna:</b> {aluna_sel}</span>
+                            <span><b>Data:</b> {datetime.now().strftime('%d/%m/%Y')}</span>
+                        </div>
+                        
+                        <p style="margin-top: 20px;">No período avaliado (<b>{periodo_tipo}</b>), a aluna demonstrou um desenvolvimento que exige atenção em pontos específicos de base técnica e teórica.</p>
+                        
+                        <h4 style="color: #1976d2; margin-bottom: 5px;">🎹 Desenvolvimento Técnico</h4>
+                        <p>Identificamos a necessidade de correção em: {", ".join(tecnica) if tecnica else "Postura adequada"}. A articulação e o posicionamento de punho são fundamentais para o avanço no método.</p>
 
-                # Dicas Específicas para Semestral/Anual
-                if periodo_tipo in ["Semestral", "Anual"]:
-                    conteudo += """
-                    <div style="background-color: #E3F2FD; padding: 15px; border-radius: 8px; border-left: 6px solid #1976D2; margin-top: 10px;">
-                        <h4 style="margin-top: 0; color: #0D47A1;">🎯 DICAS PARA AVALIAÇÃO (BANCA SEMESTRAL)</h4>
-                        <ul>
-                            <li><b>Técnica:</b> Avaliar rigorosamente a articulação dos dedos (não "adentrar" às teclas).</li>
-                            <li><b>Hinos:</b> Cobrar a respiração correta nos fraseados e a postura da pedaleira.</li>
-                            <li><b>Teoria:</b> Realizar teste oral sobre a fórmula de compasso e valores das figuras.</li>
-                        </ul>
+                        <h4 style="color: #d32f2f; margin-bottom: 5px;">⏱️ Ritmo e Pulsação</h4>
+                        <p>A aluna apresenta dificuldades com: {", ".join(ritmo) if ritmo else "Estabilidade rítmica"}. É indispensável o uso do metrônomo em todos os estudos diários.</p>
+
+                        <h4 style="color: #ef6c00; margin-bottom: 5px;">📚 Conhecimento Teórico</h4>
+                        <p>Observamos lacunas em: {", ".join(teoria) if teoria else "Leitura de partitura"}. O status das atividades na secretaria encontra-se como: <b>{df_sec_f['Status'].iloc[-1] if not df_sec_f.empty else 'Sem pendências recentes'}</b>.</p>
+
+                        <div style="background-color: #f1f8e9; padding: 15px; border-radius: 10px; margin-top: 20px;">
+                            <h4 style="color: #2e7d32; margin-top: 0;">💡 Orientação para a Próxima Instrutora</h4>
+                            <p><b>Prioridade:</b> Integrar a leitura de notas na Clave de Fá com exercícios rítmicos simples. Não avançar a lição sem a estabilidade do metrônomo.</p>
+                        </div>
+                        
+                        <p style="font-size: 10px; color: #999; margin-top: 20px; text-align: right;">Documento Digital GEM Vila Verde - Fixado em {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
                     </div>
                     """
-                
-                conteudo += f"""
-                    <h4 style="color: #E65100;">💡 DICAS PARA AS PRÓXIMAS AULAS</h4>
-                    <p>Recomendamos que a instrutora da próxima semana priorize o uso do metrônomo e a leitura na Clave de Fá, integrando a teoria à prática do órgão.</p>
-                    <p style="font-size: 11px; color: #757575; margin-top: 20px;">Análise fixada em: {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
-                </div>
-                """
 
-                # Salva permanentemente no estado da sessão
-                st.session_state.analises_fixas_salvas[id_analise] = {
-                    "data_geracao": datetime.now().strftime("%d/%m/%Y"),
-                    "conteudo": conteudo
-                }
-                st.rerun()
+                    st.session_state.analises_fixas_salvas[id_analise] = {
+                        "data_geracao": datetime.now().strftime("%d/%m/%Y"),
+                        "conteudo": conteudo
+                    }
+                    st.rerun()
 
-    # Histórico de Dados Brutos (Aparece apenas se houver dados e UMA ÚNICA VEZ)
-    if not df_f.empty:
-        with st.expander("📂 Conferir Histórico de Dados Brutos"):
+        with st.expander("📂 Histórico de Dados Brutos"):
             st.dataframe(df_f)
 
 
