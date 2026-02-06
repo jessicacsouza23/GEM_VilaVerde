@@ -28,7 +28,10 @@ def db_get_calendario():
     except: return {}
 
 def db_save_calendario(d_str, escala):
-    supabase.table("calendario").upsert({"id": d_str, "escala": escala}).execute()
+    try:
+        supabase.table("calendario").upsert({"id": d_str, "escala": escala}).execute()
+    except Exception as e:
+        st.error(f"Erro de Permissão (RLS) no Calendário: {e}")
 
 def db_delete_calendario(d_str):
     supabase.table("calendario").delete().eq("id", d_str).execute()
@@ -40,27 +43,19 @@ def db_get_historico():
     except: return []
 
 def db_save_historico(dados):
-    # CORREÇÃO CRÍTICA: Transforma a lista de dificuldades em uma string única
-    # Isso evita o erro APIError/Postgrest no Supabase
+    # Tratamento de lista para string (evita erro de tipo)
     if "Dificuldades" in dados and isinstance(dados["Dificuldades"], list):
         dados["Dificuldades"] = ", ".join(dados["Dificuldades"]) if dados["Dificuldades"] else "Nenhuma"
     
     try:
         supabase.table("historico_geral").insert(dados).execute()
+        return True
     except Exception as e:
-        st.error(f"Erro ao salvar no banco: {e}")
-
-def db_get_correcoes():
-    try:
-        res = supabase.table("correcoes_secretaria").select("*").execute()
-        return res.data
-    except: return []
-
-def db_save_correcao(dados):
-    try:
-        supabase.table("correcoes_secretaria").insert(dados).execute()
-    except Exception as e:
-        st.error(f"Erro ao salvar correção: {e}")
+        if "42501" in str(e):
+            st.error("🚨 Erro de Segurança (RLS): Você precisa ativar a política de INSERT para a tabela 'historico_geral' no painel do Supabase.")
+        else:
+            st.error(f"Erro ao salvar: {e}")
+        return False
 
 # --- BANCO DE DADOS MESTRE ---
 TURMAS = {
@@ -93,7 +88,7 @@ historico_geral = db_get_historico()
 #              MÓDULO SECRETARIA
 # ==========================================
 if perfil == "🏠 Secretaria":
-    tab_gerar, tab_chamada, tab_correcao = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Correção de Atividades"])
+    tab_gerar, tab_chamada = st.tabs(["🗓️ Planejamento de Rodízio", "📍 Chamada"])
 
     with tab_gerar:
         st.subheader("🗓️ Gestão de Rodízios")
@@ -146,26 +141,16 @@ if perfil == "🏠 Secretaria":
                         st.rerun()
 
     with tab_chamada:
-        st.subheader("📍 Chamada Geral")
-        # Interface de chamada simplificada para salvar
-        data_ch = st.selectbox("Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="sel_data_ch")
+        st.subheader("📍 Chamada Rápida")
+        data_ch = st.selectbox("Data da Chamada:", [s.strftime("%d/%m/%Y") for s in sabados])
         for t_nome, alunas in TURMAS.items():
             with st.expander(f"Chamada {t_nome}"):
                 for aluna in alunas:
                     c1, c2 = st.columns([3, 2])
                     status = c2.radio(f"{aluna}", ["P", "F", "J"], horizontal=True, key=f"ch_{aluna}_{data_ch}")
-                    if st.button(f"Confirmar {aluna}", key=f"btn_ch_{aluna}"):
-                        db_save_historico({"Data": data_ch, "Aluna": aluna, "Tipo": "Chamada", "Status": status})
-                        st.toast(f"Salvo: {aluna}")
-
-    with tab_correcao:
-        st.subheader("✅ Correção de Atividades")
-        sec_r = st.selectbox("Secretária:", SECRETARIAS)
-        alu_c = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]), key="alu_corr_sec")
-        status_c = st.radio("Status:", ["Realizada", "Não Realizada", "Pendente"], horizontal=True)
-        if st.button("Salvar Correção"):
-            db_save_correcao({"Data": datetime.now().strftime("%d/%m/%Y"), "Aluna": alu_c, "Secretaria": sec_r, "Status": status_c})
-            st.success("Registrado!")
+                    if st.button(f"Salvar {aluna}", key=f"btn_ch_{aluna}"):
+                        if db_save_historico({"Data": data_ch, "Aluna": aluna, "Tipo": "Chamada", "Status": status}):
+                            st.toast(f"{aluna} salvo!")
 
 # ==========================================
 #              MÓDULO PROFESSORA
@@ -186,44 +171,47 @@ elif perfil == "👩‍🏫 Professora":
             
             check_alunas = [atend['Aluna']] if mat == "Prática" else [a for a in TURMAS[atend['Turma']] if st.checkbox(a, value=True, key=f"aula_{a}")]
             
+            # --- FORMULÁRIO DETALHADO PEDAGÓGICO ---
             selecionadas = []
-            
             if mat == "Prática":
-                st.subheader("🎹 Dificuldades Observadas")
-                dif_list = [
-                    "Dificuldade rítmica", "Postura (Costas/Braços)", "Punho alto/baixo", 
-                    "Quebrando falanges", "Dificuldade com metrônomo", "Leitura Clave de Sol",
-                    "Leitura Clave de Fá", "Articulação ligada/semiligada", "Uso do pedal",
-                    "Dedilhado incorreto", "Não estudou", "Sem dificuldades"
+                st.subheader("🎹 Área: Postura e Técnica")
+                dif_pr = [
+                    "Postura (Costas/Ombros/Braços)", "Punho alto/baixo", "Quebrando falanges", 
+                    "Dedos não arredondados", "Pé fora do pedal de expressão", "Movimentos desnecessários na pedaleira",
+                    "Dificuldade rítmica", "Dificuldade metrônomo", "Leitura Clave Sol", "Leitura Clave Fá",
+                    "Articulação ligada/semiligada", "Respirações/Fraseado", "Não estudou", "Sem dificuldades"
                 ]
             else:
-                st.subheader("📚 Dificuldades Teóricas/Solfejo")
-                dif_list = [
-                    "Leitura rítmica", "Leitura métrica", "Afinação no solfejo",
-                    "Movimento das mãos", "Teoria básica (notas/pausas)", "Não realizou exercícios",
-                    "Sem dificuldades"
+                st.subheader("📚 Área: Teoria e Solfejo")
+                dif_pr = [
+                    "Leitura rítmica", "Leitura métrica", "Solfejo (Afinação)", "Movimento das mãos",
+                    "Teoria básica", "Não realizou as atividades", "Sem dificuldades"
                 ]
 
             cols = st.columns(2)
-            for i, d in enumerate(dif_list):
+            for i, d in enumerate(dif_pr):
                 if cols[i % 2].checkbox(d, key=f"dif_{i}"): selecionadas.append(d)
             
+            st.divider()
             lic_hj = st.text_input("Lição tratada hoje:")
-            prox_m = st.text_input("Lição de casa (Método):")
-            prox_a = st.text_input("Lição de casa (Apostila):")
-            obs_p = st.text_area("Relato de Evolução:")
+            prox_m = st.text_input("Tarefa - Método/Volume:")
+            prox_a = st.text_input("Tarefa - Apostila:")
+            obs_p = st.text_area("Relato de Evolução (Pedagógico):")
 
             if st.button("💾 SALVAR REGISTRO DE AULA", type="primary"):
+                sucesso = True
                 for aluna in check_alunas:
-                    db_save_historico({
+                    res = db_save_historico({
                         "Data": d_str, "Aluna": aluna, "Tipo": "Aula", "Materia": mat,
                         "Licao": lic_hj, "Dificuldades": selecionadas, "Obs": obs_p,
                         "Home_M": prox_m, "Home_A": prox_a, "Instrutora": instr_sel
                     })
-                st.success("Aula registrada com sucesso!")
-                st.balloons()
+                    if not res: sucesso = False
+                if sucesso:
+                    st.success("Aula registrada!")
+                    st.balloons()
         else:
-            st.info("Você não possui aula agendada para este horário.")
+            st.info("Nenhuma aula agendada para você neste horário.")
     else:
         st.error("Rodízio não disponível para esta data.")
 
@@ -231,9 +219,8 @@ elif perfil == "👩‍🏫 Professora":
 #              MÓDULO ANALÍTICO
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.header("📊 Inteligência de Dados")
+    st.header("📊 Dados Consolidados")
     if historico_geral:
-        df = pd.DataFrame(historico_geral)
-        st.dataframe(df)
+        st.dataframe(pd.DataFrame(historico_geral))
     else:
-        st.info("Nenhum dado para exibir.")
+        st.info("Aguardando registros.")
