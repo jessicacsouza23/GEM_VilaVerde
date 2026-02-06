@@ -1,21 +1,20 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-import calendar
+from datetime import datetime
 from google.cloud import firestore
 from google.oauth2 import service_account
-import json
 
 # --- CONFIGURAÇÕES DE PÁGINA ---
 st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide", page_icon="🎼")
 
-# --- CONEXÃO COM BANCO DE DADOS (FIRESTORE) ---
+# --- CONEXÃO COM BANCO DE DADOS (FIRESTORE) BLINDADA ---
 def init_connection():
     try:
-        # A correção técnica para o "Incorrect Padding" está aqui:
-        # .strip() remove espaços e .replace garante que as quebras de linha sejam interpretadas
-        pk = st.secrets["private_key"].replace("\\n", "\n").strip()
+        # Tratamento rigoroso da chave para evitar erro de Base64/Padding
+        pk = st.secrets["private_key"]
+        if isinstance(pk, str):
+            pk = pk.replace("\\n", "\n").strip()
         
         creds_dict = {
             "type": st.secrets["type"],
@@ -38,7 +37,7 @@ def init_connection():
 
 db = init_connection()
 
-# --- FUNÇÕES DE PERSISTÊNCIA ---
+# --- FUNÇÕES DE BANCO ---
 def db_save(colecao, documento, dados):
     if db:
         try:
@@ -54,7 +53,7 @@ def db_get_all(colecao):
         except: return []
     return []
 
-# --- BANCO DE DADOS MESTRE (SEUS DADOS ORIGINAIS) ---
+# --- CONTEÚDOS ORIGINAIS (RESTABELECIDOS) ---
 TURMAS = {
     "Turma 1": ["Rebecca A.", "Amanda S.", "Ingrid M.", "Rebeka S.", "Mellina S.", "Rebeca R.", "Caroline C."],
     "Turma 2": ["Vitória A.", "Elisa F.", "Sarah S.", "Gabrielly C. V.", "Emily O.", "Julya O.", "Stephany O."],
@@ -70,152 +69,114 @@ HORARIOS_LABELS = [
     "10h45 às 11h15 (4ª Aula)"
 ]
 
-# --- INICIALIZAÇÃO DE DADOS ---
-if "calendario_anual" not in st.session_state:
-    rodizios_db = db_get_all("rodizios")
-    st.session_state.calendario_anual = {r['id']: r['dados'] for r in rodizios_db if 'id' in r}
+DIFICULDADES_PRATICA = [
+    "Não estudou nada", "Estudou de forma insatisfatória", "Não assistiu os vídeos dos métodos",
+    "Dificuldade ritmica", "Dificuldade em distinguir os nomes das figuras ritmicas",
+    "Está adentrando às teclas", "Dificuldade com a postura (costas, ombros e braços)",
+    "Está deixando o punho alto ou baixo", "Não senta no centro da banqueta", "Está quebrando as falanges",
+    "Unhas muito compridas", "Dificuldade em deixar os dedos arredondados",
+    "Esquece de colocar o pé direito no pedal de expressão", "Faz movimentos desnecessários com o pé esquerdo na pedaleira",
+    "Dificuldade com the uso do metrônomo", "Estuda sem o metrônomo", "Dificuldades em ler as notas na clave de sol",
+    "Dificuldades em ler as notas na clave de fá", "Não realizou as atividades da apostila",
+    "Dificuldade em fazer a articulação ligada e semiligada", "Dificuldade com as respirações",
+    "Dificuldade com as respirações sobre passagem", "Dificuldades em recurso de dedilhado",
+    "Dificuldade em fazer nota de apoio", "Não apresentou dificuldades"
+]
+
+DIFICULDADES_TEORIA = [
+    "Não assistiu os vídeos complementares", "Dificuldades em ler as notas na clave de sol",
+    "Dificuldades em ler as notas na clave de fá", "Dificuldade no uso do metrônomo", "Estuda sem metrônomo",
+    "Não realizou as atividades", "Dificuldade em leitura ritmica", "Dificuldades em leitura métrica",
+    "Dificuldade em solfejo (afinação)", "Dificuldades no movimento da mão",
+    "Dificuldades na ordem das notas", "Não realizou as atividades da apostila",
+    "Não estudou nada", "Estudou de forma insatisfatória", "Não apresentou dificuldades"
+]
 
 # --- INTERFACE ---
-st.title("🎼 GEM Vila Verde - Gestão 2026")
+st.sidebar.title("MENU GEM")
 perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
 
-# ==========================================
-#              MÓDULO SECRETARIA
-# ==========================================
 if perfil == "🏠 Secretaria":
-    tab_gerar, tab_chamada, tab_correcao = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Correção"])
+    st.header("🏠 Gestão da Secretaria")
+    tab1, tab2 = st.tabs(["🗓️ Rodízio", "📊 Resumo Geral"])
     
-    with tab_gerar:
-        st.subheader("🗓️ Gestão de Rodízios Semanais")
-        # Aqui mantive a lógica que você usa para definir datas e instrutoras
-        data_sel = st.date_input("Data do Sábado:", value=datetime.now())
-        d_str = data_sel.strftime("%d/%m/%Y")
-        
-        if st.button(f"🚀 Gerar Rodízio para {d_str}"):
-            escala_final = []
-            for t_nome, alunas in TURMAS.items():
-                for aluna in alunas:
-                    escala_final.append({
-                        "Aluna": aluna, "Turma": t_nome, 
-                        HORARIOS_LABELS[0]: "⛪ IGREJA",
-                        HORARIOS_LABELS[1]: f"🎹 Prática", 
-                        HORARIOS_LABELS[2]: f"📚 Teoria", 
-                        HORARIOS_LABELS[3]: f"🔊 Solfejo"
-                    })
-            db_save("rodizios", d_str.replace("/", "_"), {"id": d_str, "dados": escala_final})
-            st.success("Rodízio salvo com sucesso!")
-            st.rerun()
+    with tab1:
+        data_r = st.date_input("Data do Sábado:")
+        if st.button("Gerar Base de Rodízio"):
+            escala = []
+            for t, alunas in TURMAS.items():
+                for a in alunas:
+                    escala.append({"Aluna": a, "Turma": t, HORARIOS_LABELS[1]: "Prática", HORARIOS_LABELS[2]: "Teoria"})
+            db_save("rodizios", data_r.strftime("%d_%m_%Y"), {"id": data_r.strftime("%d/%m/%Y"), "dados": escala})
+            st.success("Base de rodízio criada!")
 
-# ==========================================
-#              MÓDULO PROFESSORA
-# ==========================================
 elif perfil == "👩‍🏫 Professora":
-    st.header("👩‍🏫 Diário de Classe Digital")
-    instr_sel = st.selectbox("👤 Identificação:", PROFESSORAS_LISTA)
-    data_p = st.date_input("Data:", value=datetime.now())
-    d_str = data_p.strftime("%d/%m/%Y")
-
-    if d_str in st.session_state.calendario_anual:
-        h_sel = st.radio("⏰ Horário:", HORARIOS_LABELS, horizontal=True)
-        # Busca automática no rodízio
-        atend = next((l for l in st.session_state.calendario_anual[d_str] if instr_sel in str(l.values())), None)
+    st.header("👩‍🏫 Diário de Classe")
+    instr_sel = st.selectbox("Professora:", PROFESSORAS_LISTA)
+    data_aula = st.date_input("Data:")
+    d_str = data_aula.strftime("%d/%m/%Y")
+    
+    # Busca rodízio
+    rodizios = db_get_all("rodizios")
+    dia_atual = next((r for r in rodizios if r['id'] == d_str), None)
+    
+    if dia_atual:
+        h_sel = st.radio("Horário:", HORARIOS_LABELS, horizontal=True)
+        st.subheader("Registro de Aula")
+        mat = st.selectbox("Matéria:", ["Prática", "Teoria", "Solfejo"])
+        aluna_n = st.selectbox("Aluna:", [a for t in TURMAS.values() for a in t])
         
-        if atend:
-            # Lógica para identificar matéria
-            conteudo_celula = str(atend.values())
-            mat = "Teoria" if "Teoria" in conteudo_celula else ("Solfejo" if "Solfejo" in conteudo_celula else "Prática")
-            aluna_atual = atend.get('Aluna', 'Turma selecionada')
-            st.warning(f"📍 **ATENDIMENTO:** {aluna_atual} | {mat}")
+        lista_dif = DIFICULDADES_PRATICA if mat == "Prática" else DIFICULDADES_TEORIA
+        selecionadas = []
+        col_d1, col_d2 = st.columns(2)
+        for i, d in enumerate(lista_dif):
+            if (col_d1 if i < len(lista_dif)/2 else col_d2).checkbox(d):
+                selecionadas.append(d)
+        
+        obs = st.text_area("Relato Pedagógico Detalhado:")
+        
+        if st.button("💾 SALVAR AULA"):
+            doc_id = f"{aluna_n}_{datetime.now().timestamp()}".replace(".","")
+            db_save("historico_geral", doc_id, {
+                "Data": d_str, "Aluna": aluna_n, "Materia": mat, 
+                "Dificuldades": selecionadas, "Obs": obs, "Instrutora": instr_sel
+            })
+            st.success("Registro salvo no histórico!")
+    else:
+        st.info("Nenhum rodízio encontrado para esta data.")
 
-            # --- FORMULÁRIO PRÁTICA (ITENS ORIGINAIS RESTAURADOS) ---
-            if mat == "Prática":
-                lic_aula = st.selectbox("Lição/Volume:", [str(i) for i in range(1, 41)] + ["Hino", "Corinho"])
-                dif_pr = [
-                    "Não estudou nada", "Estudou de forma insatisfatória", "Não assistiu os vídeos dos métodos",
-                    "Dificuldade ritmica", "Dificuldade em distinguir os nomes das figuras ritmicas",
-                    "Está adentrando às teclas", "Dificuldade com a postura (costas, ombros e braços)",
-                    "Está deixando o punho alto ou baixo", "Não senta no centro da banqueta", "Está quebrando as falanges",
-                    "Unhas muito compridas", "Dificuldade em deixar os dedos arredondados",
-                    "Esquece de colocar o pé direito no pedal de expressão", "Faz movimentos desnecessários com o pé esquerdo na pedaleira",
-                    "Dificuldade com o uso do metrônomo", "Estuda sem o metrônomo", "Dificuldades em ler as notas na clave de sol",
-                    "Dificuldades em ler as notas na clave de fá", "Não realizou as atividades da apostila",
-                    "Dificuldade em fazer a articulação ligada e semiligada", "Dificuldade com as respirações",
-                    "Dificuldade com as respirações sobre passagem", "Dificuldades em recurso de dedilhado",
-                    "Dificuldade em fazer nota de apoio", "Não apresentou dificuldades"
-                ]
-                selecionadas = []
-                c1, c2 = st.columns(2)
-                for i, d in enumerate(dif_pr):
-                    if (c1 if i < 13 else c2).checkbox(d): selecionadas.append(d)
-                
-                home_m = st.selectbox("Lição de casa - Volume:", [str(i) for i in range(1, 41)])
-                home_a = st.text_input("Lição de casa - Apostila:")
-                obs = st.text_area("Relato de Evolução:")
-
-                if st.button("💾 SALVAR AULA"):
-                    doc_id = f"PR_{aluna_atual}_{datetime.now().timestamp()}".replace(".","")
-                    dados = {"Data": d_str, "Aluna": aluna_atual, "Materia": mat, "Dificuldades": selecionadas, "Obs": obs, "Home_M": home_m, "Home_A": home_a, "Instrutora": instr_sel}
-                    db_save("historico_geral", doc_id, dados)
-                    st.success("Salvo!")
-
-            # --- FORMULÁRIO TEORIA/SOLFEJO (ITENS ORIGINAIS RESTAURADOS) ---
-            else:
-                turma_sel = atend.get('Turma', 'Turma 1')
-                check_alunas = [a for a in TURMAS[turma_sel] if st.checkbox(a, value=True)]
-                dif_ts = [
-                    "Não assistiu os vídeos complementares", "Dificuldades em ler as notas na clave de sol",
-                    "Dificuldades em ler as notas na clave de fá", "Dificuldade no uso do metrônomo", "Estuda sem metrônomo",
-                    "Não realizou as atividades", "Dificuldade em leitura ritmica", "Dificuldades em leitura métrica",
-                    "Dificuldade em solfejo (afinação)", "Dificuldades no movimento da mão",
-                    "Dificuldades na ordem das notas", "Não realizou as atividades da apostila",
-                    "Não estudou nada", "Estudou de forma insatisfatória", "Não apresentou dificuldades"
-                ]
-                selecionadas = []
-                c1, c2 = st.columns(2)
-                for i, d in enumerate(dif_ts):
-                    if (c1 if i < 8 else c2).checkbox(d): selecionadas.append(d)
-                
-                obs = st.text_area("Notas Pedagógicas:")
-                if st.button("💾 SALVAR TURMA"):
-                    for aluna in check_alunas:
-                        doc_id = f"TS_{aluna}_{datetime.now().timestamp()}".replace(".","")
-                        db_save("historico_geral", doc_id, {"Data": d_str, "Aluna": aluna, "Materia": mat, "Dificuldades": selecionadas, "Obs": obs, "Instrutora": instr_sel})
-                    st.success("Salvo para a turma!")
-
-# ==========================================
-#              MÓDULO ANALÍTICO IA
-# ==========================================
 elif perfil == "📊 Analítico IA":
-    st.header("📊 Inteligência Pedagógica (Banca Semestral)")
-    # (Lógica de análise por área integrada conforme seu pedido)
-    historico = db_get_all("historico_geral")
-    if historico:
-        df = pd.DataFrame(historico)
-        aluna_sel = st.selectbox("Selecione a Aluna:", sorted(df["Aluna"].unique()))
-        df_alu = df[df["Aluna"] == aluna_sel].sort_values("Data", ascending=False)
+    st.header("📊 Análise Pedagógica Completa")
+    hist = db_get_all("historico_geral")
+    if hist:
+        df = pd.DataFrame(hist)
+        aluna_sel = st.selectbox("Selecione a Aluna para a Banca:", sorted(df["Aluna"].unique()))
+        df_alu = df[df["Aluna"] == aluna_sel]
         
-        # Agrupamento por Áreas Pedagógicas
+        # --- ANÁLISE POR ÁREAS (POSTURA, TÉCNICA, RITMO, TEORIA) ---
         todas_difs = [d for lista in df_alu["Dificuldades"] for d in lista]
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.error("**🧘 POSTURA**")
-            items = [d for d in set(todas_difs) if any(x in d.lower() for x in ["punho", "falange", "postura", "banqueta", "teclas", "dedos"])]
-            st.write(items if items else "✅ Sem pendências")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.error("🧘 **POSTURA**")
+            p = [d for d in set(todas_difs) if any(x in d.lower() for x in ["postura", "punho", "falange", "unha", "banqueta", "teclas", "dedo"])]
+            st.write(p if p else "✅ Ok")
             
-            st.warning("**🎹 TÉCNICA**")
-            items = [d for d in set(todas_difs) if any(x in d.lower() for x in ["clave", "articulação", "respiração", "dedilhado", "pedal"])]
-            st.write(items if items else "✅ Sem pendências")
+            st.warning("🎹 **TÉCNICA**")
+            t = [d for d in set(todas_difs) if any(x in d.lower() for x in ["articulação", "respiração", "dedilhado", "apoio", "clave"])]
+            st.write(t if t else "✅ Ok")
             
-        with col2:
-            st.info("**⏳ RITMO**")
-            items = [d for d in set(todas_difs) if any(x in d.lower() for x in ["metrônomo", "ritmica", "figuras"])]
-            st.write(items if items else "✅ Sem pendências")
+        with c2:
+            st.info("⏳ **RITMO**")
+            r = [d for d in set(todas_difs) if any(x in d.lower() for x in ["metrônomo", "ritmica", "figuras"])]
+            st.write(r if r else "✅ Ok")
             
-            st.success("**📖 TEORIA**")
-            items = [d for d in set(todas_difs) if any(x in d.lower() for x in ["vídeos", "apostila", "atividades", "estudou"])]
-            st.write(items if items else "✅ Sem pendências")
-        
+            st.success("📖 **TEORIA**")
+            te = [d for d in set(todas_difs) if any(x in d.lower() for x in ["vídeos", "apostila", "atividades", "estudou"])]
+            st.write(te if te else "✅ Ok")
+            
         st.divider()
-        st.subheader("🎯 Dicas para a Banca")
-        st.info(f"Focar no próximo treino: {todas_difs[-1] if todas_difs else 'Manter evolução'}")
+        st.subheader("🎯 Dicas Específicas para a Banca")
+        st.markdown(f"**Meta Próxima Aula:** {df_alu['Obs'].iloc[-1]}")
+        if r: st.write("- Intensificar uso do metrônomo em casa.")
+        if p: st.write("- Corrigir postura de mãos e dedos antes de iniciar as lições.")
