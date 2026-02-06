@@ -78,7 +78,7 @@ def get_sabados_do_mes(ano, mes):
 
 # --- INTERFACE ---
 st.title("🎼 GEM Vila Verde - Gestão 2026")
-perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA", "⚙️ Configurações"])
+perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
 
 calendario_anual = db_get_calendario()
 historico_geral = db_get_historico()
@@ -151,6 +151,91 @@ if perfil == "🏠 Secretaria":
                     if st.button(f"Salvar {aluna}", key=f"b_{aluna}"):
                         db_save_historico({"Data": dt_ch, "Aluna": aluna, "Tipo": "Chamada", "Status": st_ch})
                         st.toast(f"Presença de {aluna} salva!")
+# ==========================================
+#              MÓDULO SECRETARIA
+# ==========================================
+elif perfil == "🏢 Secretaria":
+    st.header("🏢 Gestão e Correção de Atividades")
+    
+    if not historico_geral:
+        st.info("Nenhum registro encontrado para correção.")
+    else:
+        df_edit = pd.DataFrame(historico_geral)
+        
+        # --- FILTROS DE BUSCA ---
+        st.subheader("🔍 Localizar Registro")
+        c1, c2, c3 = st.columns(3)
+        aluna_f = c1.selectbox("Filtrar Aluna:", ["Todas"] + sorted(df_edit["Aluna"].unique().tolist()))
+        data_f = c2.date_input("Filtrar Data (Opcional):", value=None)
+        tipo_f = c3.selectbox("Tipo de Registro:", ["Todos", "Aula", "Chamada"])
+
+        # Aplicando filtros no DataFrame de edição
+        df_filtrado = df_edit.copy()
+        if aluna_f != "Todas":
+            df_filtrado = df_filtrado[df_filtrado["Aluna"] == aluna_f]
+        if data_f:
+            d_str_f = data_f.strftime("%d/%m/%Y")
+            df_filtrado = df_filtrado[df_filtrado["Data"] == d_str_f]
+        if tipo_f != "Todos":
+            df_filtrado = df_filtrado[df_filtrado["Tipo"] == tipo_f]
+
+        st.write(f"Exibindo **{len(df_filtrado)}** registros:")
+
+        # --- ÁREA DE EDIÇÃO ---
+        for index, row in df_filtrado.iterrows():
+            with st.expander(f"📝 {row['Data']} - {row['Aluna']} ({row['Materia'] if 'Materia' in row else row['Tipo']})"):
+                # Criando campos de edição baseados nos dados existentes
+                col_ed1, col_ed2 = st.columns(2)
+                
+                nova_licao = col_ed1.text_input("Lição Dada:", value=row.get('Licao', ''), key=f"lic_{index}")
+                nova_instr = col_ed2.text_input("Instrutora:", value=row.get('Instrutora', ''), key=f"ins_{index}")
+                
+                novas_difs = st.text_area("Dificuldades (separadas por vírgula):", 
+                                         value=row.get('Dificuldades', ''), key=f"dif_{index}")
+                
+                nova_obs = st.text_area("Relato Pedagógico:", value=row.get('Obs', ''), key=f"obs_{index}")
+                
+                c_ed3, c_ed4, c_ed5 = st.columns(3)
+                novo_hm = c_ed3.text_input("Casa (Método):", value=row.get('Home_M', ''), key=f"hm_{index}")
+                novo_ha = c_ed4.text_input("Casa (Apostila):", value=row.get('Home_A', ''), key=f"ha_{index}")
+                novo_status = c_ed5.selectbox("Status (se for chamada):", ["P", "F", "J"], 
+                                             index=["P", "F", "J"].index(row['Status']) if row['Status'] in ["P", "F", "J"] else 0,
+                                             key=f"st_{index}")
+
+                # --- BOTÕES DE AÇÃO ---
+                b_col1, b_col2 = st.columns([1, 4])
+                
+                if b_col1.button("✅ ATUALIZAR", key=f"save_{index}", type="primary"):
+                    # Lógica para atualizar no banco de dados
+                    # Aqui você deve chamar a função db_save_historico passando o ID se tiver, 
+                    # ou substituir no st.session_state se for teste:
+                    st.session_state.historico_geral[index].update({
+                        "Licao": nova_licao,
+                        "Instrutora": nova_instr,
+                        "Dificuldades": novas_difs,
+                        "Obs": nova_obs,
+                        "Home_M": novo_hm,
+                        "Home_A": novo_ha,
+                        "Status": novo_status
+                    })
+                    st.success("Alteração salva com sucesso!")
+                    st.rerun()
+
+                if b_col2.button("🗑️ EXCLUIR REGISTRO", key=f"del_{index}"):
+                    st.session_state.historico_geral.pop(index)
+                    st.warning("Registro removido!")
+                    st.rerun()
+
+    st.divider()
+    st.subheader("📊 Resumo de Pendências")
+    # Pequeno painel para a secretaria ver quem está faltando muito
+    if not df_edit.empty and "Status" in df_edit.columns:
+        faltas = df_edit[df_edit["Status"] == "F"].groupby("Aluna").size()
+        if not faltas.empty:
+            st.write("**Alunas com Faltas:**")
+            st.bar_chart(faltas)
+        else:
+            st.success("Nenhuma falta registrada no período.")
 
 # ==========================================
 #              MÓDULO PROFESSORA
@@ -410,56 +495,4 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
-
-# ==========================================
-#              MÓDULO ADMIN (LIMPEZA)
-# ==========================================
-elif perfil == "⚙️ Configurações":
-    st.header("⚙️ Administração do Sistema")
-    st.warning("Área restrita para manutenção do banco de dados.")
-
-    st.subheader("🗑️ Limpeza de Dados")
-    st.write("Deseja apagar todos os registros de teste e zerar o sistema?")
-    
-    # Campo de confirmação para evitar cliques acidentais
-    confirmacao = st.text_input("Digite 'APAGAR' para liberar o botão:", key="confirm_delete")
-    
-    if confirmacao == "APAGAR":
-       if st.button("🔥 LIMPAR APENAS TESTES (Aulas/Análises)", type="primary"):
-            try:
-                # 1. Limpa as análises salvas
-                st.session_state.analises_fixas_salvas = {}
-                
-                # 2. Se quiser apagar apenas os registros de aulas/presença no banco
-                # mas manter a estrutura do banco de dados:
-                import sqlite3
-                conn = sqlite3.connect("vila_verde.db")
-                c = conn.cursor()
-                c.execute("DELETE FROM historico") # Apaga os dados da tabela mas mantém a tabela
-                conn.commit()
-                conn.close()
-                
-                # 3. Limpa a memória local do app
-                st.session_state.historico_geral = []
-                
-                st.success("Testes limpos! O cronograma (rodízio) foi mantido.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao limpar: {e}")
-    else:
-        st.info("Aguardando confirmação de segurança para ativar o botão de exclusão.")
-
-    st.divider()
-    st.subheader("📦 Exportar Backup")
-    # Verifica se há dados antes de tentar criar o DataFrame de backup
-    if 'historico_geral' in st.session_state and st.session_state.historico_geral:
-        df_backup = pd.DataFrame(st.session_state.historico_geral)
-        csv = df_backup.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Baixar CSV de Segurança", csv, "backup_vila_verde.csv", "text/csv")
-    else:
-        st.write("Não há dados para backup no momento.")
-                
-
-
-
 
