@@ -86,12 +86,14 @@ historico_geral = db_get_historico()
 # ==========================================
 #              MÓDULO SECRETARIA
 # ==========================================
-SECRETARIAS_LISTA = ["Ester", "Jéssica", "Larissa", "Lurdes", "Natasha", "Roseli"]
+
+# Definindo a variável que estava faltando para o sistema não travar
+SECRETARIAS_LISTA = ["Elisangela", "Célia", "Rafaela"]
 
 if perfil == "🏠 Secretaria":
     tab_gerar, tab_chamada, tab_correcao = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Correção de Atividades"])
 
-    # --- ABA 1: PLANEJAMENTO (MANTIDA INTEGRALMENTE) ---
+    # --- ABA 1: PLANEJAMENTO (MANTIDA ORIGINAL) ---
     with tab_gerar:
         st.subheader("🗓️ Gestão de Rodízios")
         c_m1, c_m2 = st.columns(2)
@@ -140,7 +142,7 @@ if perfil == "🏠 Secretaria":
                         del st.session_state.calendario_anual[d_str]
                         st.rerun()
 
-    # --- ABA 2: CHAMADA (MANTIDA INTEGRALMENTE) ---
+    # --- ABA 2: CHAMADA (MANTIDA ORIGINAL) ---
     with tab_chamada:
         st.subheader("📍 Chamada Geral")
         data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_ch_sec")
@@ -155,35 +157,37 @@ if perfil == "🏠 Secretaria":
             for r in registros_ch: st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": r["Aluna"], "Tipo": "Chamada", "Status": r["Status"]})
             st.success("Chamada salva!")
 
-    # --- ABA 3: CORREÇÃO E ANÁLISE PEDAGÓGICA (ADICIONADA) ---
+    # --- ABA 3: CORREÇÃO E ANÁLISE PEDAGÓGICA ---
     with tab_correcao:
         st.subheader("✅ Correção e Relatório para Banca")
         
-        # Seleção automática da lista que você já definiu (SECRETARIAS)
-        sec_resp = st.selectbox("Secretária Responsável:", SECRETARIAS)
-        alu_corr = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]))
+        c1_id, c2_id = st.columns(2)
+        with c1_id:
+            sec_resp = st.selectbox("Secretária Responsável:", SECRETARIAS_LISTA)
+        with c2_id:
+            alu_corr = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]))
 
-        # Visualização do que a professora postou (MSA/Apostila)
+        # Busca lição automática do histórico das professoras
         if st.session_state.historico_geral:
             df_h = pd.DataFrame(st.session_state.historico_geral)
             df_a = df_h[(df_h["Aluna"] == alu_corr) & (df_h["Tipo"] == "Aula")]
             if not df_a.empty:
                 ult = df_a.iloc[-1]
-                st.info(f"📋 **Lição Lançada:** {ult.get('Materia','')} | MSA: {ult.get('Home_M','')} | Apostila: {ult.get('Home_A','')}")
+                st.info(f"📋 **Lição da Professora:** {ult.get('Materia','')} | MSA: {ult.get('Home_M','')} | Apostila: {ult.get('Home_A','')}")
 
         st.divider()
-        st.markdown("### 🔍 Análise Pedagógica por Área")
+        st.markdown("### 🔍 Detalhamento Técnico (Dificuldades por Área)")
         
         c_tec1, c_tec2 = st.columns(2)
         with c_tec1:
-            d_postura = st.text_input("Postura:", key="ped_pos")
-            d_tecnica = st.text_input("Técnica:", key="ped_tec")
+            d_postura = st.text_input("Postura:", key="ped_pos", placeholder="Mão, arco, coluna...")
+            d_tecnica = st.text_input("Técnica:", key="ped_tec", placeholder="Dedilhado, articulação...")
         with c_tec2:
-            d_ritmo = st.text_input("Ritmo/Divisão:", key="ped_rit")
-            d_teoria = st.text_input("Teoria:", key="ped_teo")
+            d_ritmo = st.text_input("Ritmo/Divisão:", key="ped_rit", placeholder="MSA, pulsação...")
+            d_teoria = st.text_input("Teoria:", key="ped_teo", placeholder="Conceitos, leitura...")
 
-        st.markdown("### 📝 Resumo e Metas")
-        resumo_sec = st.text_area("Resumo da Secretaria (Histórico Evolutivo):")
+        st.markdown("### 📝 Resumo da Secretaria e Metas")
+        resumo_banca = st.text_area("Histórico Evolutivo (Resumo para a Banca):")
         dica_aula = st.text_input("Dica específica para a próxima aula:")
         veredito = st.radio("Status da Atividade:", ["Realizada", "Não Realizada", "Parcial"], horizontal=True)
 
@@ -196,12 +200,12 @@ if perfil == "🏠 Secretaria":
                 "Aluna": alu_corr,
                 "Secretaria": sec_resp,
                 "Dificuldades": {"Postura": d_postura, "Tecnica": d_tecnica, "Ritmo": d_ritmo, "Teoria": d_teoria},
-                "Resumo": resumo_sec,
+                "Resumo": resumo_banca,
                 "Dica": dica_aula,
                 "Status": veredito,
                 "Tipo": "Analise_Banca"
             })
-            st.success("Análise pedagógica congelada!")
+            st.success("Análise pedagógica congelada com sucesso!")
             
 # ========================================
 #              MÓDULO PROFESSORA
@@ -461,6 +465,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
