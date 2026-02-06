@@ -86,7 +86,7 @@ historico_geral = db_get_historico()
 # ==========================================
 #              MÓDULO SECRETARIA
 # ==========================================
-elif perfil == "🏠 Secretaria":
+if perfil == "🏠 Secretaria":
     tab_gerar, tab_chamada, tab_correcao = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Correção de Atividades"])
 
     # --- ABA 1: PLANEJAMENTO (RODÍZIO) ---
@@ -480,6 +480,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
