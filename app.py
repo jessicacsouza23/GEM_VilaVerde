@@ -169,7 +169,15 @@ elif perfil == "👩‍🏫 Professora":
     if d_str in st.session_state.calendario_anual:
         h_sel = st.radio("⏰ Horário:", HORARIOS_LABELS, horizontal=True)
         atend = next((l for l in st.session_state.calendario_anual[d_str] if f"({instr_sel})" in str(l.get(h_sel, ""))), None)
+    
+    if atend_info:
+            texto_aula = atend_info[h_sel]
+            mat = "Teoria" if "Teoria" in texto_aula else ("Solfejo" if "Solfejo" in texto_aula else "Prática")
+            check_alunas = [atend_info['Aluna']] if mat == "Prática" else [a for a in TURMAS[atend_info['Turma']] if st.checkbox(a, value=True, key=f"p_{a}")]
 
+            st.divider()
+            selecionadas = []
+        
         if atend:
             texto_aula = atend[h_sel]
             mat = "Teoria" if "Teoria" in texto_aula else ("Solfejo" if "Solfejo" in texto_aula else "Prática")
@@ -266,4 +274,5 @@ elif perfil == "📊 Analítico IA":
             st.write("**Correções da Secretaria:**")
             st.table(pd.DataFrame(st.session_state.correcoes_secretaria))
     else: st.info("Sem dados.")
+
 
