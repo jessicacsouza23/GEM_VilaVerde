@@ -86,7 +86,7 @@ historico_geral = db_get_historico()
 # ==========================================
 #              MÓDULO SECRETARIA
 # ==========================================
-if perfil == "🏠 Secretaria":
+elif perfil == "🏠 Secretaria":
     tab_gerar, tab_chamada, tab_correcao = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Correção de Atividades"])
 
     # --- ABA 1: PLANEJAMENTO (RODÍZIO) ---
@@ -102,24 +102,10 @@ if perfil == "🏠 Secretaria":
             with st.expander(f"📅 SÁBADO: {d_str}"):
                 if d_str not in st.session_state.calendario_anual:
                     c1, c2 = st.columns(2)
-                    
-                    # CORREÇÃO DO ERRO: Proteção com 'min()' para o index não estourar a lista
                     with c1:
-                        pt_campos = []
-                        for i in range(2, 5):
-                            idx_seguro = min(i-2, len(PROFESSORAS_LISTA)-1)
-                            sel = st.selectbox(f"Teoria H{i} ({d_str}):", PROFESSORAS_LISTA, index=idx_seguro, key=f"pt{i}_{d_str}")
-                            pt_campos.append(sel)
-                        pt2, pt3, pt4 = pt_campos
-                        
+                        pt2, pt3, pt4 = [st.selectbox(f"Teoria H{i} ({d_str}):", PROFESSORAS_LISTA, index=i-2, key=f"pt{i}_{d_str}") for i in range(2, 5)]
                     with c2:
-                        st_campos = []
-                        for i in range(2, 5):
-                            idx_seguro = min(i+1, len(PROFESSORAS_LISTA)-1)
-                            sel = st.selectbox(f"Solfejo H{i} ({d_str}):", PROFESSORAS_LISTA, index=idx_seguro, key=f"st{i}_{d_str}")
-                            st_campos.append(sel)
-                        st2, st3, st4 = st_campos
-
+                        st2, st3, st4 = [st.selectbox(f"Solfejo H{i} ({d_str}):", PROFESSORAS_LISTA, index=i+1, key=f"st{i}_{d_str}") for i in range(2, 5)]
                     folgas = st.multiselect(f"Folgas ({d_str}):", PROFESSORAS_LISTA, key=f"f_{d_str}")
 
                     if st.button(f"🚀 Gerar Rodízio para {d_str}", key=f"btn_{d_str}"):
@@ -152,94 +138,90 @@ if perfil == "🏠 Secretaria":
                         del st.session_state.calendario_anual[d_str]
                         st.rerun()
 
-    # --- ABA 3: CORREÇÃO DE ATIVIDADES (PEDAGÓGICO) ---
-    with tab_correcao:
-        st.subheader("✅ Correção e Análise Pedagógica")
-        
-        # 1. IDENTIFICAÇÃO DA SECRETARIA
-        # Se você tiver uma lista de secretarias, coloque o nome da variável aqui
-        # Caso contrário, deixei um campo de texto aberto para não inventar nomes
-        sec_resp = st.text_input("Secretária Responsável:", key="sec_resp_manual")
-        
-        # Busca automática das alunas das suas turmas reais
-        todas_alunas = sorted([aluna for sublist in TURMAS.values() for aluna in sublist])
-        alu_corr = st.selectbox("Selecionar Aluna para Correção:", todas_alunas)
+    # --- ABA 2: CHAMADA (MANTIDA ORIGINAL) ---
+    with tab_chamada:
+        st.subheader("📍 Chamada Geral")
+        data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_chamada_unica")
+        presenca_padrao = st.toggle("Marcar todas como Presente por padrão", value=True)
+        st.write("---")
+        registros_chamada = []
+        alunas_lista = sorted([a for l in TURMAS.values() for a in l])
+        for aluna in alunas_lista:
+            col1, col2, col3 = st.columns([2, 3, 3])
+            col1.write(f"**{aluna}**")
+            status = col2.radio(f"Status {aluna}", ["Presente", "Falta", "Justificada"], index=0 if presenca_padrao else 1, key=f"status_{aluna}_{data_ch_sel}", horizontal=True, label_visibility="collapsed")
+            motivo = ""
+            if status == "Justificada":
+                motivo = col3.text_input(f"Motivo justificativa", key=f"motivo_{aluna}_{data_ch_sel}", placeholder="Informe o motivo...", label_visibility="collapsed")
+            registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
+        st.divider()
+        if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
+            for reg in registros_chamada:
+                st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": reg["Aluna"], "Tipo": "Chamada", "Status": reg["Status"], "Motivo": reg["Motivo"]})
+            st.success(f"Chamada do dia {data_ch_sel} salva com sucesso!")
 
-        # 2. BUSCA DAS ATIVIDADES LANÇADAS PELAS INSTRUTORAS (MSA, APOSTILA, MATÉRIA)
-        lista_atividades = []
+    # --- ABA 3: CORREÇÃO (ESTRUTURA PEDAGÓGICA ORIGINAL + DETALHES TÉCNICOS) ---
+    with tab_correcao:
+        st.subheader("✅ Correção de Atividades")
+        sec_resp = st.selectbox("Secretária Responsável:", SECRETARIAS)
+        alu_corr = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]))
+        
+        liçao_info = "Nenhuma lição encontrada"
+        dados_originais = {}
+        
         if st.session_state.historico_geral:
             df_h = pd.DataFrame(st.session_state.historico_geral)
-            # Filtra apenas as aulas reais da aluna selecionada
-            df_a = df_h[(df_h["Aluna"] == alu_corr) & (df_h["Tipo"] == "Aula")]
-            
-            for _, row in df_a.iterrows():
-                lista_atividades.append({
-                    "label": f"{row['Data']} - {row.get('Materia', 'Aula')} (Prof. {row.get('Instrutora', '---')})",
-                    "msa": row.get('Home_M', 'Não informado'),
-                    "apostila": row.get('Home_A', 'Não informado'),
-                    "materia": row.get('Materia', '---')
-                })
-
-        if not lista_atividades:
-            st.warning(f"Nenhuma atividade de casa pendente encontrada para {alu_corr}.")
-        else:
-            selecao = st.selectbox("Qual atividade está sendo corrigida?", 
-                                   lista_atividades, format_func=lambda x: x['label'])
-
-            st.divider()
-            
-            # 3. EXIBIÇÃO DAS ATIVIDADES PARA CASA (O QUE A INSTRUTORA PASSOU)
-            st.markdown(f"### 📋 Conferência: {selecao['materia']}")
-            
-            c_info1, c_info2 = st.columns(2)
-            with c_info1:
-                st.info(f"📖 **Atividade de MSA/Método:**\n\n{selecao['msa']}")
-                status_msa = st.selectbox("Veredito MSA:", ["✅ Realizada", "❌ Não Realizada", "⚠️ Incompleta"], key="v_msa_sec")
-            
-            with c_info2:
-                st.info(f"📝 **Atividade de Apostila:**\n\n{selecao['apostila']}")
-                status_apo = st.selectbox("Veredito Apostila:", ["✅ Realizada", "❌ Não Realizada", "⚠️ Incompleta"], key="v_apo_sec")
-
-            st.markdown("---")
-            
-            # 4. ANÁLISE DETALHADA POR ÁREAS (PARA A BANCA SEMESTRAL)
-            st.markdown("### 🔍 Análise Técnica (Dificuldades por Área)")
-            st.write("Preencha os detalhes para a análise pedagógica que ficará congelada:")
-            
-            col_d1, col_d2 = st.columns(2)
-            with col_d1:
-                dif_postura = st.text_area("1. Postura (Mão, corpo, embocadura):", height=100)
-                dif_tecnica = st.text_area("2. Técnica (Dedilhado, articulação):", height=100)
-            with col_d2:
-                dif_ritmo = st.text_area("3. Ritmo (Divisão, pulsação, MSA):", height=100)
-                dif_teoria = st.text_area("4. Teoria (Conceitos, fórmulas):", height=100)
-
-            # 5. RESUMO DA SECRETARIA E METAS
-            st.markdown("### 🎯 Metas e Resumo para a Banca")
-            resumo_sec = st.text_area("Resumo Pedagógico da Secretaria (Histórico Evolutivo):")
-            proxima_meta = st.text_input("Dica/Meta para a próxima aula:")
-
-            # 6. SALVAMENTO "CONGELADO"
-            if st.button("💾 SALVAR E CONGELAR ANÁLISE", type="primary", use_container_width=True):
-                analise_pedagogica = {
-                    "Data": datetime.now().strftime("%d/%m/%Y"),
-                    "Aluna": alu_corr,
-                    "Referencia": selecao['label'],
-                    "Secretaria": sec_resp,
-                    "Resultados": {"MSA": status_msa, "Apostila": status_apo},
-                    "Dificuldades": {
-                        "Postura": dif_postura,
-                        "Tecnica": dif_tecnica,
-                        "Ritmo": dif_ritmo,
-                        "Teoria": dif_teoria
-                    },
-                    "Resumo_Secretaria": resumo_sec,
-                    "Meta": proxima_meta,
-                    "Tipo": "Analise_Congelada_Banca"
+            df_alu = df_h[(df_h["Aluna"] == alu_corr) & (df_h["Tipo"] == "Aula")]
+            if not df_alu.empty:
+                ult = df_alu.iloc[-1]
+                # Puxando informações das instrutoras conforme solicitado
+                dados_originais = {
+                    "Materia": ult.get('Materia', '---'),
+                    "Home_M": ult.get('Home_M', '---'),
+                    "Home_A": ult.get('Home_A', '---'),
+                    "Instrutora": ult.get('Instrutora', '---')
                 }
-                st.session_state.correcoes_secretaria.append(analise_pedagogica)
-                st.success(f"Análise técnica de {alu_corr} salva com sucesso!")
-                
+                liçao_info = f"Matéria: {dados_originais['Materia']} | MSA: {dados_originais['Home_M']} | Apostila: {dados_originais['Home_A']}"
+
+        st.info(f"📋 **Lição registrada pela Professora ({dados_originais.get('Instrutora', 'N/A')}):**\n{liçao_info}")
+        
+        st.write("### ⚖️ Veredito da Secretaria")
+        status_corr = st.radio("Status:", ["Realizada", "Não Realizada", "Devolvida para Correção"], horizontal=True)
+        
+        st.divider()
+        st.markdown("### 🔍 Análise Pedagógica Completa (Banca Semestral)")
+        st.write("Separe as dificuldades por áreas para o relatório congelado:")
+        
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            dif_postura = st.text_input("Dificuldade em Postura:", placeholder="Ex: Posição do arco, embocadura...")
+            dif_tecnica = st.text_input("Dificuldade em Técnica:", placeholder="Ex: Dedilhado, articulação...")
+        with col_d2:
+            dif_ritmo = st.text_input("Dificuldade em Ritmo:", placeholder="Ex: MSA, divisão, pulsação...")
+            dif_teoria = st.text_input("Dificuldade em Teoria:", placeholder="Ex: Fórmulas, leitura de notas...")
+
+        st.write("### 📝 Resumo da Secretaria e Dicas")
+        obs_sec = st.text_area("Resumo Pedagógico da Secretaria (Para a Banca):")
+        dica_proxima = st.text_input("Dica específica para a próxima aula:")
+        
+        if st.button("💾 Salvar Registro de Correção Pedagógica", type="primary"):
+            registro_congelado = {
+                "Data": datetime.now().strftime("%d/%m/%Y"),
+                "Aluna": alu_corr,
+                "Secretaria": sec_resp,
+                "Atividade_Ref": liçao_info,
+                "Status": status_corr,
+                "Dificuldades": {
+                    "Postura": dif_postura, "Tecnica": dif_tecnica,
+                    "Ritmo": dif_ritmo, "Teoria": dif_teoria
+                },
+                "Obs_Banca": obs_sec,
+                "Dica_Aula": dica_proxima,
+                "Tipo": "Correção_Secretaria"
+            }
+            st.session_state.correcoes_secretaria.append(registro_congelado)
+            st.success(f"Análise pedagógica de {alu_corr} congelada para consulta futura!")
+            
 # ========================================
 #              MÓDULO PROFESSORA
 # ==========================================
@@ -498,6 +480,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
