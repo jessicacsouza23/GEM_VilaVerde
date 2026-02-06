@@ -78,7 +78,7 @@ def get_sabados_do_mes(ano, mes):
 
 # --- INTERFACE ---
 st.title("🎼 GEM Vila Verde - Gestão 2026")
-perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
+perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA", "⚙️ Configurações"])
 
 calendario_anual = db_get_calendario()
 historico_geral = db_get_historico()
@@ -457,5 +457,6 @@ elif perfil == "⚙️ Configurações":
     else:
         st.write("Não há dados para backup no momento.")
                 
+
 
 
