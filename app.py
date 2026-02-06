@@ -169,24 +169,29 @@ elif perfil == "👩‍🏫 Professora":
     if d_str in st.session_state.calendario_anual:
         h_sel = st.radio("⏰ Horário:", HORARIOS_LABELS, horizontal=True)
         atend = next((l for l in st.session_state.calendario_anual[d_str] if f"({instr_sel})" in str(l.get(h_sel, ""))), None)
-    
-    if atend_info:
-            texto_aula = atend_info[h_sel]
-            mat = "Teoria" if "Teoria" in texto_aula else ("Solfejo" if "Solfejo" in texto_aula else "Prática")
-            check_alunas = [atend_info['Aluna']] if mat == "Prática" else [a for a in TURMAS[atend_info['Turma']] if st.checkbox(a, value=True, key=f"p_{a}")]
-
-            st.divider()
-            selecionadas = []
         
-        if atend:
+       if atend:
+            # --- PAINEL DE ATENDIMENTO (NOVO) ---
+            st.warning(f"📍 **VOCÊ ESTÁ EM ATENDIMENTO:**")
+            c_info1, c_info2, c_info3 = st.columns(3)
+            with c_info1:
+                st.metric("Aluna/Turma", atend['Aluna'] if "Prática" in atend[h_sel] else atend['Turma'])
+            with c_info2:
+                # Extrai a sala do texto (ex: SALA 8)
+                sala_texto = atend[h_sel].split("|")[0] if "|" in atend[h_sel] else "Igreja"
+                st.metric("Local", sala_texto)
+            with c_info3:
+                # Extrai a matéria (Teoria, Solfejo ou Prática)
+                mat_texto = "Prática" if "Prática" in atend[h_sel] else ("Teoria" if "Teoria" in atend[h_sel] else "Solfejo")
+                st.metric("Matéria", mat_texto)
+            st.divider()
+
             texto_aula = atend[h_sel]
             mat = "Teoria" if "Teoria" in texto_aula else ("Solfejo" if "Solfejo" in texto_aula else "Prática")
             check_alunas = [atend['Aluna']] if mat == "Prática" else [a for a in TURMAS[atend['Turma']] if st.checkbox(a, value=True, key=f"p_{a}")]
             
             selecionadas = []
-            home_m = ""
-            home_a = ""
-            lic_aula = ""
+            home_m, home_a, lic_aula = "", "", ""
 
             if mat == "Prática":
                 st.subheader("🎹 Controle de Desempenho - Aula Prática")
@@ -274,5 +279,6 @@ elif perfil == "📊 Analítico IA":
             st.write("**Correções da Secretaria:**")
             st.table(pd.DataFrame(st.session_state.correcoes_secretaria))
     else: st.info("Sem dados.")
+
 
 
