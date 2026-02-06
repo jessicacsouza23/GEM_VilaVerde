@@ -86,7 +86,7 @@ historico_geral = db_get_historico()
 # ==========================================
 #              MÓDULO SECRETARIA
 # ==========================================
-if perfil == "🏠 Secretaria":
+elif perfil == "🏠 Secretaria":
     tab_gerar, tab_chamada, tab_correcao = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Correção de Atividades"])
 
     # --- ABA 1: PLANEJAMENTO (RODÍZIO) ---
@@ -138,9 +138,9 @@ if perfil == "🏠 Secretaria":
                         del st.session_state.calendario_anual[d_str]
                         st.rerun()
 
-    # --- ABA 2: CHAMADA (MANTIDA ORIGINAL) ---
+    # --- ABA 2: CHAMADA ---
     with tab_chamada:
-        st.subheader("📍 Chamada Geral")
+        st.subheader("📍 Registro de Presença")
         data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_chamada_unica")
         presenca_padrao = st.toggle("Marcar todas como Presente por padrão", value=True)
         st.write("---")
@@ -160,51 +160,49 @@ if perfil == "🏠 Secretaria":
                 st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": reg["Aluna"], "Tipo": "Chamada", "Status": reg["Status"], "Motivo": reg["Motivo"]})
             st.success(f"Chamada do dia {data_ch_sel} salva com sucesso!")
 
-    # --- ABA 3: CORREÇÃO (ESTRUTURA PEDAGÓGICA ORIGINAL + DETALHES TÉCNICOS) ---
+    # --- ABA 3: CORREÇÃO (CONFORME SOLICITADO) ---
     with tab_correcao:
         st.subheader("✅ Correção de Atividades")
-        sec_resp = st.selectbox("Secretária Responsável:", SECRETARIAS)
+        sec_resp = st.text_input("Secretária Responsável:", placeholder="Digite seu nome...")
         alu_corr = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]))
         
         liçao_info = "Nenhuma lição encontrada"
-        dados_originais = {}
+        dados_da_instrutora = {}
         
         if st.session_state.historico_geral:
             df_h = pd.DataFrame(st.session_state.historico_geral)
             df_alu = df_h[(df_h["Aluna"] == alu_corr) & (df_h["Tipo"] == "Aula")]
             if not df_alu.empty:
                 ult = df_alu.iloc[-1]
-                # Puxando informações das instrutoras conforme solicitado
-                dados_originais = {
+                dados_da_instrutora = {
                     "Materia": ult.get('Materia', '---'),
                     "Home_M": ult.get('Home_M', '---'),
                     "Home_A": ult.get('Home_A', '---'),
                     "Instrutora": ult.get('Instrutora', '---')
                 }
-                liçao_info = f"Matéria: {dados_originais['Materia']} | MSA: {dados_originais['Home_M']} | Apostila: {dados_originais['Home_A']}"
+                liçao_info = f"Matéria: {dados_da_instrutora['Materia']} | MSA: {dados_da_instrutora['Home_M']} | Apostila: {dados_originais['Home_A']}"
 
-        st.info(f"📋 **Lição registrada pela Professora ({dados_originais.get('Instrutora', 'N/A')}):**\n{liçao_info}")
+        st.info(f"📋 **Lição registrada pela Professora ({dados_da_instrutora.get('Instrutora', 'N/A')}):**\n{liçao_info}")
         
         st.write("### ⚖️ Veredito da Secretaria")
-        status_corr = st.radio("Status:", ["Realizada", "Não Realizada", "Devolvida para Correção"], horizontal=True)
+        status_corr = st.radio("Status da Atividade:", ["Realizada", "Não Realizada", "Devolvida para Correção"], horizontal=True)
         
         st.divider()
         st.markdown("### 🔍 Análise Pedagógica Completa (Banca Semestral)")
-        st.write("Separe as dificuldades por áreas para o relatório congelado:")
         
-        col_d1, col_d2 = st.columns(2)
-        with col_d1:
-            dif_postura = st.text_input("Dificuldade em Postura:", placeholder="Ex: Posição do arco, embocadura...")
-            dif_tecnica = st.text_input("Dificuldade em Técnica:", placeholder="Ex: Dedilhado, articulação...")
-        with col_d2:
-            dif_ritmo = st.text_input("Dificuldade em Ritmo:", placeholder="Ex: MSA, divisão, pulsação...")
-            dif_teoria = st.text_input("Dificuldade em Teoria:", placeholder="Ex: Fórmulas, leitura de notas...")
+        c_d1, c_d2 = st.columns(2)
+        with c_d1:
+            dif_postura = st.text_input("Dificuldade em Postura:", key="dif_pos_sec")
+            dif_tecnica = st.text_input("Dificuldade em Técnica:", key="dif_tec_sec")
+        with c_d2:
+            dif_ritmo = st.text_input("Dificuldade em Ritmo:", key="dif_rit_sec")
+            dif_teoria = st.text_input("Dificuldade em Teoria:", key="dif_teo_sec")
 
-        st.write("### 📝 Resumo da Secretaria e Dicas")
-        obs_sec = st.text_area("Resumo Pedagógico da Secretaria (Para a Banca):")
+        st.write("### 📝 Resumo e Metas")
+        obs_sec = st.text_area("Resumo da Secretaria (Histórico Evolutivo):")
         dica_proxima = st.text_input("Dica específica para a próxima aula:")
         
-        if st.button("💾 Salvar Registro de Correção Pedagógica", type="primary"):
+        if st.button("💾 Salvar Registro e Congelar Análise", type="primary"):
             registro_congelado = {
                 "Data": datetime.now().strftime("%d/%m/%Y"),
                 "Aluna": alu_corr,
@@ -215,12 +213,14 @@ if perfil == "🏠 Secretaria":
                     "Postura": dif_postura, "Tecnica": dif_tecnica,
                     "Ritmo": dif_ritmo, "Teoria": dif_teoria
                 },
-                "Obs_Banca": obs_sec,
-                "Dica_Aula": dica_proxima,
+                "Resumo_Secretaria": obs_sec,
+                "Dica_Meta": dica_proxima,
                 "Tipo": "Correção_Secretaria"
             }
+            if "correcoes_secretaria" not in st.session_state:
+                st.session_state.correcoes_secretaria = []
             st.session_state.correcoes_secretaria.append(registro_congelado)
-            st.success(f"Análise pedagógica de {alu_corr} congelada para consulta futura!")
+            st.success(f"Análise de {alu_corr} congelada para a banca!")
             
 # ========================================
 #              MÓDULO PROFESSORA
@@ -480,6 +480,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
