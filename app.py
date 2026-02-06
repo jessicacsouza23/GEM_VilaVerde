@@ -279,12 +279,12 @@ elif perfil == "📊 Analítico IA":
 
             st.divider()
 
-            # --- 2. IDENTIFICAÇÃO DA PRÓXIMA INSTRUTORA (Lógica de Escala) ---
+            # --- 2. IDENTIFICAÇÃO DA PRÓXIMA INSTRUTORA (Lógica Corrigida) ---
             proxima_inst = "Não identificada na escala"
-            # Busca na escala da secretaria quem é a instrutora daquela aluna
             if "escala_salas" in st.session_state:
                 for esc in st.session_state.escala_salas:
-                    if esc["Aluna"] == aluna_sel:
+                    # Compara nomes removendo espaços e ignorando maiúsculas/minúsculas
+                    if esc["Aluna"].strip().lower() == aluna_sel.strip().lower():
                         proxima_inst = esc["Instrutora"]
                         break
 
@@ -294,8 +294,11 @@ elif perfil == "📊 Analítico IA":
                 
                 st.subheader(f"📜 Relatório Consolidado - {aluna_sel}")
                 
-                # AVISO DE ENVIO ESPECÍFICO
-                st.info(f"🔔 **Atenção Secretaria:** Enviar esta análise para a instrutora **{proxima_inst}**, pois ela está escalada para a próxima aula com a aluna **{aluna_sel}**.")
+                # Aviso de quem deve receber a análise
+                if proxima_inst != "Não identificada na escala":
+                    st.success(f"📢 **Destinatária:** Envie este relatório para a instrutora **{proxima_inst}**, responsável pela próxima aula desta aluna.")
+                else:
+                    st.warning("⚠️ **Atenção:** Aluna não encontrada na escala de salas da secretaria. Verifique o rodízio.")
 
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("Média Geral", f"{d.get('media', 0):.0f}%")
@@ -341,6 +344,7 @@ elif perfil == "📊 Analítico IA":
 
             else:
                 if st.button("✨ GERAR E FIXAR ANÁLISE COMPLETA"):
+                    # (Lógica de processamento igual a anterior...)
                     df_sec = pd.DataFrame(st.session_state.correcoes_secretaria)
                     df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel] if not df_sec.empty else pd.DataFrame()
                     t_difs = [d for l in df_aulas['Dificuldades'] for d in l if l]
