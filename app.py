@@ -252,14 +252,13 @@ elif perfil == "📊 Analítico IA":
 
         id_analise = f"{aluna_sel}_{data_ini_ref}_{periodo_tipo}"
 
-        # Filtro de Datas
         df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y').dt.date
         delta = {"Diário":0, "Mensal":30, "Bimestral":60, "Semestral":180, "Anual":365}[periodo_tipo]
         d_fim = data_ini_ref + timedelta(days=delta)
         df_f = df_geral[(df_geral["Aluna"] == aluna_sel) & (df_geral["dt_obj"] >= data_ini_ref) & (df_geral["dt_obj"] <= d_fim)]
 
         if not df_f.empty:
-            # --- 1. GRÁFICOS (Sempre Visíveis) ---
+            # --- 1. GRÁFICOS ---
             st.subheader("📈 Visão Geral de Desempenho")
             df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
             df_ch = df_f[df_f["Tipo"] == "Chamada"]
@@ -285,9 +284,8 @@ elif perfil == "📊 Analítico IA":
             if "escala_salas" in st.session_state and st.session_state.escala_salas:
                 aluna_alvo = aluna_sel.strip().lower()
                 for esc in st.session_state.escala_salas:
-                    nome_escala = esc.get("Aluna", "").strip().lower()
-                    # Se o nome da escala estiver dentro do nome da aluna ou vice-versa
-                    if nome_escala and (nome_escala in aluna_alvo or aluna_alvo in nome_escala):
+                    nome_esc = esc.get("Aluna", "").strip().lower()
+                    if nome_esc and (nome_esc in aluna_alvo or aluna_alvo in nome_esc):
                         proxima_inst = esc.get("Instrutora")
                         break
 
@@ -297,13 +295,11 @@ elif perfil == "📊 Analítico IA":
                 
                 st.subheader(f"📜 Relatório Consolidado - {aluna_sel}")
                 
-                # Feedback Automático do Rodízio
                 if proxima_inst:
-                    st.success(f"✅ **Rodízio Identificado:** A instrutora **{proxima_inst}** está escalada para a próxima aula com esta aluna.")
+                    st.success(f"✅ **Rodízio:** Instrutora **{proxima_inst}** identificada para a próxima aula.")
                 else:
-                    st.error("❌ **Aluna não encontrada no Rodízio:** Verifique se a escala de salas foi preenchida corretamente na Secretaria.")
+                    st.error("❌ **Aluna não encontrada no Rodízio.** Verifique a escala na Secretaria.")
 
-                # Métricas
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("Média Geral", f"{d.get('media', 0):.0f}%")
                 m2.metric("Aulas", d.get('qtd_aulas', 0))
@@ -318,9 +314,58 @@ elif perfil == "📊 Analítico IA":
                 if periodo_tipo in ["Semestral", "Anual"]:
                     st.success(f"**🎯 Sugestões para Banca:**\n{d.get('banca', '')}")
 
-                # --- ENVIO WHATSAPP (Apenas se houver instrutora no rodízio) ---
+                # --- ENVIO WHATSAPP ---
                 if proxima_inst:
                     st.subheader(f"📲 Enviar para {proxima_inst}")
-                    tel_instrutora = st.text_input(f"WhatsApp de
+                    label_tel = f"WhatsApp de {proxima_inst} (com DDD):"
+                    tel_instrutora = st.text_input(label_tel, key="tel_whats")
+                    
+                    if tel_instrutora:
+                        import urllib.parse
+                        texto_whats = (
+                            f"*RELATÓRIO PEDAGÓGICO - GEM VILA VERDE*\n"
+                            f"*Para:* Instrutora {proxima_inst}\n\n"
+                            f"*Aluna:* {aluna_sel}\n"
+                            f"*Desenvoltura:* {d.get('media', 0):.0f}%\n\n"
+                            f"*POSTURA E TÉCNICA:*\n{d.get('difs_tecnica', '')}\n\n"
+                            f"*RITMO E TEORIA:*\n{d.get('difs_ritmo', '')}\n\n"
+                            f"*DICA PRÓXIMA AULA:*\n{d.get('dicas', '')}"
+                        )
+                        link_whatsapp = f"https://wa.me/55{tel_instrutora}?text={urllib.parse.quote(texto_whats)}"
+                        st.link_button("🚀 Abrir WhatsApp e Enviar", link_whatsapp)
+                
+                if st.button("🗑️ Gerar Nova Análise"):
+                    del st.session_state.analises_fixas_salvas[id_analise]
+                    st.rerun()
+
+            else:
+                if st.button("✨ GERAR E FIXAR ANÁLISE PEDAGÓGICA COMPLETA"):
+                    df_sec = pd.DataFrame(st.session_state.correcoes_secretaria)
+                    df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel] if not df_sec.empty else pd.DataFrame()
+                    t_difs = [d for l in df_aulas['Dificuldades'] for d in l if l]
+                    difs_set = set(t_difs)
+                    
+                    tecnica = [d for d in difs_set if any(w in d.lower() for w in ["postura", "punho", "dedos", "falange", "articulação", "pedal"])]
+                    ritmo_teoria = [d for d in difs_set if any(w in d.lower() for w in ["metrônomo", "ritmica", "clave", "solfejo", "teoria"])]
+                    
+                    status_sec_atual = df_sec_f['Status'].iloc[-1] if not df_sec_f.empty else "Sem pendências"
+                    media_val = df_aulas['Nota_Desenv'].mean() if not df_aulas.empty else 0
+                    freq_val = (len(df_ch[df_ch["Status"] == "Presente"]) / len(df_ch) * 100) if len(df_ch) > 0 else 0
+
+                    st.session_state.analises_fixas_salvas[id_analise] = {
+                        "data_geracao": datetime.now().strftime("%d/%m/%Y"),
+                        "media": media_val,
+                        "qtd_aulas": len(df_aulas),
+                        "freq": freq_val,
+                        "status_sec": status_sec_atual,
+                        "difs_tecnica": ", ".join(tecnica) if tecnica else "Normal.",
+                        "difs_ritmo": ", ".join(ritmo_teoria) if ritmo_teoria else "Em dia.",
+                        "dicas": "Trabalhar independência de mãos e leitura na Clave de Fá.",
+                        "banca": "Conferir articulação e postura de punho/falanges."
+                    }
+                    st.rerun()
+
+    with st.expander("📂 Histórico Bruto"):
+        st.dataframe(df_f)
 
 
