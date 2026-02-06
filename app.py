@@ -407,6 +407,48 @@ elif perfil == "📊 Analítico IA":
             
             with st.expander("Ver Logs de Frequência (Secretaria)"):
                 st.table(df_ch[['Data', 'Status']])
-
+        # ==========================================
+        #              MÓDULO ADMIN (LIMPEZA)
+        # ==========================================
+        elif perfil == "⚙️ Configurações":
+            st.header("⚙️ Administração do Sistema")
+            st.warning("Área restrita para manutenção do banco de dados.")
+        
+            st.subheader("🗑️ Limpeza de Dados")
+            st.write("Deseja apagar todos os registros de teste e zerar o sistema?")
+            
+            # Campo de confirmação para evitar cliques acidentais
+            confirmacao = st.text_input("Digite 'APAGAR' para liberar o botão:")
+            
+            if confirmacao == "APAGAR":
+                if st.button("🔥 ZERAR BANCO DE DATOS AGORA", type="primary"):
+                    try:
+                        # Se estiver usando SQLite local
+                        import os
+                        if os.path.exists("vila_verde.db"):
+                            os.remove("vila_verde.db")
+                            st.success("Arquivo de banco de dados local removido!")
+                        
+                        # Se estiver usando lista em memória (session_state)
+                        st.session_state.historico_geral = []
+                        st.session_state.analises_fixas_salvas = {}
+                        
+                        st.error("Todos os dados foram apagados com sucesso!")
+                        st.balloons()
+                        # Recarrega o app para limpar a interface
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao zerar banco: {e}")
+            else:
+                st.info("Aguardando confirmação de segurança.")
+        
+            st.divider()
+            st.subheader("📦 Exportar Backup")
+            if historico_geral:
+                df_backup = pd.DataFrame(historico_geral)
+                csv = df_backup.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Baixar CSV de Segurança", csv, "backup_vila_verde.csv", "text/csv")
+                
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
