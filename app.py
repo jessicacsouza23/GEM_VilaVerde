@@ -130,8 +130,6 @@ if perfil == "🏠 Secretaria":
                     db_delete_calendario(d_str)
                     st.rerun()
 
-elif perfil == "👩‍🏫 Professora":
-    st.info("A aguardar integração dos formulários...")
 # ==========================================
 #              MÓDULO PROFESSORA
 # ==========================================
@@ -205,5 +203,6 @@ elif perfil == "📊 Analítico IA":
         df_f = df_geral[df_geral["Aluna"] == aluna_sel]
         st.subheader(f"Análise de {aluna_sel}")
         st.dataframe(df_f)
+
 
 
