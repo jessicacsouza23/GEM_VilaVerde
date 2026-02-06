@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 import calendar
 from supabase import create_client, Client
 
@@ -40,10 +40,15 @@ def db_get_historico():
     except: return []
 
 def db_save_historico(dados):
-    # Converte listas em strings para evitar erro de API do Supabase
+    # CORREÇÃO CRÍTICA: Transforma a lista de dificuldades em uma string única
+    # Isso evita o erro APIError/Postgrest no Supabase
     if "Dificuldades" in dados and isinstance(dados["Dificuldades"], list):
-        dados["Dificuldades"] = ", ".join(dados["Dificuldades"])
-    supabase.table("historico_geral").insert(dados).execute()
+        dados["Dificuldades"] = ", ".join(dados["Dificuldades"]) if dados["Dificuldades"] else "Nenhuma"
+    
+    try:
+        supabase.table("historico_geral").insert(dados).execute()
+    except Exception as e:
+        st.error(f"Erro ao salvar no banco: {e}")
 
 def db_get_correcoes():
     try:
@@ -52,7 +57,10 @@ def db_get_correcoes():
     except: return []
 
 def db_save_correcao(dados):
-    supabase.table("correcoes_secretaria").insert(dados).execute()
+    try:
+        supabase.table("correcoes_secretaria").insert(dados).execute()
+    except Exception as e:
+        st.error(f"Erro ao salvar correção: {e}")
 
 # --- BANCO DE DADOS MESTRE ---
 TURMAS = {
@@ -131,39 +139,33 @@ if perfil == "🏠 Secretaria":
                         st.rerun()
                 else:
                     df_view = pd.DataFrame(calendario_anual[d_str])
-                    colunas_certas = ["Aluna", "Turma"] + HORARIOS_LABELS
-                    st.table(df_view[colunas_certas])
+                    col_ordem = ["Aluna", "Turma"] + HORARIOS_LABELS
+                    st.table(df_view[col_ordem])
                     if st.button(f"🗑️ Excluir Rodízio {d_str}", key=f"del_{d_str}"):
                         db_delete_calendario(d_str)
                         st.rerun()
 
     with tab_chamada:
         st.subheader("📍 Chamada Geral")
-        data_ch_sel = st.selectbox("Data da Chamada:", [s.strftime("%d/%m/%Y") for s in sabados])
-        presenca_padrao = st.toggle("Marcar todas como Presente", value=True)
-        registros_chamada = []
-        for turma, alunas in TURMAS.items():
-            with st.expander(f"Chamada - {turma}"):
+        # Interface de chamada simplificada para salvar
+        data_ch = st.selectbox("Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="sel_data_ch")
+        for t_nome, alunas in TURMAS.items():
+            with st.expander(f"Chamada {t_nome}"):
                 for aluna in alunas:
-                    c1, c2, c3 = st.columns([2, 2, 2])
-                    c1.write(aluna)
-                    st_alu = c2.radio("Status", ["Presente", "Falta", "Justificada"], index=0 if presenca_padrao else 1, key=f"ch_{aluna}_{data_ch_sel}", horizontal=True, label_visibility="collapsed")
-                    mot_alu = c3.text_input("Obs", key=f"mot_{aluna}_{data_ch_sel}", placeholder="Motivo...", label_visibility="collapsed") if st_alu == "Justificada" else ""
-                    registros_chamada.append({"Data": data_ch_sel, "Aluna": aluna, "Tipo": "Chamada", "Status": st_alu, "Motivo": mot_alu})
-        
-        if st.button("💾 Salvar Chamada Completa"):
-            for r in registros_chamada: db_save_historico(r)
-            st.success("Chamada salva!")
+                    c1, c2 = st.columns([3, 2])
+                    status = c2.radio(f"{aluna}", ["P", "F", "J"], horizontal=True, key=f"ch_{aluna}_{data_ch}")
+                    if st.button(f"Confirmar {aluna}", key=f"btn_ch_{aluna}"):
+                        db_save_historico({"Data": data_ch, "Aluna": aluna, "Tipo": "Chamada", "Status": status})
+                        st.toast(f"Salvo: {aluna}")
 
     with tab_correcao:
-        st.subheader("✅ Correção de Atividades (Secretaria)")
-        sec_resp = st.selectbox("Secretária:", SECRETARIAS)
-        alu_corr = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]))
-        status_corr = st.radio("Status:", ["Realizada", "Não Realizada", "Devolvida"], horizontal=True)
-        obs_sec = st.text_area("Notas da Secretaria:")
-        if st.button("💾 Salvar Registro de Correção"):
-            db_save_correcao({"Data": datetime.now().strftime("%d/%m/%Y"), "Aluna": alu_corr, "Secretaria": sec_resp, "Status": status_corr, "Obs": obs_sec})
-            st.success("Salvo!")
+        st.subheader("✅ Correção de Atividades")
+        sec_r = st.selectbox("Secretária:", SECRETARIAS)
+        alu_c = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]), key="alu_corr_sec")
+        status_c = st.radio("Status:", ["Realizada", "Não Realizada", "Pendente"], horizontal=True)
+        if st.button("Salvar Correção"):
+            db_save_correcao({"Data": datetime.now().strftime("%d/%m/%Y"), "Aluna": alu_c, "Secretaria": sec_r, "Status": status_c})
+            st.success("Registrado!")
 
 # ==========================================
 #              MÓDULO PROFESSORA
@@ -179,53 +181,59 @@ elif perfil == "👩‍🏫 Professora":
         atend = next((l for l in calendario_anual[d_str] if f"({instr_sel})" in str(l.get(h_sel, ""))), None)
         
         if atend:
-            sala_info = atend[h_sel].split("|")[0] if "|" in atend[h_sel] else "Igreja"
-            quem_info = atend['Aluna'] if "Prática" in atend[h_sel] else atend['Turma']
-            st.warning(f"📍 **ATENDIMENTO:** {quem_info} | **LOCAL:** {sala_info}")
-            
             mat = "Teoria" if "Teoria" in atend[h_sel] else ("Solfejo" if "Solfejo" in atend[h_sel] else "Prática")
-            check_alunas = [atend['Aluna']] if mat == "Prática" else [a for a in TURMAS[atend['Turma']] if st.checkbox(f"Presente: {a}", value=True, key=f"p_{a}")]
+            st.warning(f"📍 Atendimento: {atend['Aluna'] if mat == 'Prática' else atend['Turma']} ({mat})")
+            
+            check_alunas = [atend['Aluna']] if mat == "Prática" else [a for a in TURMAS[atend['Turma']] if st.checkbox(a, value=True, key=f"aula_{a}")]
             
             selecionadas = []
-            home_m, home_a, lic_aula = "", "", ""
-
-            if mat == "Prática":
-                st.subheader("🎹 Controle de Desempenho - Prática")
-                lic_aula = st.selectbox("Lição/Volume Atual:", [str(i) for i in range(1, 41)] + ["Outro"])
-                dif_pr = ["Não estudou", "Insatisfatório", "Postura", "Metrônomo", "Leitura Clave Sol", "Leitura Clave Fá", "Articulação", "Dedilhado", "Sem dificuldades"]
-                c1, c2 = st.columns(2)
-                for i, d in enumerate(dif_pr):
-                    if (c1 if i < 5 else c2).checkbox(d, key=f"dk_{d}"): selecionadas.append(d)
-                home_m = st.selectbox("Tarefa (Volume):", [str(i) for i in range(1, 41)])
-                home_a = st.text_input("Tarefa (Apostila):")
-
-            else:
-                st.subheader(f"📚 Controle de Desempenho - {mat}")
-                lic_aula = st.text_input("Lição do dia:")
-                dif_te = ["Não assistiu vídeos", "Teoria básica", "Ritmo", "Solfejo (Afinação)", "Movimento Mão", "Sem dificuldades"]
-                c1, c2 = st.columns(2)
-                for i, d in enumerate(dif_te):
-                    if (c1 if i < 3 else c2).checkbox(d, key=f"dt_{d}"): selecionadas.append(d)
-                home_m = st.text_input("Tarefa de casa:")
-
-            obs = st.text_area("Observações Pedagógicas:")
             
-            if st.button("💾 SALVAR REGISTRO"):
+            if mat == "Prática":
+                st.subheader("🎹 Dificuldades Observadas")
+                dif_list = [
+                    "Dificuldade rítmica", "Postura (Costas/Braços)", "Punho alto/baixo", 
+                    "Quebrando falanges", "Dificuldade com metrônomo", "Leitura Clave de Sol",
+                    "Leitura Clave de Fá", "Articulação ligada/semiligada", "Uso do pedal",
+                    "Dedilhado incorreto", "Não estudou", "Sem dificuldades"
+                ]
+            else:
+                st.subheader("📚 Dificuldades Teóricas/Solfejo")
+                dif_list = [
+                    "Leitura rítmica", "Leitura métrica", "Afinação no solfejo",
+                    "Movimento das mãos", "Teoria básica (notas/pausas)", "Não realizou exercícios",
+                    "Sem dificuldades"
+                ]
+
+            cols = st.columns(2)
+            for i, d in enumerate(dif_list):
+                if cols[i % 2].checkbox(d, key=f"dif_{i}"): selecionadas.append(d)
+            
+            lic_hj = st.text_input("Lição tratada hoje:")
+            prox_m = st.text_input("Lição de casa (Método):")
+            prox_a = st.text_input("Lição de casa (Apostila):")
+            obs_p = st.text_area("Relato de Evolução:")
+
+            if st.button("💾 SALVAR REGISTRO DE AULA", type="primary"):
                 for aluna in check_alunas:
                     db_save_historico({
                         "Data": d_str, "Aluna": aluna, "Tipo": "Aula", "Materia": mat,
-                        "Licao": lic_aula, "Dificuldades": selecionadas, "Obs": obs, 
-                        "Home_M": home_m, "Home_A": home_a, "Instrutora": instr_sel
+                        "Licao": lic_hj, "Dificuldades": selecionadas, "Obs": obs_p,
+                        "Home_M": prox_m, "Home_A": prox_a, "Instrutora": instr_sel
                     })
-                st.success(f"Registros de {mat} salvos com sucesso!")
-        else: st.warning("Você não tem atendimento agendado para este horário.")
-    else: st.warning("A secretaria ainda não gerou o rodízio para esta data.")
+                st.success("Aula registrada com sucesso!")
+                st.balloons()
+        else:
+            st.info("Você não possui aula agendada para este horário.")
+    else:
+        st.error("Rodízio não disponível para esta data.")
 
 # ==========================================
 #              MÓDULO ANALÍTICO
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.header("📊 Banco de Dados Pedagógico")
+    st.header("📊 Inteligência de Dados")
     if historico_geral:
-        st.dataframe(pd.DataFrame(historico_geral))
-    else: st.info("Sem dados registrados até o momento.")
+        df = pd.DataFrame(historico_geral)
+        st.dataframe(df)
+    else:
+        st.info("Nenhum dado para exibir.")
