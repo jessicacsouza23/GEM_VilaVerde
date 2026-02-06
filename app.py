@@ -425,25 +425,27 @@ elif perfil == "⚙️ Configurações":
     confirmacao = st.text_input("Digite 'APAGAR' para liberar o botão:", key="confirm_delete")
     
     if confirmacao == "APAGAR":
-        if st.button("🔥 ZERAR BANCO DE DATOS AGORA", type="primary"):
+       if st.button("🔥 LIMPAR APENAS TESTES (Aulas/Análises)", type="primary"):
             try:
-                # 1. Limpa o arquivo SQLite se ele existir
-                import os
-                if os.path.exists("vila_verde.db"):
-                    os.remove("vila_verde.db")
-                    st.toast("Arquivo .db deletado!")
+                # 1. Limpa as análises salvas
+                st.session_state.analises_fixas_salvas = {}
                 
-                # 2. Limpa o cache da memória
-                if "historico_geral" in st.session_state:
-                    st.session_state.historico_geral = []
-                if "analises_fixas_salvas" in st.session_state:
-                    st.session_state.analises_fixas_salvas = {}
+                # 2. Se quiser apagar apenas os registros de aulas/presença no banco
+                # mas manter a estrutura do banco de dados:
+                import sqlite3
+                conn = sqlite3.connect("vila_verde.db")
+                c = conn.cursor()
+                c.execute("DELETE FROM historico") # Apaga os dados da tabela mas mantém a tabela
+                conn.commit()
+                conn.close()
                 
-                st.success("Todos os dados foram apagados com sucesso!")
-                st.balloons()
+                # 3. Limpa a memória local do app
+                st.session_state.historico_geral = []
+                
+                st.success("Testes limpos! O cronograma (rodízio) foi mantido.")
                 st.rerun()
             except Exception as e:
-                st.error(f"Erro ao zerar banco: {e}")
+                st.error(f"Erro ao limpar: {e}")
     else:
         st.info("Aguardando confirmação de segurança para ativar o botão de exclusão.")
 
@@ -457,6 +459,7 @@ elif perfil == "⚙️ Configurações":
     else:
         st.write("Não há dados para backup no momento.")
                 
+
 
 
 
