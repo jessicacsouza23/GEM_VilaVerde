@@ -407,7 +407,11 @@ elif perfil == "📊 Analítico IA":
             
             with st.expander("Ver Logs de Frequência (Secretaria)"):
                 st.table(df_ch[['Data', 'Status']])
-        # ==========================================
+       
+        else:
+            st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
+ # ==========================================
         #              MÓDULO ADMIN (LIMPEZA)
         # ==========================================
         elif perfil == "⚙️ Configurações":
@@ -449,6 +453,4 @@ elif perfil == "📊 Analítico IA":
                 csv = df_backup.to_csv(index=False).encode('utf-8')
                 st.download_button("📥 Baixar CSV de Segurança", csv, "backup_vila_verde.csv", "text/csv")
                 
-        else:
-            st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
 
