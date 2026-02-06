@@ -166,15 +166,24 @@ elif perfil == "👩‍🏫 Professora":
         atend = next((l for l in calendario_anual[d_str] if f"({instr_sel})" in str(l.get(h_sel, ""))), None)
         
         if atend:
+            # Lógica de Matéria corrigida
             mat = "Teoria" if "Teoria" in atend[h_sel] else ("Solfejo" if "Solfejo" in atend[h_sel] else "Prática")
             st.warning(f"📍 Atendimento: {atend['Aluna'] if mat == 'Prática' else atend['Turma']} ({mat})")
             
-            check_alunas = [atend['Aluna']] if mat == "Prática" else [a for a in TURMAS[atend['Turma']] if st.checkbox(a, value=True, key=f"chk_{a}")]
+            # Seleção de Alunas (Individual para Prática, Lista para Teoria/Solfejo)
+            if mat == "Prática":
+                check_alunas = [atend['Aluna']]
+            else:
+                st.write("---")
+                st.write("**Chamada da Turma:**")
+                turma_nome = atend['Turma']
+                check_alunas = [a for a in TURMAS.get(turma_nome, []) if st.checkbox(a, value=True, key=f"chk_{a}")]
             
             selecionadas = []
-            # FORMULÁRIO PEDAGÓGICO COMPLETO
+            
+            # FORMULÁRIO PEDAGÓGICO
             if mat == "Prática":
-                st.subheader("🎹 Dificuldades Técnicas")
+                st.subheader("🎹 Dificuldades Técnicas e Postura")
                 lista_dif = [
                     "Não estudou nada", "Estudou de forma insatisfatória", "Não assistiu os vídeos",
                     "Dificuldade rítmica", "Nomes das figuras rítmicas", "Adentrando às teclas",
@@ -185,50 +194,67 @@ elif perfil == "👩‍🏫 Professora":
                     "Articulação ligada/semiligada", "Respirações", "Respirações sobre passagem",
                     "Recurso de dedilhado", "Nota de apoio", "Não apresentou dificuldades"
                 ]
-            else if mat == "Teoria":
+            elif mat == "Teoria": # CORRIGIDO: de 'else if' para 'elif'
                 st.subheader("📚 Dificuldades Teóricas")
                 lista_dif = [
-                    "Não assistiu vídeos complementares", "Dificuldades em ler as notas na clave de sol", "Dificuldades em ler as notas na clave de fá",
-                    "Uso do metrônomo", "Estuda sem metrônomo", "Não realizou atividades",
-                    "Leitura rítmica", "Leitura métrica", "Solfejo (afinação)",
-                    "Movimento da mão", "Ordem das notas (asc/desc)", "Atividades da apostila",
+                    "Não assistiu vídeos complementares", "Dificuldades em ler as notas na clave de sol", 
+                    "Dificuldades em ler as notas na clave de fá", "Uso do metrônomo", 
+                    "Estuda sem metrônomo", "Não realizou atividades", "Leitura rítmica", 
+                    "Leitura métrica", "Solfejo (afinação)", "Movimento da mão", 
+                    "Ordem das notas (asc/desc)", "Atividades da apostila",
                     "Não estudou nada", "Estudou insatisfatoriamente", "Não apresentou dificuldades"                                
                 ]
-            else:
+            else: # Solfejo
                 st.subheader("📚 Dificuldades Solfejo")
                 lista_dif = [
-                    "Não assistiu vídeos complementares", "Dificuldades em ler as notas na clave de sol", "Dificuldades em ler as notas na clave de fá",
-                    "Uso do metrônomo", "Estuda sem metrônomo", "Não realizou atividades",
-                    "Leitura rítmica", "Leitura métrica", "Solfejo (afinação)",
-                    "Movimento da mão", "Ordem das notas (asc/desc)", "Atividades da apostila",
+                    "Não assistiu vídeos complementares", "Dificuldades em ler as notas na clave de sol", 
+                    "Dificuldades em ler as notas na clave de fá", "Uso do metrônomo", 
+                    "Estuda sem metrônomo", "Não realizou atividades", "Leitura rítmica", 
+                    "Leitura métrica", "Solfejo (afinação)", "Movimento da mão", 
+                    "Ordem das notas (asc/desc)", "Atividades da apostila",
                     "Não estudou nada", "Estudou insatisfatoriamente", "Não apresentou dificuldades"                                
                 ]
 
+            # Exibição em duas colunas para facilitar a marcação
             cols = st.columns(2)
             for i, d in enumerate(lista_dif):
-                if cols[i % 2].checkbox(d, key=f"f_{i}"): selecionadas.append(d)
+                if cols[i % 2].checkbox(d, key=f"f_{i}_{d_str}"): 
+                    selecionadas.append(d)
             
-            l_hj = st.text_input("Lição dada hoje:")
-            p_m = st.text_input("Para casa (Método):")
-            p_a = st.text_input("Para casa (Apostila):")
-            obs_f = st.text_area("Relato Pedagógico (Análise):")
+            st.write("---")
+            l_hj = st.text_input("📖 Lição dada hoje (Ex: Hino 10, Método p. 20):")
+            p_m = st.text_input("🏠 Para casa (Método):")
+            p_a = st.text_input("🏠 Para casa (Apostila/Outros):")
+            obs_f = st.text_area("✍️ Relato Pedagógico (O que observar na próxima aula):")
 
-            if st.button("💾 SALVAR AULA", type="primary"):
-                sucesso = True
-                for aluna in check_alunas:
-                    res = db_save_historico({
-                        "Data": d_str, "Aluna": aluna, "Tipo": "Aula", "Materia": mat,
-                        "Licao": l_hj, "Dificuldades": selecionadas, "Obs": obs_f,
-                        "Home_M": p_m, "Home_A": p_a, "Instrutora": instr_sel
-                    })
-                    if not res: sucesso = False
-                if sucesso:
-                    st.success("Registro de aula salvo com sucesso!")
-                    st.balloons()
+            if st.button("💾 SALVAR REGISTRO DE AULA", type="primary"):
+                if not selecionadas:
+                    st.error("Por favor, selecione ao menos uma opção nas dificuldades (ou 'Não apresentou dificuldades').")
+                else:
+                    sucesso = True
+                    # Salva o registro para cada aluna selecionada (importante para turmas)
+                    for aluna in check_alunas:
+                        res = db_save_historico({
+                            "Data": d_str, 
+                            "Aluna": aluna, 
+                            "Tipo": "Aula", 
+                            "Materia": mat,
+                            "Licao": l_hj, 
+                            "Dificuldades": ", ".join(selecionadas), 
+                            "Obs": obs_f,
+                            "Home_M": p_m, 
+                            "Home_A": p_a, 
+                            "Instrutora": instr_sel
+                        })
+                        if not res: sucesso = False
+                    
+                    if sucesso:
+                        st.success(f"Aula de {mat} registrada com sucesso para {len(check_alunas)} aluna(s)!")
+                        st.balloons()
         else:
-            st.info("Você não tem aula agendada neste horário.")
+            st.info(f"Sra. {instr_sel}, não encontramos aula agendada para este horário hoje.")
     else:
-        st.error("Rodízio não encontrado para esta data.")
+        st.error("Cronograma de rodízio não localizado para esta data.")
 
 # ==========================================
 #              MÓDULO ANALÍTICO
@@ -365,3 +391,4 @@ elif perfil == "📊 Analítico IA":
             st.subheader("📂 Logs de Atividades (Histórico Detalhado)")
             if not df_aulas.empty:
                 st.dataframe(df_aulas[['Data', 'Materia', 'Licao', 'Dificuldades', 'Instrutora', 'Obs']], use_container_width=True)
+
