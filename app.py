@@ -279,64 +279,70 @@ elif perfil == "📊 Analítico IA":
 
             st.divider()
 
-            # --- 2. IDENTIFICAÇÃO DA PRÓXIMA INSTRUTORA (Lógica Corrigida) ---
-            proxima_inst = "Não identificada na escala"
-            if "escala_salas" in st.session_state:
+            # --- 2. IDENTIFICAÇÃO DA PRÓXIMA INSTRUTORA (Lógica Blindada) ---
+            proxima_inst = "Não identificada"
+            aluna_busca = aluna_sel.strip().lower()
+            
+            if "escala_salas" in st.session_state and st.session_state.escala_salas:
                 for esc in st.session_state.escala_salas:
-                    # Compara nomes removendo espaços e ignorando maiúsculas/minúsculas
-                    if esc["Aluna"].strip().lower() == aluna_sel.strip().lower():
+                    nome_escala = esc["Aluna"].strip().lower()
+                    # Busca flexível: se um nome estiver contido no outro
+                    if aluna_busca in nome_escala or nome_escala in aluna_busca:
                         proxima_inst = esc["Instrutora"]
                         break
-
+            
             # --- 3. EXIBIÇÃO DA ANÁLISE ---
             if id_analise in st.session_state.analises_fixas_salvas:
                 d = st.session_state.analises_fixas_salvas[id_analise]
                 
                 st.subheader(f"📜 Relatório Consolidado - {aluna_sel}")
                 
-                # Aviso de quem deve receber a análise
-                if proxima_inst != "Não identificada na escala":
-                    st.success(f"📢 **Destinatária:** Envie este relatório para a instrutora **{proxima_inst}**, responsável pela próxima aula desta aluna.")
+                # Interface de Destinatário
+                if proxima_inst != "Não identificada":
+                    st.success(f"📢 **Destinatária Identificada:** Envie este relatório para a instrutora **{proxima_inst}**.")
                 else:
-                    st.warning("⚠️ **Atenção:** Aluna não encontrada na escala de salas da secretaria. Verifique o rodízio.")
+                    st.warning("⚠️ **Aluna não encontrada na escala automática.**")
+                    # Permite que a secretaria escolha a instrutora manualmente se o automático falhar
+                    todas_inst = ["Selecione..."] + sorted(list(set([d.get("Instrutora", "Instrutora") for d in st.session_state.historico_geral if d.get("Tipo")=="Aula"])))
+                    proxima_inst = st.selectbox("Selecione a Instrutora da próxima aula manualmente:", todas_inst)
 
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Média Geral", f"{d.get('media', 0):.0f}%")
-                m2.metric("Aulas", d.get('qtd_aulas', 0))
-                m3.metric("Frequência", f"{d.get('freq', 0):.0f}%")
-                m4.metric("Atividades", d.get('status_sec', 'N/A'))
+                if proxima_inst != "Selecione..." and proxima_inst != "Não identificada":
+                    # Métricas e Relatório (Mantendo o que já estava bom)
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Média Geral", f"{d.get('media', 0):.0f}%")
+                    m2.metric("Aulas", d.get('qtd_aulas', 0))
+                    m3.metric("Frequência", f"{d.get('freq', 0):.0f}%")
+                    m4.metric("Atividades", d.get('status_sec', 'N/A'))
 
-                st.markdown("---")
-                st.error(f"**⚠️ Técnica e Postura:**\n{d.get('difs_tecnica', '')}")
-                st.warning(f"**🎵 Ritmo e Teoria:**\n{d.get('difs_ritmo', '')}")
-                st.info(f"**💡 Dica para a Próxima Aula:**\n{d.get('dicas', '')}")
-                
-                if periodo_tipo in ["Semestral", "Anual"]:
-                    st.success(f"**🎯 Sugestões para Banca:**\n{d.get('banca', '')}")
+                    st.markdown("---")
+                    st.error(f"**⚠️ Técnica e Postura:**\n{d.get('difs_tecnica', '')}")
+                    st.warning(f"**🎵 Ritmo e Teoria:**\n{d.get('difs_ritmo', '')}")
+                    st.info(f"**💡 Dica para a Próxima Aula:**\n{d.get('dicas', '')}")
+                    
+                    if periodo_tipo in ["Semestral", "Anual"]:
+                        st.success(f"**🎯 Sugestões para Banca:**\n{d.get('banca', '')}")
 
-                # --- BOTÃO WHATSAPP ---
-                st.subheader(f"📲 Enviar para {proxima_inst}")
-                tel_instrutora = st.text_input("Número do WhatsApp da Instrutora (com DDD):", placeholder="Ex: 11999999999")
-                
-                import urllib.parse
-                texto_whats = (
-                    f"*RELATÓRIO PEDAGÓGICO - GEM VILA VERDE*\n"
-                    f"*Para:* Instrutora {proxima_inst}\n\n"
-                    f"*Aluna:* {aluna_sel}\n"
-                    f"*Período:* {periodo_tipo}\n"
-                    f"*Média de Desenvoltura:* {d.get('media', 0):.0f}%\n"
-                    f"*Frequência:* {d.get('freq', 0):.0f}%\n\n"
-                    f"*POSTURA E TÉCNICA:*\n{d.get('difs_tecnica', '')}\n\n"
-                    f"*RITMO E TEORIA:*\n{d.get('difs_ritmo', '')}\n\n"
-                    f"*DICA PRÓXIMA AULA:*\n{d.get('dicas', '')}"
-                )
-                
-                link_whatsapp = f"https://wa.me/55{tel_instrutora}?text={urllib.parse.quote(texto_whats)}"
-                
-                if tel_instrutora:
-                    st.link_button(f"🚀 Enviar para {proxima_inst} via WhatsApp", link_whatsapp)
-                else:
-                    st.caption("Digite o número para habilitar o envio.")
+                    # --- BOTÃO WHATSAPP ---
+                    st.subheader(f"📲 Enviar para {proxima_inst}")
+                    tel_instrutora = st.text_input(f"WhatsApp de {proxima_inst} (com DDD):", placeholder="Ex: 11999999999")
+                    
+                    import urllib.parse
+                    texto_whats = (
+                        f"*RELATÓRIO PEDAGÓGICO - GEM VILA VERDE*\n"
+                        f"*Para:* Instrutora {proxima_inst}\n\n"
+                        f"*Aluna:* {aluna_sel}\n"
+                        f"*Média Desenvoltura:* {d.get('media', 0):.0f}%\n\n"
+                        f"*POSTURA E TÉCNICA:*\n{d.get('difs_tecnica', '')}\n\n"
+                        f"*RITMO E TEORIA:*\n{d.get('difs_ritmo', '')}\n\n"
+                        f"*DICA PRÓXIMA AULA:*\n{d.get('dicas', '')}"
+                    )
+                    
+                    link_whatsapp = f"https://wa.me/55{tel_instrutora}?text={urllib.parse.quote(texto_whats)}"
+                    
+                    if tel_instrutora:
+                        st.link_button(f"🚀 Enviar Relatório para {proxima_inst}", link_whatsapp)
+                    else:
+                        st.caption("Digite o número para habilitar o envio.")
 
                 if st.button("🗑️ Gerar Nova Análise"):
                     del st.session_state.analises_fixas_salvas[id_analise]
@@ -369,3 +375,4 @@ elif perfil == "📊 Analítico IA":
                         "banca": "Conferir articulação ligada/semiligada e postura de punho e falanges."
                     }
                     st.rerun()
+
