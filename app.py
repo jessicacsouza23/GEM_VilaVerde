@@ -93,51 +93,27 @@ if perfil == "🏠 Secretaria":
     with tab_chamada:
         st.subheader("📍 Chamada Geral")
         data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_chamada_unica")
-        
         presenca_padrao = st.toggle("Marcar todas como Presente por padrão", value=True)
-        
         st.write("---")
         registros_chamada = []
         alunas_lista = sorted([a for l in TURMAS.values() for a in l])
-        
         for aluna in alunas_lista:
             col1, col2, col3 = st.columns([2, 3, 3])
             col1.write(f"**{aluna}**")
-            
-            status = col2.radio(
-                f"Status {aluna}", 
-                ["Presente", "Falta", "Justificada"], 
-                index=0 if presenca_padrao else 1,
-                key=f"status_{aluna}_{data_ch_sel}",
-                horizontal=True,
-                label_visibility="collapsed"
-            )
-            
-            motivo = ""
-            if status == "Justificada":
-                motivo = col3.text_input(f"Motivo justificativa", key=f"motivo_{aluna}_{data_ch_sel}", placeholder="Informe o motivo...", label_visibility="collapsed")
-            
+            status = col2.radio(f"Status {aluna}", ["Presente", "Falta", "Justificada"], index=0 if presenca_padrao else 1, key=f"status_{aluna}_{data_ch_sel}", horizontal=True, label_visibility="collapsed")
+            motivo = col3.text_input(f"Motivo justificativa", key=f"motivo_{aluna}_{data_ch_sel}", placeholder="Informe o motivo...", label_visibility="collapsed") if status == "Justificada" else ""
             registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
 
         st.divider()
         if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
             for reg in registros_chamada:
-                st.session_state.historico_geral.append({
-                    "Data": data_ch_sel, 
-                    "Aluna": reg["Aluna"], 
-                    "Tipo": "Chamada", 
-                    "Status": reg["Status"], 
-                    "Motivo": reg["Motivo"]
-                })
+                st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": reg["Aluna"], "Tipo": "Chamada", "Status": reg["Status"], "Motivo": reg["Motivo"]})
             st.success(f"Chamada do dia {data_ch_sel} salva com sucesso!")
-            st.balloons()
 
     with tab_correcao:
         st.subheader("✅ Correção de Atividades")
         sec_resp = st.selectbox("Secretária Responsável:", SECRETARIAS)
         alu_corr = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]))
-        
-        # Conexão com o que a professora passou
         liçao_info = "Nenhuma lição encontrada"
         if st.session_state.historico_geral:
             df_h = pd.DataFrame(st.session_state.historico_geral)
@@ -145,16 +121,11 @@ if perfil == "🏠 Secretaria":
             if not df_alu.empty:
                 ult = df_alu.iloc[-1]
                 liçao_info = f"Matéria: {ult['Materia']} | Lição: {ult['Home_M']} | Apostila: {ult['Home_A']}"
-        
         st.info(f"📋 **Lição registrada pela Professora:** {liçao_info}")
         status_corr = st.radio("Status:", ["Realizada", "Não Realizada", "Devolvida para Correção"], horizontal=True)
         obs_sec = st.text_area("Notas da Secretaria:")
-        
         if st.button("💾 Salvar Registro de Correção"):
-            st.session_state.correcoes_secretaria.append({
-                "Data": datetime.now().strftime("%d/%m/%Y"), "Aluna": alu_corr, "Secretaria": sec_resp,
-                "Atividade": liçao_info, "Status": status_corr, "Obs": obs_sec
-            })
+            st.session_state.correcoes_secretaria.append({"Data": datetime.now().strftime("%d/%m/%Y"), "Aluna": alu_corr, "Secretaria": sec_resp, "Atividade": liçao_info, "Status": status_corr, "Obs": obs_sec})
             st.success("Corrigido!")
 
 # ==========================================
@@ -170,22 +141,14 @@ elif perfil == "👩‍🏫 Professora":
         h_sel = st.radio("⏰ Horário:", HORARIOS_LABELS, horizontal=True)
         atend = next((l for l in st.session_state.calendario_anual[d_str] if f"({instr_sel})" in str(l.get(h_sel, ""))), None)
         
-       if atend:
-            # --- PAINEL DE ATENDIMENTO (NOVO) ---
-            st.warning(f"📍 **VOCÊ ESTÁ EM ATENDIMENTO:**")
-            c_info1, c_info2, c_info3 = st.columns(3)
-            with c_info1:
-                st.metric("Aluna/Turma", atend['Aluna'] if "Prática" in atend[h_sel] else atend['Turma'])
-            with c_info2:
-                # Extrai a sala do texto (ex: SALA 8)
-                sala_texto = atend[h_sel].split("|")[0] if "|" in atend[h_sel] else "Igreja"
-                st.metric("Local", sala_texto)
-            with c_info3:
-                # Extrai a matéria (Teoria, Solfejo ou Prática)
-                mat_texto = "Prática" if "Prática" in atend[h_sel] else ("Teoria" if "Teoria" in atend[h_sel] else "Solfejo")
-                st.metric("Matéria", mat_texto)
+        if atend:
+            # INFORMATIVO DE ATENDIMENTO
+            sala_info = atend[h_sel].split("|")[0] if "|" in atend[h_sel] else "Igreja"
+            quem_info = atend['Aluna'] if "Prática" in atend[h_sel] else atend['Turma']
+            st.warning(f"📍 **ATENDIMENTO ATUAL:** {quem_info} | **LOCAL:** {sala_info}")
             st.divider()
 
+            # FORMULÁRIO DE REGISTRO
             texto_aula = atend[h_sel]
             mat = "Teoria" if "Teoria" in texto_aula else ("Solfejo" if "Solfejo" in texto_aula else "Prática")
             check_alunas = [atend['Aluna']] if mat == "Prática" else [a for a in TURMAS[atend['Turma']] if st.checkbox(a, value=True, key=f"p_{a}")]
@@ -279,6 +242,3 @@ elif perfil == "📊 Analítico IA":
             st.write("**Correções da Secretaria:**")
             st.table(pd.DataFrame(st.session_state.correcoes_secretaria))
     else: st.info("Sem dados.")
-
-
-
