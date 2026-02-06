@@ -31,7 +31,7 @@ def db_save_calendario(d_str, escala):
     try:
         supabase.table("calendario").upsert({"id": d_str, "escala": escala}).execute()
     except Exception as e:
-        st.error(f"Erro de Permissão (RLS) no Calendário: {e}")
+        st.error(f"Erro ao salvar rodízio: {e}")
 
 def db_delete_calendario(d_str):
     supabase.table("calendario").delete().eq("id", d_str).execute()
@@ -43,7 +43,7 @@ def db_get_historico():
     except: return []
 
 def db_save_historico(dados):
-    # Tratamento de lista para string (evita erro de tipo)
+    # Converte lista de dificuldades em texto para o banco
     if "Dificuldades" in dados and isinstance(dados["Dificuldades"], list):
         dados["Dificuldades"] = ", ".join(dados["Dificuldades"]) if dados["Dificuldades"] else "Nenhuma"
     
@@ -52,19 +52,18 @@ def db_save_historico(dados):
         return True
     except Exception as e:
         if "42501" in str(e):
-            st.error("🚨 Erro de Segurança (RLS): Você precisa ativar a política de INSERT para a tabela 'historico_geral' no painel do Supabase.")
+            st.error("🚨 BLOQUEIO DE SEGURANÇA: Vá ao painel do Supabase > Policies > historico_geral e ative a política de INSERT como 'true'.")
         else:
-            st.error(f"Erro ao salvar: {e}")
+            st.error(f"Erro técnico: {e}")
         return False
 
-# --- BANCO DE DADOS MESTRE ---
+# --- DADOS MESTRE ---
 TURMAS = {
     "Turma 1": ["Rebecca A.", "Amanda S.", "Ingrid M.", "Rebeka S.", "Mellina S.", "Rebeca R.", "Caroline C."],
     "Turma 2": ["Vitória A.", "Elisa F.", "Sarah S.", "Gabrielly C. V.", "Emily O.", "Julya O.", "Stephany O."],
     "Turma 3": ["Heloísa R.", "Ana Marcela S.", "Vitória Bella T.", "Júlia G. S.", "Micaelle S.", "Raquel L.", "Júlia Cristina"]
 }
 PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
-SECRETARIAS = ["Ester", "Jéssica", "Larissa", "Lourdes", "Natasha", "Roseli"]
 HORARIOS_LABELS = [
     "08h45 às 09h30 (1ª Aula - Igreja)", 
     "09h35 às 10h05 (2ª Aula)", 
@@ -88,7 +87,7 @@ historico_geral = db_get_historico()
 #              MÓDULO SECRETARIA
 # ==========================================
 if perfil == "🏠 Secretaria":
-    tab_gerar, tab_chamada = st.tabs(["🗓️ Planejamento de Rodízio", "📍 Chamada"])
+    tab_gerar, tab_chamada = st.tabs(["🗓️ Rodízio", "📍 Chamada"])
 
     with tab_gerar:
         st.subheader("🗓️ Gestão de Rodízios")
@@ -134,6 +133,7 @@ if perfil == "🏠 Secretaria":
                         st.rerun()
                 else:
                     df_view = pd.DataFrame(calendario_anual[d_str])
+                    # GARANTE IGREJA EM PRIMEIRO
                     col_ordem = ["Aluna", "Turma"] + HORARIOS_LABELS
                     st.table(df_view[col_ordem])
                     if st.button(f"🗑️ Excluir Rodízio {d_str}", key=f"del_{d_str}"):
@@ -141,23 +141,23 @@ if perfil == "🏠 Secretaria":
                         st.rerun()
 
     with tab_chamada:
-        st.subheader("📍 Chamada Rápida")
-        data_ch = st.selectbox("Data da Chamada:", [s.strftime("%d/%m/%Y") for s in sabados])
-        for t_nome, alunas in TURMAS.items():
-            with st.expander(f"Chamada {t_nome}"):
+        st.subheader("📍 Registro de Presença")
+        dt_ch = st.selectbox("Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="dt_ch")
+        for t_n, alunas in TURMAS.items():
+            with st.expander(f"Chamada {t_n}"):
                 for aluna in alunas:
                     c1, c2 = st.columns([3, 2])
-                    status = c2.radio(f"{aluna}", ["P", "F", "J"], horizontal=True, key=f"ch_{aluna}_{data_ch}")
-                    if st.button(f"Salvar {aluna}", key=f"btn_ch_{aluna}"):
-                        if db_save_historico({"Data": data_ch, "Aluna": aluna, "Tipo": "Chamada", "Status": status}):
-                            st.toast(f"{aluna} salvo!")
+                    st_ch = c2.radio(f"{aluna}", ["P", "F", "J"], horizontal=True, key=f"v_{aluna}_{dt_ch}")
+                    if st.button(f"Salvar {aluna}", key=f"b_{aluna}"):
+                        db_save_historico({"Data": dt_ch, "Aluna": aluna, "Tipo": "Chamada", "Status": st_ch})
+                        st.toast(f"Presença de {aluna} salva!")
 
 # ==========================================
 #              MÓDULO PROFESSORA
 # ==========================================
 elif perfil == "👩‍🏫 Professora":
     st.header("👩‍🏫 Diário de Classe")
-    instr_sel = st.selectbox("👤 Identificação:", PROFESSORAS_LISTA)
+    instr_sel = st.selectbox("👤 Professora:", PROFESSORAS_LISTA)
     data_p = st.date_input("Data:", value=datetime.now())
     d_str = data_p.strftime("%d/%m/%Y")
 
@@ -169,58 +169,55 @@ elif perfil == "👩‍🏫 Professora":
             mat = "Teoria" if "Teoria" in atend[h_sel] else ("Solfejo" if "Solfejo" in atend[h_sel] else "Prática")
             st.warning(f"📍 Atendimento: {atend['Aluna'] if mat == 'Prática' else atend['Turma']} ({mat})")
             
-            check_alunas = [atend['Aluna']] if mat == "Prática" else [a for a in TURMAS[atend['Turma']] if st.checkbox(a, value=True, key=f"aula_{a}")]
+            check_alunas = [atend['Aluna']] if mat == "Prática" else [a for a in TURMAS[atend['Turma']] if st.checkbox(a, value=True, key=f"chk_{a}")]
             
-            # --- FORMULÁRIO DETALHADO PEDAGÓGICO ---
             selecionadas = []
+            # FORMULÁRIO PEDAGÓGICO COMPLETO
             if mat == "Prática":
-                st.subheader("🎹 Área: Postura e Técnica")
-                dif_pr = [
-                    "Postura (Costas/Ombros/Braços)", "Punho alto/baixo", "Quebrando falanges", 
-                    "Dedos não arredondados", "Pé fora do pedal de expressão", "Movimentos desnecessários na pedaleira",
-                    "Dificuldade rítmica", "Dificuldade metrônomo", "Leitura Clave Sol", "Leitura Clave Fá",
-                    "Articulação ligada/semiligada", "Respirações/Fraseado", "Não estudou", "Sem dificuldades"
+                st.subheader("🎹 Dificuldades Técnicas/Posturais")
+                lista_dif = [
+                    "Postura de Costas/Braços", "Punho alto/baixo", "Quebrando falanges", 
+                    "Dedos não arredondados", "Pé esquerdo na pedaleira", "Uso do Pedal",
+                    "Dificuldade rítmica", "Leitura Clave Sol", "Leitura Clave Fá",
+                    "Articulação/Fraseado", "Não estudou método", "Sem dificuldades"
                 ]
             else:
-                st.subheader("📚 Área: Teoria e Solfejo")
-                dif_pr = [
-                    "Leitura rítmica", "Leitura métrica", "Solfejo (Afinação)", "Movimento das mãos",
-                    "Teoria básica", "Não realizou as atividades", "Sem dificuldades"
-                ]
+                st.subheader("📚 Dificuldades Teóricas")
+                lista_dif = ["Leitura rítmica", "Leitura métrica", "Afinação Solfejo", "Teoria básica", "Exercícios incompletos", "Sem dificuldades"]
 
             cols = st.columns(2)
-            for i, d in enumerate(dif_pr):
-                if cols[i % 2].checkbox(d, key=f"dif_{i}"): selecionadas.append(d)
+            for i, d in enumerate(lista_dif):
+                if cols[i % 2].checkbox(d, key=f"f_{i}"): selecionadas.append(d)
             
-            st.divider()
-            lic_hj = st.text_input("Lição tratada hoje:")
-            prox_m = st.text_input("Tarefa - Método/Volume:")
-            prox_a = st.text_input("Tarefa - Apostila:")
-            obs_p = st.text_area("Relato de Evolução (Pedagógico):")
+            l_hj = st.text_input("Lição dada hoje:")
+            p_m = st.text_input("Para casa (Método):")
+            p_a = st.text_input("Para casa (Apostila):")
+            obs_f = st.text_area("Relato Pedagógico (Análise):")
 
-            if st.button("💾 SALVAR REGISTRO DE AULA", type="primary"):
+            if st.button("💾 SALVAR AULA", type="primary"):
                 sucesso = True
                 for aluna in check_alunas:
                     res = db_save_historico({
                         "Data": d_str, "Aluna": aluna, "Tipo": "Aula", "Materia": mat,
-                        "Licao": lic_hj, "Dificuldades": selecionadas, "Obs": obs_p,
-                        "Home_M": prox_m, "Home_A": prox_a, "Instrutora": instr_sel
+                        "Licao": l_hj, "Dificuldades": selecionadas, "Obs": obs_f,
+                        "Home_M": p_m, "Home_A": p_a, "Instrutora": instr_sel
                     })
                     if not res: sucesso = False
                 if sucesso:
-                    st.success("Aula registrada!")
+                    st.success("Registro de aula salvo com sucesso!")
                     st.balloons()
         else:
-            st.info("Nenhuma aula agendada para você neste horário.")
+            st.info("Você não tem aula agendada neste horário.")
     else:
-        st.error("Rodízio não disponível para esta data.")
+        st.error("Rodízio não encontrado para esta data.")
 
 # ==========================================
 #              MÓDULO ANALÍTICO
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.header("📊 Dados Consolidados")
+    st.header("📊 Inteligência Pedagógica")
     if historico_geral:
-        st.dataframe(pd.DataFrame(historico_geral))
+        df = pd.DataFrame(historico_geral)
+        st.dataframe(df)
     else:
-        st.info("Aguardando registros.")
+        st.info("Nenhum dado registrado.")
