@@ -80,7 +80,10 @@ if perfil == "🏠 Secretaria":
                                         p_disp = [p for p in PROFESSORAS_LISTA if p not in [cfg["ITeo"], cfg["ISol"]] + folgas]
                                         f_rot = (i + (idx_sab * 3) + h_idx)
                                         instr_p = p_disp[f_rot % len(p_disp)] if p_disp else "Vago"
-                                        agenda[h_label] = f"🎹 SALA {(f_rot % 7) + 1} | Prática ({instr_p})"
+                                        # REGRA SOLICITADA: Sala fixa por instrutora no dia, muda por semana
+                                        idx_instr = PROFESSORAS_LISTA.index(instr_p) if instr_p in PROFESSORAS_LISTA else 0
+                                        sala_fixa = ((idx_instr + idx_sab) % 7) + 1
+                                        agenda[h_label] = f"🎹 SALA {sala_fixa} | Prática ({instr_p})"
                                 escala_final.append(agenda)
                         st.session_state.calendario_anual[d_str] = escala_final
                         st.rerun()
@@ -101,9 +104,10 @@ if perfil == "🏠 Secretaria":
             col1, col2, col3 = st.columns([2, 3, 3])
             col1.write(f"**{aluna}**")
             status = col2.radio(f"Status {aluna}", ["Presente", "Falta", "Justificada"], index=0 if presenca_padrao else 1, key=f"status_{aluna}_{data_ch_sel}", horizontal=True, label_visibility="collapsed")
-            motivo = col3.text_input(f"Motivo justificativa", key=f"motivo_{aluna}_{data_ch_sel}", placeholder="Informe o motivo...", label_visibility="collapsed") if status == "Justificada" else ""
+            motivo = ""
+            if status == "Justificada":
+                motivo = col3.text_input(f"Motivo justificativa", key=f"motivo_{aluna}_{data_ch_sel}", placeholder="Informe o motivo...", label_visibility="collapsed")
             registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
-
         st.divider()
         if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
             for reg in registros_chamada:
@@ -148,7 +152,7 @@ elif perfil == "👩‍🏫 Professora":
             st.warning(f"📍 **ATENDIMENTO ATUAL:** {quem_info} | **LOCAL:** {sala_info}")
             st.divider()
 
-            # FORMULÁRIO DE REGISTRO
+            # FORMULÁRIO (RESTITUÍDO CONFORME O ORIGINAL)
             texto_aula = atend[h_sel]
             mat = "Teoria" if "Teoria" in texto_aula else ("Solfejo" if "Solfejo" in texto_aula else "Prática")
             check_alunas = [atend['Aluna']] if mat == "Prática" else [a for a in TURMAS[atend['Turma']] if st.checkbox(a, value=True, key=f"p_{a}")]
