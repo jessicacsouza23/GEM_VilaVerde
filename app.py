@@ -216,6 +216,8 @@ elif perfil == "👩‍🏫 Professora":
 # ==========================================
 elif perfil == "📊 Analítico IA":
     st.header("📊 Inteligência Pedagógica - Vila Verde")
+    from PIL import Image, ImageDraw, ImageFont
+    import io
 
     if "analises_fixas_salvas" not in st.session_state:
         st.session_state.analises_fixas_salvas = {}
@@ -226,91 +228,105 @@ elif perfil == "📊 Analítico IA":
         df_geral = pd.DataFrame(historico_geral)
         todas_alunas = sorted(df_geral["Aluna"].unique())
         
-        # --- FILTROS ---
         c1, c2, c3 = st.columns([2, 2, 2])
         aluna_sel = c1.selectbox("Selecione a Aluna:", todas_alunas)
         periodo_tipo = c2.selectbox("Tipo de Período:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
         data_ini_ref = c3.date_input("Data Inicial da Análise:") 
 
         id_analise = f"{aluna_sel}_{data_ini_ref}_{periodo_tipo}"
-
-        # Filtragem de Datas
-        from datetime import timedelta
         df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y').dt.date
+        
+        # Filtro de data
+        from datetime import timedelta
         delta_dias = {"Diário":0, "Mensal":30, "Bimestral":60, "Semestral":180, "Anual":365}[periodo_tipo]
         d_fim = data_ini_ref + timedelta(days=delta_dias)
-        
         df_f = df_geral[(df_geral["Aluna"] == aluna_sel) & (df_geral["dt_obj"] >= data_ini_ref) & (df_geral["dt_obj"] <= d_fim)]
 
         if not df_f.empty:
             df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
             df_ch = df_f[df_f["Tipo"] == "Chamada"]
 
-            # --- 1. GRÁFICOS DE DESEMPENHO ---
-            st.subheader("📈 Visão Geral de Desempenho")
+            # --- 1. GRÁFICOS ---
+            st.subheader("📈 Desempenho no Período")
             col_g1, col_g2 = st.columns(2)
-            
             with col_g1:
                 if not df_aulas.empty:
-                    # Cálculo de nota baseado em ausência de dificuldades
                     def calc_nota(txt):
-                        if "Sem dificuldades" in str(txt): return 100
-                        difs = str(txt).split(",")
-                        return max(0, 100 - (len(difs) * 15))
-                    
+                        return max(0, 100 - (len(str(txt).split(",")) * 15)) if "Sem dificuldades" not in str(txt) else 100
                     df_aulas['Nota'] = df_aulas['Dificuldades'].apply(calc_nota)
-                    st.write("**Desenvoltura por Matéria (%)**")
+                    st.write("**Desenvoltura Técnica (%)**")
                     st.bar_chart(df_aulas.groupby('Materia')['Nota'].mean())
-                else:
-                    st.info("Sem dados de aulas para gráficos.")
-
             with col_g2:
                 if not df_ch.empty:
-                    st.write("**Frequência (Presenças vs Faltas)**")
+                    st.write("**Frequência (P/F/J)**")
                     st.bar_chart(df_ch["Status"].value_counts())
-                else:
-                    st.info("Sem dados de chamada para gráficos.")
 
             st.divider()
 
-            # --- 2. RELATÓRIO CONSOLIDADO E "CONGELAMENTO" ---
+            # --- 2. RELATÓRIO E EXPORTAÇÃO ---
             if id_analise in st.session_state.analises_fixas_salvas:
                 d = st.session_state.analises_fixas_salvas[id_analise]
                 
-                # Container que simula o visual da imagem para exportação
+                # Visualização Streamlit
                 with st.container(border=True):
-                    st.markdown(f"### 📋 RELATÓRIO PEDAGÓGICO - {aluna_sel}")
-                    st.caption(f"Período: {data_ini_ref.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')}")
-                    
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric("Aulas", d['qtd_aulas'])
-                    m2.metric("Frequência", f"{d['freq']:.0f}%")
-                    m3.metric("Última Lição", d['ultima_licao'])
+                    st.markdown(f"### 📋 RELATÓRIO: {aluna_sel}")
+                    st.write(f"**Aulas:** {d['qtd_aulas']} | **Frequência:** {d['freq']:.0f}% | **Lição:** {d['ultima_licao']}")
+                    st.error(f"**⚠️ Técnica:** {d['difs_tecnica']}")
+                    st.warning(f"**🎵 Teoria/Ritmo:** {d['difs_ritmo']}")
+                    st.success(f"**🎯 Metas Banca:** {d['banca']}")
 
-                    st.markdown("---")
-                    st.error(f"**⚠️ ÁREA: POSTURA E TÉCNICA**\n\n{d['difs_tecnica']}")
-                    st.warning(f"**🎵 ÁREA: RITMO E TEORIA**\n\n{d['difs_ritmo']}")
-                    st.info(f"**💡 DICA PARA PRÓXIMA AULA:**\n\n{d['dicas']}")
-                    st.success(f"**🎯 METAS PARA BANCA SEMESTRAL:**\n\n{d['banca']}")
+                # --- GERAÇÃO DA IMAGEM PNG ---
+                # Criamos uma imagem branca
+                img = Image.new('RGB', (800, 600), color=(255, 255, 255))
+                canvas = ImageDraw.Draw(img)
                 
-                # --- CAMPO PARA GERAR IMAGEM ---
-                st.subheader("🖼️ Exportar Relatório")
-                st.write("Para salvar como JPG, clique com o botão direito no relatório acima e selecione 'Salvar Imagem' ou use o botão de captura do seu dispositivo.")
-                if st.button("📸 Preparar Relatório para Impressão/PDF"):
-                    st.toast("Relatório formatado! Use Ctrl+P ou Print Screen.")
+                # Texto do Relatório
+                linhas = [
+                    "RELATÓRIO PEDAGÓGICO - GEM VILA VERDE",
+                    f"Aluna: {aluna_sel}",
+                    f"Periodo: {data_ini_ref} ate {d_fim}",
+                    "-"*40,
+                    f"Aulas: {d['qtd_aulas']} | Frequencia: {d['freq']:.0f}%",
+                    f"Ultima Licao: {d['ultima_licao']}",
+                    "",
+                    "ANALISE TECNICA:",
+                    f"- {d['difs_tecnica'][:60]}...", # Limita tamanho para caber
+                    "",
+                    "TEORIA E RITMO:",
+                    f"- {d['difs_ritmo'][:60]}...",
+                    "",
+                    "METAS PARA A BANCA:",
+                    f"- {d['banca'][:60]}...",
+                    "-"*40,
+                    f"Gerado em: {datetime.now().strftime('%d/%m/%Y')}"
+                ]
+                
+                y_pos = 50
+                for linha in linhas:
+                    canvas.text((50, y_pos), linha, fill=(0, 0, 0))
+                    y_pos += 30
+                
+                # Converter para bytes para download
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                byte_im = buf.getvalue()
 
-                if st.button("🗑️ Gerar Nova Análise (Limpar Fixada)"):
+                st.download_button(
+                    label="📥 Baixar Relatório (PNG)",
+                    data=byte_im,
+                    file_name=f"Relatorio_{aluna_sel}.png",
+                    mime="image/png"
+                )
+
+                if st.button("🗑️ Gerar Nova Análise"):
                     del st.session_state.analises_fixas_salvas[id_analise]
                     st.rerun()
 
             else:
-                if st.button("✨ GERAR E FIXAR ANÁLISE COMPLETA"):
-                    # Processamento inteligente das áreas
-                    texto_total = " ".join(df_aulas['Dificuldades'].astype(str)).lower()
-                    
+                if st.button("✨ GERAR E FIXAR ANÁLISE"):
                     def filtrar_dif(palavras):
                         achadas = [d for d in df_aulas['Dificuldades'].astype(str) if any(p in d.lower() for p in palavras)]
-                        return ", ".join(set(achadas)) if achadas else "Nenhuma dificuldade crítica registrada."
+                        return ", ".join(set(achadas)) if achadas else "Nenhuma dificuldade registrada."
 
                     st.session_state.analises_fixas_salvas[id_analise] = {
                         "qtd_aulas": len(df_aulas),
@@ -318,13 +334,7 @@ elif perfil == "📊 Analítico IA":
                         "ultima_licao": df_aulas.iloc[0]['Licao'] if not df_aulas.empty else "N/A",
                         "difs_tecnica": filtrar_dif(["postura", "punho", "dedo", "falange", "articulação", "pedal"]),
                         "difs_ritmo": filtrar_dif(["metrônomo", "rítmica", "clave", "solfejo", "teoria"]),
-                        "dicas": "Trabalhar exercícios de independência das mãos e firmar o tempo no metrônomo.",
-                        "banca": "Focar na postura dos ombros e na clareza do dedilhado nos hinos de movimento."
+                        "dicas": "Focar em independência de mãos.",
+                        "banca": "Ajustar postura e firmeza no metrônomo."
                     }
                     st.rerun()
-
-        else:
-            st.error("Nenhum dado encontrado para esta aluna neste período.")
-
-    with st.expander("📂 Ver Histórico de Dados Brutos (Logs)"):
-        if not df_f.empty: st.dataframe(df_f)
