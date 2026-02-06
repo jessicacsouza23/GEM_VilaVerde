@@ -234,7 +234,7 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.header("📊 Inteligência Pedagógica - Vila Verde")
 
-    # Inicialização segura da memória
+    # Inicialização da memória de análises fixas
     if "analises_fixas_salvas" not in st.session_state:
         st.session_state.analises_fixas_salvas = {}
     
@@ -251,16 +251,17 @@ elif perfil == "📊 Analítico IA":
         periodo_tipo = c2.selectbox("Tipo de Período:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
         data_ini_ref = c3.date_input("Data Inicial do Período:") 
 
+        # ID único para congelar a análise e não mudar mais
         id_analise = f"{aluna_sel}_{data_ini_ref}_{periodo_tipo}"
 
-        # Lógica de Filtro
+        # Lógica de Filtro de Datas
         df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y').dt.date
         delta = {"Diário":0, "Mensal":30, "Bimestral":60, "Semestral":180, "Anual":365}[periodo_tipo]
         d_fim = data_ini_ref + timedelta(days=delta)
         df_f = df_geral[(df_geral["Aluna"] == aluna_sel) & (df_geral["dt_obj"] >= data_ini_ref) & (df_geral["dt_obj"] <= d_fim)]
 
         if not df_f.empty:
-            # --- 1. GRÁFICOS DE DESEMPENHO (SEMPRE VISÍVEIS) ---
+            # --- 1. GRÁFICOS DE DESEMPENHO (Sempre visíveis para conferência rápida) ---
             st.subheader("📈 Visão Geral de Desempenho")
             df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
             df_ch = df_f[df_f["Tipo"] == "Chamada"]
@@ -272,97 +273,98 @@ elif perfil == "📊 Analítico IA":
                         if not isinstance(l, list) or not l: return 100.0
                         return max(0.0, 100.0 - (len(l) * 10.0))
                     df_aulas['Nota_Desenv'] = df_aulas['Dificuldades'].apply(calc_nota)
-                    st.write("**Desenvoltura por Disciplina**")
+                    st.write("**Desenvoltura Técnica (0-100%)**")
                     st.bar_chart(df_aulas.groupby('Materia')['Nota_Desenv'].mean())
             
             with col_g2:
                 if not df_ch.empty:
-                    st.write("**Frequência e Presença**")
+                    st.write("**Frequência (Dias)**")
                     st.bar_chart(df_ch["Status"].value_counts())
 
             st.divider()
 
-            # --- 2. EXIBIÇÃO DA ANÁLISE FIXA ---
+            # --- 2. EXIBIÇÃO DA ANÁLISE (SALVA OU NOVA) ---
             if id_analise in st.session_state.analises_fixas_salvas:
-                dados = st.session_state.analises_fixas_salvas[id_analise]
+                d = st.session_state.analises_fixas_salvas[id_analise]
                 
-                st.subheader(f"📜 Relatório Consolidado - {aluna_sel}")
-                st.caption(f"Gerado em: {dados['data_geracao']} | Referência: {data_ini_ref.strftime('%d/%m/%Y')}")
+                # Try/Except para evitar o KeyError se a versão da memória for antiga
+                try:
+                    st.subheader(f"📜 Relatório Consolidado - {aluna_sel}")
+                    st.caption(f"Gerado em: {d['data_geracao']} | Referência: {data_ini_ref.strftime('%d/%m/%Y')}")
 
-                # Métricas Principais
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Média Geral", f"{dados['media']:.0f}%")
-                m2.metric("Aulas", dados['qtd_aulas'])
-                m3.metric("Frequência", f"{dados['freq']:.0f}%")
-                m4.metric("Atividades Sec.", dados['status_sec'])
+                    # Blocos de métricas
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Média Geral", f"{d['media']:.0f}%")
+                    m2.metric("Aulas", d['qtd_aulas'])
+                    m3.metric("Frequência", f"{d['freq']:.0f}%")
+                    m4.metric("Atividades", d['status_sec'])
 
-                # Corpo do Relatório Organizado
-                st.subheader("📑 Parecer Técnico Detalhado")
-                st.write(f"**Resumo do Período:** {dados['texto_geral']}")
+                    st.subheader("📝 Parecer Pedagógico Detalhado")
+                    st.write(f"**Resumo do Desenvolvimento:** {d['texto_geral']}")
 
-                # Categorização de Dificuldades (O que melhorar)
-                st.markdown("### ⚠️ Pontos de Atenção e Melhoria")
-                col_m1, col_m2 = st.columns(2)
-                with col_m1:
-                    st.write("**Técnica e Postura:**")
-                    st.write(dados['difs_tecnica'])
-                with col_m2:
-                    st.write("**Ritmo e Teoria:**")
-                    st.write(dados['difs_ritmo'])
+                    # Seções Detalhadas
+                    col_p1, col_p2 = st.columns(2)
+                    with col_p1:
+                        st.error(f"**⚠️ Postura e Técnica:**\n{d['difs_tecnica']}")
+                    with col_p2:
+                        st.warning(f"**🎵 Ritmo e Teoria:**\n{d['difs_ritmo']}")
 
-                # Orientações
-                st.info(f"**💡 Dica Pedagógica para a Próxima Instrutora:**\n{dados['dicas']}")
-                
-                if periodo_tipo in ["Semestral", "Anual"]:
-                    st.warning(f"**🎯 Orientações para Avaliação Semestral (Banca):**\n{dados['banca']}")
+                    st.info(f"**💡 Dica Pedagógica para a Próxima Aula:**\n{d['dicas']}")
+                    
+                    if periodo_tipo in ["Semestral", "Anual"]:
+                        st.success(f"**🎯 Sugestões para Avaliação (Banca):**\n{d['banca']}")
+                    
+                    if st.button("🗑️ Apagar esta análise e gerar uma nova"):
+                        del st.session_state.analises_fixas_salvas[id_analise]
+                        st.rerun()
 
-                st.success("✅ Esta análise está salva e não sofrerá alterações.")
+                except KeyError:
+                    st.error("Dados antigos detectados. Por favor, clique no botão abaixo para atualizar a análise.")
+                    if st.button("🔄 Atualizar Análise"):
+                        del st.session_state.analises_fixas_salvas[id_analise]
+                        st.rerun()
 
             else:
-                # Botão para gerar a análise robusta
-                if st.button("✨ GERAR E FIXAR ANÁLISE PEDAGÓGICA COMPLETA"):
+                # --- BOTÃO PARA GERAR A ANÁLISE ROBUSTA ---
+                if st.button("✨ GERAR E SALVAR ANÁLISE PEDAGÓGICA COMPLETA"):
                     df_sec = pd.DataFrame(st.session_state.correcoes_secretaria)
                     df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel] if not df_sec.empty else pd.DataFrame()
                     
-                    # Processamento de textos e dificuldades
-                    todas_difs = [d for l in df_aulas['Dificuldades'] for d in l if l]
-                    difs_set = set(todas_difs)
+                    # Filtros de dificuldades por categoria
+                    t_difs = [d for l in df_aulas['Dificuldades'] for d in l if l]
+                    difs_set = set(t_difs)
                     
-                    # Separando as dificuldades por categoria para o texto
-                    tecnica = [d for d in difs_set if any(word in d.lower() for word in ["postura", "punho", "articulação", "falanges", "dedos", "banqueta"])]
-                    ritmo_teoria = [d for d in difs_set if any(word in d.lower() for word in ["metrônomo", "ritmica", "clave", "notas", "teoria", "solfejo"])]
+                    tecnica = [d for d in difs_set if any(w in d.lower() for w in ["postura", "punho", "dedos", "falange", "articulação", "banqueta", "pé", "pedal"])]
+                    ritmo_teoria = [d for d in difs_set if any(w in d.lower() for w in ["metrônomo", "ritmica", "clave", "solfejo", "teoria", "apostila", "vídeos"])]
                     
-                    status_sec_atual = df_sec_f['Status'].iloc[-1] if not df_sec_f.empty else "Nenhuma pendência"
+                    status_sec_atual = df_sec_f['Status'].iloc[-1] if not df_sec_f.empty else "Nenhuma pendência registrada"
                     media_val = df_aulas['Nota_Desenv'].mean() if not df_aulas.empty else 0
                     freq_val = (len(df_ch[df_ch["Status"] == "Presente"]) / len(df_ch) * 100) if len(df_ch) > 0 else 0
-                    
-                    # Observações das professoras
                     obs_totais = ". ".join(df_aulas['Obs'].dropna().unique())
 
-                    # Salvar no estado
+                    # Dicas para a banca (Semestral)
+                    banca_dicas = (
+                        "1. Testar leitura à primeira vista na Clave de Fá.\n"
+                        "2. Avaliar rigorosamente a quebra de falanges e altura do punho.\n"
+                        "3. Conferir a respiração nos hinos e o uso do pedal de expressão."
+                    )
+
+                    # Salvar tudo na memória
                     st.session_state.analises_fixas_salvas[id_analise] = {
                         "data_geracao": datetime.now().strftime("%d/%m/%Y"),
                         "media": media_val,
                         "qtd_aulas": len(df_aulas),
                         "freq": freq_val,
                         "status_sec": status_sec_atual,
-                        "texto_geral": f"A aluna demonstra um perfil de estudo {('dedicado' if media_val > 80 else 'regular')}. {obs_totais if obs_totais else 'Sem observações comportamentais.'}",
-                        "difs_tecnica": ", ".join(tecnica) if tecnica else "Nenhuma dificuldade técnica crítica.",
-                        "difs_ritmo": ", ".join(ritmo_teoria) if ritmo_teoria else "Conhecimento teórico em dia.",
-                        "dicas": "Trabalhar a independência das mãos e a leitura rítmica sem o instrumento antes da execução. Reforçar o uso do metrônomo em todas as fases.",
-                        "banca": "Focar na avaliação da postura (falanges e punho), respiração correta nos hinos (fraseado) e conferir a leitura na Clave de Fá."
+                        "texto_geral": f"A aluna demonstra um desenvolvimento de nível {('Excelente' if media_val > 85 else 'Bom' if media_val > 65 else 'Regular')}. Obs: {obs_totais if obs_totais else 'Comportamento exemplar.'}",
+                        "difs_tecnica": ", ".join(tecnica) if tecnica else "Nenhuma dificuldade técnica crítica observada.",
+                        "difs_ritmo": ", ".join(ritmo_teoria) if ritmo_teoria else "Conhecimento teórico e rítmico em dia.",
+                        "dicas": "Trabalhar a independência das mãos em andamentos bem lentos e focar na leitura da Clave de Fá antes de iniciar novas lições.",
+                        "banca": banca_dicas
                     }
                     st.rerun()
-
         else:
-            st.warning(f"Nenhum dado encontrado para {aluna_sel} no período de {data_ini_ref.strftime('%d/%m/%Y')} em diante.")
+            st.warning(f"Sem dados para {aluna_sel} no período de {data_ini_ref.strftime('%d/%m/%Y')} até {d_fim.strftime('%d/%m/%Y')}.")
 
-    # Histórico de Dados Brutos
-    if not df_f.empty:
-        with st.expander("📂 Conferir Histórico de Dados Brutos"):
-            st.dataframe(df_f)
-
-    with st.expander("📂 Ver Histórico Bruto"):
+    with st.expander("📂 Conferir Histórico de Dados Brutos"):
         st.dataframe(df_f)
-
-
