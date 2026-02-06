@@ -14,7 +14,7 @@ def init_supabase():
         key = st.secrets["SUPABASE_KEY"]
         return create_client(url, key)
     except:
-        st.error("⚠️ Erro: Adicione SUPABASE_URL e SUPABASE_KEY nos Secrets do Streamlit.")
+        st.error("⚠️ Erro: Configure SUPABASE_URL e SUPABASE_KEY nos Secrets do Streamlit.")
         return None
 
 supabase = init_supabase()
@@ -43,18 +43,26 @@ if perfil == "🏠 Secretaria":
             df_sec = pd.DataFrame(res.data)
             
             if not df_sec.empty:
-                st.subheader("📋 Resumo de Atividades Recentes")
+                st.subheader("📋 Resumo Geral de Aulas (Secretaria)")
+                # Exibe o resumo básico para a secretaria
                 st.dataframe(df_sec[["data", "aluna", "professora", "banca", "meta"]], use_container_width=True)
+                
+                st.download_button(
+                    label="📥 Baixar Relatório Completo (CSV)",
+                    data=df_sec.to_csv(index=False).encode('utf-8'),
+                    file_name=f"GEM_VilaVerde_Relatorio_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
             else:
                 st.info("Nenhuma aula registrada até o momento.")
         except:
-            st.warning("Tabela 'historico_pedagogico' não encontrada. Verifique o SQL Editor no Supabase.")
+            st.warning("Aguardando criação da tabela no Supabase.")
     
 # ==========================================
 #              MÓDULO PROFESSORA
 # ==========================================
 elif perfil == "👩‍🏫 Professora":
-    st.header("👩‍🏫 Diário Pedagógico de Aula")
+    st.header("👩‍🏫 Ficha Pedagógica Detalhada")
     
     with st.form("ficha_pedagogica"):
         col_id1, col_id2 = st.columns(2)
@@ -67,53 +75,63 @@ elif perfil == "👩‍🏫 Professora":
         
         st.divider()
         
-        # --- ANÁLISE POR ÁREAS (POSTURA, TÉCNICA, RITMO, TEORIA) ---
-        c1, c2 = st.columns(2)
-        with c1:
+        # --- SELEÇÃO DE DIFICULDADES (O QUE VOCÊ ACHOU LEGAL!) ---
+        col1, col2 = st.columns(2)
+        with col1:
             st.markdown("### **🪑 Postura**")
-            p_check = st.multiselect("Dificuldades Observadas:", ["Costas/Ombros", "Punhos/Braços", "Mão Arredondada", "Pés/Pedaleira"])
+            p_check = st.multiselect("Dificuldades Observadas (Postura):", 
+                                     ["Coluna Curvada", "Ombros Tensos", "Altura do Banco", "Punho Baixo", "Dedo Esticado", "Pés Fora do Lugar"])
             
             st.markdown("### **🎹 Técnica**")
-            t_check = st.multiselect("Dificuldades Observadas:", ["Dedilhado", "Articulação (Legato)", "Substituição", "Fraseado"])
+            t_check = st.multiselect("Dificuldades Observadas (Técnica):", 
+                                     ["Dedilhado Incorreto", "Articulação (Pobre)", "Falta de Legato", "Substituição", "Falta de Dinâmica", "Independência de Mãos"])
             
-        with c2:
+        with col2:
             st.markdown("### **⏱️ Ritmo**")
-            r_check = st.multiselect("Dificuldades Observadas:", ["Uso do Metrônomo", "Divisão Rítmica", "Pausas/Valores"])
+            r_check = st.multiselect("Dificuldades Observadas (Ritmo):", 
+                                     ["Falta Metrônomo", "Acelera/Atrasa", "Divisão de Figuras", "Respeito às Pausas", "Estabilidade"])
             
             st.markdown("### **📖 Teoria**")
-            teo_check = st.multiselect("Dificuldades Observadas:", ["Leitura Clave Sol/Fá", "Tonalidades", "Tarefa de Casa"])
+            teo_check = st.multiselect("Dificuldades Observadas (Teoria):", 
+                                       ["Leitura de Notas", "Fórmulas de Compasso", "Armaduras/Tonalidade", "Terminologia Musical", "Tarefa Não Feita"])
 
         st.divider()
+        
+        # --- BANCA E METAS ---
         st.markdown("### **🎓 Preparação para Banca Semestral**")
-        banca_status = st.select_slider("Prontidão da Aluna:", ["Necessita Atenção", "Em Desenvolvimento", "Bom", "Apta para Exame"])
-        meta_prox = st.text_input("🎯 Meta específica para a próxima aula:")
-        relato_detalhado = st.text_area("📝 Relato Pedagógico (Análise Completa):")
+        banca_status = st.select_slider("Status de Prontidão:", 
+                                        options=["Início do Método", "Desenvolvendo", "Bom Progresso", "Apta para Pré-Exame", "PRONTA (EXCELENTE)"])
+        
+        meta_prox = st.text_input("🎯 Meta específica para a próxima aula (Dica para Aluna):")
+        relato_detalhado = st.text_area("📝 Relato Pedagógico (Análise para o histórico):")
 
-        if st.form_submit_button("💾 CONGELAR ANÁLISE"):
+        if st.form_submit_button("💾 CONGELAR ANÁLISE COMPLETA"):
             if prof_sel != "Selecione seu nome..." and supabase:
+                # Monta os dados para salvar
                 dados = {
                     "data": data_aula.strftime("%d/%m/%Y"),
                     "aluna": aluna_sel,
                     "professora": prof_sel,
-                    "postura": ", ".join(p_check),
-                    "tecnica": ", ".join(t_check),
-                    "ritmo": ", ".join(r_check),
-                    "teoria": ", ".join(teo_check),
+                    "postura": ", ".join(p_check) if p_check else "OK",
+                    "tecnica": ", ".join(t_check) if t_check else "OK",
+                    "ritmo": ", ".join(r_check) if r_check else "OK",
+                    "teoria": ", ".join(teo_check) if teo_check else "OK",
                     "banca": banca_status,
                     "meta": meta_prox,
                     "relato": relato_detalhado
                 }
+                # Insere no Supabase
                 supabase.table("historico_pedagogico").insert(dados).execute()
                 st.balloons()
-                st.success(f"Análise de {aluna_sel} salva com sucesso!")
+                st.success(f"Análise de {aluna_sel} foi congelada no histórico!")
             else:
-                st.error("Verifique se seu nome foi selecionado e se o banco está conectado.")
+                st.error("Por favor, selecione seu nome e verifique a conexão com o banco.")
 
 # ==========================================
 #              MÓDULO ANALÍTICO
 # ==========================================
 elif perfil == "📊 Analítico & Banca":
-    st.header("📊 Evolução Histórica")
+    st.header("📊 Evolução Técnica e Preparação")
     
     if supabase:
         try:
@@ -121,16 +139,30 @@ elif perfil == "📊 Analítico & Banca":
             df_total = pd.DataFrame(res.data)
             
             if not df_total.empty:
-                aluna_h = st.selectbox("Selecione a Aluna para Ver o Histórico:", sorted(df_total["aluna"].unique()))
+                aluna_h = st.selectbox("Selecione a Aluna para ver o Histórico:", sorted(df_total["aluna"].unique()))
                 df_aluna = df_total[df_total["aluna"] == aluna_h].sort_values(by="created_at", ascending=False)
+                
+                # Resumo visual do progresso
+                st.write(f"### Histórico de {aluna_h}")
                 
                 for _, row in df_aluna.iterrows():
                     with st.expander(f"📅 Aula de {row['data']} - Profª {row['professora']}"):
-                        st.write(f"**🎯 Próxima Meta:** {row['meta']}")
-                        st.write(f"**🏆 Status Banca:** {row['banca']}")
-                        st.info(f"**Relato Detalhado:** {row['relato']}")
-                        st.write(f"🚩 Dificuldades pontuadas: {row['postura']} | {row['tecnica']} | {row['ritmo']} | {row['teoria']}")
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            st.write(f"**🎯 Meta definida:** {row['meta']}")
+                            st.write(f"**🏆 Status Banca:** {row['banca']}")
+                        with col_b:
+                            st.write(f"**📝 Relato:** {row['relato']}")
+                        
+                        st.divider()
+                        # Mostra as dificuldades separadas por áreas
+                        st.write("**Dificuldades registradas nesta aula:**")
+                        c_p, c_t, c_r, c_te = st.columns(4)
+                        c_p.write(f"🪑 **Postura:** {row['postura']}")
+                        c_t.write(f"🎹 **Técnica:** {row['tecnica']}")
+                        c_r.write(f"⏱️ **Ritmo:** {row['ritmo']}")
+                        c_te.write(f"📖 **Teoria:** {row['teoria']}")
             else:
-                st.info("Nenhum histórico encontrado para análise.")
+                st.info("Aguardando o primeiro registro para gerar o histórico.")
         except:
-            st.error("Erro ao carregar dados.")
+            st.error("Erro ao carregar dados do banco.")
