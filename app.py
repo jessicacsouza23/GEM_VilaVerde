@@ -1,95 +1,23 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 from datetime import datetime
-import calendar
-from supabase import create_client, Client
 
-# --- CONFIGURAÇÕES DE PÁGINA ---
-st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide", page_icon="🎼")
+# ==========================================
+# INICIALIZAÇÃO DO ESTADO (PARA EVITAR ERROS)
+# ==========================================
+if "calendario_anual" not in st.session_state:
+    st.session_state.calendario_anual = {}
+if "historico_geral" not in st.session_state:
+    st.session_state.historico_geral = []
+if "correcoes_secretaria" not in st.session_state:
+    st.session_state.correcoes_secretaria = []
 
-# --- CONEXÃO COM SUPABASE ---
-@st.cache_resource
-def init_supabase():
-    try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
-        return create_client(url, key)
-    except:
-        return None
-
-supabase = init_supabase()
-
-# --- FUNÇÕES DE BANCO DE DADOS ---
-def db_get_calendario():
-    try:
-        res = supabase.table("calendario").select("*").execute()
-        return {item['id']: item['escala'] for item in res.data}
-    except: return {}
-
-def db_save_calendario(d_str, escala):
-    try:
-        supabase.table("calendario").upsert({"id": d_str, "escala": escala}).execute()
-    except Exception as e:
-        st.error(f"Erro ao salvar rodízio: {e}")
-
-def db_delete_calendario(d_str):
-    supabase.table("calendario").delete().eq("id", d_str).execute()
-
-def db_get_historico():
-    try:
-        res = supabase.table("historico_geral").select("*").order("created_at", desc=True).execute()
-        return res.data
-    except: return []
-
-def db_save_historico(dados):
-    # Converte lista de dificuldades em texto para o banco
-    if "Dificuldades" in dados and isinstance(dados["Dificuldades"], list):
-        dados["Dificuldades"] = ", ".join(dados["Dificuldades"]) if dados["Dificuldades"] else "Nenhuma"
-    
-    try:
-        supabase.table("historico_geral").insert(dados).execute()
-        return True
-    except Exception as e:
-        if "42501" in str(e):
-            st.error("🚨 BLOQUEIO DE SEGURANÇA: Vá ao painel do Supabase > Policies > historico_geral e ative a política de INSERT como 'true'.")
-        else:
-            st.error(f"Erro técnico: {e}")
-        return False
-
-# --- DADOS MESTRE ---
-TURMAS = {
-    "Turma 1": ["Rebecca A.", "Amanda S.", "Ingrid M.", "Rebeka S.", "Mellina S.", "Rebeca R.", "Caroline C."],
-    "Turma 2": ["Vitória A.", "Elisa F.", "Sarah S.", "Gabrielly C. V.", "Emily O.", "Julya O.", "Stephany O."],
-    "Turma 3": ["Heloísa R.", "Ana Marcela S.", "Vitória Bella T.", "Júlia G. S.", "Micaelle S.", "Raquel L.", "Júlia Cristina"]
-}
-PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
-HORARIOS_LABELS = [
-    "08h45 às 09h30 (1ª Aula - Igreja)", 
-    "09h35 às 10h05 (2ª Aula)", 
-    "10h10 às 10h40 (3ª Aula)", 
-    "10h45 às 11h15 (4ª Aula)"
-]
-
-def get_sabados_do_mes(ano, mes):
-    cal = calendar.Calendar(firstweekday=calendar.SUNDAY)
-    dias = cal.monthdatescalendar(ano, mes)
-    return [dia for semana in dias for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
-
-# --- INTERFACE ---
-st.title("🎼 GEM Vila Verde - Gestão 2026")
-perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
-
-calendario_anual = db_get_calendario()
-historico_geral = db_get_historico()
+# DEFINIÇÃO DAS SECRETÁRIAS (CONFORME SEU CADASTRO)
+SECRETARIAS_LISTA = ["Elisangela", "Célia", "Rafaela"]
 
 # ==========================================
 #              MÓDULO SECRETARIA
 # ==========================================
-
-# Definindo a variável que estava faltando para o sistema não travar
-SECRETARIAS_LISTA = ["Elisangela", "Célia", "Rafaela"]
-
 if perfil == "🏠 Secretaria":
     tab_gerar, tab_chamada, tab_correcao = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Correção de Atividades"])
 
@@ -99,6 +27,8 @@ if perfil == "🏠 Secretaria":
         c_m1, c_m2 = st.columns(2)
         mes_ref = c_m1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
         ano_ref = c_m2.selectbox("Ano:", [2026, 2027], index=0)
+        
+        # Função que você já tem no seu app.py
         sabados = get_sabados_do_mes(ano_ref, mes_ref)
         
         for idx_sab, sab in enumerate(sabados):
@@ -142,7 +72,7 @@ if perfil == "🏠 Secretaria":
                         del st.session_state.calendario_anual[d_str]
                         st.rerun()
 
-    # --- ABA 2: CHAMADA (MANTIDA ORIGINAL) ---
+    # --- ABA 2: CHAMADA ---
     with tab_chamada:
         st.subheader("📍 Chamada Geral")
         data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_ch_sec")
@@ -154,7 +84,8 @@ if perfil == "🏠 Secretaria":
             st_ch = c2.radio(f"Status {aluna}", ["P", "F", "J"], horizontal=True, key=f"ch_{aluna}_{data_ch_sel}", label_visibility="collapsed")
             registros_ch.append({"Aluna": aluna, "Status": st_ch})
         if st.button("💾 SALVAR CHAMADA", type="primary"):
-            for r in registros_ch: st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": r["Aluna"], "Tipo": "Chamada", "Status": r["Status"]})
+            for r in registros_ch: 
+                st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": r["Aluna"], "Tipo": "Chamada", "Status": r["Status"]})
             st.success("Chamada salva!")
 
     # --- ABA 3: CORREÇÃO E ANÁLISE PEDAGÓGICA ---
@@ -167,34 +98,34 @@ if perfil == "🏠 Secretaria":
         with c2_id:
             alu_corr = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]))
 
-        # Busca lição automática do histórico das professoras
+        # Busca lição automática
+        liçao_prof = {"mat": "---", "msa": "---", "apo": "---"}
         if st.session_state.historico_geral:
             df_h = pd.DataFrame(st.session_state.historico_geral)
             df_a = df_h[(df_h["Aluna"] == alu_corr) & (df_h["Tipo"] == "Aula")]
             if not df_a.empty:
                 ult = df_a.iloc[-1]
-                st.info(f"📋 **Lição da Professora:** {ult.get('Materia','')} | MSA: {ult.get('Home_M','')} | Apostila: {ult.get('Home_A','')}")
+                liçao_prof = {"mat": ult.get('Materia','---'), "msa": ult.get('Home_M','---'), "apo": ult.get('Home_A','---')}
 
-        st.divider()
-        st.markdown("### 🔍 Detalhamento Técnico (Dificuldades por Área)")
+        st.info(f"📋 **Registro da Instrutora:** {liçao_prof['mat']} | MSA: {liçao_prof['msa']} | Apostila: {liçao_prof['apo']}")
         
-        c_tec1, c_tec2 = st.columns(2)
-        with c_tec1:
-            d_postura = st.text_input("Postura:", key="ped_pos", placeholder="Mão, arco, coluna...")
-            d_tecnica = st.text_input("Técnica:", key="ped_tec", placeholder="Dedilhado, articulação...")
-        with c_tec2:
-            d_ritmo = st.text_input("Ritmo/Divisão:", key="ped_rit", placeholder="MSA, pulsação...")
-            d_teoria = st.text_input("Teoria:", key="ped_teo", placeholder="Conceitos, leitura...")
+        st.divider()
+        st.markdown("### 🔍 Detalhamento Técnico")
+        
+        col_tec1, col_tec2 = st.columns(2)
+        with col_tec1:
+            d_postura = st.text_input("Postura:", key="ped_postura")
+            d_tecnica = st.text_input("Técnica:", key="ped_tecnica")
+        with col_tec2:
+            d_ritmo = st.text_input("Ritmo/Divisão:", key="ped_ritmo")
+            d_teoria = st.text_input("Teoria:", key="ped_teoria")
 
-        st.markdown("### 📝 Resumo da Secretaria e Metas")
-        resumo_banca = st.text_area("Histórico Evolutivo (Resumo para a Banca):")
-        dica_aula = st.text_input("Dica específica para a próxima aula:")
-        veredito = st.radio("Status da Atividade:", ["Realizada", "Não Realizada", "Parcial"], horizontal=True)
+        st.markdown("### 📝 Resumo e Metas")
+        resumo_banca = st.text_area("Histórico Evolutivo (Resumo para Banca):")
+        dica_aula = st.text_input("Dica para a próxima aula:")
+        veredito = st.radio("Status:", ["Realizada", "Não Realizada", "Parcial"], horizontal=True)
 
-        if st.button("💾 CONGELAR ANÁLISE COMPLETA", type="primary", use_container_width=True):
-            if "correcoes_secretaria" not in st.session_state:
-                st.session_state.correcoes_secretaria = []
-            
+        if st.button("💾 CONGELAR ANÁLISE PEDAGÓGICA", type="primary"):
             st.session_state.correcoes_secretaria.append({
                 "Data": datetime.now().strftime("%d/%m/%Y"),
                 "Aluna": alu_corr,
@@ -205,7 +136,7 @@ if perfil == "🏠 Secretaria":
                 "Status": veredito,
                 "Tipo": "Analise_Banca"
             })
-            st.success("Análise pedagógica congelada com sucesso!")
+            st.success(f"Análise de {alu_corr} congelada!")
             
 # ========================================
 #              MÓDULO PROFESSORA
@@ -465,6 +396,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
