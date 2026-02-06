@@ -232,94 +232,112 @@ elif perfil == "👩‍🏫 Professora":
 #              MÓDULO ANALÍTICO
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.header("📊 Análise de Evolução Pedagógica")
+    st.header("📊 Inteligência Pedagógica - Vila Verde")
 
     if not st.session_state.historico_geral:
-        st.info("Aguardando dados para análise. Realize chamadas e registros de aula primeiro.")
+        st.info("Aguardando dados para iniciar as análises.")
     else:
-        # 1. Filtros de Seleção
         df_geral = pd.DataFrame(st.session_state.historico_geral)
         todas_alunas = sorted(df_geral["Aluna"].unique())
         
         c1, c2, c3 = st.columns([2, 2, 2])
         aluna_sel = c1.selectbox("Selecione a Aluna:", todas_alunas)
-        periodo_tipo = c2.selectbox("Período do Relatório:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
-        data_ref = c3.date_input("Data de Referência (Fim do Período):")
+        periodo_tipo = c2.selectbox("Período da Análise:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
+        data_ini_ref = c3.date_input("Data Inicial da Análise:") # Ajustado para ser a data inicial
 
-        # Lógica de Filtro de Datas
+        # 1. Lógica de Filtro de Datas (Data Inicial + Período)
         df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y').dt.date
-        d_fim = data_ref
+        d_ini = data_ini_ref
         delta = {"Diário":0, "Mensal":30, "Bimestral":60, "Semestral":180, "Anual":365}[periodo_tipo]
-        d_ini = d_fim - timedelta(days=delta)
+        d_fim = d_ini + timedelta(days=delta)
         
-        # DataFrame filtrado para a aluna e período
         df_f = df_geral[(df_geral["Aluna"] == aluna_sel) & (df_geral["dt_obj"] >= d_ini) & (df_geral["dt_obj"] <= d_fim)]
 
         if df_f.empty:
-            st.warning(f"Nenhum registro encontrado para {aluna_sel} entre {d_ini.strftime('%d/%m/%Y')} e {d_fim.strftime('%d/%m/%Y')}.")
+            st.warning(f"Sem registros de {d_ini.strftime('%d/%m/%Y')} até {d_fim.strftime('%d/%m/%Y')}.")
         else:
-            # --- GRÁFICO DE DESENVOLTURA (Como a aluna se saiu) ---
-            st.subheader("📈 Nível de Desenvoltura por Disciplina")
+            # --- GRÁFICO DE DESENVOLTURA TÉCNICA ---
+            st.subheader("📈 Desempenho e Desenvoltura")
             df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
             
             if not df_aulas.empty:
-                # Cálculo de Desenvoltura: Começa em 100%, perde 10% por dificuldade marcada
+                # Cálculo de Desenvoltura (0 a 100%)
                 def calcular_nota(lista_difs):
                     if not isinstance(lista_difs, list) or not lista_difs: return 100.0
                     if "Não apresentou dificuldades" in lista_difs: return 100.0
-                    nota = 100.0 - (len(lista_difs) * 10.0)
-                    return max(0.0, nota)
+                    return max(0.0, 100.0 - (len(lista_difs) * 12.0))
 
                 df_aulas['Nota_Desenv'] = df_aulas['Dificuldades'].apply(calcular_nota)
-                grafico_data = df_aulas.groupby('Materia')['Nota_Desenv'].mean()
-                
-                # Exibição do Gráfico de Barras
-                st.bar_chart(grafico_data)
-                st.caption("A pontuação baseia-se na ausência de dificuldades técnicas registradas (100% = Excelente).")
-            else:
-                st.info("Sem registros de aula para gerar o gráfico de desenvoltura.")
-
-            # --- BOTÃO PARA GERAR O RELATÓRIO COMPLETO NA TELA ---
-            if st.button("✨ GERAR RELATÓRIO PEDAGÓGICO E NOTIFICAR"):
-                # Cálculo de Frequência
+                resumo_grafico = df_aulas.groupby('Materia')['Nota_Desenv'].mean()
+                st.bar_chart(resumo_grafico)
+            
+            # --- BOTÃO DE GERAR ANÁLISE ---
+            if st.button("✨ PROCESSAR ANÁLISE PEDAGÓGICA COMPLETA"):
+                # Cálculos de Apoio
                 df_ch = df_f[df_f["Tipo"] == "Chamada"]
-                total_dias = len(df_ch)
-                presencas = len(df_ch[df_ch["Status"] == "Presente"])
-                porcentagem_freq = (presencas / total_dias * 100) if total_dias > 0 else 0
-
+                freq = (len(df_ch[df_ch["Status"] == "Presente"]) / len(df_ch) * 100) if len(df_ch) > 0 else 0
+                total_licoes = df_aulas['Licao'].nunique()
+                
                 st.divider()
-                # ESTRUTURA DO RELATÓRIO (APARECE NA TELA)
                 st.markdown(f"# 📜 RELATÓRIO PEDAGÓGICO - {aluna_sel.upper()}")
-                st.write(f"**Período Selecionado:** {periodo_tipo} ({d_ini.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')})")
+                st.caption(f"Período Avaliado: {d_ini.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')}")
+
+                # DASHBOARD DE DADOS INTERESSANTES
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Frequência", f"{freq:.0f}%")
+                col2.metric("Aulas no Período", len(df_aulas))
+                col3.metric("Conteúdos Vistos", total_licoes)
+                col4.metric("Média Geral", f"{df_aulas['Nota_Desenv'].mean():.0f}%")
+
+                # --- RESUMO POR DISCIPLINA (O QUE MELHORAR E DICAS) ---
+                st.subheader("📝 Avaliação por Disciplina")
                 
-                # Métricas Rápidas
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Frequência", f"{porcentagem_freq:.1f}%")
-                m2.metric("Aulas Realizadas", len(df_aulas))
-                m3.metric("Média de Desenvoltura", f"{df_aulas['Nota_Desenv'].mean():.0f}%" if not df_aulas.empty else "0%")
+                for mat in ["Prática", "Teoria", "Solfejo"]:
+                    df_m = df_aulas[df_aulas["Materia"] == mat]
+                    if not df_m.empty:
+                        with st.expander(f"Ver Detalhes de {mat}"):
+                            # Identificar Dificuldades Recorrentes
+                            todas_difs = [d for lista in df_m["Dificuldades"] for d in lista]
+                            difs_unicas = list(set(todas_difs)) if todas_difs else []
+                            
+                            st.write(f"**Desenvolvimento em {mat}:** A aluna demonstrou um aproveitamento de {df_m['Nota_Desenv'].mean():.0f}% nesta matéria.")
+                            
+                            if difs_unicas and "Não apresentou dificuldades" not in difs_unicas:
+                                st.error("⚠️ **O que precisa melhorar:**")
+                                for d in difs_unicas: st.write(f"- {d}")
+                                
+                                st.info("💡 **Dicas para as próximas aulas:**")
+                                if mat == "Prática":
+                                    st.write("Reforçar o uso do metrónomo em andamentos lentos e focar na independência das mãos antes de aumentar a velocidade.")
+                                elif mat == "Teoria":
+                                    st.write("Rever os conceitos básicos de figuras de valor e realizar exercícios de escrita para fixação.")
+                                else:
+                                    st.write("Praticar a leitura rítmica apenas com palmas antes de incluir a altura das notas.")
+                            else:
+                                st.success("🌟 **Destaque:** Aluna sem dificuldades recorrentes registradas no período.")
 
-                # Conteúdo Pedagógico (Baseado nas suas seções)
-                st.subheader("📗 Análise de Desempenho Técnica")
-                if not df_aulas.empty:
-                    for mat in ["Prática", "Teoria", "Solfejo"]:
-                        aulas_mat = df_aulas[df_aulas["Materia"] == mat]
-                        if not aulas_mat.empty:
-                            with st.expander(f"Evolução em {mat}"):
-                                for _, r in aulas_mat.iterrows():
-                                    st.write(f"**Data {r['Data']}:** Lição {r['Licao']}")
-                                    st.write(f"**Dificuldades:** {', '.join(r['Dificuldades'])}")
-                                    st.write(f"**Obs:** {r['Obs']}")
+                # --- SEÇÃO 6: ANÁLISE DE COMPORTAMENTO ---
+                st.subheader("🧠 Perfil e Postura")
+                observacoes_texto = " ".join(df_aulas['Obs'].dropna().unique())
+                if observacoes_texto:
+                    st.write(f"**Análise das Professoras:** {observacoes_texto}")
+                else:
+                    st.write("Sem observações comportamentais específicas registradas no período.")
+
+                # --- DADO EXTRA: PROGRESSÃO DE LIÇÕES ---
+                st.subheader("🚀 Trilho de Progresso")
+                st.write(f"A aluna trabalhou as seguintes lições/conteúdos: {', '.join(df_aulas['Licao'].unique())}")
                 
-                st.subheader("📋 Resumo da Secretaria")
-                df_sec = pd.DataFrame(st.session_state.correcoes_secretaria)
-                if not df_sec.empty:
-                    df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel]
-                    st.table(df_sec_f[["Data", "Atividade", "Status"]])
+                st.divider()
+                st.warning("🔔 **Atenção:** Análise concluída. Por favor, apresente este relatório à instrutora responsável pela próxima semana.")
+                
+                # Guardar no "banco"
+                st.session_state.analises_salvas.append({
+                    "Aluna": aluna_sel, 
+                    "Data_Analise": datetime.now().strftime("%d/%m/%Y"),
+                    "Media": df_aulas['Nota_Desenv'].mean()
+                })
 
-                # AVISO FINAL
-                st.success("✅ Análise gerada com sucesso e salva no banco de dados!")
-                st.info("🔔 **AVISO:** A análise da aluna está pronta. Favor comunicar a instrutora da próxima semana.")
-
-            # Histórico Geral
-            with st.expander("📂 Ver histórico bruto de dados"):
+            with st.expander("📂 Histórico de Dados Brutos"):
                 st.dataframe(df_f)
+
