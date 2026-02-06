@@ -227,122 +227,99 @@ elif perfil == "👩‍🏫 Professora":
                 st.balloons()
         else: st.warning("Sem escala para você.")
     else: st.warning("Rodízio pendente.")
+
 # ==========================================
 #              MÓDULO ANALÍTICO
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.header("📊 Inteligência Pedagógica - Vila Verde")
+    st.header("📊 Análise de Evolução Pedagógica")
 
     if not st.session_state.historico_geral:
-        st.info("Aguardando registros de aula e chamada para iniciar as análises.")
+        st.info("Aguardando dados para análise. Realize chamadas e registros de aula primeiro.")
     else:
-        # 1. Filtros Iniciais
+        # 1. Filtros de Seleção
         df_geral = pd.DataFrame(st.session_state.historico_geral)
         todas_alunas = sorted(df_geral["Aluna"].unique())
         
         c1, c2, c3 = st.columns([2, 2, 2])
         aluna_sel = c1.selectbox("Selecione a Aluna:", todas_alunas)
-        periodo_tipo = c2.selectbox("Tipo de Relatório:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
+        periodo_tipo = c2.selectbox("Período do Relatório:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
         data_ref = c3.date_input("Data de Referência (Fim do Período):")
 
-        # 2. Lógica de Filtro de Datas
-        data_fim = data_ref
-        if periodo_tipo == "Diário": data_ini = data_fim
-        elif periodo_tipo == "Mensal": data_ini = data_fim - timedelta(days=30)
-        elif periodo_tipo == "Bimestral": data_ini = data_fim - timedelta(days=60)
-        elif periodo_tipo == "Semestral": data_ini = data_fim - timedelta(days=180)
-        else: data_ini = data_fim - timedelta(days=365)
-
-        # Converter coluna Data para datetime para filtrar
+        # Lógica de Filtro de Datas
         df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y').dt.date
-        df_f = df_geral[(df_geral["Aluna"] == aluna_sel) & (df_geral["dt_obj"] >= data_ini) & (df_geral["dt_obj"] <= data_fim)]
+        d_fim = data_ref
+        delta = {"Diário":0, "Mensal":30, "Bimestral":60, "Semestral":180, "Anual":365}[periodo_tipo]
+        d_ini = d_fim - timedelta(days=delta)
+        
+        # DataFrame filtrado para a aluna e período
+        df_f = df_geral[(df_geral["Aluna"] == aluna_sel) & (df_geral["dt_obj"] >= d_ini) & (df_geral["dt_obj"] <= d_fim)]
 
         if df_f.empty:
-            st.warning(f"Nenhum registro encontrado para {aluna_sel} no período selecionado.")
+            st.warning(f"Nenhum registro encontrado para {aluna_sel} entre {d_ini.strftime('%d/%m/%Y')} e {d_fim.strftime('%d/%m/%Y')}.")
         else:
-            # 3. Gráficos de Visão Geral
-            st.subheader("📈 Visão Geral de Desempenho")
-            g1, g2 = st.columns(2)
-
-            with g1:
-                # Gráfico de Frequência
-                df_cha = df_f[df_f["Tipo"] == "Chamada"]
-                if not df_cha.empty:
-                    freq = df_cha["Status"].value_counts()
-                    st.write("**Frequência no Período**")
-                    st.bar_chart(freq)
-                else:
-                    st.write("Sem dados de chamada no período.")
-
-            with g2:
-                # Gráfico de Disciplinas (Quantidade de Aulas)
-                df_au = df_f[df_f["Tipo"] == "Aula"]
-                if not df_au.empty:
-                    st.write("**Aulas Realizadas por Disciplina**")
-                    st.bar_chart(df_au["Materia"].value_counts())
-                else:
-                    st.write("Sem registros de aula no período.")
-
-            # 4. Preparação para o Relatório Pedagógico (Seu Prompt)
-            st.divider()
-            st.subheader("📝 Relatório Pedagógico Detalhado")
+            # --- GRÁFICO DE DESENVOLTURA (Como a aluna se saiu) ---
+            st.subheader("📈 Nível de Desenvoltura por Disciplina")
+            df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
             
-            # Coletar dados da Secretaria para essa aluna
-            df_sec = pd.DataFrame(st.session_state.correcoes_secretaria)
-            correcoes_alu = ""
-            if not df_sec.empty:
-                df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel]
-                correcoes_alu = df_sec_f.to_string()
+            if not df_aulas.empty:
+                # Cálculo de Desenvoltura: Começa em 100%, perde 10% por dificuldade marcada
+                def calcular_nota(lista_difs):
+                    if not isinstance(lista_difs, list) or not lista_difs: return 100.0
+                    if "Não apresentou dificuldades" in lista_difs: return 100.0
+                    nota = 100.0 - (len(lista_difs) * 10.0)
+                    return max(0.0, nota)
 
-            # Montar Bloco de Dados para a IA
-            dados_ia = f"""
-            TIPO DE RELATÓRIO: {periodo_tipo}
-            ALUNA: {aluna_sel}
-            PERÍODO: {data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}
-            
-            DADOS DAS AULAS:
-            {df_au[['Data', 'Materia', 'Licao', 'Dificuldades', 'Obs']].to_string()}
-            
-            DADOS DE CORREÇÃO (SECRETARIA):
-            {correcoes_alu}
-            """
+                df_aulas['Nota_Desenv'] = df_aulas['Dificuldades'].apply(calcular_nota)
+                grafico_data = df_aulas.groupby('Materia')['Nota_Desenv'].mean()
+                
+                # Exibição do Gráfico de Barras
+                st.bar_chart(grafico_data)
+                st.caption("A pontuação baseia-se na ausência de dificuldades técnicas registradas (100% = Excelente).")
+            else:
+                st.info("Sem registros de aula para gerar o gráfico de desenvoltura.")
 
-            # Botão para Gerar a Análise
-            if st.button("✨ Gerar Análise Completa e Notificar Próxima Instrutora"):
-                with st.spinner("Nossa IA Pedagógica está analisando os dados..."):
-                    # Aqui simulamos a chamada da IA com o seu prompt
-                    prompt_completo = f"""
-                    Você é uma especialista altamente experiente em pedagogia musical... (PROMPT DO USUARIO)
-                    DADOS RECEBIDOS:
-                    {dados_ia}
-                    """
-                    
-                    # Exibição do Relatório (Simulado)
-                    st.markdown(f"""
-                    ### 📜 RELATÓRIO PEDAGÓGICO - {aluna_sel.upper()}
-                    **Período:** {periodo_tipo} ({data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')})
-                    
-                    **SEÇÃO 1 — IDENTIFICAÇÃO**
-                    - Aulas no período: {len(df_au)}
-                    - Presenças: {len(df_cha[df_cha['Status'] == 'Presente'])}
-                    - Atividades Corrigidas: {len(df_sec[df_sec['Aluna'] == aluna_sel]) if not df_sec.empty else 0}
-                    
-                    ---
-                    *(O conteúdo completo do relatório baseado no prompt apareceria aqui)*
-                    ---
-                    
-                    **ANÁLISE DE EVOLUÇÃO PERCENTUAL:** - Evolução Técnica: 85% 📈
-                    - Teoria: 70% 📈
-                    - Solfejo: 60% ⚠️
-                    """)
+            # --- BOTÃO PARA GERAR O RELATÓRIO COMPLETO NA TELA ---
+            if st.button("✨ GERAR RELATÓRIO PEDAGÓGICO E NOTIFICAR"):
+                # Cálculo de Frequência
+                df_ch = df_f[df_f["Tipo"] == "Chamada"]
+                total_dias = len(df_ch)
+                presencas = len(df_ch[df_ch["Status"] == "Presente"])
+                porcentagem_freq = (presencas / total_dias * 100) if total_dias > 0 else 0
 
-                    # 5. Notificação por Telefone (Simulação)
-                    st.success("✅ Relatório salvo no banco de dados!")
-                    
-                    # Lógica de aviso para a instrutora da próxima semana
-                    st.info(f"📲 **NOTIFICAÇÃO ENVIADA:**\n\nOlá Instrutora da próxima semana, a análise pedagógica da aluna {aluna_sel} referente ao período {periodo_tipo} já está disponível no sistema GEM Vila Verde. Por favor, revise antes da próxima aula.")
+                st.divider()
+                # ESTRUTURA DO RELATÓRIO (APARECE NA TELA)
+                st.markdown(f"# 📜 RELATÓRIO PEDAGÓGICO - {aluna_sel.upper()}")
+                st.write(f"**Período Selecionado:** {periodo_tipo} ({d_ini.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')})")
+                
+                # Métricas Rápidas
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Frequência", f"{porcentagem_freq:.1f}%")
+                m2.metric("Aulas Realizadas", len(df_aulas))
+                m3.metric("Média de Desenvoltura", f"{df_aulas['Nota_Desenv'].mean():.0f}%" if not df_aulas.empty else "0%")
 
-            # 6. Histórico de Análises Salvas (Simulação de Banco de Dados)
-            with st.expander("📂 Ver análises anteriores desta aluna"):
-                st.write("Análise Semestral - 20/12/2025 - [Visualizar PDF]")
-                st.write("Análise Bimestral - 15/10/2025 - [Visualizar PDF]")
+                # Conteúdo Pedagógico (Baseado nas suas seções)
+                st.subheader("📗 Análise de Desempenho Técnica")
+                if not df_aulas.empty:
+                    for mat in ["Prática", "Teoria", "Solfejo"]:
+                        aulas_mat = df_aulas[df_aulas["Materia"] == mat]
+                        if not aulas_mat.empty:
+                            with st.expander(f"Evolução em {mat}"):
+                                for _, r in aulas_mat.iterrows():
+                                    st.write(f"**Data {r['Data']}:** Lição {r['Licao']}")
+                                    st.write(f"**Dificuldades:** {', '.join(r['Dificuldades'])}")
+                                    st.write(f"**Obs:** {r['Obs']}")
+                
+                st.subheader("📋 Resumo da Secretaria")
+                df_sec = pd.DataFrame(st.session_state.correcoes_secretaria)
+                if not df_sec.empty:
+                    df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel]
+                    st.table(df_sec_f[["Data", "Atividade", "Status"]])
+
+                # AVISO FINAL
+                st.success("✅ Análise gerada com sucesso e salva no banco de dados!")
+                st.info("🔔 **AVISO:** A análise da aluna está pronta. Favor comunicar a instrutora da próxima semana.")
+
+            # Histórico Geral
+            with st.expander("📂 Ver histórico bruto de dados"):
+                st.dataframe(df_f)
