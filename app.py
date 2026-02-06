@@ -11,10 +11,11 @@ import json
 st.set_page_config(page_title="GEM Vila Verde - Sistema 2026", layout="wide", page_icon="🎼")
 
 # --- CONEXÃO COM BANCO DE DADOS (FIRESTORE) ---
+# --- CONEXÃO COM BANCO DE DADOS (FIRESTORE) ---
 def init_connection():
     try:
-        key_dict = json.loads(st.secrets["textkey"])
-        creds = service_account.Credentials.from_service_account_info(key_dict)
+        # Agora ele lê as configurações diretamente dos Secrets
+        creds = service_account.Credentials.from_service_account_info(st.secrets)
         return firestore.Client(credentials=creds)
     except Exception as e:
         st.error(f"Erro na conexão com o banco de dados: {e}")
@@ -269,3 +270,4 @@ elif perfil == "📊 Analítico IA":
             st.divider()
             st.subheader("🎯 Dicas para a Próxima Aula e Banca")
             st.info(f"**Recomendação:** {df_alu['Obs'].iloc[-1] if not df_alu['Obs'].empty else 'Continuar evolução no método.'}")
+
