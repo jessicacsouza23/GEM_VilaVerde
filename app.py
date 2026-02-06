@@ -181,35 +181,78 @@ if perfil == "🏠 Secretaria":
                 st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": reg["Aluna"], "Tipo": "Chamada", "Status": reg["Status"]})
             st.success("Chamada salva!")
 
-    # --- ABA 3: CORREÇÃO (CONFORME SOLICITADO) ---
+    # --- ABA 3: CORREÇÃO DE ATIVIDADES (DETALHADA) ---
     with tab_correcao:
-        st.subheader("✅ Correção de Atividades")
-        sec_resp = st.selectbox("Secretária Responsável:", SECRETARIAS)
-        alu_corr = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]))
+        st.subheader("✅ Centro de Correção Pedagógica")
         
-        liçao_info = "Sem registros."
+        c_sec1, c_sec2 = st.columns(2)
+        sec_resp = c_sec1.selectbox("Secretária Responsável:", SECRETARIAS, key="sec_resp_corr")
+        alu_corr = c_sec2.selectbox("Selecionar Aluna para Correção:", sorted([a for l in TURMAS.values() for a in l]), key="alu_sel_corr")
+        
+        # 1. BUSCA DE DADOS DA PROFESSORA
+        dados_da_aula = {"Materia": "---", "MSA": "---", "Apostila": "---", "Instrutora": "---"}
+        encontrou_aula = False
+
         if st.session_state.historico_geral:
             df_h = pd.DataFrame(st.session_state.historico_geral)
             df_alu = df_h[(df_h["Aluna"] == alu_corr) & (df_h.get("Tipo") == "Aula")]
             
             if not df_alu.empty:
                 ult = df_alu.iloc[-1]
-                liçao_info = f"Matéria: {ult.get('Materia', '---')} | MSA: {ult.get('Home_M', '---')} | Apostila: {ult.get('Home_A', '---')}"
-                st.info(f"📋 **Última Lição (Professora):** {liçao_info}")
+                dados_da_aula = {
+                    "Materia": ult.get('Materia', '---'),
+                    "MSA": ult.get('Home_M', '---'),
+                    "Apostila": ult.get('Home_A', '---'),
+                    "Instrutora": ult.get('Instrutora', '---')
+                }
+                encontrou_aula = True
 
-        st.divider()
-        status_corr = st.radio("Veredito:", ["Realizada", "Não Realizada", "Devolvida"], horizontal=True)
-        obs_sec = st.text_area("Resumo da Secretaria (Análise para Banca):")
+        # 2. EXIBIÇÃO DO QUE DEVE SER CORRIGIDO
+        st.markdown(f"### 📋 Atividades para Corrigir ({alu_corr})")
+        if encontrou_aula:
+            st.warning(f"**Lançado por {dados_da_aula['Instrutora']}:** {dados_da_aula['Materia']}")
+        else:
+            st.error("⚠️ Nenhuma aula recente encontrada para esta aluna.")
 
-        if st.button("💾 Salvar Correção", type="primary"):
-            st.session_state.correcoes_secretaria.append({
+        # 3. CAMPOS DE CHECK (AQUI É ONDE A SECRETARIA ATUA)
+        col_c1, col_c2 = st.columns(2)
+        
+        with col_c1:
+            st.markdown("**📖 Conferência de Lições**")
+            # Mostra a lição da professora e pergunta se foi feita
+            conf_msa = st.selectbox(f"MSA/Método ({dados_da_aula['MSA']}):", 
+                                  ["✅ Realizada", "❌ Não Realizada", "⚠️ Parcial", "🚫 Não solicitado"], key="conf_msa")
+            
+            conf_apostila = st.selectbox(f"Apostila ({dados_da_aula['Apostila']}):", 
+                                       ["✅ Realizada", "❌ Não Realizada", "⚠️ Parcial", "🚫 Não solicitado"], key="conf_apo")
+
+        with col_c2:
+            st.markdown("**🎯 Avaliação de Resultados**")
+            resultado_geral = st.radio("Veredito Final:", ["Aprovada", "Reprovada (Refazer)", "Em Andamento"], horizontal=True, key="veredito")
+            
+        # 4. RESUMO PARA A BANCA
+        st.markdown("**📝 Resumo Pedagógico da Secretaria (Para a Banca Semestral)**")
+        obs_sec = st.text_area("Descreva a evolução técnica observada nesta correção:", 
+                              placeholder="Ex: Aluna executou bem o MSA Fase 3, mas a Apostila de Teoria ainda apresenta erros de divisão...",
+                              key="obs_sec_banca")
+
+        # 5. BOTÃO DE SALVAMENTO
+        if st.button("💾 SALVAR CORREÇÃO COMPLETA", type="primary", use_container_width=True):
+            registro_final = {
                 "Data": datetime.now().strftime("%d/%m/%Y"),
                 "Aluna": alu_corr,
-                "Status": status_corr,
-                "Obs": obs_sec,
-                "Secretaria": sec_resp
-            })
-            st.success("Corrigido!")            
+                "Secretaria": sec_resp,
+                "Materia_Ref": dados_da_aula['Materia'],
+                "MSA_Status": conf_msa,
+                "Apostila_Status": conf_apostila,
+                "Veredito": resultado_geral,
+                "Nota_Tecnica": obs_sec,
+                "Tipo": "Correção Secretaria"
+            }
+            st.session_state.correcoes_secretaria.append(registro_final)
+            st.success(f"✅ Correção de {alu_corr} registrada e congelada para consulta futura!")
+            st.balloons()
+            
 # ========================================
 #              MÓDULO PROFESSORA
 # ==========================================
@@ -468,6 +511,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
