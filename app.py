@@ -89,22 +89,24 @@ historico_geral = db_get_historico()
 elif perfil == "🏠 Secretaria":
     tab_gerar, tab_chamada, tab_correcao = st.tabs(["🗓️ Rodízio", "📍 Chamada", "🏢 Correção de Atividades"])
 
-    # --- ABA 1: RODÍZIO (MANTIDA ORIGINAL) ---
+    # --- ABA 1: RODÍZIO ---
     with tab_gerar:
         st.subheader("🗓️ Gestão de Rodízios")
         c_m1, c_m2 = st.columns(2)
         mes_ref = c_m1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
         ano_ref = c_m2.selectbox("Ano:", [2026, 2027], index=0)
+        
+        # Certifique-se que a função get_sabados_do_mes existe no seu código global
         sabados = get_sabados_do_mes(ano_ref, mes_ref)
         
         for idx_sab, sab in enumerate(sabados):
             d_str = sab.strftime("%d/%m/%Y")
             with st.expander(f"📅 SÁBADO: {d_str}"):
                 if d_str not in calendario_anual:
-                    c1, c2 = st.columns(2)
-                    with c1:
+                    col_t1, col_t2 = st.columns(2)
+                    with col_t1:
                         pt2, pt3, pt4 = [st.selectbox(f"Teoria H{i} ({d_str}):", PROFESSORAS_LISTA, index=i-2, key=f"pt{i}_{d_str}") for i in range(2, 5)]
-                    with c2:
+                    with col_t2:
                         st2, st3, st4 = [st.selectbox(f"Solfejo H{i} ({d_str}):", PROFESSORAS_LISTA, index=i+1, key=f"st{i}_{d_str}") for i in range(2, 5)]
                     folgas = st.multiselect(f"Folgas ({d_str}):", PROFESSORAS_LISTA, key=f"f_{d_str}")
 
@@ -140,10 +142,10 @@ elif perfil == "🏠 Secretaria":
                         db_delete_calendario(d_str)
                         st.rerun()
 
-    # --- ABA 2: CHAMADA (MANTIDA ORIGINAL) ---
+    # --- ABA 2: CHAMADA ---
     with tab_chamada:
         st.subheader("📍 Registro de Presença")
-        dt_ch = st.selectbox("Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="dt_ch")
+        dt_ch = st.selectbox("Data da Chamada:", [s.strftime("%d/%m/%Y") for s in sabados], key="dt_ch_sec")
         for t_n, alunas in TURMAS.items():
             with st.expander(f"Chamada {t_n}"):
                 for aluna in alunas:
@@ -153,72 +155,50 @@ elif perfil == "🏠 Secretaria":
                         db_save_historico({"Data": dt_ch, "Aluna": aluna, "Tipo": "Chamada", "Status": st_ch})
                         st.toast(f"Presença de {aluna} salva!")
 
-    # --- ABA 3: CORREÇÃO DE ATIVIDADES (TURBO E DETALHADA) ---
+    # --- ABA 3: CORREÇÃO DE ATIVIDADES ---
     with tab_correcao:
-        st.subheader("🛠️ Auditoria de Lançamentos")
-        
+        st.subheader("🏢 Auditoria e Correção")
         if not historico_geral:
-            st.info("O banco de dados está vazio.")
+            st.info("Nenhum registro no histórico para editar.")
         else:
             df_edit = pd.DataFrame(historico_geral)
             
-            # Filtros rápidos
-            c_f1, c_f2 = st.columns(2)
-            filtro_aluna = c_f1.selectbox("Filtrar por Aluna:", ["Todas"] + sorted(df_edit["Aluna"].unique().tolist()), key="f_al_corr")
-            filtro_tipo = c_f2.selectbox("Tipo:", ["Todos", "Aula", "Chamada"], key="f_tp_corr")
+            # Filtros de busca na correção
+            f_col1, f_col2 = st.columns(2)
+            aluna_f = f_col1.selectbox("Aluna:", ["Todas"] + sorted(df_edit["Aluna"].unique().tolist()), key="f_al_sec")
+            tipo_f = f_col2.selectbox("Tipo:", ["Todos", "Aula", "Chamada"], key="f_tp_sec")
 
             df_f = df_edit.copy()
-            if filtro_aluna != "Todas": df_f = df_f[df_f["Aluna"] == filtro_aluna]
-            if filtro_tipo != "Todos": df_f = df_f[df_f["Tipo"] == filtro_tipo]
-
-            st.write(f"Encontrados {len(df_f)} registros.")
+            if aluna_f != "Todas": df_f = df_f[df_f["Aluna"] == aluna_f]
+            if tipo_f != "Todos": df_f = df_f[df_f["Tipo"] == tipo_f]
 
             for idx, row in df_f.iterrows():
-                # Título do expander muda cor se for falta ou aula
-                label = f"📌 {row['Data']} - {row['Aluna']} | {row.get('Materia', row['Tipo'])}"
-                with st.expander(label):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        data_edit = st.text_input("Data:", value=row['Data'], key=f"ed_dt_{idx}")
-                        materia_edit = st.text_input("Matéria:", value=row.get('Materia', ''), key=f"ed_mat_{idx}")
-                        licao_edit = st.text_input("Lição Dada:", value=row.get('Licao', ''), key=f"ed_lic_{idx}")
-                    
-                    with col2:
-                        instr_edit = st.text_input("Instrutora:", value=row.get('Instrutora', ''), key=f"ed_inst_{idx}")
-                        status_edit = st.selectbox("Status Presença:", ["P", "F", "J"], 
-                                                 index=["P", "F", "J"].index(row['Status']) if row.get('Status') in ["P", "F", "J"] else 0,
-                                                 key=f"ed_st_{idx}")
-                    
-                    dif_edit = st.text_area("Dificuldades Técnicas:", value=row.get('Dificuldades', ''), key=f"ed_dif_{idx}")
-                    obs_edit = st.text_area("Relato Pedagógico:", value=row.get('Obs', ''), key=f"ed_obs_{idx}")
+                with st.expander(f"📝 {row['Data']} - {row['Aluna']} ({row.get('Materia', row['Tipo'])})"):
+                    # Interface de edição detalhada
+                    e_c1, e_c2 = st.columns(2)
+                    with e_c1:
+                        nova_lic = st.text_input("Lição:", value=row.get('Licao', ''), key=f"e_lic_{idx}")
+                        nova_inst = st.text_input("Instrutora:", value=row.get('Instrutora', ''), key=f"e_ins_{idx}")
+                    with e_c2:
+                        novo_st = st.selectbox("Presença:", ["P", "F", "J"], 
+                                             index=["P", "F", "J"].index(row['Status']) if row.get('Status') in ["P", "F", "J"] else 0,
+                                             key=f"e_st_{idx}")
+                        nova_mat = st.text_input("Matéria:", value=row.get('Materia', ''), key=f"e_mt_{idx}")
 
-                    c_btn1, c_btn2, c_btn3 = st.columns([1, 1, 2])
-                    if c_btn1.button("💾 SALVAR", key=f"btn_save_{idx}", type="primary"):
+                    nova_dif = st.text_area("Dificuldades:", value=row.get('Dificuldades', ''), key=f"e_df_{idx}")
+                    nova_obs = st.text_area("Relato:", value=row.get('Obs', ''), key=f"e_ob_{idx}")
+
+                    eb1, eb2 = st.columns([1, 4])
+                    if eb1.button("✅ SALVAR", key=f"sv_{idx}", type="primary"):
                         st.session_state.historico_geral[idx].update({
-                            "Data": data_edit, "Materia": materia_edit, "Licao": licao_edit,
-                            "Instrutora": instr_edit, "Status": status_edit, 
-                            "Dificuldades": dif_edit, "Obs": obs_edit
+                            "Licao": nova_lic, "Instrutora": nova_inst, "Status": novo_st,
+                            "Materia": nova_mat, "Dificuldades": nova_dif, "Obs": nova_obs
                         })
-                        st.success("Alterado!")
+                        st.success("Atualizado!")
                         st.rerun()
-                    
-                    if c_btn2.button("🗑️ EXCLUIR", key=f"btn_del_{idx}"):
+                    if eb2.button("🗑️ EXCLUIR", key=f"dl_{idx}"):
                         st.session_state.historico_geral.pop(idx)
-                        st.warning("Excluído!")
                         st.rerun()
-
-        st.divider()
-        # Gráfico de faltas para a secretaria agir
-        if historico_geral:
-            st.subheader("🚩 Alertas de Absenteísmo")
-            df_faltas = pd.DataFrame(historico_geral)
-            if "Status" in df_faltas.columns:
-                resumo_faltas = df_faltas[df_faltas["Status"] == "F"]["Aluna"].value_counts()
-                if not resumo_faltas.empty:
-                    st.bar_chart(resumo_faltas)
-                else:
-                    st.success("Nenhuma falta crítica detectada.")
 
 # ==========================================
 #              MÓDULO PROFESSORA
@@ -478,5 +458,6 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
