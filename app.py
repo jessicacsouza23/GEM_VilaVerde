@@ -234,10 +234,12 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.header("📊 Inteligência Pedagógica - Vila Verde")
 
-    # Inicialização de memória
+    # Inicialização segura da memória
     if "analises_fixas_salvas" not in st.session_state:
         st.session_state.analises_fixas_salvas = {}
     
+    df_f = pd.DataFrame()
+
     if not st.session_state.historico_geral:
         st.info("Aguardando registros no histórico para iniciar as análises.")
     else:
@@ -251,14 +253,14 @@ elif perfil == "📊 Analítico IA":
 
         id_analise = f"{aluna_sel}_{data_ini_ref}_{periodo_tipo}"
 
-        # Filtragem de dados
+        # Lógica de Filtro de Datas
         df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y').dt.date
         delta = {"Diário":0, "Mensal":30, "Bimestral":60, "Semestral":180, "Anual":365}[periodo_tipo]
         d_fim = data_ini_ref + timedelta(days=delta)
         df_f = df_geral[(df_geral["Aluna"] == aluna_sel) & (df_geral["dt_obj"] >= data_ini_ref) & (df_geral["dt_obj"] <= d_fim)]
 
         if not df_f.empty:
-            # --- GRÁFICOS INICIAIS ---
+            # --- 1. GRÁFICOS DE DESEMPENHO ---
             st.subheader("📈 Indicadores de Desempenho")
             df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
             df_ch = df_f[df_f["Tipo"] == "Chamada"]
@@ -269,9 +271,9 @@ elif perfil == "📊 Analítico IA":
                     def calc_nota(l):
                         if not isinstance(l, list) or not l: return 100.0
                         return max(0.0, 100.0 - (len(l) * 10.0))
-                    df_aulas['Nota'] = df_aulas['Dificuldades'].apply(calc_nota)
-                    st.write("**Média de Desenvoltura**")
-                    st.bar_chart(df_aulas.groupby('Materia')['Nota'].mean())
+                    df_aulas['Nota_Desenv'] = df_aulas['Dificuldades'].apply(calc_nota)
+                    st.write("**Desenvoltura por Disciplina**")
+                    st.bar_chart(df_aulas.groupby('Materia')['Nota_Desenv'].mean())
             
             with col_g2:
                 if not df_ch.empty:
@@ -280,56 +282,58 @@ elif perfil == "📊 Analítico IA":
 
             st.divider()
 
-            # --- EXIBIÇÃO DA ANÁLISE ---
+            # --- 2. EXIBIÇÃO DA ANÁLISE SALVA OU BOTÃO PARA GERAR ---
             if id_analise in st.session_state.analises_fixas_salvas:
-                dados_salvos = st.session_state.analises_fixas_salvas[id_analise]
+                dados = st.session_state.analises_fixas_salvas[id_analise]
                 
-                st.subheader(f"📑 Relatório Salvo em {dados_salvos['data_geracao']}")
-                
-                # Exibição usando componentes nativos
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Média Geral", f"{dados_salvos['media']:.0f}%")
-                m2.metric("Aulas", dados_salvos['qtd_aulas'])
-                m3.metric("Frequência", f"{dados_salvos['freq']:.0f}%")
+                # Proteção contra erros de chaves antigas
+                try:
+                    st.subheader(f"📑 Relatório Consolidado ({dados['data_geracao']})")
+                    
+                    c_m1, c_m2, c_m3 = st.columns(3)
+                    c_m1.metric("Média de Desenvoltura", f"{dados.get('media', 0):.0f}%")
+                    c_m2.metric("Aulas Realizadas", dados.get('qtd_aulas', 0))
+                    c_m3.metric("Frequência", f"{dados.get('freq', 0):.0f}%")
 
-                st.markdown(f"### 📋 Parecer Técnico: {aluna_sel}")
-                st.write(dados_salvos['texto_geral'])
-                
-                st.error(f"**⚠️ O que melhorar:** \n{dados_salvos['melhorar']}")
-                st.info(f"**💡 Dica para próxima aula:** \n{dados_salvos['dicas']}")
-                
-                if periodo_tipo in ["Semestral", "Anual"]:
-                    st.warning(f"**🎯 Sugestão para Banca:** \n{dados_salvos['banca']}")
+                    st.markdown(f"### 📋 Parecer Pedagógico: {aluna_sel}")
+                    st.write(dados.get('texto_geral', ""))
+                    
+                    st.error(f"**⚠️ Pontos a melhorar:** \n{dados.get('melhorar', 'Nenhum registro específico.')}")
+                    st.info(f"**💡 Orientações para a próxima aula:** \n{dados.get('dicas', 'Seguir cronograma normal.')}")
+                    
+                    if periodo_tipo in ["Semestral", "Anual"]:
+                        st.warning(f"**🎯 Critérios para Avaliação/Banca:** \n{dados.get('banca', '')}")
+                except KeyError:
+                    st.warning("Houve uma atualização no sistema. Por favor, gere a análise novamente abaixo.")
+                    del st.session_state.analises_fixas_salvas[id_analise]
 
-            else:
-                if st.button("✨ GERAR E SALVAR ANÁLISE COMPLETA"):
-                    # Processamento de dados para a análise
+            # Botão para gerar (aparece se não houver análise ou se houver erro)
+            if id_analise not in st.session_state.analises_fixas_salvas:
+                if st.button("✨ GERAR E FIXAR ANÁLISE PEDAGÓGICA"):
                     df_sec = pd.DataFrame(st.session_state.correcoes_secretaria)
                     df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel] if not df_sec.empty else pd.DataFrame()
                     
                     t_difs = [d for l in df_aulas['Dificuldades'] for d in l if l]
-                    status_sec = df_sec_f['Status'].iloc[-1] if not df_sec_f.empty else "Sem registros"
-                    media_final = df_aulas['Nota'].mean() if not df_aulas.empty else 0
-                    freq_final = (len(df_ch[df_ch["Status"] == "Presente"]) / len(df_ch) * 100) if len(df_ch) > 0 else 0
+                    status_sec = df_sec_f['Status'].iloc[-1] if not df_sec_f.empty else "Sem registros na secretaria"
+                    media_val = df_aulas['Nota_Desenv'].mean() if not df_aulas.empty else 0
+                    freq_val = (len(df_ch[df_ch["Status"] == "Presente"]) / len(df_ch) * 100) if len(df_ch) > 0 else 0
 
-                    # Texto de Dicas Automáticas
-                    dicas_txt = "Priorizar o uso do metrônomo em andamentos lentos e reforçar a leitura das notas na Clave de Fá."
-                    banca_txt = "Avaliar a postura das mãos (falanges), respiração nos hinos e autonomia no solfejo rítmico."
-                    
-                    # Salva no estado
+                    # Montagem do conteúdo fixo
                     st.session_state.analises_fixas_salvas[id_analise] = {
                         "data_geracao": datetime.now().strftime("%d/%m/%Y"),
-                        "media": media_final,
+                        "media": media_val,
                         "qtd_aulas": len(df_aulas),
-                        "freq": freq_final,
-                        "texto_geral": f"A aluna demonstra um aproveitamento de {media_final:.0f}%. O status das atividades na secretaria é: {status_sec}.",
-                        "melhorar": ", ".join(set(t_difs)) if t_difs else "Manter a constância.",
-                        "dicas": dicas_txt,
-                        "banca": banca_txt
+                        "freq": freq_val,
+                        "texto_geral": f"A aluna {aluna_sel} apresenta aproveitamento técnico de {media_val:.1f}%. Atividades da secretaria: {status_sec}.",
+                        "melhorar": ", ".join(set(t_difs)) if t_difs else "Manter o ritmo atual de estudos.",
+                        "dicas": "Focar em exercícios de independência de mãos e leitura de notas na Clave de Fá.",
+                        "banca": "Avaliar postura das mãos (falanges), respiração correta nos hinos e solfejo rítmico."
                     }
                     st.rerun()
 
-        with st.expander("📂 Histórico de Dados Brutos"):
-            st.dataframe(df_f)
+        else:
+            st.warning(f"Nenhum dado encontrado para {aluna_sel} no período selecionado.")
 
+    with st.expander("📂 Ver Histórico Bruto"):
+        st.dataframe(df_f)
 
