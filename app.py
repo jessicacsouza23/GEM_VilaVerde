@@ -88,7 +88,7 @@ historico_geral = db_get_historico()
 # ==========================================
 
 # Definindo a variável que estava faltando para o sistema não travar
-SECRETARIAS_LISTA = ["Elisangela", "Célia", "Rafaela"]
+SECRETARIAS_LISTA = ["Ester", "Jéssica", "Larissa", "Lurdes", "Natasha", "Roseli"]
 
 if perfil == "🏠 Secretaria":
     tab_gerar, tab_chamada, tab_correcao = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Correção de Atividades"])
@@ -465,6 +465,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
