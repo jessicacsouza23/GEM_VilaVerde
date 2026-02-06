@@ -142,14 +142,13 @@ if perfil == "🏠 Secretaria":
                         del st.session_state.calendario_anual[d_str]
                         st.rerun()
 
-    # --- ABA 2: CHAMADA ---
     with tab_chamada:
         st.subheader("📍 Chamada Geral")
         data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_ch_sec")
         
-        # Botão para Presença Geral
-        if st.button("✅ Marcar Todas como Presentes"):
-            st.session_state["presenca_geral"] = True
+        # Botão para Presença Geral - Define um estado na sessão
+        if st.button("✅ Marcar Todas como Presentes (P)"):
+            st.session_state["presenca_geral_trigger"] = True
         
         alunas_lista = [
             "Amanda S. - Pq do Carmo II", "Ana Marcela S. - Vila Verde", "Caroline C. - Vila Ré",
@@ -162,14 +161,24 @@ if perfil == "🏠 Secretaria":
         ]
         
         registros_ch = []
+        
+        # Determina o índice padrão: 0 para "P", 1 para "F" (ou None para forçar escolha)
+        # Se o gatilho de presença geral estiver ativo, o padrão vira 0 (P)
+        idx_padrao = 0 if st.session_state.get("presenca_geral_trigger", False) else 1
+
         for aluna in alunas_lista:
             c1, c2, c3 = st.columns([2, 2, 2])
             c1.write(f"**{aluna}**")
             
-            # Valor padrão se "Presença Geral" for clicado
-            index_padrao = 0 if st.session_state.get("presenca_geral", False) else 1 # P=0, F=1
-            
-            st_ch = c2.radio(f"Status {aluna}", ["P", "F", "J"], index=index_padrao, horizontal=True, key=f"ch_{aluna}_{data_ch_sel}", label_visibility="collapsed")
+            # O rádio agora responde ao botão através do index
+            st_ch = c2.radio(
+                f"Status {aluna}", 
+                ["P", "F", "J"], 
+                index=idx_padrao, 
+                horizontal=True, 
+                key=f"ch_{aluna}_{data_ch_sel}", 
+                label_visibility="collapsed"
+            )
             
             motivo = ""
             if st_ch == "J":
@@ -177,12 +186,21 @@ if perfil == "🏠 Secretaria":
             
             registros_ch.append({"Aluna": aluna, "Status": st_ch, "Motivo": motivo})
 
-        if st.button("💾 SALVAR CHAMADA", type="primary", use_container_width=True):
+        st.divider()
+        if st.button("💾 SALVAR CHAMADA FINAL", type="primary", use_container_width=True):
             for r in registros_ch: 
-                st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": r["Aluna"], "Tipo": "Chamada", "Status": r["Status"], "Justificativa": r["Motivo"]})
-            st.session_state["presenca_geral"] = False # Reseta o gatilho
-            st.success("Chamada salva!")
-
+                st.session_state.historico_geral.append({
+                    "Data": data_ch_sel, 
+                    "Aluna": r["Aluna"], 
+                    "Tipo": "Chamada", 
+                    "Status": r["Status"], 
+                    "Justificativa": r["Motivo"]
+                })
+            # Reseta o gatilho após salvar para a próxima vez começar limpo
+            st.session_state["presenca_geral_trigger"] = False
+            st.success("Chamada gravada com sucesso!")
+            st.rerun()
+            
     # --- ABA 3: CORREÇÃO E ANÁLISE PEDAGÓGICA ---
     with tab_correcao:
         st.subheader("✅ Controle de Lições e Relatório")
@@ -489,6 +507,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
