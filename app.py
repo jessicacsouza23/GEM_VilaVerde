@@ -234,9 +234,11 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.header("📊 Inteligência Pedagógica - Vila Verde")
 
-    # Inicialização da memória de análises fixas
+    # Inicialização da memória de análises fixas e variáveis de segurança
     if "analises_fixas_salvas" not in st.session_state:
         st.session_state.analises_fixas_salvas = {}
+    
+    df_f = pd.DataFrame() # Segurança para evitar NameError
 
     if not st.session_state.historico_geral:
         st.info("Aguardando registros no histórico para iniciar as análises.")
@@ -249,92 +251,91 @@ elif perfil == "📊 Analítico IA":
         periodo_tipo = c2.selectbox("Tipo de Período:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
         data_ini_ref = c3.date_input("Data Inicial do Período:") 
 
-        # 1. Chave única para salvar a análise (Aluna + Data + Tipo)
+        # ID único para congelar a análise
         id_analise = f"{aluna_sel}_{data_ini_ref}_{periodo_tipo}"
 
-        # 2. Lógica de Filtro para buscar dados NOVOS ou carregar SALVOS
+        # Lógica de Filtro
+        df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y').dt.date
+        delta = {"Diário":0, "Mensal":30, "Bimestral":60, "Semestral":180, "Anual":365}[periodo_tipo]
+        d_fim = data_ini_ref + timedelta(days=delta)
+        df_f = df_geral[(df_geral["Aluna"] == aluna_sel) & (df_geral["dt_obj"] >= data_ini_ref) & (df_geral["dt_obj"] <= d_fim)]
+
+        # VERIFICAÇÃO: Se já existe análise salva, mostra ela e ignora o resto
         if id_analise in st.session_state.analises_fixas_salvas:
-            st.success(f"📌 Carregando análise salva em {st.session_state.analises_fixas_salvas[id_analise]['data_geracao']}")
-            relatorio_final = st.session_state.analises_fixas_salvas[id_analise]['conteudo']
-            st.markdown(relatorio_final, unsafe_allow_html=True)
+            st.success(f"✅ Análise Congelada: Carregada do registro de {st.session_state.analises_fixas_salvas[id_analise]['data_geracao']}")
+            st.markdown(st.session_state.analises_fixas_salvas[id_analise]['conteudo'], unsafe_allow_html=True)
+        
+        elif df_f.empty:
+            st.warning(f"Nenhum dado encontrado para {aluna_sel} neste período.")
+        
         else:
-            # Filtragem para gerar nova análise
-            df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y').dt.date
-            delta = {"Diário":0, "Mensal":30, "Bimestral":60, "Semestral":180, "Anual":365}[periodo_tipo]
-            d_fim = data_ini_ref + timedelta(days=delta)
-            df_f = df_geral[(df_geral["Aluna"] == aluna_sel) & (df_geral["dt_obj"] >= data_ini_ref) & (df_geral["dt_obj"] <= d_fim)]
+            # Botão para gerar a nova análise baseada nos dados atuais
+            if st.button("✨ GERAR E SALVAR ANÁLISE PEDAGÓGICA"):
+                df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
+                df_sec = pd.DataFrame(st.session_state.correcoes_secretaria)
+                df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel] if not df_sec.empty else pd.DataFrame()
+                
+                # Cálculo de aproveitamento
+                def calc_nota(lista):
+                    if not isinstance(lista, list) or not lista: return 100.0
+                    return max(0.0, 100.0 - (len(lista) * 12.0))
+                
+                if not df_aulas.empty:
+                    df_aulas['Nota_Desenv'] = df_aulas['Dificuldades'].apply(calc_nota)
+                    media = df_aulas['Nota_Desenv'].mean()
+                else:
+                    media = 0
 
-            if df_f.empty:
-                st.warning("Nenhum dado encontrado para gerar nova análise neste período.")
-            else:
-                if st.button("✨ GERAR E SALVAR ANÁLISE PEDAGÓGICA"):
-                    # Cálculos Iniciais
-                    df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
-                    df_sec = pd.DataFrame(st.session_state.correcoes_secretaria)
-                    df_sec_f = df_sec[df_sec["Aluna"] == aluna_sel] if not df_sec.empty else pd.DataFrame()
+                # --- MONTAGEM DO RELATÓRIO HTML ---
+                # Aqui juntamos todas as disciplinas e correções
+                estilo_caixa = "border: 2px solid #2E7D32; padding: 20px; border-radius: 12px; background-color: #f9fdf9;"
+                
+                conteudo = f"""
+                <div style="{estilo_caixa}">
+                    <h2 style="text-align: center; color: #1B5E20;">🎼 PARECER PEDAGÓGICO INTEGRADO</h2>
+                    <p style="text-align: center;"><b>Aluna:</b> {aluna_sel} | <b>Período:</b> {periodo_tipo}</p>
+                    <hr>
+                    <h4>📊 DESENVOLVIMENTO GLOBAL</h4>
+                    <p>Após analisar as aulas de <b>Prática, Teoria e Solfejo</b>, a aluna apresenta um índice de aproveitamento médio de <b>{media:.0f}%</b>.</p>
                     
-                    def calc_nota(lista):
-                        if not isinstance(lista, list) or not lista: return 100.0
-                        return max(0.0, 100.0 - (len(lista) * 12.0))
-                    
-                    if not df_aulas.empty:
-                        df_aulas['Nota_Desenv'] = df_aulas['Dificuldades'].apply(calc_nota)
-                        media_geral = df_aulas['Nota_Desenv'].mean()
-                    else:
-                        media_geral = 0
+                    <h4>📚 ATIVIDADES E SECRETARIA</h4>
+                    <p>No período, foram registradas {len(df_sec_f)} correções de atividades pela secretaria. O status geral das tarefas é: 
+                    <b>{df_sec_f['Status'].iloc[-1] if not df_sec_f.empty else 'Sem registros'}</b>.</p>
 
-                    # --- CONSTRUÇÃO DO RESUMO GERAL (TODAS AS DISCIPLINAS JUNTAS) ---
-                    texto_relatorio = f"""
-                    <div style="border: 2px solid #4CAF50; padding: 20px; border-radius: 10px;">
-                        <h1 style="text-align: center;">📜 FECHAMENTO PEDAGÓGICO: {aluna_sel.upper()}</h1>
-                        <p style="text-align: center;"><b>Período:</b> {periodo_tipo} ({data_ini_ref.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')})</p>
-                        <hr>
-                        <h3>🎯 RESUMO INTEGRADO DO DESENVOLVIMENTO</h3>
-                        <p>A aluna apresenta um índice de desenvolvimento técnico de <b>{media_geral:.0f}%</b>. 
-                        Considerando as aulas de Prática, Teoria e Solfejo de forma integrada, observou-se que:</p>
+                    <h4>🔍 O QUE MELHORAR</h4>
+                    <p>Com base nas dificuldades recorrentes, a aluna deve focar em: 
+                    <i>{", ".join(list(set([d for l in df_aulas['Dificuldades'] for d in l if l]))) if not df_aulas.empty else 'Evolução constante sem bloqueios técnicos'}</i>.</p>
+                """
+
+                # Dicas Específicas para Semestral/Anual
+                if periodo_tipo in ["Semestral", "Anual"]:
+                    conteudo += """
+                    <div style="background-color: #E3F2FD; padding: 15px; border-radius: 8px; border-left: 6px solid #1976D2; margin-top: 10px;">
+                        <h4 style="margin-top: 0; color: #0D47A1;">🎯 DICAS PARA AVALIAÇÃO (BANCA SEMESTRAL)</h4>
                         <ul>
-                            <li><b>Evolução Prática:</b> Trabalhou {len(df_aulas[df_aulas['Materia']=='Prática'])} aulas de instrumento.</li>
-                            <li><b>Base Teórica:</b> Desempenho {'estável' if media_geral > 70 else 'que requer atenção'} na assimilação de conceitos.</li>
-                            <li><b>Correções da Secretaria:</b> {len(df_sec_f)} atividades validadas no período.</li>
+                            <li><b>Técnica:</b> Avaliar rigorosamente a articulação dos dedos (não "adentrar" às teclas).</li>
+                            <li><b>Hinos:</b> Cobrar a respiração correta nos fraseados e a postura da pedaleira.</li>
+                            <li><b>Teoria:</b> Realizar teste oral sobre a fórmula de compasso e valores das figuras.</li>
                         </ul>
-                        
-                        <h3 style="color: #2e7d32;">✅ PONTOS FORTES E AVANÇOS</h3>
-                        <p>Demonstra boa recepção às orientações das instrutoras e constância na presença.</p>
-
-                        <h3 style="color: #d32f2f;">⚠️ PONTOS A MELHORAR (PLANO DE AÇÃO)</h3>
-                        <p>É necessário intensificar o estudo rítmico. As dificuldades mais recorrentes no período envolveram: 
-                        <i>{", ".join(list(set([d for l in df_aulas['Dificuldades'] for d in l if l]))) if not df_aulas.empty else 'Nenhuma registrada'}</i>.</p>
-                    """
-
-                    # Dicas Especiais para Semestral/Anual
-                    if periodo_tipo in ["Semestral", "Anual"]:
-                        texto_relatorio += """
-                        <div style="background-color: #f0f7ff; padding: 15px; border-radius: 5px; border-left: 5px solid #2196f3;">
-                            <h3>📝 DICAS PARA AVALIAÇÃO SEMESTRAL (BANCA)</h3>
-                            <ul>
-                                <li><b>O que observar:</b> Verifique a postura dos ombros e o arredondamento das falanges durante a execução dos hinos.</li>
-                                <li><b>Teste de Leitura:</b> Aplique um solfejo rítmico de uma lição que ela não viu recentemente para testar a autonomia.</li>
-                                <li><b>Teoria:</b> Questione sobre a função dos acidentes ocorrentes encontrados no repertório atual.</li>
-                            </ul>
-                        </div>
-                        """
-                    
-                    texto_relatorio += f"""
-                        <h3 style="color: #ff9800;">💡 DICAS PARA AS PRÓXIMAS AULAS</h3>
-                        <p>Sugerimos que a próxima instrutora foque em exercícios de independência de mãos e leitura à primeira vista na Clave de Fá.</p>
-                        <hr>
-                        <p style="font-size: 12px; color: gray;">Relatório gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
                     </div>
                     """
+                
+                conteudo += f"""
+                    <h4 style="color: #E65100;">💡 DICAS PARA AS PRÓXIMAS AULAS</h4>
+                    <p>Recomendamos que a instrutora da próxima semana priorize o uso do metrônomo e a leitura na Clave de Fá, integrando a teoria à prática do órgão.</p>
+                    <p style="font-size: 11px; color: #757575; margin-top: 20px;">Análise fixada em: {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
+                </div>
+                """
 
-                    # SALVAR NO ESTADO (CONGELAR)
-                    st.session_state.analises_fixas_salvas[id_analise] = {
-                        "data_geracao": datetime.now().strftime("%d/%m/%Y"),
-                        "conteudo": texto_relatorio
-                    }
-                    st.rerun()
+                # Salva permanentemente no estado da sessão
+                st.session_state.analises_fixas_salvas[id_analise] = {
+                    "data_geracao": datetime.now().strftime("%d/%m/%Y"),
+                    "conteudo": conteudo
+                }
+                st.rerun()
 
-        # Exibir apenas UMA VEZ os dados brutos no final para conferência
+    # Histórico de Dados Brutos (Aparece apenas se houver dados e UMA ÚNICA VEZ)
+    if not df_f.empty:
         with st.expander("📂 Conferir Histórico de Dados Brutos"):
             st.dataframe(df_f)
 
