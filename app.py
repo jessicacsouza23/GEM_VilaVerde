@@ -211,14 +211,12 @@ elif perfil == "👩‍🏫 Professora":
     else:
         st.error("Rodízio não encontrado para esta data.")
 
-
 # ==========================================
 #              MÓDULO ANALÍTICO
 # ==========================================
 elif perfil == "📊 Analítico IA":
     st.header("📊 Inteligência Pedagógica - Vila Verde")
 
-    # Inicializa o estado para salvar análises "congeladas"
     if "analises_fixas_salvas" not in st.session_state:
         st.session_state.analises_fixas_salvas = {}
     
@@ -228,13 +226,12 @@ elif perfil == "📊 Analítico IA":
         df_geral = pd.DataFrame(historico_geral)
         todas_alunas = sorted(df_geral["Aluna"].unique())
         
-        # Filtros Superiores
+        # --- FILTROS ---
         c1, c2, c3 = st.columns([2, 2, 2])
         aluna_sel = c1.selectbox("Selecione a Aluna:", todas_alunas)
         periodo_tipo = c2.selectbox("Tipo de Período:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
         data_ini_ref = c3.date_input("Data Inicial da Análise:") 
 
-        # Identificador único para congelar a análise
         id_analise = f"{aluna_sel}_{data_ini_ref}_{periodo_tipo}"
 
         # Filtragem de Datas
@@ -249,87 +246,85 @@ elif perfil == "📊 Analítico IA":
             df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
             df_ch = df_f[df_f["Tipo"] == "Chamada"]
 
-            # --- INTEGRAÇÃO COM RODÍZIO (Busca próxima instrutora) ---
-            proxima_inst = None
-            data_hoje = datetime.now().strftime("%d/%m/%Y")
-            if data_hoje in calendario_anual:
-                escala_dia = calendario_anual[data_hoje]
-                for esc in escala_dia:
-                    if esc.get("Aluna") == aluna_sel:
-                        # Tenta extrair o nome da instrutora do campo de Prática
-                        for h in HORARIOS_LABELS:
-                            if "Prática" in str(esc.get(h, "")):
-                                proxima_inst = str(esc.get(h, "")).split("(")[-1].replace(")", "")
-                                break
+            # --- 1. GRÁFICOS DE DESEMPENHO ---
+            st.subheader("📈 Visão Geral de Desempenho")
+            col_g1, col_g2 = st.columns(2)
+            
+            with col_g1:
+                if not df_aulas.empty:
+                    # Cálculo de nota baseado em ausência de dificuldades
+                    def calc_nota(txt):
+                        if "Sem dificuldades" in str(txt): return 100
+                        difs = str(txt).split(",")
+                        return max(0, 100 - (len(difs) * 15))
+                    
+                    df_aulas['Nota'] = df_aulas['Dificuldades'].apply(calc_nota)
+                    st.write("**Desenvoltura por Matéria (%)**")
+                    st.bar_chart(df_aulas.groupby('Materia')['Nota'].mean())
+                else:
+                    st.info("Sem dados de aulas para gráficos.")
 
-            # --- EXIBIÇÃO OU GERAÇÃO DA ANÁLISE ---
+            with col_g2:
+                if not df_ch.empty:
+                    st.write("**Frequência (Presenças vs Faltas)**")
+                    st.bar_chart(df_ch["Status"].value_counts())
+                else:
+                    st.info("Sem dados de chamada para gráficos.")
+
+            st.divider()
+
+            # --- 2. RELATÓRIO CONSOLIDADO E "CONGELAMENTO" ---
             if id_analise in st.session_state.analises_fixas_salvas:
                 d = st.session_state.analises_fixas_salvas[id_analise]
-                st.subheader(f"📜 Relatório Consolidado (Fixo) - {aluna_sel}")
                 
-                if proxima_inst:
-                    st.success(f"✅ Próxima Aula: Instrutora **{proxima_inst}**")
+                # Container que simula o visual da imagem para exportação
+                with st.container(border=True):
+                    st.markdown(f"### 📋 RELATÓRIO PEDAGÓGICO - {aluna_sel}")
+                    st.caption(f"Período: {data_ini_ref.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')}")
+                    
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Aulas", d['qtd_aulas'])
+                    m2.metric("Frequência", f"{d['freq']:.0f}%")
+                    m3.metric("Última Lição", d['ultima_licao'])
 
-                # Métricas Principais
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Aulas no Período", d['qtd_aulas'])
-                m2.metric("Frequência", f"{d['freq']:.0f}%")
-                m3.metric("Status Secretaria", d['status_sec'])
-                m4.metric("Última Lição", d['ultima_licao'])
+                    st.markdown("---")
+                    st.error(f"**⚠️ ÁREA: POSTURA E TÉCNICA**\n\n{d['difs_tecnica']}")
+                    st.warning(f"**🎵 ÁREA: RITMO E TEORIA**\n\n{d['difs_ritmo']}")
+                    st.info(f"**💡 DICA PARA PRÓXIMA AULA:**\n\n{d['dicas']}")
+                    st.success(f"**🎯 METAS PARA BANCA SEMESTRAL:**\n\n{d['banca']}")
+                
+                # --- CAMPO PARA GERAR IMAGEM ---
+                st.subheader("🖼️ Exportar Relatório")
+                st.write("Para salvar como JPG, clique com o botão direito no relatório acima e selecione 'Salvar Imagem' ou use o botão de captura do seu dispositivo.")
+                if st.button("📸 Preparar Relatório para Impressão/PDF"):
+                    st.toast("Relatório formatado! Use Ctrl+P ou Print Screen.")
 
-                st.divider()
-
-                # Categorização por Áreas
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.error(f"**⚠️ Postura e Técnica:**\n{d['difs_tecnica']}")
-                    st.warning(f"**🎵 Ritmo e Teoria:**\n{d['difs_ritmo']}")
-                with col_b:
-                    st.info(f"**💡 Dica para a Próxima Aula:**\n{d['dicas']}")
-                    st.success(f"**🎯 Metas para Banca:**\n{d['banca']}")
-
-                # Botão WhatsApp
-                st.subheader("📲 Compartilhar com Professora")
-                tel = st.text_input("WhatsApp da Instrutora (DDD + número):", placeholder="11999999999")
-                if tel:
-                    import urllib.parse
-                    msg = (f"*RELATÓRIO PEDAGÓGICO - {aluna_sel}*\n\n"
-                           f"*Técnica:* {d['difs_tecnica']}\n"
-                           f"*Ritmo:* {d['difs_ritmo']}\n"
-                           f"*Dica:* {d['dicas']}\n"
-                           f"*Meta Banca:* {d['banca']}")
-                    link = f"https://wa.me/55{tel}?text={urllib.parse.quote(msg)}"
-                    st.link_button("🚀 Enviar Relatório via WhatsApp", link)
-
-                if st.button("🗑️ Apagar e Gerar Nova Análise"):
+                if st.button("🗑️ Gerar Nova Análise (Limpar Fixada)"):
                     del st.session_state.analises_fixas_salvas[id_analise]
                     st.rerun()
 
             else:
-                # Caso não esteja fixado, mostra botão para processar
-                st.warning("Nenhuma análise congelada para este período.")
-                if st.button("✨ PROCESSAR E CONGELAR ANÁLISE COMPLETA"):
-                    # Processamento de texto para separar categorias
-                    texto_difs = " ".join(df_aulas['Dificuldades'].astype(str)).lower()
+                if st.button("✨ GERAR E FIXAR ANÁLISE COMPLETA"):
+                    # Processamento inteligente das áreas
+                    texto_total = " ".join(df_aulas['Dificuldades'].astype(str)).lower()
                     
                     def filtrar_dif(palavras):
                         achadas = [d for d in df_aulas['Dificuldades'].astype(str) if any(p in d.lower() for p in palavras)]
-                        return ", ".join(set(achadas)) if achadas else "Sem pendências registradas."
+                        return ", ".join(set(achadas)) if achadas else "Nenhuma dificuldade crítica registrada."
 
                     st.session_state.analises_fixas_salvas[id_analise] = {
                         "qtd_aulas": len(df_aulas),
                         "freq": (len(df_ch[df_ch["Status"] == "P"]) / len(df_ch) * 100) if len(df_ch) > 0 else 0,
                         "ultima_licao": df_aulas.iloc[0]['Licao'] if not df_aulas.empty else "N/A",
-                        "status_sec": "Regular" if len(df_ch[df_ch["Status"] == "F"]) < 2 else "Alerta de Faltas",
                         "difs_tecnica": filtrar_dif(["postura", "punho", "dedo", "falange", "articulação", "pedal"]),
                         "difs_ritmo": filtrar_dif(["metrônomo", "rítmica", "clave", "solfejo", "teoria"]),
-                        "dicas": "Focar em exercícios de independência e leitura de clave de fá.",
-                        "banca": "Ajustar postura de punho e precisão rítmica nos hinos."
+                        "dicas": "Trabalhar exercícios de independência das mãos e firmar o tempo no metrônomo.",
+                        "banca": "Focar na postura dos ombros e na clareza do dedilhado nos hinos de movimento."
                     }
                     st.rerun()
 
         else:
-            st.error("Sem dados para esta aluna no período selecionado.")
+            st.error("Nenhum dado encontrado para esta aluna neste período.")
 
-    with st.expander("📂 Ver Histórico de Dados Brutos"):
+    with st.expander("📂 Ver Histórico de Dados Brutos (Logs)"):
         if not df_f.empty: st.dataframe(df_f)
