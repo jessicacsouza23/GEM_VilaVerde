@@ -84,15 +84,16 @@ calendario_anual = db_get_calendario()
 historico_geral = db_get_historico()
 
 # ==========================================
-#        INICIALIZAÇÃO DE SEGURANÇA
-# (Coloque isso logo após as importações)
+#      CONFIGURAÇÕES GLOBAIS (TOP DO APP)
 # ==========================================
-for key in ["historico_geral", "calendario_anual", "correcoes_secretaria"]:
-    if key not in st.session_state:
-        if key == "calendario_anual":
-            st.session_state[key] = {}
-        else:
-            st.session_state[key] = []
+# Certifique-se de que estas listas existam no seu código:
+SECRETARIAS = ["Ana Paula", "Maria Eduarda", "Cláudia"] 
+PROFESSORAS_LISTA = ["Instrutora 1", "Instrutora 2", "Instrutora 3", "Instrutora 4"]
+TURMAS = {
+    "Turma 1": ["Aluna A", "Aluna B"],
+    "Turma 2": ["Aluna C", "Aluna D"],
+    "Turma 3": ["Aluna E", "Aluna F"]
+}
 
 # ==========================================
 #              MÓDULO SECRETARIA
@@ -106,14 +107,11 @@ if perfil == "🏠 Secretaria":
         c_m1, c_m2 = st.columns(2)
         mes_ref = c_m1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
         ano_ref = c_m2.selectbox("Ano:", [2026, 2027], index=0)
-        
-        # Função para pegar sábados
         sabados = get_sabados_do_mes(ano_ref, mes_ref)
         
         for idx_sab, sab in enumerate(sabados):
             d_str = sab.strftime("%d/%m/%Y")
             with st.expander(f"📅 SÁBADO: {d_str}"):
-                # Verificação de segurança corrigida
                 if d_str not in st.session_state.calendario_anual:
                     c1, c2 = st.columns(2)
                     with c1:
@@ -156,66 +154,49 @@ if perfil == "🏠 Secretaria":
     with tab_chamada:
         st.subheader("📍 Chamada Geral")
         data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_chamada_unica")
-        presenca_padrao = st.toggle("Marcar todas como Presente por padrão", value=True)
-        st.write("---")
-        registros_chamada = []
         alunas_lista = sorted([a for l in TURMAS.values() for a in l])
+        registros_chamada = []
         for aluna in alunas_lista:
-            col1, col2, col3 = st.columns([2, 3, 3])
+            col1, col2 = st.columns([2, 3])
             col1.write(f"**{aluna}**")
-            status = col2.radio(f"Status {aluna}", ["Presente", "Falta", "Justificada"], index=0 if presenca_padrao else 1, key=f"status_{aluna}_{data_ch_sel}", horizontal=True, label_visibility="collapsed")
-            motivo = ""
-            if status == "Justificada":
-                motivo = col3.text_input(f"Motivo justificativa", key=f"motivo_{aluna}_{data_ch_sel}", placeholder="Informe o motivo...", label_visibility="collapsed")
-            registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
+            status = col2.radio(f"Status {aluna}", ["P", "F", "J"], horizontal=True, key=f"st_{aluna}_{data_ch_sel}", label_visibility="collapsed")
+            registros_chamada.append({"Aluna": aluna, "Status": status})
         
-        if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
+        if st.button("💾 SALVAR CHAMADA", type="primary"):
             for reg in registros_chamada:
-                st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": reg["Aluna"], "Tipo": "Chamada", "Status": reg["Status"], "Motivo": reg["Motivo"]})
-            st.success(f"Chamada de {data_ch_sel} salva!")
+                st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": reg["Aluna"], "Tipo": "Chamada", "Status": reg["Status"]})
+            st.success("Chamada salva!")
 
-    # --- ABA 3: CORREÇÃO (MSA, APOSTILA E ATIVIDADES) ---
+    # --- ABA 3: CORREÇÃO (MSA, APOSTILA E MATÉRIA) ---
     with tab_correcao:
         st.subheader("✅ Correção de Atividades")
+        # Aqui estava o erro: garantindo que SECRETARIAS exista
         sec_resp = st.selectbox("Secretária Responsável:", SECRETARIAS)
         alu_corr = st.selectbox("Aluna:", sorted([a for l in TURMAS.values() for a in l]))
         
-        liçao_info = "Nenhuma atividade para casa encontrada."
-        
-        # Lógica de busca no histórico das professoras
+        liçao_info = "Sem registros."
         if st.session_state.historico_geral:
             df_h = pd.DataFrame(st.session_state.historico_geral)
-            # Filtra registros de aula da aluna selecionada
             df_alu = df_h[(df_h["Aluna"] == alu_corr) & (df_h.get("Tipo") == "Aula")]
             
             if not df_alu.empty:
                 ult = df_alu.iloc[-1]
-                # Puxa exatamente o que você pediu: Matéria, MSA/Método e Apostila
-                materia_p = ult.get('Materia', 'Não informada')
-                msa_p = ult.get('Home_M', 'Nada registrado')
-                apostila_p = ult.get('Home_A', 'Nada registrado')
-                instrutora_p = ult.get('Instrutora', 'Instrutora')
-                
-                liçao_info = f"📌 **Matéria:** {materia_p} | 📖 **MSA/Método:** {msa_p} | 📝 **Apostila:** {apostila_p}"
-                st.info(f"📋 **Lançamento da {instrutora_p}:**\n\n{liçao_info}")
-            else:
-                st.warning("Não há registros de aula para esta aluna.")
+                liçao_info = f"Matéria: {ult.get('Materia', '---')} | MSA: {ult.get('Home_M', '---')} | Apostila: {ult.get('Home_A', '---')}"
+                st.info(f"📋 **Última Lição (Professora):** {liçao_info}")
 
         st.divider()
-        st.write("### Veredito da Secretaria")
-        status_corr = st.radio("Status da Atividade:", ["Realizada", "Não Realizada", "Parcialmente Realizada", "Devolvida para Correção"], horizontal=True)
-        obs_sec = st.text_area("Notas da Secretaria (Para o Resumo da Secretaria/Banca):")
+        status_corr = st.radio("Veredito:", ["Realizada", "Não Realizada", "Devolvida"], horizontal=True)
+        obs_sec = st.text_area("Resumo da Secretaria (Análise para Banca):")
 
-        if st.button("💾 Salvar Registro de Correção", type="primary"):
+        if st.button("💾 Salvar Correção", type="primary"):
             st.session_state.correcoes_secretaria.append({
                 "Data": datetime.now().strftime("%d/%m/%Y"),
                 "Aluna": alu_corr,
-                "Secretaria": sec_resp,
-                "Atividade_Ref": liçao_info,
                 "Status": status_corr,
-                "Obs": obs_sec
+                "Obs": obs_sec,
+                "Secretaria": sec_resp
             })
-            st.success("Correção registrada com sucesso!")
+            st.success("Corrigido!")
             
 # ========================================
 #              MÓDULO PROFESSORA
@@ -475,6 +456,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
