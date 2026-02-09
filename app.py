@@ -160,7 +160,6 @@ if perfil == "🏠 Secretaria":
             })
             st.success(f"Análise de {alu_corr} congelada com sucesso!")
 
-
 # ========================================
 #              MÓDULO PROFESSORA
 # ==========================================
@@ -419,6 +418,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
