@@ -72,7 +72,7 @@ perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Profe
 if perfil == "🏠 Secretaria":
     tab_gerar, tab_chamada, tab_correcao = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Correção de Atividades"])
 
-    # --- ABA 1: PLANEJAMENTO ---
+    # --- ABA 1: PLANEJAMENTO (RODÍZIO FUNCIONAL) ---
     with tab_gerar:
         st.subheader("🗓️ Gestão de Rodízios")
         c_m1, c_m2 = st.columns(2)
@@ -80,20 +80,76 @@ if perfil == "🏠 Secretaria":
         ano_ref = c_m2.selectbox("Ano:", [2026, 2027], index=0)
         sabados = get_sabados_do_mes(ano_ref, mes_ref)
         
+        # Sincroniza com o Supabase
+        calendario_db = db_get_calendario()
+
         for idx_sab, sab in enumerate(sabados):
             d_str = sab.strftime("%d/%m/%Y")
             with st.expander(f"📅 SÁBADO: {d_str}"):
-                if d_str not in st.session_state.calendario_anual:
-                    # Lógica de geração de rodízio (mantida do seu original)
-                    if st.button(f"🚀 Gerar Rodízio para {d_str}", key=f"btn_{d_str}"):
-                        st.session_state.calendario_anual[d_str] = [] # Simplificado para exemplo
+                # Verifica se já existe rodízio para esta data
+                if d_str not in calendario_db:
+                    st.info("Rodízio ainda não gerado para este dia.")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        pt2 = st.selectbox(f"Teoria H2 ({d_str}):", PROFESSORAS_LISTA, index=0, key=f"pt2_{d_str}")
+                        pt3 = st.selectbox(f"Teoria H3 ({d_str}):", PROFESSORAS_LISTA, index=1, key=f"pt3_{d_str}")
+                        pt4 = st.selectbox(f"Teoria H4 ({d_str}):", PROFESSORAS_LISTA, index=2, key=f"pt4_{d_str}")
+                    with c2:
+                        st2 = st.selectbox(f"Solfejo H2 ({d_str}):", PROFESSORAS_LISTA, index=3, key=f"st2_{d_str}")
+                        st3 = st.selectbox(f"Solfejo H3 ({d_str}):", PROFESSORAS_LISTA, index=4, key=f"st3_{d_str}")
+                        st4 = st.selectbox(f"Solfejo H4 ({d_str}):", PROFESSORAS_LISTA, index=5, key=f"st4_{d_str}")
+                    
+                    folgas = st.multiselect(f"Professoras de Folga ({d_str}):", PROFESSORAS_LISTA, key=f"folga_{d_str}")
+
+                    if st.button(f"🚀 Gerar e Salvar Rodízio {d_str}", key=f"gen_{d_str}"):
+                        escala_final = []
+                        # Definição do fluxo das turmas por horário
+                        fluxo = {
+                            HORARIOS_LABELS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "Pra": "Turma 3", "ITeo": pt2, "ISol": st2},
+                            HORARIOS_LABELS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "Pra": "Turma 1", "ITeo": pt3, "ISol": st3},
+                            HORARIOS_LABELS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "Pra": "Turma 2", "ITeo": pt4, "ISol": st4}
+                        }
+
+                        for t_nome, alunas in TURMAS.items():
+                            for i, aluna in enumerate(alunas):
+                                agenda = {"Aluna": aluna, "Turma": t_nome, HORARIOS_LABELS[0]: "⛪ IGREJA"}
+                                
+                                for h_idx in [1, 2, 3]:
+                                    h_label = HORARIOS_LABELS[h_idx]
+                                    cfg = fluxo[h_label]
+                                    
+                                    if cfg["Teo"] == t_nome:
+                                        agenda[h_label] = f"📚 SALA 8 | Teoria ({cfg['ITeo']})"
+                                    elif cfg["Sol"] == t_nome:
+                                        agenda[h_label] = f"🔊 SALA 9 | Solfejo ({cfg['ISol']})"
+                                    else:
+                                        # Lógica para Prática (Individual)
+                                        p_disp = [p for p in PROFESSORAS_LISTA if p not in [cfg["ITeo"], cfg["ISol"]] + folgas]
+                                        if p_disp:
+                                            # Rotação baseada no índice da aluna + sábado para não repetir sempre a mesma professora
+                                            f_rot = (i + (idx_sab * 3) + h_idx)
+                                            instr_p = p_disp[f_rot % len(p_disp)]
+                                            idx_instr = PROFESSORAS_LISTA.index(instr_p)
+                                            sala_fixa = ((idx_instr + idx_sab) % 7) + 1
+                                            agenda[h_label] = f"🎹 SALA {sala_fixa} | Prática ({instr_p})"
+                                        else:
+                                            agenda[h_label] = "⚠️ S/ Instrutor"
+                                
+                                escala_final.append(agenda)
+                        
+                        # Salva no Supabase e atualiza estado local
+                        db_save_calendario(d_str, escala_final)
+                        st.success(f"Rodízio de {d_str} salvo com sucesso!")
                         st.rerun()
                 else:
-                    st.success("Rodízio Gerado")
-                    if st.button(f"🗑️ Excluir Rodízio {d_str}", key=f"del_{d_str}"):
-                        del st.session_state.calendario_anual[d_str]
+                    # Exibe a tabela do que já está salvo
+                    df_view = pd.DataFrame(calendario_db[d_str])
+                    st.dataframe(df_view, use_container_width=True)
+                    
+                    if st.button(f"🗑️ Excluir Rodízio {d_str}", key=f"del_db_{d_str}"):
+                        db_delete_calendario(d_str)
+                        st.warning("Rodízio excluído!")
                         st.rerun()
-
     # --- ABA 2: CHAMADA ---
     with tab_chamada:
         st.subheader("📍 Chamada Geral")
@@ -418,6 +474,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
