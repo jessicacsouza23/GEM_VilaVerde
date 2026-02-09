@@ -102,7 +102,7 @@ calendario_db = db_get_calendario()
 if perfil == "🏠 Secretaria":
     tab_gerar, tab_chamada, tab_correcao = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Correção de Atividades"])
 
-    # ==========================================
+# ==========================================
 # BLOCO 1: RODÍZIO DINÂMICO (OTIMIZAÇÃO DE SALAS)
 # ==========================================
 
@@ -177,93 +177,93 @@ if d_str not in calendario_db:
         st.rerun()
         
     # ==========================================
-# BLOCO 2: CHAMADA GERAL (OTIMIZADA)
-# ==========================================
-
-with tab_chamada:
-    st.subheader("📍 Chamada Geral - Secretaria")
+    # BLOCO 2: CHAMADA GERAL (OTIMIZADA)
+    # ==========================================
     
-    # 1. Seleção da Data (usando os sábados calculados no início do código)
-    data_ch_sel = st.selectbox(
-        "Selecione a Data da Chamada:", 
-        [s.strftime("%d/%m/%Y") for s in sabados], 
-        key="sel_data_chamada"
-    )
-    
-    # 2. Botão de Presença em Massa
-    # Usamos um botão que define um estado temporário na sessão
-    c_btn1, c_btn2 = st.columns([1, 3])
-    if c_btn1.button("✅ Marcar Todas Presentes", use_container_width=True):
-        st.session_state["presenca_geral_trigger"] = True
-        st.rerun()
-
-    if c_btn2.button("🧹 Resetar Campos", type="secondary"):
-        st.session_state["presenca_geral_trigger"] = False
-        st.rerun()
-
-    st.divider()
-
-    # 3. Lógica da Lista de Alunas
-    # Definimos o índice padrão do rádio: 0 para "P", 1 para "F"
-    # Se o gatilho de presença geral foi clicado, o padrão vira 0 (P)
-    idx_padrao = 0 if st.session_state.get("presenca_geral_trigger", False) else 1
-    
-    registros_chamada_atual = []
-
-    # Criamos um container com scroll para não ocupar a tela toda se a lista crescer
-    with st.container(height=500):
-        for aluna in ALUNAS_LISTA:
-            col_nome, col_status, col_obs = st.columns([2, 1, 2])
-            
-            col_nome.write(f"**{aluna}**")
-            
-            # O radio agora responde ao estado do botão de massa
-            status_aluna = col_status.radio(
-                f"Status {aluna}", 
-                ["P", "F", "J"], 
-                index=idx_padrao, 
-                horizontal=True, 
-                key=f"chamada_radio_{aluna}_{data_ch_sel}",
-                label_visibility="collapsed"
-            )
-            
-            obs_falta = ""
-            if status_aluna == "J":
-                obs_falta = col_obs.text_input(
-                    "Motivo:", 
-                    key=f"obs_ch_{aluna}_{data_ch_sel}", 
-                    placeholder="Ex: Viagem, Doença..."
-                )
-            elif status_aluna == "F":
-                col_obs.caption("⚠️ Falta sem justificativa")
-            
-            registros_chamada_atual.append({
-                "Data": data_ch_sel,
-                "Aluna": aluna,
-                "Tipo": "Chamada",
-                "Status": status_aluna,
-                "Justificativa": obs_falta
-            })
-
-    st.divider()
-
-    # 4. Botão de Salvar no Banco
-    if st.button("💾 FINALIZAR E SALVAR CHAMADA", type="primary", use_container_width=True):
-        # Aqui enviamos cada registro para o Supabase
-        sucesso_total = True
-        for reg in registros_chamada_atual:
-            res = db_save_historico(reg)
-            if not res:
-                sucesso_total = False
+    with tab_chamada:
+        st.subheader("📍 Chamada Geral - Secretaria")
         
-        if sucesso_total:
-            st.success(f"Chamada de {data_ch_sel} gravada com sucesso no histórico!")
-            st.balloons()
-            # Limpa o gatilho para a próxima chamada
+        # 1. Seleção da Data (usando os sábados calculados no início do código)
+        data_ch_sel = st.selectbox(
+            "Selecione a Data da Chamada:", 
+            [s.strftime("%d/%m/%Y") for s in sabados], 
+            key="sel_data_chamada"
+        )
+        
+        # 2. Botão de Presença em Massa
+        # Usamos um botão que define um estado temporário na sessão
+        c_btn1, c_btn2 = st.columns([1, 3])
+        if c_btn1.button("✅ Marcar Todas Presentes", use_container_width=True):
+            st.session_state["presenca_geral_trigger"] = True
+            st.rerun()
+    
+        if c_btn2.button("🧹 Resetar Campos", type="secondary"):
             st.session_state["presenca_geral_trigger"] = False
-        else:
-            st.error("Erro ao salvar alguns registros. Verifique a conexão.")
+            st.rerun()
+    
+        st.divider()
+    
+        # 3. Lógica da Lista de Alunas
+        # Definimos o índice padrão do rádio: 0 para "P", 1 para "F"
+        # Se o gatilho de presença geral foi clicado, o padrão vira 0 (P)
+        idx_padrao = 0 if st.session_state.get("presenca_geral_trigger", False) else 1
+        
+        registros_chamada_atual = []
+    
+        # Criamos um container com scroll para não ocupar a tela toda se a lista crescer
+        with st.container(height=500):
+            for aluna in ALUNAS_LISTA:
+                col_nome, col_status, col_obs = st.columns([2, 1, 2])
+                
+                col_nome.write(f"**{aluna}**")
+                
+                # O radio agora responde ao estado do botão de massa
+                status_aluna = col_status.radio(
+                    f"Status {aluna}", 
+                    ["P", "F", "J"], 
+                    index=idx_padrao, 
+                    horizontal=True, 
+                    key=f"chamada_radio_{aluna}_{data_ch_sel}",
+                    label_visibility="collapsed"
+                )
+                
+                obs_falta = ""
+                if status_aluna == "J":
+                    obs_falta = col_obs.text_input(
+                        "Motivo:", 
+                        key=f"obs_ch_{aluna}_{data_ch_sel}", 
+                        placeholder="Ex: Viagem, Doença..."
+                    )
+                elif status_aluna == "F":
+                    col_obs.caption("⚠️ Falta sem justificativa")
+                
+                registros_chamada_atual.append({
+                    "Data": data_ch_sel,
+                    "Aluna": aluna,
+                    "Tipo": "Chamada",
+                    "Status": status_aluna,
+                    "Justificativa": obs_falta
+                })
+    
+        st.divider()
+    
+        # 4. Botão de Salvar no Banco
+        if st.button("💾 FINALIZAR E SALVAR CHAMADA", type="primary", use_container_width=True):
+            # Aqui enviamos cada registro para o Supabase
+            sucesso_total = True
+            for reg in registros_chamada_atual:
+                res = db_save_historico(reg)
+                if not res:
+                    sucesso_total = False
             
+            if sucesso_total:
+                st.success(f"Chamada de {data_ch_sel} gravada com sucesso no histórico!")
+                st.balloons()
+                # Limpa o gatilho para a próxima chamada
+                st.session_state["presenca_geral_trigger"] = False
+            else:
+                st.error("Erro ao salvar alguns registros. Verifique a conexão.")
+                
     with tab_correcao:
         st.subheader("✅ Análise Pedagógica")
         alu_c = st.selectbox("Aluna para Análise:", ALUNAS_LISTA)
@@ -537,6 +537,7 @@ elif perfil == "📊 Analítico IA":
        
         else:
             st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
+
 
 
 
