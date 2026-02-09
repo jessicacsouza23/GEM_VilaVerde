@@ -2,14 +2,17 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import calendar
+import io
+from PIL import Image, ImageDraw
 from supabase import create_client, Client
 
-# --- 1. CONFIGURAÇÕES ---
+# --- 1. CONFIGURAÇÕES E BANCO ---
 st.set_page_config(page_title="GEM Vila Verde", layout="wide")
 
 @st.cache_resource
 def init_supabase():
-    try: return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+    try:
+        return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
     except: return None
 
 supabase = init_supabase()
@@ -26,6 +29,18 @@ def db_save_calendario(d_str, escala):
 def db_delete_calendario(d_str):
     supabase.table("calendario").delete().eq("id", d_str).execute()
 
+def db_get_historico():
+    try:
+        res = supabase.table("historico_geral").select("*").execute()
+        return res.data
+    except: return []
+
+def db_save_historico(dados):
+    try:
+        supabase.table("historico_geral").insert(dados).execute()
+        return True
+    except: return False
+
 # --- 2. DADOS MESTRE ---
 PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
 ALUNAS_LISTA = [
@@ -39,32 +54,24 @@ TURMAS = {
     "Turma 2": ["Vitória A.", "Elisa F.", "Sarah S.", "Gabrielly V. V.", "Emily O.", "Julya O.", "Stephany O."],
     "Turma 3": ["Heloísa R.", "Ana Marcela S.", "Vitória Bella T.", "Júlia G. S.", "Micaelle S.", "Raquel L.", "Júlia Cristina"]
 }
-
-# Sequência de horários conforme solicitado
-HORARIOS = [
-    "08h45 (Igreja)", 
-    "09h35 (H2)", 
-    "10h10 (H3)", 
-    "10h45 (H4)"
-]
+HORARIOS = ["08h45 (Igreja)", "09h35 (H2)", "10h10 (H3)", "10h45 (H4)"]
 
 # --- 3. INTERFACE ---
 st.title("🎼 GEM Vila Verde - Gestão 2026")
-aba_sec, aba_prof = st.tabs(["🏠 Secretaria", "👩‍🏫 Professora"])
+perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
 
 calendario_db = db_get_calendario()
+historico_geral = db_get_historico()
 
-with aba_sec:
-    t_plan, t_cham, t_ped = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Análise Pedagógica"])
+if perfil == "🏠 Secretaria":
+    tab_plan, tab_chamada, tab_ped = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Análise Pedagógica"])
     
-    with t_plan:
+    with tab_plan:
         c1, c2 = st.columns(2)
         mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
         ano = c2.selectbox("Ano:", [2026, 2027])
-        
         sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
                    for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
-        
         data_sel = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
 
         if data_sel not in calendario_db:
@@ -72,45 +79,33 @@ with aba_sec:
             col_t, col_s = st.columns(2)
             with col_t:
                 st.subheader("📚 Teoria (SALA 8)")
-                p_t = [st.selectbox(f"Prof. Teoria {h}", PROFESSORAS_LISTA, index=i, key=f"t{h}{data_sel}") for i, h in enumerate(["H2", "H3", "H4"])]
+                p_t = [st.selectbox(f"Prof. Teoria {h}", PROFESSORAS_LISTA, index=i, key=f"t{h}") for i, h in enumerate(["H2", "H3", "H4"])]
             with col_s:
                 st.subheader("🔊 Solfejo (SALA 9)")
-                p_s = [st.selectbox(f"Prof. Solfejo {h}", PROFESSORAS_LISTA, index=i+3, key=f"s{h}{data_sel}") for i, h in enumerate(["H2", "H3", "H4"])]
-            
-            folgas = st.multiselect("Folgas:", PROFESSORAS_LISTA, key=f"f{data_sel}")
+                p_s = [st.selectbox(f"Prof. Solfejo {h}", PROFESSORAS_LISTA, index=i+3, key=f"s{h}") for i, h in enumerate(["H2", "H3", "H4"])]
+            folgas = st.multiselect("Folgas:", PROFESSORAS_LISTA)
 
             if st.button(f"🚀 Gerar Rodízio Oficial {data_sel}"):
                 escala = []
-                # REGRA: Teoria começa com Turma 1, Solfejo com Turma 2. No próximo horário rotaciona.
                 fluxo_coletivo = {
                     HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "ITeo": p_t[0], "ISol": p_s[0]},
                     HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "ITeo": p_t[1], "ISol": p_s[1]},
                     HORARIOS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "ITeo": p_t[2], "ISol": p_s[2]}
                 }
-
                 for t_nome, alunas in TURMAS.items():
                     for idx_alu, aluna in enumerate(alunas):
-                        # AULA 1: Sempre Solfejo Melódico na Igreja
                         row = {"Aluna": aluna, "Turma": t_nome, HORARIOS[0]: "⛪ Solfejo Melódico (Igreja)"}
-                        
                         for h_idx in [1, 2, 3]:
                             h_lab = HORARIOS[h_idx]
                             cfg = fluxo_coletivo[h_lab]
-                            
-                            if cfg["Teo"] == t_nome:
-                                row[h_lab] = f"📚 SALA 8 | Teoria ({cfg['ITeo']})"
-                            elif cfg["Sol"] == t_nome:
-                                row[h_lab] = f"🔊 SALA 9 | Solfejo ({cfg['ISol']})"
+                            if cfg["Teo"] == t_nome: row[h_lab] = f"📚 SALA 8 | Teoria ({cfg['ITeo']})"
+                            elif cfg["Sol"] == t_nome: row[h_lab] = f"🔊 SALA 9 | Solfejo ({cfg['ISol']})"
                             else:
-                                # PRÁTICA: Salas 1 a 7
                                 p_livres = [p for p in PROFESSORAS_LISTA if p not in [cfg["ITeo"], cfg["ISol"]] + folgas]
                                 instr = p_livres[(idx_alu + h_idx) % len(p_livres)]
-                                # Sala é fixa pelo nome da professora no dia
                                 num_sala = (PROFESSORAS_LISTA.index(instr) % 7) + 1
-                                row[h_lab] = f"🎹 SALA {num_sala} | {instr}"
-                        
+                                row[h_lab] = f"🎹 SALA {num_sala} | ({instr})"
                         escala.append(row)
-                
                 db_save_calendario(data_sel, escala)
                 st.rerun()
         else:
@@ -119,335 +114,99 @@ with aba_sec:
             if st.button("🗑️ Excluir este Rodízio"):
                 db_delete_calendario(data_sel)
                 st.rerun()
-                
-    # --- ABA CHAMADA ---
+
     with tab_chamada:
         st.subheader("📍 Chamada")
-        data_ch_sel = st.selectbox("Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="sel_ch")
-        
-        c_b1, c_b2 = st.columns([1, 4])
-        if c_b1.button("✅ Marcar Todas"):
-            st.session_state["presenca_geral_trigger"] = True
+        data_ch_sel = st.selectbox("Data da Chamada:", [s.strftime("%d/%m/%Y") for s in sabados])
+        if st.button("✅ Marcar Todas Presentes"):
+            st.session_state["p_geral"] = True
             st.rerun()
         
-        idx_p = 0 if st.session_state.get("presenca_geral_trigger", False) else 1
-        registros_atuais = []
-
+        idx_p = 0 if st.session_state.get("p_geral", False) else 1
+        regs = []
         for aluna in ALUNAS_LISTA:
-            c1, c2, c3 = st.columns([2, 1, 2])
+            c1, c2 = st.columns([3, 2])
+            status = c2.radio(aluna, ["P", "F", "J"], index=idx_p, horizontal=True, key=f"ch_{aluna}", label_visibility="collapsed")
             c1.write(aluna)
-            status = c2.radio(f"S_{aluna}", ["P", "F", "J"], index=idx_p, horizontal=True, key=f"r_{aluna}_{data_ch_sel}", label_visibility="collapsed")
-            obs = c3.text_input("Obs:", key=f"o_{aluna}_{data_ch_sel}") if status == "J" else ""
-            registros_atuais.append({"Data": data_ch_sel, "Aluna": aluna, "Status": status, "Obs": obs, "Tipo": "Chamada"})
+            regs.append({"Aluna": aluna, "Status": status, "Data": data_ch_sel, "Tipo": "Chamada"})
+        
+        if st.button("💾 SALVAR CHAMADA"):
+            for r in regs: db_save_historico(r)
+            st.session_state["p_geral"] = False
+            st.success("Salvo!")
 
-        if st.button("💾 SALVAR CHAMADA", use_container_width=True):
-            for r in registros_atuais: db_save_historico(r)
-            st.session_state["presenca_geral_trigger"] = False
-            st.success("Salvo!"); st.balloons()
-
-    # --- ABA CORREÇÃO ---
-    with tab_correcao:
+    with tab_ped:
         st.subheader("✅ Análise Pedagógica")
-        alu_sel = st.selectbox("Aluna:", ALUNAS_LISTA, key="ped_alu")
+        alu_sel = st.selectbox("Aluna:", ALUNAS_LISTA)
         with st.form("f_ped"):
             c1, c2 = st.columns(2)
-            d_pos = c1.text_area("Postura (Mãos/Coluna):")
-            d_tec = c2.text_area("Técnica (Dedilhado):")
-            d_rit = c1.text_area("Ritmo (Métrica):")
-            d_teo = c2.text_area("Teoria (Leitura):")
-            resumo = st.text_area("Resumo Secretaria (Banca Semestral):")
+            d_pos = c1.text_area("Postura:")
+            d_tec = c2.text_area("Técnica:")
+            d_rit = c1.text_area("Ritmo:")
+            d_teo = c2.text_area("Teoria:")
+            resumo = st.text_area("Resumo Secretaria (Banca):")
             meta = st.text_input("Meta próxima aula:")
             if st.form_submit_button("❄️ CONGELAR ANÁLISE"):
                 db_save_historico({"Aluna": alu_sel, "Tipo": "Analise_Pedagogica", "Dados": {"Postura": d_pos, "Técnica": d_tec, "Ritmo": d_rit, "Teoria": d_teo, "Meta": meta, "Resumo": resumo}})
-                st.success("Dados congelados!")
+                st.success("Congelado!")
 
-# ========================================
-#              MÓDULO PROFESSORA
-# ==========================================
 elif perfil == "👩‍🏫 Professora":
     st.header("👩‍🏫 Diário de Classe")
     instr_sel = st.selectbox("👤 Professora:", PROFESSORAS_LISTA)
-    data_p = st.date_input("Data:", value=datetime.now())
-    d_str = data_p.strftime("%d/%m/%Y")
+    data_p = st.selectbox("Data da Aula:", list(calendario_db.keys())) if calendario_db else None
 
-    if d_str in calendario_anual:
-        h_sel = st.radio("⏰ Horário:", HORARIOS_LABELS, horizontal=True)
-        atend = next((l for l in calendario_anual[d_str] if f"({instr_sel})" in str(l.get(h_sel, ""))), None)
+    if data_p:
+        h_sel = st.radio("⏰ Horário:", HORARIOS, horizontal=True)
+        # Busca no banco se existe aula para esta professora neste horário
+        dia_escala = calendario_db[data_p]
+        atend = next((l for l in dia_escala if f"({instr_sel})" in str(l.get(h_sel, ""))), None)
         
         if atend:
-            # Lógica de Matéria corrigida
             mat = "Teoria" if "Teoria" in atend[h_sel] else ("Solfejo" if "Solfejo" in atend[h_sel] else "Prática")
             st.warning(f"📍 Atendimento: {atend['Aluna'] if mat == 'Prática' else atend['Turma']} ({mat})")
             
-            # Seleção de Alunas (Individual para Prática, Lista para Teoria/Solfejo)
-            if mat == "Prática":
-                check_alunas = [atend['Aluna']]
-            else:
-                st.write("---")
-                st.write("**Chamada da Turma:**")
-                turma_nome = atend['Turma']
-                check_alunas = [a for a in TURMAS.get(turma_nome, []) if st.checkbox(a, value=True, key=f"chk_{a}")]
+            check_alunas = [atend['Aluna']] if mat == "Prática" else [a for a in TURMAS.get(atend['Turma'], []) if st.checkbox(a, value=True, key=f"p_{a}")]
             
-            selecionadas = []
+            st.subheader(f"Dificuldades em {mat}")
+            lista_dif = ["Não estudou", "Dificuldade rítmica", "Postura", "Metrônomo", "Clave de Fá", "Leitura", "Não apresentou dificuldades"]
+            selecionadas = [d for d in lista_dif if st.checkbox(d, key=f"dif_{d}")]
             
-            # FORMULÁRIO PEDAGÓGICO
-            if mat == "Prática":
-                st.subheader("🎹 Dificuldades Técnicas e Postura")
-                lista_dif = [
-                    "Não estudou nada", "Estudou de forma insatisfatória", "Não assistiu os vídeos",
-                    "Dificuldade rítmica", "Nomes das figuras rítmicas", "Adentrando às teclas",
-                    "Postura (costas/ombros/braços)", "Punho alto/baixo", "Não senta no centro",
-                    "Quebrando falanges", "Unhas compridas", "Dedos arredondados",
-                    "Pé no pedal expressão", "Movimentos pé esquerdo", "Uso do metrônomo",
-                    "Estuda sem metrônomo", "Clave de sol", "Clave de fá", "Atividades apostila",
-                    "Articulação ligada/semiligada", "Respirações", "Respirações sobre passagem",
-                    "Recurso de dedilhado", "Nota de apoio", "Não apresentou dificuldades"
-                ]
-            elif mat == "Teoria": # CORRIGIDO: de 'else if' para 'elif'
-                st.subheader("📚 Dificuldades Teóricas")
-                lista_dif = [
-                    "Não assistiu vídeos complementares", "Dificuldades em ler as notas na clave de sol", 
-                    "Dificuldades em ler as notas na clave de fá", "Uso do metrônomo", 
-                    "Estuda sem metrônomo", "Não realizou atividades", "Leitura rítmica", 
-                    "Leitura métrica", "Solfejo (afinação)", "Movimento da mão", 
-                    "Ordem das notas (asc/desc)", "Atividades da apostila",
-                    "Não estudou nada", "Estudou insatisfatoriamente", "Não apresentou dificuldades"                                
-                ]
-            else: # Solfejo
-                st.subheader("📚 Dificuldades Solfejo")
-                lista_dif = [
-                    "Não assistiu vídeos complementares", "Dificuldades em ler as notas na clave de sol", 
-                    "Dificuldades em ler as notas na clave de fá", "Uso do metrônomo", 
-                    "Estuda sem metrônomo", "Não realizou atividades", "Leitura rítmica", 
-                    "Leitura métrica", "Solfejo (afinação)", "Movimento da mão", 
-                    "Ordem das notas (asc/desc)", "Atividades da apostila",
-                    "Não estudou nada", "Estudou insatisfatoriamente", "Não apresentou dificuldades"                                
-                ]
+            l_hj = st.text_input("📖 Lição dada:")
+            obs_f = st.text_area("✍️ Relato Pedagógico:")
 
-            # Exibição em duas colunas para facilitar a marcação
-            cols = st.columns(2)
-            for i, d in enumerate(lista_dif):
-                if cols[i % 2].checkbox(d, key=f"f_{i}_{d_str}"): 
-                    selecionadas.append(d)
-            
-            st.write("---")
-            l_hj = st.text_input("📖 Lição dada hoje (Ex: Hino 10, Método p. 20):")
-            p_m = st.text_input("🏠 Para casa (Método):")
-            p_a = st.text_input("🏠 Para casa (Apostila/Outros):")
-            obs_f = st.text_area("✍️ Relato Pedagógico (O que observar na próxima aula):")
-
-            if st.button("💾 SALVAR REGISTRO DE AULA", type="primary"):
-                if not selecionadas:
-                    st.error("Por favor, selecione ao menos uma opção nas dificuldades (ou 'Não apresentou dificuldades').")
-                else:
-                    sucesso = True
-                    # Salva o registro para cada aluna selecionada (importante para turmas)
-                    for aluna in check_alunas:
-                        res = db_save_historico({
-                            "Data": d_str, 
-                            "Aluna": aluna, 
-                            "Tipo": "Aula", 
-                            "Materia": mat,
-                            "Licao": l_hj, 
-                            "Dificuldades": ", ".join(selecionadas), 
-                            "Obs": obs_f,
-                            "Home_M": p_m, 
-                            "Home_A": p_a, 
-                            "Instrutora": instr_sel
-                        })
-                        if not res: sucesso = False
-                    
-                    if sucesso:
-                        st.success(f"Aula de {mat} registrada com sucesso para {len(check_alunas)} aluna(s)!")
-                        st.balloons()
+            if st.button("💾 SALVAR REGISTRO"):
+                for aluna in check_alunas:
+                    db_save_historico({"Data": data_p, "Aluna": aluna, "Tipo": "Aula", "Materia": mat, "Licao": l_hj, "Dificuldades": ", ".join(selecionadas), "Obs": obs_f, "Instrutora": instr_sel})
+                st.success("Registrado!")
         else:
-            st.info(f"Sra. {instr_sel}, não encontramos aula agendada para este horário hoje.")
-    else:
-        st.error("Cronograma de rodízio não localizado para esta data.")
+            st.info("Nenhuma aula agendada para este horário.")
 
-# ==========================================
-#              MÓDULO ANALÍTICO
-# ==========================================
 elif perfil == "📊 Analítico IA":
-    st.header("📊 Inteligência Pedagógica - Vila Verde")
-    from PIL import Image, ImageDraw, ImageFont
-    import io
-
-    if "analises_fixas_salvas" not in st.session_state:
-        st.session_state.analises_fixas_salvas = {}
-    
+    st.header("📊 Inteligência Pedagógica")
     if not historico_geral:
-        st.info("Aguardando registros no histórico para iniciar as análises.")
+        st.info("Sem dados no histórico.")
     else:
         df_geral = pd.DataFrame(historico_geral)
-        todas_alunas = sorted(df_geral["Aluna"].unique())
+        aluna_sel = st.selectbox("Selecione a Aluna:", sorted(df_geral["Aluna"].unique()))
+        df_f = df_geral[df_geral["Aluna"] == aluna_sel]
         
-        c1, c2, c3 = st.columns([2, 2, 2])
-        aluna_sel = c1.selectbox("Selecione a Aluna:", todas_alunas)
-        periodo_tipo = c2.selectbox("Tipo de Período:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
-        data_ini_ref = c3.date_input("Data Inicial da Análise:") 
-
-        id_analise = f"{aluna_sel}_{data_ini_ref}_{periodo_tipo}"
-        
-        from datetime import timedelta
-        df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y').dt.date
-        delta_dias = {"Diário":0, "Mensal":30, "Bimestral":60, "Semestral":180, "Anual":365}[periodo_tipo]
-        d_fim = data_ini_ref + timedelta(days=delta_dias)
-        
-        df_f = df_geral[(df_geral["Aluna"] == aluna_sel) & (df_geral["dt_obj"] >= data_ini_ref) & (df_geral["dt_obj"] <= d_fim)]
-
-        if not df_f.empty:
-            df_aulas = df_f[df_f["Tipo"] == "Aula"].copy()
+        st.subheader("📈 Performance")
+        col1, col2 = st.columns(2)
+        with col1:
+            df_aulas = df_f[df_f["Tipo"] == "Aula"]
+            if not df_aulas.empty:
+                st.write("Aulas por Matéria")
+                st.bar_chart(df_aulas["Materia"].value_counts())
+        with col2:
             df_ch = df_f[df_f["Tipo"] == "Chamada"]
-
-            # --- 1. GRÁFICOS DETALHADOS ---
-            st.subheader("📈 Diagnóstico de Performance")
-            col_g1, col_g2 = st.columns(2)
-            with col_g1:
-                if not df_aulas.empty:
-                    def calc_nota(txt):
-                        if "Sem dificuldades" in str(txt): return 100
-                        return max(0, 100 - (len(str(txt).split(",")) * 12))
-                    df_aulas['Nota'] = df_aulas['Dificuldades'].apply(calc_nota)
-                    st.write("**Aproveitamento por Matéria (%)**")
-                    st.bar_chart(df_aulas.groupby('Materia')['Nota'].mean())
-            with col_g2:
-                if not df_ch.empty:
-                    st.write("**Assiduidade (Presenças vs Faltas)**")
-                    st.bar_chart(df_ch["Status"].value_counts())
-
-            st.divider()
-
-            # --- 2. RELATÓRIO PEDAGÓGICO CONGELADO ---
-            if id_analise in st.session_state.analises_fixas_salvas:
-                d = st.session_state.analises_fixas_salvas[id_analise]
-                
-                with st.container(border=True):
-                    st.markdown(f"## 📋 Ficha de Avaliação: {aluna_sel}")
-                    st.caption(f"Período: {data_ini_ref.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')} | Ref: {periodo_tipo}")
-                    
-                    # Resumo da Secretaria
-                    st.markdown("### 🏢 Resumo Secretaria")
-                    s1, s2, s3 = st.columns(3)
-                    s1.metric("Aulas Totais", d['qtd_aulas'])
-                    s2.metric("Frequência", f"{d['freq']:.1f}%")
-                    s3.metric("Status Licao", d['ultima_licao'])
-
-                    st.markdown("---")
-                    
-                    # Detalhamento por Área
-                    st.markdown("### 🎹 Análise Pedagógica Detalhada")
-                    t1, t2 = st.columns(2)
-                    with t1:
-                        st.error(f"**🔹 POSTURA & TÉCNICA**\n\n{d['difs_tecnica']}")
-                        st.warning(f"**🔹 RITMO & TEORIA**\n\n{d['difs_ritmo']}")
-                    with t2:
-                        st.info(f"**💡 DICAS PARA PRÓXIMA AULA**\n\n{d['dicas']}")
-                        st.success(f"**🎯 FOCO BANCA SEMESTRAL**\n\n{d['banca']}")
-                
-                # --- GERADOR DE IMAGEM PNG PROFISSIONAL ---
-                img = Image.new('RGB', (1200, 1000), color=(255, 255, 255))
-                draw = ImageDraw.Draw(img)
-                
-                texto_png = [
-                    "GEM VILA VERDE - RELATÓRIO PEDAGÓGICO COMPLETO",
-                    f"ALUNA: {aluna_sel} | TIPO: {periodo_tipo}",
-                    f"DATA: {data_ini_ref.strftime('%d/%m/%Y')} - {d_fim.strftime('%d/%m/%Y')}",
-                    "="*50,
-                    f"AULAS REALIZADAS: {d['qtd_aulas']} | FREQUÊNCIA: {d['freq']:.1f}%",
-                    f"ÚLTIMA LIÇÃO: {d['ultima_licao']}",
-                    "-"*50,
-                    "[ANÁLISE DE POSTURA E TÉCNICA]",
-                    f"{d['difs_tecnica']}",
-                    "",
-                    "[ANÁLISE DE RITMO E TEORIA]",
-                    f"{d['difs_ritmo']}",
-                    "",
-                    "[ORIENTAÇÕES PARA A PRÓXIMA AULA]",
-                    f"{d['dicas']}",
-                    "",
-                    "[REQUISITOS PARA BANCA SEMESTRAL]",
-                    f"{d['banca']}",
-                    "="*50,
-                    f"Documento Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
-                ]
-                
-                curr_y = 50
-                for line in texto_png:
-                    draw.text((60, curr_y), line, fill=(0, 0, 0))
-                    curr_y += 38
-
-                buf = io.BytesIO()
-                img.save(buf, format="PNG")
-                st.download_button(f"📥 Exportar PNG Detalhado", buf.getvalue(), f"Analise_Completa_{aluna_sel}.png", "image/png")
-
-                if st.button("🗑️ Gerar Novo Diagnóstico (Limpar Anterior)"):
-                    del st.session_state.analises_fixas_salvas[id_analise]
-                    st.rerun()
-
-            else:
-                if st.button("✨ EXECUTAR DIAGNÓSTICO PEDAGÓGICO"):
-                    def filtrar_dif(palavras):
-                        achadas = [d for d in df_aulas['Dificuldades'].astype(str) if any(p in d.lower() for p in palavras)]
-                        return "- " + "\n- ".join(set(achadas)) if achadas else "Nenhuma pendência crítica registrada nesta área."
-
-                    # Lógica de Dicas Automáticas baseada nas dificuldades
-                    difs_raw = " ".join(df_aulas['Dificuldades'].astype(str)).lower()
-                    dica_ia = "Reforçar o estudo diário com mãos separadas."
-                    if "metrônomo" in difs_raw: dica_ia = "Obrigatório uso de metrônomo em todas as lições, começando em 40 BPM."
-                    if "postura" in difs_raw or "punho" in difs_raw: dica_ia = "Aplicar exercícios de relaxamento de ombros e correção de altura do banco."
-
-                    st.session_state.analises_fixas_salvas[id_analise] = {
-                        "qtd_aulas": len(df_aulas),
-                        "freq": (len(df_ch[df_ch["Status"] == "P"]) / len(df_ch) * 100) if len(df_ch) > 0 else 0,
-                        "ultima_licao": df_aulas.iloc[0]['Licao'] if not df_aulas.empty else "N/A",
-                        "difs_tecnica": filtrar_dif(["postura", "punho", "dedo", "falange", "articulação", "pedal", "tecla"]),
-                        "difs_ritmo": filtrar_dif(["metrônomo", "rítmica", "clave", "solfejo", "teoria", "figura", "leitura"]),
-                        "dicas": dica_ia,
-                        "banca": "Para a banca, a aluna precisa estabilizar o tempo rítmico e manter o punho nivelado, sem quebrar as falanges."
-                    }
-                    st.rerun()
-
-            st.divider()
-            # --- 3. LOGS DE AUDITORIA (SECRETARIA E PROFESSORA) ---
-            st.subheader("📂 Histórico de Logs para Auditoria")
-            with st.expander("Ver Logs das Aulas (Detalhado)"):
-                st.dataframe(df_aulas[['Data', 'Materia', 'Licao', 'Dificuldades', 'Instrutora', 'Obs']], use_container_width=True)
-            
-            with st.expander("Ver Logs de Frequência (Secretaria)"):
-                st.table(df_ch[['Data', 'Status']])
-       
-        else:
-            st.warning("Não há registros suficientes para gerar um relatório detalhado desta aluna no período.")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            if not df_ch.empty:
+                st.write("Frequência")
+                st.bar_chart(df_ch["Status"].value_counts())
+        
+        if st.button("📥 Gerar Relatório PNG"):
+            img = Image.new('RGB', (800, 600), color=(255, 255, 255))
+            draw = ImageDraw.Draw(img)
+            draw.text((50, 50), f"Relatorio: {aluna_sel}\nGerado em: {datetime.now()}", fill=(0,0,0))
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            st.download_button("Baixar PNG", buf.getvalue(), "relatorio.png")
