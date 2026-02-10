@@ -544,3 +544,4 @@ elif perfil == "📊 Analítico IA"
 
 
 
+
