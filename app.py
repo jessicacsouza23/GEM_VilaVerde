@@ -593,7 +593,6 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.title("📊 Painel Pedagógico de Performance")
 
-    # 1. Busca de Dados
     historico_geral = db_get_historico()
     calendario_db = db_get_calendario()
     df = pd.DataFrame(historico_geral)
@@ -608,21 +607,18 @@ elif perfil == "📊 Analítico IA":
         with c2:
             tipo_periodo = st.radio("Período:", ["Diária", "Mensal", "Semestral", "Geral"], horizontal=True)
 
-        # Tratamento de Datas
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=False)
 
-        # --- LÓGICA DA DATA DIÁRIA (VOLTOU) ---
+        # Lógica Diária
         df_f = df_aluna.copy()
         if tipo_periodo == "Diária":
             datas_disponiveis = sorted(df_aluna['dt_obj'].dropna().unique(), reverse=True)
             if datas_disponiveis:
                 dia_sel = st.date_input("📅 Data da aula:", value=datas_disponiveis[0])
                 df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
-            else:
-                st.warning("Nenhum registro para esta data.")
 
-        # --- [1] LÓGICA DE RODÍZIO ---
+        # --- [1] RODÍZIO ---
         proxima_aula, proxima_prof, prof_teoria = "Não encontrada", "Não definida", "Não definida"
         if calendario_db:
             try:
@@ -635,9 +631,7 @@ elif perfil == "📊 Analítico IA":
                     dados_aluna = next((i for i in escala if fit(i.get('Aluna','')) in fit(alu_ia)), None)
                     if dados_aluna:
                         proxima_aula = d_str
-                        h2 = dados_aluna.get("09h35 (H2)", "-")
-                        h3 = dados_aluna.get("10h10 (H3)", "-")
-                        h4 = dados_aluna.get("10h45 (H4)", "-")
+                        h2, h3, h4 = dados_aluna.get("09h35 (H2)", "-"), dados_aluna.get("10h10 (H3)", "-"), dados_aluna.get("10h45 (H4)", "-")
                         def clean(t): return str(t).split("|")[-1].strip() if "|" in str(t) else str(t)
                         proxima_prof = f"H2: {clean(h2)} | H3: {clean(h3)} | H4: {clean(h4)}"
                         teos = [f"{h[:2]} ({clean(dados_aluna.get(h))})" for h in ["09h35 (H2)", "10h10 (H3)", "10h45 (H4)"] if any(s in str(dados_aluna.get(h)) for s in ["SALA 8", "SALA 9"])]
@@ -656,34 +650,16 @@ elif perfil == "📊 Analítico IA":
         m3.metric("Frequência", f"{freq:.0f}%")
         m4.metric("Próximo Sab", proxima_aula)
 
-        # --- [3] CARDS DE DIFICULDADES (PROTEÇÃO CONTRA ERRO) ---
-        todas_difs = []
-        if 'Dificuldades' in df_f.columns:
-            for item in df_f['Dificuldades'].dropna():
-                if isinstance(item, list): todas_difs.extend([str(i) for i in item])
-                else: todas_difs.append(str(item))
-        
-        # Limpeza robusta
-        lista_final = [str(d) for d in todas_difs if d and str(d).lower() != 'none']
-        
-        tecnicos = [d for d in lista_final if any(x in d.lower() for x in ["postura", "dedo", "punho", "mão"])]
-        ritmicos = [d for d in lista_final if any(x in d.lower() for x in ["ritmo", "metrônomo", "solfejo", "tempo"])]
-
-        txt_tec = " • ".join(set(tecnicos)) if tecnicos else "Sem observações críticas."
-        txt_rit = " • ".join(set(ritmicos)) if ritmicos else "Desempenho rítmico estável."
+        # --- [3] CARDS ---
+        todas_difs = [str(d) for item in df_f['Dificuldades'].dropna() for d in (item if isinstance(item, list) else [item])]
+        tecnicos = [d for d in todas_difs if any(x in d.lower() for x in ["postura", "dedo", "punho", "mão"])]
+        ritmicos = [d for d in todas_difs if any(x in d.lower() for x in ["ritmo", "metrônomo", "solfejo", "tempo"])]
 
         c_esq, c_dir = st.columns(2)
-        with c_esq:
-            st.error(f"**🎹 Postura e Técnica**\n\n{txt_tec}")
-        with c_dir:
-            st.warning(f"**🎶 Ritmo e Teoria**\n\n{txt_rit}")
+        with c_esq: st.error(f"**🎹 Postura e Técnica**\n\n{' • '.join(set(tecnicos)) if tecnicos else 'OK'}")
+        with c_dir: st.warning(f"**🎶 Ritmo e Teoria**\n\n{' • '.join(set(ritmicos)) if ritmicos else 'OK'}")
 
-        # --- [4] PRÓXIMA AULA ---
-        with st.expander("📬 Escala de Próxima Aula", expanded=True):
-            st.write(f"**Agenda para {proxima_aula}:** {proxima_prof}")
-            st.write(f"**Foco Teórico:** {prof_teoria}")
-
-        # --- [5] IA E CONGELAMENTO ---
+        # --- [4] IA E CONGELAMENTO ---
         st.divider()
         analise_previa = None
         try:
@@ -694,33 +670,23 @@ elif perfil == "📊 Analítico IA":
         if analise_previa:
             st.success(f"✅ Análise Congelada ({analise_previa['created_at'][:10]})")
             st.markdown(analise_previa['conteudo'])
-            if st.button("🔄 Gerar Nova Análise"):
-                analise_previa = None
+            if st.button("🔄 Gerar Nova (Atualizar)"): analise_previa = None
 
         if not analise_previa:
             if st.button("✨ GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
-                with st.spinner("IA Processando..."):
+                with st.spinner("Analisando histórico..."):
                     hist_texto = df_f[['Data', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
-                    prompt = f"""
-                    Gere uma análise pedagógica completa para {alu_ia}.
-                    HISTÓRICO: {hist_texto}
-                    
-                    ESTRUTURA OBRIGATÓRIA:
-                    ## 🧍 1. POSTURA
-                    ## 🎹 2. TÉCNICA
-                    ## 🥁 3. RITMO
-                    ## 📖 4. TEORIA
-                    ## 📋 5. RESUMO SECRETARIA
-                    ## 🎯 6. METAS PRÓXIMA AULA ({proxima_aula})
-                    ## 🏛️ 7. DICAS PARA BANCA SEMESTRAL
-                    """
+                    prompt = f"Gere análise técnica para {alu_ia}. Histórico: {hist_texto}. Separe: Postura, Técnica, Ritmo, Teoria, Metas e Banca."
                     try:
                         response = model.generate_content(prompt)
                         texto = response.text
                         supabase.table("analises_congeladas").insert({"aluna": alu_ia, "conteudo": texto, "periodo": tipo_periodo}).execute()
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Erro na IA: {e}")
+                        if "429" in str(e):
+                            st.error("⏳ **Limite Diário da IA Atingido.**\n\nO Google permite apenas 20 gerações gratuitas por dia. Aguarde alguns segundos ou tente novamente amanhã. Suas análises anteriores continuam salvas abaixo.")
+                        else:
+                            st.error(f"Erro na IA: {e}")
 
 # --- FIM DO MÓDULO ---
 
@@ -728,6 +694,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
