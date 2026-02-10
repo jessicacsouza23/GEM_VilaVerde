@@ -51,8 +51,8 @@ def carregar_dados_globais():
 historico_geral, calendario_raw = carregar_dados_globais()
     
 # Conexão Supabase
-SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
-SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
+# SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
+# SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
 
 @st.cache_resource
 def init_supabase():
@@ -732,6 +732,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
