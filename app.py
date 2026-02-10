@@ -436,103 +436,98 @@ elif perfil == "👩‍🏫 Professora":
 # ==========================================
 # MÓDULO ANÁLISE DE IA
 # ==========================================
-elif perfil == "📊 Analítico IA":
-    st.header("📊 Inteligência Pedagógica & Dashboards")
+elif perfil == "📊 Análise de IA":
+    st.header("📊 Inteligência Pedagógica")
     
     if not historico_geral:
-        st.info("Aguardando registros para gerar gráficos.")
+        st.info("Sem dados disponíveis para análise.")
     else:
-        df_completo = pd.DataFrame(historico_geral)
+        df = pd.DataFrame(historico_geral)
         
-        # Filtros de Seleção
-        c1, c2, c3 = st.columns([2, 1, 1])
-        aluna_analise = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
-        tipo_periodo = c2.selectbox("Período Analisado:", ["Dia", "Mês", "Bimestre", "Semestre", "Ano", "Geral"])
-        data_alvo = c3.date_input("Data base:", datetime.now()) if tipo_periodo == "Dia" else None
-
-        df_aluna = filtrar_por_periodo(df_completo, aluna_analise, tipo_periodo, data_alvo)
-
-        if df_aluna.empty:
-            st.warning("Nenhum dado encontrado para esta aluna no período selecionado.")
-        else:
-            # --- 📈 SEÇÃO DE GRÁFICOS ---
-            st.subheader("🎯 Visão Geral de Desempenho")
-            g1, g2 = st.columns(2)
-
-            with g1:
-                # 1. Gráfico de Frequência de Atividades/Aulas
-                fig_freq = px.histogram(df_aluna, x="Data", color="Tipo", 
-                                       title="Frequência de Registros",
-                                       labels={"Tipo": "Categoria"},
-                                       color_discrete_sequence=px.colors.qualitative.Safe)
-                st.plotly_chart(fig_freq, use_container_width=True)
-
-            with g2:
-                # 2. Análise de Dificuldades Recorrentes
-                # Explodir a lista de dificuldades (que está em formato JSON no banco)
-                todas_difs = []
-                for lista in df_aluna['Dificuldades'].dropna():
-                    if isinstance(lista, list): todas_difs.extend(lista)
-                
-                if todas_difs:
-                    df_difs = pd.DataFrame(todas_difs, columns=["Dificuldade"]).value_counts().reset_index(name="Quantidade")
-                    fig_difs = px.bar(df_difs, x="Quantidade", y="Dificuldade", orientation='h',
-                                     title="Top Dificuldades Detectadas",
-                                     color="Quantidade", color_continuous_scale="Reds")
-                    st.plotly_chart(fig_difs, use_container_width=True)
-                else:
-                    st.write("Sem dificuldades registradas para gerar o gráfico.")
-
-            # 3. Gráfico de Equilíbrio Pedagógico (Radar)
-            st.markdown("---")
-            st.subheader("⚖️ Equilíbrio Pedagógico")
-            
-            # Contagem de tipos para ver onde há mais foco
-            contagem_tipo = df_aluna['Tipo'].value_counts()
-            categorias = ["Aula_Prática", "Aula_Teoria", "Aula_Solfejo", "Controle_Licao"]
-            valores = [contagem_tipo.get(cat, 0) for cat in categorias]
-
-            fig_radar = go.Figure(data=go.Scatterpolar(
-                r=valores,
-                theta=['Prática', 'Teoria', 'Solfejo', 'Atividades'],
+        # Filtros de Aluna e Período
+        c1, c2 = st.columns([2,1])
+        alu_ia = c1.selectbox("Aluna:", ALUNAS_LISTA)
+        per_ia = c2.selectbox("Período:", ["Geral", "Dia", "Mês", "Bimestre", "Semestre"])
+        
+        # Filtro de Data
+        df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y').dt.date
+        df_f = df[df["Aluna"] == alu_ia]
+        
+        # --- SEÇÃO DE GRÁFICOS ---
+        st.subheader("🎯 Dashboards de Evolução")
+        g1, g2 = st.columns(2)
+        
+        with g1:
+            # Gráfico de Radar/Teia
+            tipos_contagem = [df_f[df_f['Tipo'].str.contains(t, na=False)].shape[0] for t in ["Prática", "Teoria", "Solfejo", "Licao"]]
+            fig_r = go.Figure(data=go.Scatterpolar(
+                r=tipos_contagem, 
+                theta=['Prática', 'Teoria', 'Solfejo', 'Atividades'], 
                 fill='toself',
-                line_color='#2E86C1'
+                line_color='#1f77b4'
             ))
-            fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, max(valores)+1])), 
-                                  showlegend=False, title="Volume de Evolução por Área")
-            st.plotly_chart(fig_radar, use_container_width=True)
+            fig_r.update_layout(title="Volume de Estudos por Área", polar=dict(radialaxis=dict(visible=True)))
+            st.plotly_chart(fig_r, use_container_width=True)
+            
+        with g2:
+            # Gráfico de Dificuldades (Frequência)
+            difs_all = []
+            for sublist in df_f['Dificuldades'].dropna():
+                if isinstance(sublist, list): difs_all.extend(sublist)
+            
+            if difs_all:
+                df_d = pd.Series(difs_all).value_counts().reset_index(name='count')
+                df_d.columns = ['Dificuldade', 'Frequência']
+                fig_bar = px.bar(df_d.head(10), x='Frequência', y='Dificuldade', orientation='h', 
+                                title="Top 10 Dificuldades Recorrentes", color='Frequência',
+                                color_continuous_scale='Reds')
+                st.plotly_chart(fig_bar, use_container_width=True)
+            else:
+                st.info("Ainda não há dificuldades registradas para gerar o gráfico.")
 
-            # --- ✨ PROCESSAMENTO DA IA ---
-            st.markdown("---")
-            if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO COM IA"):
-                with st.spinner("A IA está cruzando os dados de Prática, Teoria e Atividades..."):
+        st.divider()
+
+        # --- BOTÃO DA IA ---
+        if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
+            if not GENAI_KEY or "SUA_CHAVE" in GENAI_KEY:
+                st.error("⚠️ Erro: Chave da API não configurada. Verifique os Secrets do Streamlit.")
+            else:
+                with st.spinner("A IA está analisando o desempenho técnico e pedagógico..."):
+                    # Preparação dos dados para a IA
+                    dados_formatados = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
                     
-                    # Preparação do Contexto para a IA
-                    resumo_dados = df_aluna[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao', 'Status']].to_string()
+                    prompt_final = f"""
+                    Você é uma Coordenadora Pedagógica de Música especialista em Órgão Eletrônico.
+                    Gere um relatório detalhado para a aluna: {alu_ia}.
                     
-                    prompt_master = f"""
-                    IDENTIDADE: Você é a Coordenadora Pedagógica do GEM Vila Verde.
-                    DADOS ANALISADOS:
-                    {resumo_dados}
+                    HISTÓRICO DE AULAS:
+                    {dados_formatados}
                     
-                    TAREFA: Gere um relatório pedagógico profundo (Seções 1 a 13) para a aluna {aluna_analise}.
-                    FOCO: 
-                    - Seção de Prática: Analise Postura, Técnica e Ritmo baseado nas 'Dificuldades'.
-                    - Seção de Secretaria: Analise o Status das lições (pendências vs realizadas).
-                    - Seção de Evolução: Compare os registros do início e fim do período {tipo_periodo}.
-                    - Seção de Metas: Crie metas reais para a próxima aula.
-                    
-                    DICAS PARA BANCA: Sugira o que ela deve focar para o exame semestral.
-                    Linguagem: Formal, empática e motivadora.
+                    ESTRUTURA DO RELATÓRIO (13 SEÇÕES):
+                    Analise separadamente Postura, Técnica, Ritmo e Teoria.
+                    Dê dicas específicas para a próxima aula e para a banca semestral.
+                    Seja profissional, técnico e motivador.
                     """
 
                     try:
-                        response = model.generate_content(prompt_master)
-                        st.markdown(response.text)
+                        # Chamada da IA com tratamento de versão
+                        response = model.generate_content(prompt_final)
                         
-                        # Opção para congelar
-                        st.download_button("Baixar Análise Congelada", response.text, f"Analise_{aluna_analise}.txt")
+                        st.markdown("---")
+                        st.markdown("### 📝 Relatório Analítico de Desempenho")
+                        st.write(response.text)
+                        
+                        # Botão para salvar/baixar
+                        st.download_button(
+                            label="📥 Baixar Análise Completa",
+                            data=response.text,
+                            file_name=f"Analise_{alu_ia}_{datetime.now().strftime('%d_%m')}.txt",
+                            mime="text/plain"
+                        )
+                        
                     except Exception as e:
-                        st.error(f"Erro ao processar IA: {e}")
+                        st.error(f"❌ Erro ao processar IA: {e}")
+                        st.info("Dica: Verifique se sua chave API está ativa e se o modelo 'gemini-1.5-flash-latest' está disponível na sua região.")
+
 
 
