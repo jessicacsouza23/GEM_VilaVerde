@@ -338,7 +338,7 @@ if perfil == "🏠 Secretaria":
             if not df_alu.empty:
                 # Pega o último status de cada lição/categoria
                 ultimos_status = df_alu.sort_values('Data').groupby(['Categoria', 'Licao_Detalhe']).last().reset_index()
-                pendencias_reais = ultimos_status[ultimos_status['Status'] != "OK"].to_dict('records')
+                pendencias_reais = ultimos_status[ultimos_status['Status'] != "Realizadas - sem pendência"].to_dict('records')
 
         # --- EXIBIÇÃO DAS PENDÊNCIAS ---
         if pendencias_reais:
@@ -721,6 +721,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
