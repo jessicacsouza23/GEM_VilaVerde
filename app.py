@@ -311,134 +311,124 @@ if perfil == "🏠 Secretaria":
                 st.error(f"Erro ao salvar no banco de dados: {e}")
         
    
-    with tab_lição:
-        t.subheader("Registro de Correção de Lições")
+    Entendido. Vamos unificar a lógica de "Memória de Registro" (verificar se já existe) com a estrutura de "Pendências e Novas Atividades" que você enviou.
+
+O código abaixo faz o seguinte:
+
+Verifica se já existe correção para a aluna no dia, permitindo a edição.
+
+Mantém a lista de pendências visível para resolução rápida.
+
+Organiza o formulário de "Nova Atividade" com a inteligência de carregar dados anteriores se a secretaria estiver apenas editando um registro do mesmo dia.
+
+Aqui está o código completo para copiar e colar:
+
+Python
+# ==========================================
+# MÓDULO SECRETARIA (CONTROLE DE LIÇÕES)
+# ==========================================
+elif perfil == "🏢 Secretaria":
+    st.title("🏢 Gestão de Secretaria")
+    
+    tab_licao, tab_financeiro = st.tabs(["📝 Correção de Lições", "💰 Financeiro"])
+
+    with tab_licao:
+        st.subheader("Registro de Correção de Lições")
         
         # Garante o histórico para consulta
         df_historico = pd.DataFrame(historico_geral)
+        data_hj = datetime.now()
         
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns([2, 1, 1])
         with c1:
-            aluna_corr = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
+            alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
         with c2:
-            data_corr = st.date_input("Data da Correção:", datetime.now(), key="sec_data")
+            sec_resp = st.selectbox("Responsável:", PROFESSORAS_LISTA, key="sec_resp")
+        with c3:
+            data_corr = st.date_input("Data:", data_hj, key="sec_data")
             data_corr_str = data_corr.strftime("%d/%m/%Y")
 
-        # --- VERIFICAÇÃO DE REGISTRO EXISTENTE ---
+        # --- LÓGICA DE PENDÊNCIAS (BUSCA NO HISTÓRICO) ---
+        pendencias_reais = []
+        if not df_historico.empty:
+            # Filtra apenas o que é controle de lição desta aluna e que não está "OK"
+            df_alu = df_historico[df_historico['Aluna'] == alu_sel]
+            ultimos_status = df_alu.sort_values('Data').groupby(['Categoria', 'Licao_Detalhe']).last().reset_index()
+            pendencias_reais = ultimos_status[ultimos_status['Status'] != "OK"].to_dict('records')
+
+        # --- EXIBIÇÃO DAS PENDÊNCIAS ---
+        if pendencias_reais:
+            st.error(f"🚨 LIÇÕES PENDENTES PARA {alu_sel.upper()}")
+            for p in pendencias_reais:
+                with st.container(border=True):
+                    col_info, col_acao = st.columns([2, 1])
+                    with col_info:
+                        st.markdown(f"📖 **{p['Categoria']}** | {p.get('Licao_Detalhe', '---')}")
+                        st.caption(f"📅 Desde: {p['Data']} | Status: {p['Status']}")
+                    with col_acao:
+                        with st.expander("✅ Resolver"):
+                            st_res = st.selectbox("Nova Situação:", STATUS_LICAO, key=f"st_{p['id']}")
+                            obs_res = st.text_area("Obs entrega:", key=f"obs_{p['id']}")
+                            if st.button("Salvar Atualização", key=f"btn_{p['id']}"):
+                                db_save_historico({
+                                    "Aluna": alu_sel, "Tipo": "Controle_Licao", "Data": data_corr_str,
+                                    "Secretaria": sec_resp, "Categoria": p["Categoria"],
+                                    "Licao_Detalhe": p["Licao_Detalhe"], "Status": st_res, "Observacao": obs_res
+                                })
+                                st.rerun()
+        else:
+            st.success("✅ Nenhuma pendência encontrada.")
+
+        st.divider()
+
+        # --- VERIFICAÇÃO DE REGISTRO EXISTENTE NO DIA (PARA EDIÇÃO) ---
         registro_previo = None
         if not df_historico.empty:
-            # Busca registros de "Correção" para esta aluna nesta data
-            condicao = (df_historico['Aluna'] == aluna_corr) & \
+            condicao = (df_historico['Aluna'] == alu_sel) & \
                        (df_historico['Data'] == data_corr_str) & \
-                       (df_historico['Tipo'] == "Correção")
-            
+                       (df_historico['Tipo'] == "Controle_Licao")
             match = df_historico[condicao]
             if not match.empty:
                 registro_previo = match.iloc[-1].to_dict()
-                st.warning(f"⚠️ Já existe um registro de correção para {aluna_corr} nesta data. Você pode alterá-lo abaixo.")
+                st.warning(f"⚠️ Já existe um registro de atividade para hoje. Editando registro anterior.")
 
-        with st.form("f_correcao_sec", clear_on_submit=False):
-            # Quem está realizando a correção?
-            instr_corr = st.selectbox("Responsável pela Correção:", PROFESSORAS_LISTA, 
-                                     index=PROFESSORAS_LISTA.index(registro_previo['Instrutora']) if registro_previo and registro_previo['Instrutora'] in PROFESSORAS_LISTA else 0)
+        # --- FORMULÁRIO PARA NOVAS ATIVIDADES ---
+        with st.form("f_nova_atividade", clear_on_submit=False):
+            st.markdown("### ✍️ Registrar Nova Atividade")
             
-            # Dados da Lição
-            lic_atual = st.text_input("Lição Corrigida (Ex: MSA Cap 2 / Apostila Pág 5):", 
-                                     value=registro_previo.get('Licao_Atual', "") if registro_previo else "")
+            c_cat, c_det = st.columns([1, 2])
             
-            # Dificuldades na correção
-            st.markdown("**Dificuldades Observadas na Correção:**")
-            difs_previa = registro_previo.get('Dificuldades', []) if registro_previo else []
-            if isinstance(difs_previa, str): difs_previa = [difs_previa]
+            # Preenchimento automático se for edição
+            idx_cat = 0
+            if registro_previo and registro_previo['Categoria'] in CATEGORIAS_LICAO:
+                idx_cat = CATEGORIAS_LICAO.index(registro_previo['Categoria'])
             
-            cols_d = st.columns(2)
-            difs_selecionadas = []
-            # Lista padrão de dificuldades para teoria/correção
-            lista_dificuldades_sec = ["Erros de Teoria", "Falta de Atenção", "Caligrafia Musical", "Métrica Incorreta", "Escrita de Notas", "Não realizou a lição"]
+            cat_sel = c_cat.radio("Categoria:", CATEGORIAS_LICAO, index=idx_cat)
+            det_lic = c_det.text_input("Lição / Página:", 
+                                      value=registro_previo.get('Licao_Detalhe', "") if registro_previo else "",
+                                      placeholder="Ex: Lição 02, pág 05")
             
-            for i, d in enumerate(lista_dificuldades_sec):
-                t_col = cols_d[0] if i < 3 else cols_d[1]
-                if t_col.checkbox(d, value=(d in difs_previa), key=f"sec_diff_{d}"):
-                    difs_selecionadas.append(d)
-            
-            obs_sec = st.text_area("Observações Adicionais:", value=registro_previo.get('Observacao', "") if registro_previo else "")
-            
-            # Botão Dinâmico
-            btn_label = "🔄 ATUALIZAR CORREÇÃO" if registro_previo else "💾 SALVAR CORREÇÃO"
-            if st.form_submit_button(btn_label):
-                if not lic_atual:
-                    st.error("⚠️ Informe qual lição foi corrigida.")
-                else:
-                    db_save_historico({
-                        "Aluna": aluna_corr,
-                        "Tipo": "Correção",
-                        "Data": data_corr_str,
-                        "Instrutora": instr_corr,
-                        "Licao_Atual": lic_atual,
-                        "Dificuldades": difs_selecionadas,
-                        "Observacao": obs_sec,
-                        "Status": "Corrigido"
-                    })
-                    st.success(f"✅ Correção de {aluna_corr} salva com sucesso!")
-                    st.cache_data.clear()
-                    st.rerun()
-
-    with tab_financeiro:
-        st.info("Módulo financeiro em desenvolvimento...")
-
-                # --- EXIBIÇÃO DAS PENDÊNCIAS COM BOTÃO DE RESOLUÇÃO ---
-                if pendencias_reais:
-                    st.error("🚨 LIÇÕES PENDENTES - ATUALIZE ABAIXO SE ENTREGUE HOJE")
-                    for p in pendencias_reais:
-                        with st.container(border=True):
-                            col_info, col_acao = st.columns([2, 1])
-                            
-                            with col_info:
-                                st.markdown(f"📖 **{p['Categoria']}**")
-                                st.markdown(f"**Lição:** {p.get('Licao_Detalhe', '---')}")
-                                st.caption(f"📅 Primeira correção em: {p['Data']} | Motivo: {p['Status']}")
-                                st.info(f"Obs Antiga: {p.get('Observacao', '-')}")
-                            
-                            with col_acao:
-                                # Mini formulário para resolver a pendência específica
-                                with st.expander("✅ Resolver esta pendência"):
-                                    status_resolv = st.selectbox("Nova Situação:", STATUS_LICAO, key=f"st_{p['id']}")
-                                    obs_resolv = st.text_area("Observação da entrega:", key=f"obs_{p['id']}")
-                                    if st.button("Salvar Atualização", key=f"btn_{p['id']}"):
-                                        dados_update = {
-                                            "Aluna": alu_sel,
-                                            "Tipo": "Controle_Licao",
-                                            "Data": data_hj.strftime("%d/%m/%Y"),
-                                            "Secretaria": sec_resp,
-                                            "Categoria": p["Categoria"],
-                                            "Licao_Detalhe": p["Licao_Detalhe"],
-                                            "Status": status_resolv,
-                                            "Observacao": obs_resolv
-                                        }
-                                        if db_save_historico(dados_update):
-                                            st.success("Salvo com sucesso!")
-                                            st.rerun()
-                else:
-                    st.success("✅ Nenhuma pendência encontrada para esta aluna.")
-
             st.divider()
             
-            # --- FORMULÁRIO PARA NOVAS ATIVIDADES ---
-            with st.form("f_nova_atividade", clear_on_submit=True):
-                st.markdown("### ✍️ Registrar Nova Atividade (Diferente das Pendências)")
-                c_cat, c_det = st.columns([1, 2])
-                cat_sel = c_cat.radio("Categoria:", CATEGORIAS_LICAO)
-                det_lic = c_det.text_input("Lição / Página:", placeholder="Ex: Lição 02, pág 05")
+            idx_stat = 0
+            if registro_previo and registro_previo['Status'] in STATUS_LICAO:
+                idx_stat = STATUS_LICAO.index(registro_previo['Status'])
                 
-                st.divider()
-                status_sel = st.radio("Status hoje:", STATUS_LICAO, horizontal=True)
-                obs_hoje = st.text_area("Observação Técnica (p/ Análise IA):")
-                
-                if st.form_submit_button("❄️ CONGELAR E SALVAR"):
+            status_sel = st.radio("Status hoje:", STATUS_LICAO, horizontal=True, index=idx_stat)
+            obs_hoje = st.text_area("Observação Técnica (p/ Análise IA):", 
+                                   value=registro_previo.get('Observacao', "") if registro_previo else "")
+            
+            # Botão Dinâmico
+            btn_label = "🔄 ATUALIZAR REGISTRO" if registro_previo else "❄️ CONGELAR E SALVAR"
+            
+            if st.form_submit_button(btn_label):
+                if not det_lic:
+                    st.error("⚠️ Informe a Lição/Página!")
+                else:
                     sucesso = db_save_historico({
                         "Aluna": alu_sel,
                         "Tipo": "Controle_Licao",
-                        "Data": data_hj.strftime("%d/%m/%Y"),
+                        "Data": data_corr_str,
                         "Secretaria": sec_resp,
                         "Categoria": cat_sel,
                         "Licao_Detalhe": det_lic,
@@ -446,11 +436,12 @@ if perfil == "🏠 Secretaria":
                         "Observacao": obs_hoje
                     })
                     if sucesso:
-                        st.success("✅ Registro salvo com sucesso!")
-                        st.balloons()
+                        st.success("✅ Registro processado!")
+                        st.cache_data.clear()
                         st.rerun()
 
-        st.divider()
+    with tab_financeiro:
+        st.info("Módulo financeiro em desenvolvimento...")
                     
 # ==========================================
 # MÓDULO PROFESSORA
@@ -758,6 +749,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
