@@ -479,34 +479,35 @@ elif perfil == "📊 Analítico IA":
             st.divider()
 
             # BOTÃO DE GERAR RELATÓRIO
+            # DENTRO DO: if perfil == "📊 Análise de IA":
             if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
-                with st.spinner("IA Analisando Postura, Técnica e Ritmo..."):
-                    # Preparação do histórico para a IA
-                    resumo_historico = ""
-                    for _, row in df_f.iterrows():
-                        resumo_historico += f"Data: {row['Data']} | Área: {row['Tipo']} | Lição: {row['Licao_Atual']}\n"
-                        resumo_historico += f"Dificuldades: {row['Dificuldades']}\nObs: {row['Observacao']}\n---\n"
-
-                    prompt_master = f"""
-                    Aja como Coordenadora Pedagógica Master de Órgão Eletrônico.
-                    Analise o progresso da aluna {alu_ia} e gere o relatório completo de 13 seções.
-                    
-                    DADOS:
-                    {resumo_historico}
-                    
-                    REQUISITOS DA ANÁLISE:
-                    - Separe dificuldades por ÁREAS: Postura (mãos, costas, pés), Técnica (dedilhado, articulação), Ritmo (metrônomo) e Teoria.
-                    - Inclua o resumo da secretaria.
-                    - Defina metas para a próxima aula.
-                    - Dê dicas específicas para a banca semestral.
-                    """
-                    
-                    try:
-                        response = model.generate_content(prompt_master)
-                        st.markdown("### 📝 Relatório Analítico Final")
-                        st.markdown(response.text)
-                        st.download_button("📥 Baixar Análise Congelada", response.text, f"Analise_{alu_ia}.txt")
-                    except Exception as e:
-                        st.error(f"Erro ao processar conteúdo: {e}")
-
-
+                if model:
+                    with st.spinner("IA Analisando Postura, Técnica e Ritmo..."):
+                        # Preparação do histórico formatado
+                        historico_ia = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
+            
+                        prompt_master = f"""
+                        Você é a Coordenadora Pedagógica Master do GEM Vila Verde.
+                        Analise a aluna {alu_ia} e gere um relatório de 13 seções com:
+                        
+                        1. POSTURA: Detalhe mãos, costas e pés.
+                        2. TÉCNICA: Dedilhado e articulação.
+                        3. RITMO: Uso do metrônomo e pulsação.
+                        4. TEORIA: Desempenho nos métodos.
+                        5. SECRETARIA: Resumo de lições e pendências.
+                        6. BANCA: Dicas específicas para o exame semestral.
+                        
+                        HISTÓRICO:
+                        {historico_ia}
+                        """
+                        
+                        try:
+                            response = model.generate_content(prompt_master)
+                            st.markdown("---")
+                            st.markdown("### 📝 Relatório Analítico Final")
+                            st.write(response.text)
+                            st.download_button("📥 Baixar Relatório", response.text, f"Analise_{alu_ia}.txt")
+                        except Exception as e:
+                            st.error(f"Erro na geração: {e}")
+                else:
+                    st.error("Conecte a IA primeiro.")
