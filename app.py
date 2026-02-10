@@ -9,29 +9,33 @@ import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 
-# --- CONFIGURAÇÃO DA IA (VERSÃO ESTÁVEL v1) ---
-if "GOOGLE_API_KEY" in st.secrets:
-    GENAI_KEY = st.secrets["GOOGLE_API_KEY"]
-else:
-    GENAI_KEY = "SUA_CHAVE_AQUI"
+# --- 1. CONFIGURAÇÕES E CONEXÃO ---
+st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
 
-genai.configure(api_key=GENAI_KEY)
-
-def carregar_modelo():
-    # Lista de nomes técnicos aceitos pela API v1 estável
-    modelos = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+# Função Robusta para Inicializar IA
+def inicializar_ia():
+    # Tenta buscar a chave de 3 lugares diferentes para não falhar
+    api_key = None
+    if "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+    elif "google_api_key" in st.secrets:
+        api_key = st.secrets["google_api_key"]
     
-    for nome in modelos:
-        try:
-            m = genai.GenerativeModel(model_name=nome)
-            # Teste de fumaça (smoke test)
-            m.generate_content("ping") 
-            return m
-        except:
-            continue
-    return None
+    if not api_key:
+        return None, "Chave API não encontrada nos Secrets."
 
-model = carregar_modelo()
+    try:
+        genai.configure(api_key=api_key)
+        # Forçamos o modelo 1.5-flash que é o mais estável para o Free Tier
+        modelo = genai.GenerativeModel('gemini-1.5-flash')
+        # Teste de pulso
+        modelo.generate_content("oi", generation_config={"max_output_tokens": 1})
+        return modelo, "Sucesso"
+    except Exception as e:
+        return None, str(e)
+
+model, status_ia = inicializar_ia()
+
 
 # Conexão Supabase
 SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
@@ -448,89 +452,86 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.header("📊 Inteligência Pedagógica Vila Verde")
     
-    if model is None:
-        st.error("❌ Não foi possível conectar com nenhum modelo de IA. Verifique se sua API Key é válida e se você tem saldo/quota no Google AI Studio.")
-    elif not historico_geral:
+    if status_ia != "Sucesso":
+        st.error(f"❌ Erro de Conexão com a IA: {status_ia}")
+        st.info("Acesse 'Settings > Secrets' no Streamlit e adicione: GOOGLE_API_KEY = 'sua_chave'")
+    
+    if not historico_geral:
         st.warning("⚠️ O banco de dados está vazio.")
     else:
         df = pd.DataFrame(historico_geral)
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         
         c1, c2 = st.columns([2,1])
-        alu_ia = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
-        per_ia = c2.selectbox("Período:", ["Geral", "Dia", "Mês", "Bimestre", "Semestre"])
+        with c1:
+            alu_ia = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
+        with c2:
+            per_ia = st.selectbox("Período:", ["Geral", "Dia", "Mês", "Bimestre", "Semestre"])
         
-        hoje = datetime.now().date()
         df_f = df[df["Aluna"] == alu_ia]
         
-        # Filtros de data
-        if per_ia == "Dia": df_f = df_f[df_f['dt_obj'] == hoje]
-        elif per_ia == "Mês": df_f = df_f[df_f['dt_obj'] > (hoje - timedelta(days=30))]
-        elif per_ia == "Bimestre": df_f = df_f[df_f['dt_obj'] > (hoje - timedelta(days=60))]
-        elif per_ia == "Semestre": df_f = df_f[df_f['dt_obj'] > (hoje - timedelta(days=180))]
-
         if df_f.empty:
-            st.info(f"Sem registros para {alu_ia} neste período.")
+            st.info(f"Sem registros para {alu_ia} no sistema.")
         else:
-            # --- 📈 DASHBOARDS ---
-            st.subheader("🎯 Visão Geral de Desempenho")
-            g1, g2 = st.columns(2)
+            # DASHBOARDS VISUAIS
+            st.subheader("🎯 Resumo Técnico")
+            col_g1, col_g2 = st.columns(2)
             
-            with g1:
-                # Gráfico Radar
-                cat_radar = ['Aula_Prática', 'Aula_Teoria', 'Aula_Solfejo', 'Controle_Licao']
-                val_radar = [df_f[df_f['Tipo'] == c].shape[0] for c in cat_radar]
-                fig_radar = go.Figure(data=go.Scatterpolar(r=val_radar, theta=['Prática', 'Teoria', 'Solfejo', 'Secretaria'], fill='toself'))
-                fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, max(val_radar)+1])))
+            with col_g1:
+                # Radar de equilíbrio
+                tipos = df_f['Tipo'].value_counts()
+                fig_radar = go.Figure(data=go.Scatterpolar(
+                    r=tipos.values,
+                    theta=tipos.index,
+                    fill='toself',
+                    line_color='#1f77b4'
+                ))
+                fig_radar.update_layout(title="Volume por Área")
                 st.plotly_chart(fig_radar, use_container_width=True)
-
-            with g2:
-                # Gráfico Dificuldades
-                difs = [item for sublist in df_f['Dificuldades'].dropna() for item in sublist if isinstance(sublist, list)]
+                
+            with col_g2:
+                # Barras de Dificuldades
+                difs = [d for sub in df_f['Dificuldades'].dropna() for d in sub if isinstance(sub, list)]
                 if difs:
-                    df_d = pd.Series(difs).value_counts().reset_index(name='qtd')
-                    st.plotly_chart(px.bar(df_d.head(8), x='qtd', y='index', orientation='h', title="Dificuldades Recorrentes"), use_container_width=True)
+                    df_d = pd.Series(difs).value_counts().reset_index()
+                    df_d.columns = ['Dificuldade', 'Qtd']
+                    fig_bar = px.bar(df_d.head(10), x='Qtd', y='Dificuldade', orientation='h', title="Dificuldades Recorrentes")
+                    st.plotly_chart(fig_bar, use_container_width=True)
 
             st.divider()
 
-            # --- 🚀 BOTÃO GERADOR DE RELATÓRIO ---if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
-if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
-    if model:
-        with st.spinner(f"Processando com {model.model_name}..."):
-            # Transformamos o histórico em um formato de lista legível
-            historico_texto = ""
-            for _, row in df_f.iterrows():
-                historico_texto += f"\nData: {row['Data']} | Tipo: {row['Tipo']} | Lição: {row['Licao_Atual']}\n"
-                historico_texto += f"Dificuldades: {', '.join(row['Dificuldades']) if isinstance(row['Dificuldades'], list) else row['Dificuldades']}\n"
-                historico_texto += f"Observações: {row['Observacao']}\n"
+            # BOTÃO DE GERAR RELATÓRIO (Indentação Rigorosa)
+            if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
+                if model:
+                    with st.spinner("Analisando Postura, Técnica, Ritmo e Teoria..."):
+                        # Organização dos dados para o Prompt
+                        dados_texto = ""
+                        for _, row in df_f.iterrows():
+                            dados_texto += f"\nData: {row['Data']} | Área: {row['Tipo']} | Lição: {row['Licao_Atual']}\n"
+                            dados_texto += f"Dificuldades: {row['Dificuldades']}\n"
+                            dados_texto += f"Obs: {row['Observacao']}\n"
 
-            prompt_completo = f"""
-            Analise como uma Coordenadora Pedagógica de Órgão Eletrônico:
-            Aluna: {alu_ia}
-            
-            DADOS DAS AULAS:
-            {historico_texto}
-            
-            Gere um relatório detalhado com 13 seções, separando:
-            - Postura (costas, mãos, pés)
-            - Técnica (articulação, dedilhado)
-            - Ritmo (metrônomo, pulsação)
-            - Teoria e Solfejo
-            - Metas e Dicas para a Banca Semestral.
-            """
+                        prompt_master = f"""
+                        Atue como Coordenadora Pedagógica de Órgão Eletrônico.
+                        Gere uma análise completa para a aluna {alu_ia} baseada nestes dados:
+                        {dados_texto}
 
-            try:
-                response = model.generate_content(prompt_completo)
-                st.markdown("---")
-                st.markdown(response.text)
-                st.download_button("📥 Baixar Relatório", response.text, f"Analise_{alu_ia}.txt")
-            except Exception as e:
-                st.error(f"Erro ao gerar conteúdo: {e}")
-    else:
-        st.error("IA Indisponível. Verifique sua conexão e API Key no Google AI Studio.")
-            
-            
-            
-    
-    
-
+                        ESTRUTURA OBRIGATÓRIA:
+                        1. Análise de Postura (costas, mãos, pés).
+                        2. Evolução Técnica e Rítmica.
+                        3. Desempenho em Teoria/Solfejo.
+                        4. Resumo da Secretaria (Lições e Pendências).
+                        5. Plano de Melhoria para a Próxima Aula (com metas).
+                        6. Dicas específicas para a Banca Semestral.
+                        """
+                        
+                        try:
+                            response = model.generate_content(prompt_master)
+                            st.markdown("### 📝 Relatório Analítico Final")
+                            st.markdown(response.text)
+                            st.download_button("📥 Baixar Relatório", response.text, f"Analise_{alu_ia}.txt")
+                        except Exception as e:
+                            st.error(f"Erro ao processar conteúdo: {e}")
+                else:
+                    st.error("A IA não está conectada. Verifique sua chave API.")
+                    
