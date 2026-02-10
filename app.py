@@ -182,7 +182,6 @@ if perfil == "🏠 Secretaria":
     with tab_lição:
         st.subheader("📝 Controle de Lições e Pendências")
         
-        # Cabeçalho
         c1, c2 = st.columns(2)
         sec_resp = c1.selectbox("Secretária responsável:", SECRETARIAS_LISTA)
         data_hj = c2.date_input("Data de Hoje:", datetime.now())
@@ -193,48 +192,45 @@ if perfil == "🏠 Secretaria":
             # --- ÁREA DE PENDÊNCIAS ---
             df_hist = pd.DataFrame(historico_geral)
             if not df_hist.empty:
-                df_hist['dt_comparar'] = pd.to_datetime(df_hist['Data'], format='%d/%m/%Y').dt.date
-                
-                # Busca tudo que deu erro
-                pendentes_bruto = df_hist[
-                    (df_hist["Aluna"] == alu_sel) & 
-                    (df_hist["Tipo"] == "Controle_Licao") & 
-                    (df_hist["Status"].isin(["Realizada - devolvida para refazer", "Não realizada"]))
-                ].sort_values("dt_comparar", ascending=False)
+                # Verificação de segurança para as colunas existirem no DataFrame
+                if 'Data' in df_hist.columns and 'Status' in df_hist.columns:
+                    df_hist['dt_comparar'] = pd.to_datetime(df_hist['Data'], format='%d/%m/%Y').dt.date
+                    
+                    pendentes_bruto = df_hist[
+                        (df_hist["Aluna"] == alu_sel) & 
+                        (df_hist["Tipo"] == "Controle_Licao") & 
+                        (df_hist["Status"].isin(["Realizada - devolvida para refazer", "Não realizada"]))
+                    ].sort_values("dt_comparar", ascending=False)
 
-                # Busca o que foi corrigido depois
-                sucessos = df_hist[
-                    (df_hist["Aluna"] == alu_sel) & 
-                    (df_hist["Status"] == "Realizadas - sem pendência")
-                ]
-                
-                # Filtra o que ainda não foi resolvido
-                pendencias_reais = []
-                for _, p in pendentes_bruto.iterrows():
-                    resolvida = sucessos[
-                        (sucessos["Categoria"] == p["Categoria"]) & 
-                        (sucessos["Licao_Detalhe"] == p["Licao_Detalhe"]) & 
-                        (sucessos["dt_comparar"] >= p["dt_comparar"])
+                    sucessos = df_hist[
+                        (df_hist["Aluna"] == alu_sel) & 
+                        (df_hist["Status"] == "Realizadas - sem pendência")
                     ]
-                    if resolvida.empty:
-                        pendencias_reais.append(p)
+                    
+                    pendencias_reais = []
+                    for _, p in pendentes_bruto.iterrows():
+                        resolvida = sucessos[
+                            (sucessos["Categoria"] == p["Categoria"]) & 
+                            (sucessos["Licao_Detalhe"] == p["Licao_Detalhe"]) & 
+                            (sucessos["dt_comparar"] >= p["dt_comparar"])
+                        ]
+                        if resolvida.empty:
+                            pendencias_reais.append(p)
 
-                if pendencias_reais:
-                    st.error("🚨 ATENÇÃO: LIÇÕES AINDA PENDENTES")
-                    for p in pendencias_reais:
-                        with st.container(border=True):
-                            col_a, col_b = st.columns([1, 4])
-                            col_a.warning(f"**{p['Status']}**")
-                            col_b.markdown(f"📖 **{p['Categoria']}** - {p.get('Licao_Detalhe', '---')}")
-                            col_b.caption(f"📅 Primeira correção em: {p['Data']} | Obs: {p.get('Observacao', '-')}")
+                    if pendencias_reais:
+                        st.error("🚨 LIÇÕES PENDENTES")
+                        for p in pendencias_reais:
+                            with st.container(border=True):
+                                st.warning(f"**{p['Status']}** | {p['Categoria']} - {p.get('Licao_Detalhe', '')}")
+                                st.caption(f"📅 Primeira correção em: {p['Data']} | Obs: {p.get('Observacao', '-')}")
                 else:
-                    st.success("✅ Aluna sem pendências pendentes.")
+                    st.info("Iniciando banco de dados...")
 
             st.divider()
             
-            # --- FORMULÁRIO COM MENSAGEM DE SUCESSO ---
+            # --- FORMULÁRIO ---
             with st.form("f_registro_final", clear_on_submit=True):
-                st.markdown("### ✍️ Registrar Nova Atividade")
+                st.markdown("### ✍️ Registrar Atividade")
                 c_cat, c_det = st.columns([1, 2])
                 cat_sel = c_cat.radio("Categoria:", CATEGORIAS_LICAO)
                 det_lic = c_det.text_input("Lição / Página:", placeholder="Ex: Lição 02, pág 05")
@@ -244,6 +240,7 @@ if perfil == "🏠 Secretaria":
                 obs_hoje = st.text_area("Observação Técnica (p/ Análise IA):")
                 
                 if st.form_submit_button("❄️ CONGELAR E SALVAR"):
+                    # Os nomes das chaves (Aluna, Tipo, etc) devem ser IDÊNTICOS aos do banco
                     sucesso = db_save_historico({
                         "Aluna": alu_sel,
                         "Tipo": "Controle_Licao",
@@ -255,10 +252,9 @@ if perfil == "🏠 Secretaria":
                         "Observacao": obs_hoje
                     })
                     if sucesso:
-                        st.balloons() # Efeito visual opcional
-                        st.success("✅ Registro salvo com sucesso! O histórico foi atualizado.")
-                        # O st.rerun() pode ser removido ou colocado após um pequeno delay se quiser que a mensagem dure mais
-                        # st.rerun()
+                        st.success("✅ Registro salvo com sucesso!")
+                        st.balloons()
+                        # st.rerun() # Opcional: recarrega a página para atualizar o mural
 
 # ==========================================
 # MÓDULO PROFESSORA
@@ -334,6 +330,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
