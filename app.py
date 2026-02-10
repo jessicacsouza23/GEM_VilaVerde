@@ -10,13 +10,12 @@ import plotly.graph_objects as go
 import google.generativeai as genai
 
 # --- CONFIGURAÇÃO DA API (Substitua pela sua chave) ---
-# Dica: No Streamlit Cloud, salve em "Secrets" como GOOGLE_API_KEY
-GENAI_KEY = "SUA_CHAVE_API_AQUI" 
+st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
+
+# Substitua pela sua chave real do Google AI Studio
+GENAI_KEY = st.secrets["GOOGLE_API_KEY"]
 genai.configure(api_key=GENAI_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
-
-# --- 1. CONFIGURAÇÕES ---
-st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
 
 # Conexão Supabase
 SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
@@ -528,3 +527,4 @@ elif perfil == "📊 Analítico IA":
                         st.download_button("Baixar Análise Congelada", response.text, f"Analise_{aluna_analise}.txt")
                     except Exception as e:
                         st.error(f"Erro ao processar IA: {e}")
+
