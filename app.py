@@ -512,52 +512,51 @@ elif perfil == "👩‍🏫 Professora":
 # MÓDULO ANÁLISE DE IA
 # ==========================================
 elif perfil == "📊 Analítico IA":
- st.title("📊 Análise Pedagógica e Rodízio")
-    
+    st.title("📊 Análise Pedagógica e Rodízio")
+
     # 1. CARREGAMENTO DOS DADOS
-    # Importante: Estas linhas devem ter exatamente 4 espaços de recuo em relação ao elif
     df = pd.DataFrame(historico_geral)
-    
+
     if df.empty:
         st.info("ℹ️ O banco de dados está vazio. Registre uma aula para iniciar.")
     else:
         # 2. SELEÇÃO DA ALUNA
         alu_ia = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
-        
+
         # 3. FILTRO DE DATA E PERÍODO
         if 'Data' in df.columns:
             df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
             df_aluna = df[df["Aluna"] == alu_ia]
-            
+
             tipo_periodo = st.radio(
                 "Selecione o tipo de análise:",
                 ["Diária", "Mensal", "Bimestral", "Semestral", "Anual", "Geral"],
                 horizontal=True
             )
-            
-            df_f = pd.DataFrame() 
-            
+
+            df_f = pd.DataFrame()
+
             if tipo_periodo == "Diária":
                 datas_disponiveis = sorted(df_aluna['dt_obj'].unique(), reverse=True)
                 if datas_disponiveis:
                     dia_sel = st.selectbox("Escolha o dia da aula:", datas_disponiveis)
                     df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
-                
+
             elif tipo_periodo == "Mensal":
                 meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
                 mes_sel = st.selectbox("Escolha o mês:", meses, index=datetime.now().month - 1)
                 df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month == meses.index(mes_sel) + 1]
-                
+
             elif tipo_periodo == "Bimestral":
                 bim_sel = st.selectbox("Escolha o Bimestre:", ["1º Bimestre", "2º Bimestre", "3º Bimestre", "4º Bimestre", "5º Bimestre", "6º Bimestre"])
                 mapa_bim = {"1º Bimestre": [1,2], "2º Bimestre": [3,4], "3º Bimestre": [5,6], "4º Bimestre": [7,8], "5º Bimestre": [9,10], "6º Bimestre": [11,12]}
                 df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(mapa_bim[bim_sel])]
-                
+
             elif tipo_periodo == "Semestral":
                 sem_sel = st.selectbox("Escolha o Semestre:", ["1º Semestre", "2º Semestre"])
                 meses_sem = [1,2,3,4,5,6] if sem_sel == "1º Semestre" else [7,8,9,10,11,12]
                 df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(meses_sem)]
-                
+
             elif tipo_periodo == "Anual":
                 df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.year == 2026]
             else:
@@ -569,7 +568,7 @@ elif perfil == "📊 Analítico IA":
             else:
                 total = len(df_f)
                 aprov = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
-                
+
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Registros", total)
                 c2.metric("Aproveitamento", f"{(aprov/total*100) if total > 0 else 0:.1f}%")
@@ -600,7 +599,7 @@ elif perfil == "📊 Analítico IA":
                             dados_aluna = next((item for item in escala if item.get('Aluna') == alu_ia), None)
                             if dados_aluna:
                                 proxima_prof = f"H2: {dados_aluna.get('09h35 (H2)')} | H3: {dados_aluna.get('10h10 (H3)')} | H4: {dados_aluna.get('10h45 (H4)')}"
-                
+
                 st.info(f"📍 **Próxima Aula:** {proxima_aula}")
                 st.success(f"👩‍🏫 **Escala:** {proxima_prof}")
 
@@ -621,7 +620,7 @@ elif perfil == "📊 Analítico IA":
                     st.markdown(analise_existente['conteudo'])
                     if st.button("🔄 Atualizar Análise com IA"):
                         analise_existente = None
-                
+
                 if not analise_existente:
                     if st.button("✨ GERAR ANÁLISE COMPLETA (IA)"):
                         if model:
@@ -633,7 +632,7 @@ elif perfil == "📊 Analítico IA":
                                 Inclua o resumo da secretaria, defina metas para a próxima aula e dê dicas para a banca semestral.
                                 Dados: {dados_texto}"""
                                 res = model.generate_content(prompt)
-                                
+
                                 nova = {"aluna": alu_ia, "periodo": tipo_periodo, "conteudo": res.text, "professoras_escala": proxima_prof}
                                 supabase.table("analises_congeladas").insert(nova).execute()
                                 st.rerun()
@@ -644,6 +643,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
