@@ -249,42 +249,57 @@ if perfil == "🏠 Secretaria":
             col1.write(f"**{aluna}**")
             status = col2.radio(f"Status {aluna}", ["Presente", "Falta", "Justificada"], index=0 if presenca_padrao else 1, key=f"status_{aluna}_{data_ch_sel}", horizontal=True, label_visibility="collapsed")
             motivo = ""
-            # --- LÓGICA DA CHAMADA ---
+       # --- LOGICA DA CHAMADA (DENTRO DO LOOP DE ALUNAS) ---
+        col1, col2, col3 = st.columns([2, 2, 3])
+        status = col2.radio(f"Status para {aluna}", ["Presente", "Ausente", "Justificada"], key=f"status_{aluna}_{data_ch_sel}")
+        
+        # Inicializamos o motivo como vazio
+        motivo = ""
+        
+        # Se for justificada, aparece o campo. Usamos o session_state para garantir que o valor não suma
         if status == "Justificada":
-            motivo = col3.text_input(f"Motivo justificativa", key=f"motivo_{aluna}_{data_ch_sel}", placeholder="Informe o motivo...", label_visibility="collapsed")
-        else:
-            motivo = "" # Garante que a variável exista mesmo se não for justificada
-            
+            motivo = col3.text_input(
+                f"Motivo justificativa", 
+                key=f"motivo_input_{aluna}_{data_ch_sel}", 
+                placeholder="Informe o motivo...", 
+                label_visibility="collapsed"
+            )
+        
+        # Adicionamos à lista temporária que será processada no botão
         registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
         
+        # --- BOTÃO DE SALVAMENTO ---
         if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
+            # PROTEÇÃO: Verificamos se data_ch_sel existe, se não, usamos a data de hoje
+            try:
+                data_string = data_ch_sel.strftime("%d/%m/%Y")
+            except NameError:
+                data_string = datetime.now().strftime("%d/%m/%Y")
+            
             novos_registros = []
+            
             for reg in registros_chamada:
-                # Criamos o dicionário no formato que o seu banco Supabase aceita
-                dado_formatado = {
-                    "Data": data_ch_sel.strftime("%d/%m/%Y"),
+                novos_registros.append({
+                    "Data": data_string,
                     "Aluna": reg["Aluna"],
                     "Tipo": "Chamada",
                     "Status": reg["Status"],
-                    "Observacao": reg["Motivo"], # Usamos 'Observacao' para bater com a análise de IA
-                    "Licao_Atual": "N/A",
+                    "Observacao": reg["Motivo"],  # Salvamos o motivo aqui para a IA ler depois
+                    "Licao_Atual": "Chamada Diária",
                     "Dificuldades": []
-                }
-                novos_registros.append(dado_formatado)
-            
+                })
+        
             try:
-                # 1. SALVA NO BANCO DE DADOS (SUPABASE)
+                # 1. Salva no Supabase
                 supabase.table("historico_geral").insert(novos_registros).execute()
                 
-                # 2. ATUALIZA A MEMÓRIA LOCAL (SESSION STATE)
-                if "historico_geral" not in st.session_state:
-                    st.session_state.historico_geral = []
-                st.session_state.historico_geral.extend(novos_registros)
+                # 2. Limpa o cache para a aba de Análise de IA atualizar
+                st.cache_data.clear()
                 
-                st.success(f"✅ Chamada de {data_ch_sel.strftime('%d/%m/%Y')} salva no banco de dados!")
-                st.cache_data.clear() # Limpa o cache para a análise de IA ler os dados novos
+                st.success(f"✅ Chamada de {data_string} salva com sucesso!")
+                st.balloons()
             except Exception as e:
-                st.error(f"Erro ao salvar no banco: {e}")
+                st.error(f"Erro ao salvar no banco de dados: {e}")
         
    
     with tab_lição:
@@ -557,5 +572,6 @@ elif perfil == "📊 Analítico IA":
                         else: st.error(f"Erro: {e}")
                 else:
                     st.error("IA indisponível no momento devido ao limite de quota.")
+
 
 
