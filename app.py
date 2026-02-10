@@ -5,6 +5,15 @@ import calendar
 from supabase import create_client, Client
 import io
 from PIL import Image, ImageDraw
+import plotly.express as px
+import plotly.graph_objects as go
+import google.generativeai as genai
+
+# --- CONFIGURAÇÃO DA API (Substitua pela sua chave) ---
+# Dica: No Streamlit Cloud, salve em "Secrets" como GOOGLE_API_KEY
+GENAI_KEY = "SUA_CHAVE_API_AQUI" 
+genai.configure(api_key=GENAI_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- 1. CONFIGURAÇÕES ---
 st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
@@ -421,128 +430,101 @@ elif perfil == "👩‍🏫 Professora":
 # ==========================================
 # MÓDULO ANÁLISE DE IA
 # ==========================================
-elif perfil == "📊 Analítico IA": # Alterar o nome no radio da sidebar para "📊 Analítico IA"
-    st.header("🤖 Inteligência Artificial Pedagógica")
+elif perfil == "📊 Analítico IA":
+    st.header("📊 Inteligência Pedagógica & Dashboards")
     
     if not historico_geral:
-        st.info("Aguardando dados no histórico para realizar análise.")
+        st.info("Aguardando registros para gerar gráficos.")
     else:
         df_completo = pd.DataFrame(historico_geral)
         
-        # --- FILTROS DE INTERFACE ---
-        col1, col2, col3 = st.columns([2, 1, 1])
-        
-        with col1:
-            aluna_analise = st.selectbox("Selecione a Aluna para Análise:", ALUNAS_LISTA)
-        with col2:
-            tipo_periodo = st.selectbox("Período da Análise:", ["Dia", "Mês", "Bimestre", "Semestre", "Ano", "Geral"])
-        with col3:
-            data_alvo = None
-            if tipo_periodo == "Dia":
-                data_alvo = st.date_input("Data específica:", datetime.now())
+        # Filtros de Seleção
+        c1, c2, c3 = st.columns([2, 1, 1])
+        aluna_analise = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
+        tipo_periodo = c2.selectbox("Período Analisado:", ["Dia", "Mês", "Bimestre", "Semestre", "Ano", "Geral"])
+        data_alvo = c3.date_input("Data base:", datetime.now()) if tipo_periodo == "Dia" else None
 
-        # Aplica o filtro
-        df_filtrado = filtrar_por_periodo(df_completo, aluna_analise, tipo_periodo, data_alvo)
+        df_aluna = filtrar_por_periodo(df_completo, aluna_analise, tipo_periodo, data_alvo)
 
-        if df_filtrado.empty:
-            st.warning(f"Não foram encontrados registros para {aluna_analise} neste período.")
+        if df_aluna.empty:
+            st.warning("Nenhum dado encontrado para esta aluna no período selecionado.")
         else:
-            st.success(f"Foram encontrados {len(df_filtrado)} registros para análise.")
-            
-            # --- EXIBIÇÃO DOS DADOS BRUTOS (CONGELADOS) ---
-            with st.expander("Ver dados mapeados para a IA"):
-                st.dataframe(df_filtrado, use_container_width=True)
+            # --- 📈 SEÇÃO DE GRÁFICOS ---
+            st.subheader("🎯 Visão Geral de Desempenho")
+            g1, g2 = st.columns(2)
 
-            # --- BOTÃO PARA GERAR ANÁLISE ---
-            if st.button("✨ GERAR ANÁLISE PEDAGÓGICA COMPLETA"):
-                with st.spinner("A IA está analisando posturas, técnicas e evolução..."):
+            with g1:
+                # 1. Gráfico de Frequência de Atividades/Aulas
+                fig_freq = px.histogram(df_aluna, x="Data", color="Tipo", 
+                                       title="Frequência de Registros",
+                                       labels={"Tipo": "Categoria"},
+                                       color_discrete_sequence=px.colors.qualitative.Safe)
+                st.plotly_chart(fig_freq, use_container_width=True)
+
+            with g2:
+                # 2. Análise de Dificuldades Recorrentes
+                # Explodir a lista de dificuldades (que está em formato JSON no banco)
+                todas_difs = []
+                for lista in df_aluna['Dificuldades'].dropna():
+                    if isinstance(lista, list): todas_difs.extend(lista)
+                
+                if todas_difs:
+                    df_difs = pd.DataFrame(todas_difs, columns=["Dificuldade"]).value_counts().reset_index(name="Quantidade")
+                    fig_difs = px.bar(df_difs, x="Quantidade", y="Dificuldade", orientation='h',
+                                     title="Top Dificuldades Detectadas",
+                                     color="Quantidade", color_continuous_scale="Reds")
+                    st.plotly_chart(fig_difs, use_container_width=True)
+                else:
+                    st.write("Sem dificuldades registradas para gerar o gráfico.")
+
+            # 3. Gráfico de Equilíbrio Pedagógico (Radar)
+            st.markdown("---")
+            st.subheader("⚖️ Equilíbrio Pedagógico")
+            
+            # Contagem de tipos para ver onde há mais foco
+            contagem_tipo = df_aluna['Tipo'].value_counts()
+            categorias = ["Aula_Prática", "Aula_Teoria", "Aula_Solfejo", "Controle_Licao"]
+            valores = [contagem_tipo.get(cat, 0) for cat in categorias]
+
+            fig_radar = go.Figure(data=go.Scatterpolar(
+                r=valores,
+                theta=['Prática', 'Teoria', 'Solfejo', 'Atividades'],
+                fill='toself',
+                line_color='#2E86C1'
+            ))
+            fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, max(valores)+1])), 
+                                  showlegend=False, title="Volume de Evolução por Área")
+            st.plotly_chart(fig_radar, use_container_width=True)
+
+            # --- ✨ PROCESSAMENTO DA IA ---
+            st.markdown("---")
+            if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO COM IA"):
+                with st.spinner("A IA está cruzando os dados de Prática, Teoria e Atividades..."):
                     
                     # Preparação do Contexto para a IA
-                    texto_dados = df_filtrado.to_csv(index=False)
+                    resumo_dados = df_aluna[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao', 'Status']].to_string()
                     
-                    # Determinar quem é a próxima instrutora (se for análise diária)
-                    proxima_info = ""
-                    if tipo_periodo == "Dia" and data_alvo:
-                        # Lógica para buscar no calendário quem atende ela no próximo sábado
-                        prox_sabado = (data_alvo + timedelta(days=(5 - data_alvo.weekday()) % 7)).strftime("%d/%m/%Y")
-                        escala_prox = calendario_db.get(prox_sabado, [])
-                        instr_prox = next((atend for atend in escala_prox if atend['Aluna'] == aluna_analise), None)
-                        if instr_prox:
-                            proxima_info = f"\n⚠️ ATENÇÃO: Esta análise deve ser encaminhada para a Instrutora que dará a próxima aula: {instr_prox}."
-
-                    # MONTAGEM DO PROMPT (Unindo seus dois prompts)
-                    prompt_final = f"""
-                    {proxima_info}
+                    prompt_master = f"""
+                    IDENTIDADE: Você é a Coordenadora Pedagógica do GEM Vila Verde.
+                    DADOS ANALISADOS:
+                    {resumo_dados}
                     
-                    CONTEXTO: Você é uma especialista em pedagogia musical para órgão eletrônico.
-                    PERÍODO SOLICITADO: {tipo_periodo}
-                    DADOS BRUTOS:
-                    {texto_dados}
+                    TAREFA: Gere um relatório pedagógico profundo (Seções 1 a 13) para a aluna {aluna_analise}.
+                    FOCO: 
+                    - Seção de Prática: Analise Postura, Técnica e Ritmo baseado nas 'Dificuldades'.
+                    - Seção de Secretaria: Analise o Status das lições (pendências vs realizadas).
+                    - Seção de Evolução: Compare os registros do início e fim do período {tipo_periodo}.
+                    - Seção de Metas: Crie metas reais para a próxima aula.
                     
-                    INSTRUÇÕES DE RIGOR:
-                    1. Mapeie: Nome (Aluna), Prática (Lição_Atual, Dificuldades, Observacao), Teoria/Solfejo (Tipo, Dificuldades), Data.
-                    2. Organize por bloco: [NOME DA ALUNA EM NEGRITO].
-                    3. Regra de Ouro: Não resuma dados literais das professoras, mas interprete pedagogicamente na análise final.
-                    
-                    ESTRUTURA DO RELATÓRIO:
-                    - SEÇÃO 1: Identificação e Resumo Executivo (Evolução lenta, moderada ou rápida).
-                    - SEÇÃO 2: Análise por Disciplina (Prática: Postura, Técnica, Ritmo; Teoria; Solfejo).
-                    - SEÇÃO 3: Comportamento e Perfil.
-                    - SEÇÃO 4: Dificuldades Frequentes (Quantificar se houver mais de uma aula).
-                    - SEÇÃO 5: PLANO DE MELHORIA REALISTA (Dicas de exercícios e metas mensuráveis).
-                    - SEÇÃO 6: DICAS ESPECÍFICAS PARA A BANCA SEMESTRAL.
-                    
-                    Seja técnico, real e motivador.
+                    DICAS PARA BANCA: Sugira o que ela deve focar para o exame semestral.
+                    Linguagem: Formal, empática e motivadora.
                     """
-                    
-                    # Chamada simulada da IA (Aqui você integrará com a API do Gemini/OpenAI)
-                    # Por enquanto, exibiremos o container onde o texto aparecerá:
-                    st.markdown("---")
-                    st.header(f"📝 Relatório Pedagógico - {aluna_analise}")
-                    
-                    # Exemplo de como o resultado será estruturado
-                    st.info(f"Relatório gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-                    
-                    # Aqui entra o componente que recebe a resposta da IA
-                    st.markdown(f"""
-                    ### 🧾 SEÇÃO 1 — IDENTIFICAÇÃO
-                    **Aluna:** {aluna_analise}  
-                    **Período:** {tipo_periodo}  
-                    {proxima_info}
-                    
-                    *(A análise completa aparecerá aqui após integração com a chave de API)*
-                    """)
-                    
-                    # Botão para "Congelar" (Salvar a análise pronta num banco de dados de relatórios)
-                    if st.button("💾 Congelar Relatório para Consulta Futura"):
-                        st.success("Relatório salvo no histórico de análises da aluna!")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+                    try:
+                        response = model.generate_content(prompt_master)
+                        st.markdown(response.text)
+                        
+                        # Opção para congelar
+                        st.download_button("Baixar Análise Congelada", response.text, f"Analise_{aluna_analise}.txt")
+                    except Exception as e:
+                        st.error(f"Erro ao processar IA: {e}")
