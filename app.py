@@ -156,11 +156,10 @@ calendario_db = db_get_calendario()
 # ==========================================
 if perfil == "🏠 Secretaria":
     # CORREÇÃO: Agora as 4 variáveis correspondem aos 4 itens da lista
-    tab_plan, tab_cham, tab_licao, tab_fin = st.tabs([
+    tab_plan, tab_cham, tab_licao = st.tabs([
         "🗓️ Planejamento", 
         "📍 Chamada", 
-        "📝 Controle de Lições", 
-        "💰 Financeiro"
+        "📝 Controle de Lições"
     ])
     
     with tab_plan:
@@ -332,13 +331,14 @@ if perfil == "🏠 Secretaria":
             data_corr = st.date_input("Data:", data_hj, key="sec_data")
             data_corr_str = data_corr.strftime("%d/%m/%Y")
 
-        # --- LÓGICA DE PENDÊNCIAS (BUSCA NO HISTÓRICO) ---
+        # --- LÓGICA DE PENDÊNCIAS ---
         pendencias_reais = []
         if not df_historico.empty:
-            # Filtra apenas o que é controle de lição desta aluna e que não está "OK"
             df_alu = df_historico[df_historico['Aluna'] == alu_sel]
-            ultimos_status = df_alu.sort_values('Data').groupby(['Categoria', 'Licao_Detalhe']).last().reset_index()
-            pendencias_reais = ultimos_status[ultimos_status['Status'] != "OK"].to_dict('records')
+            if not df_alu.empty:
+                # Pega o último status de cada lição/categoria
+                ultimos_status = df_alu.sort_values('Data').groupby(['Categoria', 'Licao_Detalhe']).last().reset_index()
+                pendencias_reais = ultimos_status[ultimos_status['Status'] != "OK"].to_dict('records')
 
         # --- EXIBIÇÃO DAS PENDÊNCIAS ---
         if pendencias_reais:
@@ -351,9 +351,10 @@ if perfil == "🏠 Secretaria":
                         st.caption(f"📅 Desde: {p['Data']} | Status: {p['Status']}")
                     with col_acao:
                         with st.expander("✅ Resolver"):
-                            st_res = st.selectbox("Nova Situação:", STATUS_LICAO, key=f"st_{p['id']}")
-                            obs_res = st.text_area("Obs entrega:", key=f"obs_{p['id']}")
-                            if st.button("Salvar Atualização", key=f"btn_{p['id']}"):
+                            key_id = f"{p['Categoria']}_{p['Licao_Detalhe']}".replace(" ", "_")
+                            st_res = st.selectbox("Nova Situação:", STATUS_LICAO, key=f"st_{key_id}")
+                            obs_res = st.text_area("Obs entrega:", key=f"obs_{key_id}")
+                            if st.button("Salvar Atualização", key=f"btn_{key_id}"):
                                 db_save_historico({
                                     "Aluna": alu_sel, "Tipo": "Controle_Licao", "Data": data_corr_str,
                                     "Secretaria": sec_resp, "Categoria": p["Categoria"],
@@ -365,7 +366,7 @@ if perfil == "🏠 Secretaria":
 
         st.divider()
 
-        # --- VERIFICAÇÃO DE REGISTRO EXISTENTE NO DIA (PARA EDIÇÃO) ---
+        # --- VERIFICAÇÃO DE REGISTRO EXISTENTE ---
         registro_previo = None
         if not df_historico.empty:
             condicao = (df_historico['Aluna'] == alu_sel) & \
@@ -374,17 +375,15 @@ if perfil == "🏠 Secretaria":
             match = df_historico[condicao]
             if not match.empty:
                 registro_previo = match.iloc[-1].to_dict()
-                st.warning(f"⚠️ Já existe um registro de atividade para hoje. Editando registro anterior.")
+                st.warning(f"⚠️ Já existe um registro para hoje. Editando registro anterior.")
 
         # --- FORMULÁRIO PARA NOVAS ATIVIDADES ---
         with st.form("f_nova_atividade", clear_on_submit=False):
             st.markdown("### ✍️ Registrar Nova Atividade")
             
             c_cat, c_det = st.columns([1, 2])
-            
-            # Preenchimento automático se for edição
             idx_cat = 0
-            if registro_previo and registro_previo['Categoria'] in CATEGORIAS_LICAO:
+            if registro_previo and registro_previo.get('Categoria') in CATEGORIAS_LICAO:
                 idx_cat = CATEGORIAS_LICAO.index(registro_previo['Categoria'])
             
             cat_sel = c_cat.radio("Categoria:", CATEGORIAS_LICAO, index=idx_cat)
@@ -395,14 +394,13 @@ if perfil == "🏠 Secretaria":
             st.divider()
             
             idx_stat = 0
-            if registro_previo and registro_previo['Status'] in STATUS_LICAO:
+            if registro_previo and registro_previo.get('Status') in STATUS_LICAO:
                 idx_stat = STATUS_LICAO.index(registro_previo['Status'])
                 
             status_sel = st.radio("Status hoje:", STATUS_LICAO, horizontal=True, index=idx_stat)
-            obs_hoje = st.text_area("Observação Técnica (p/ Análise IA):", 
+            obs_hoje = st.text_area("Observação Técnica:", 
                                    value=registro_previo.get('Observacao', "") if registro_previo else "")
             
-            # Botão Dinâmico
             btn_label = "🔄 ATUALIZAR REGISTRO" if registro_previo else "❄️ CONGELAR E SALVAR"
             
             if st.form_submit_button(btn_label):
@@ -410,22 +408,15 @@ if perfil == "🏠 Secretaria":
                     st.error("⚠️ Informe a Lição/Página!")
                 else:
                     sucesso = db_save_historico({
-                        "Aluna": alu_sel,
-                        "Tipo": "Controle_Licao",
-                        "Data": data_corr_str,
-                        "Secretaria": sec_resp,
-                        "Categoria": cat_sel,
-                        "Licao_Detalhe": det_lic,
-                        "Status": status_sel,
-                        "Observacao": obs_hoje
+                        "Aluna": alu_sel, "Tipo": "Controle_Licao", "Data": data_corr_str,
+                        "Secretaria": sec_resp, "Categoria": cat_sel, "Licao_Detalhe": det_lic,
+                        "Status": status_sel, "Observacao": obs_hoje
                     })
                     if sucesso:
                         st.success("✅ Registro processado!")
                         st.cache_data.clear()
                         st.rerun()
 
-    with tab_financeiro:
-        st.info("Módulo financeiro em desenvolvimento...")
                     
 # ==========================================
 # MÓDULO PROFESSORA
@@ -733,6 +724,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
