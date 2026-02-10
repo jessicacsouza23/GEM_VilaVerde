@@ -599,91 +599,105 @@ elif perfil == "📊 Analítico IA":
         df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=False)
 
         # Filtro de Data Dinâmico
+        df_f = pd.DataFrame()
         if tipo_periodo == "Diária":
             datas_h = sorted(df_aluna['dt_obj'].unique(), reverse=True)
             dia_sel = st.date_input("Consultar data:", value=datas_h[0] if datas_h else datetime.now().date())
             df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
         else:
-            # Lógica simplificada para outros períodos (ajuste conforme necessidade)
             df_f = df_aluna 
 
-        # --- [1] BUSCA DO RODÍZIO DA PRÓXIMA SEMANA ---
-        proxima_aula, proxima_prof = "Não definida", "Não definida"
+        # --- [1] BUSCA DO RODÍZIO E PROFESSORAS (INDIVIDUAL E GRUPO) ---
+        proxima_aula, proxima_prof, prof_teoria = "Não definida", "Não definida", "Não definida"
         if 'calendario_raw' in locals() and calendario_raw:
             try:
                 cal_df = pd.DataFrame(calendario_raw)
                 cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
                 futuros = cal_df[cal_df['dt_format'] >= datetime.now().date()].sort_values('dt_format')
+                
                 if not futuros.empty:
                     for _, row in futuros.iterrows():
-                        dados_aluna = next((item for item in row['escala'] if item.get('Aluna') == alu_ia), None)
+                        escala = row.get('escala', [])
+                        dados_aluna = next((item for item in escala if item.get('Aluna') == alu_ia), None)
+                        
                         if dados_aluna:
                             proxima_aula = row['id']
+                            # Individual (H2, H3, H4)
                             h2 = dados_aluna.get('09h35 (H2)', '-')
                             h3 = dados_aluna.get('10h10 (H3)', '-')
                             h4 = dados_aluna.get('10h45 (H4)', '-')
                             proxima_prof = f"H2: {h2} | H3: {h3} | H4: {h4}"
+                            
+                            # Grupo (Teoria/Solfejo - Geralmente H1 ou campo específico)
+                            prof_teoria = dados_aluna.get('09h00 (H1)', 'Coletiva/Teoria')
                             break
             except: pass
 
         if df_f.empty:
             st.warning(f"Sem registros para {alu_ia} no período selecionado.")
         else:
-            # --- [2] DASHBOARD DE PREVIEW (VISUAL DA IMAGEM) ---
+            # --- [2] DASHBOARD DE PREVIEW ---
             st.markdown(f"### 📜 Consolidação Pedagógica - {alu_ia}")
             
-            # Métricas
+            # Métricas corrigidas (realizadas no plural)
             total_aulas = len(df_f)
-            realizadas = len(df_f[df_f['Status'].isin(["Realizada", "Corrigido", "OK"])])
-            faltas = len(df_f[df_f['Status'] == "Falta"])
+            realizadas = len(df_f[df_f['Status'].isin(["Realizada", "Corrigido", "OK", "Realizadas - sem pendência"])])
+            faltas = len(df_f[df_f['Status'].isin(["Falta", "Faltou"])])
             freq = (1 - (faltas/total_aulas)) * 100 if total_aulas > 0 else 0
 
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Média de Evolução", "8.5" if realizada > 0 else "0.0")
+            m1.metric("Média de Evolução", "8.5" if realizadas > 0 else "0.0")
             m2.metric("Total Aulas", total_aulas)
             m3.metric("Frequência", f"{freq:.0f}%")
             m4.metric("Próxima Aula", proxima_aula)
 
-            # --- [3] PARECER TÉCNICO (PREVIEW DOS DADOS REAIS) ---
+            # --- [3] PARECER TÉCNICO ---
             st.markdown("#### 📝 Resumo das Dificuldades e Observações")
-            
-            # Agregando textos para o preview
-            todas_obs = " ".join(df_f['Observacao'].fillna("").astype(str))
             todas_difs = [d for sub in df_f['Dificuldades'].dropna() for d in (sub if isinstance(sub, list) else [sub])]
             
             c_post, c_rit = st.columns(2)
             with c_post:
-                st.markdown(f"""<div style="background-color: #fff0f0; padding: 15px; border-radius: 10px; border-left: 5px solid #ff4b4b; height: 150px;">
+                st.markdown(f"""<div style="background-color: #fff0f0; padding: 15px; border-radius: 10px; border-left: 5px solid #ff4b4b; min-height: 120px;">
                 <b style="color: #ff4b4b;">🎹 Postura e Técnica:</b><br>
-                <small>{' • '.join([d for d in todas_difs if d in DIF_PRATICA]) if any(d in DIF_PRATICA for d in todas_difs) else "Sem intercorrências técnicas."}</small>
+                <small>{' • '.join(set([d for d in todas_difs if d in ["Postura Incorreta", "Mão Tensa", "Dedilhado", "Articulação"]])) or "Sem intercorrências técnicas."}</small>
                 </div>""", unsafe_allow_html=True)
 
             with c_rit:
-                st.markdown(f"""<div style="background-color: #ffffec; padding: 15px; border-radius: 10px; border-left: 5px solid #f1c40f; height: 150px;">
+                st.markdown(f"""<div style="background-color: #ffffec; padding: 15px; border-radius: 10px; border-left: 5px solid #f1c40f; min-height: 120px;">
                 <b style="color: #d4ac0d;">📖 Ritmo e Teoria:</b><br>
-                <small>{' • '.join([d for d in todas_difs if d in DIF_TEORIA]) if any(d in DIF_TEORIA for d in todas_difs) else "Desenvolvimento teórico regular."}</small>
+                <small>{' • '.join(set([d for d in todas_difs if d in ["Erros de Ritmo", "Solfejo", "Teoria", "Métrica Incorreta"]])) or "Desenvolvimento teórico regular."}</small>
                 </div>""", unsafe_allow_html=True)
 
-            # Correção do "None" na Dica
-            dica_texto = df_f.iloc[0].get('Licao_Casa', "Realizar revisões das lições passadas.")
-            if not dica_texto or dica_texto == "None": dica_texto = "Focar na fixação dos exercícios atuais."
-            
+            dica_texto = df_f.iloc[0].get('Licao_Casa', "Focar na fixação dos exercícios atuais.")
+            if not dica_texto or dica_texto == "None": dica_texto = "Revisar conteúdo da última aula."
             st.info(f"💡 **Dica Pedagógica Imediata:** {dica_texto}")
 
-            # --- [4] GRÁFICOS RESTAURADOS ---
+            # --- [4] GRÁFICOS ---
             st.divider()
             g1, g2 = st.columns(2)
             with g1:
-                fig_p = px.pie(df_f, names='Tipo', hole=0.4, title="Áreas Focadas", color_discrete_sequence=px.colors.qualitative.Pastel)
+                fig_p = px.pie(df_f, names='Tipo', hole=0.4, title="Áreas Focadas")
                 st.plotly_chart(fig_p, use_container_width=True)
             with g2:
-                if todas_difs:
-                    df_d = pd.Series([d for d in todas_difs if d != "Não apresentou dificuldades"]).value_counts().reset_index().head(5)
+                difs_limpas = [d for d in todas_difs if d not in ["Não apresentou dificuldades", "None"]]
+                if difs_limpas:
+                    df_d = pd.Series(difs_limpas).value_counts().reset_index().head(5)
                     df_d.columns = ['Dificuldade', 'Qtd']
-                    fig_b = px.bar(df_d, x='Qtd', y='Dificuldade', orientation='h', title="Top Dificuldades", color='Qtd', color_continuous_scale='Reds')
+                    fig_b = px.bar(df_d, x='Qtd', y='Dificuldade', orientation='h', title="Top Dificuldades", color='Qtd')
                     st.plotly_chart(fig_b, use_container_width=True)
 
-            # --- [5] ANÁLISE IA CONGELADA ---
+            # --- [5] ENCAMINHAMENTO E RODÍZIO ---
+            with st.expander("📬 Destinatários do Relatório (Próximo Rodízio)", expanded=True):
+                st.markdown(f"""
+                **Este relatório deve ser encaminhado para:**
+                * **Aulas Individuais:** {proxima_prof}
+                * **Aula em Grupo (Teoria):** {prof_teoria}
+                * **Coordenação:** Para arquivamento na ficha da aluna.
+                
+                *Obs: As metas abaixo serão geradas pela IA focando especificamente nestas instrutoras.*
+                """)
+
+            # --- [6] ANÁLISE IA CONGELADA ---
             st.divider()
             
             def buscar_analise(aluna, periodo):
@@ -695,43 +709,35 @@ elif perfil == "📊 Analítico IA":
             analise_congelada = buscar_analise(alu_ia, tipo_periodo)
 
             if analise_congelada:
-                st.success(f"✅ Análise IA Congelada (Referência: {analise_congelada['data_geracao'][:10]})")
+                st.success(f"✅ Análise IA Congelada ({analise_congelada['data_geracao'][:10]})")
                 st.markdown(analise_congelada['conteudo'])
-                if st.button("🔄 Os dados mudaram? Gerar Novo Relatório"):
+                if st.button("🔄 Dados mudaram? Gerar Novo Relatório"):
                     analise_congelada = None
 
             if not analise_congelada:
-                st.warning("⚠️ Nenhuma análise IA gerada para este período.")
                 if st.button("✨ GERAR RELATÓRIO PEDAGÓGICO COMPLETO (IA)"):
-                    with st.spinner("IA consolidando histórico, rodízio e metas..."):
+                    with st.spinner("IA processando dados..."):
                         try:
                             dados_contexto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
                             prompt = f"""
-                            Aja como Coordenadora Pedagógica. Gere uma análise técnica para {alu_ia}.
-                            
-                            CONTEXTO:
-                            Aulas no período: {total_aulas} | Frequência: {freq:.0f}%
-                            Dados coletados: {dados_contexto}
-                            Próximo Rodízio ({proxima_aula}): {proxima_prof}
-                            
-                            ESTRUTURA OBRIGATÓRIA:
+                            Aja como Coordenadora Pedagógica Master. Aluna: {alu_ia}.
+                            ESTRUTURA:
                             ## 🎹 1. POSTURA E TÉCNICA
                             ## 🥁 2. RITMO E MÉTRICA
                             ## 📖 3. TEORIA E DESENVOLVIMENTO
-                            ## 🏠 4. RESUMO DA SECRETARIA (FALTAS/PENDÊNCIAS)
+                            ## 🏠 4. RESUMO DA SECRETARIA (Frequência: {freq:.0f}%)
                             ## 🎯 5. METAS PARA A PRÓXIMA AULA ({proxima_aula})
-                            (Baseado na escala: {proxima_prof})
+                            Encaminhar metas para: {proxima_prof} e {prof_teoria}.
                             ## 🏛️ 6. DICAS PARA A BANCA SEMESTRAL
+                            DADOS: {dados_contexto}
                             """
                             res_ia = model.generate_content(prompt)
-                            
-                            # Salvar para congelar
                             supabase.table("analises_congeladas").insert({
                                 "aluna": alu_ia, "periodo": tipo_periodo, "conteudo": res_ia.text
                             }).execute()
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Erro ao gerar IA: {e}")
+                            st.error(f"Erro na IA: {e}")
 
 # --- FIM DO MÓDULO ---
 
@@ -739,3 +745,4 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
