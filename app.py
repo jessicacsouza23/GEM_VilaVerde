@@ -126,29 +126,15 @@ DIF_SOLFEJO = ["Não assistiu os vídeos complementares", "Dificuldades em ler a
                "Dificuldades na ordem das notas, ascendente e descendente", "Não realizou as atividades da apostila", "Não estudou nada", 
                "Estudou de forma insatisfatória", "Não apresentou dificuldades"]
 
-# --- FUNÇÃO PARA FILTRAR POR PERÍODO ---
-def filtrar_por_periodo(df, aluna, periodo, data_especifica=None):
-    if df.empty:
-        return df
+def filtrar_por_periodo(df, periodo):
+    hoje = datetime.now().date()
+    if periodo == "Dia": return df[df['dt_obj'] == hoje]
+    elif periodo == "Mês": return df[df['dt_obj'] >= (hoje - timedelta(days=30))]
+    elif periodo == "Bimestre": return df[df['dt_obj'] >= (hoje - timedelta(days=60))]
+    elif periodo == "Semestre": return df[df['dt_obj'] >= (hoje - timedelta(days=180))]
+    elif periodo == "Ano": return df[df['dt_obj'] >= (hoje - timedelta(days=365))]
+    return df # Geral
     
-    # Converte coluna Data para datetime
-    df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y')
-    df_aluna = df[df["Aluna"] == aluna].sort_values("dt_obj", ascending=False)
-    
-    hoje = datetime.now()
-    
-    if periodo == "Dia" and data_especifica:
-        return df_aluna[df_aluna['dt_obj'].dt.date == data_especifica]
-    elif periodo == "Mês":
-        return df_aluna[df_aluna['dt_obj'] > (hoje - timedelta(days=30))]
-    elif periodo == "Bimestre":
-        return df_aluna[df_aluna['dt_obj'] > (hoje - timedelta(days=60))]
-    elif periodo == "Semestre":
-        return df_aluna[df_aluna['dt_obj'] > (hoje - timedelta(days=180))]
-    elif periodo == "Ano":
-        return df_aluna[df_aluna['dt_obj'] > (hoje - timedelta(days=365))]
-    return df_aluna # Geral
-
 historico_geral = db_get_historico()
 calendario_db = db_get_calendario()
 
@@ -450,91 +436,91 @@ elif perfil == "👩‍🏫 Professora":
 # MÓDULO ANÁLISE DE IA
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.title("📊 Painel de Transferência Pedagógica")
-    st.markdown("---")
+    st.title("📊 Análise Pedagógica e Rodízio")
     
     if not historico_geral:
-        st.warning("Aguardando registros para análise.")
+        st.warning("Sem dados para analisar.")
     else:
         df = pd.DataFrame(historico_geral)
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         
         c1, c2 = st.columns([2, 1])
         alu_ia = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
-        per_ia = c2.selectbox("Filtrar Período:", ["Geral", "Últimos 30 dias", "Últimos 90 dias"])
+        per_ia = c2.selectbox("Filtro de Período:", ["Geral", "Dia", "Mês", "Bimestre", "Semestre", "Ano"])
         
-        df_f = df[df["Aluna"] == alu_ia].sort_values("dt_obj", ascending=False)
+        # Aplicar Filtros
+        df_aluna = df[df["Aluna"] == alu_ia]
+        df_f = filtrar_por_periodo(df_aluna, per_ia).sort_values("dt_obj", ascending=False)
         
         if df_f.empty:
-            st.info(f"Sem histórico para {alu_ia}.")
+            st.info(f"Nenhum registro encontrado para {alu_ia} neste período.")
         else:
-            # --- 📈 DASHBOARD DE PORCENTAGENS ---
-            st.subheader("📝 Indicadores de Aproveitamento")
+            # --- 📈 DASHBOARD RESUMIDO ---
+            total = len(df_f)
+            aprov = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
+            perc = (aprov/total*100) if total > 0 else 0
             
-            # Cálculo de métricas
-            total_aulas = len(df_f)
-            aprovadas = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
-            refazer = len(df_f[df_f['Status'] == "Realizada - devolvida para refazer"])
-            perc_aprov = (aprovadas / total_aulas * 100) if total_aulas > 0 else 0
-            
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Total de Registros", total_aulas)
-            m2.metric("Aproveitamento", f"{perc_aprov:.1f}%")
-            m3.metric("Para Refazer", refazer, delta_color="inverse")
-            m4.metric("Dificuldades Ativas", len([d for sub in df_f['Dificuldades'].dropna() for d in sub if d != "Não apresentou dificuldades"]))
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Registros no Período", total)
+            m2.metric("Aproveitamento", f"{perc:.1f}%")
+            m3.metric("Lições Pendentes", len(df_f[df_f['Status'] != "Realizadas - sem pendência"]))
 
-            # --- 📊 GRÁFICOS ---
-            g1, g2 = st.columns(2)
-            with g1:
-                t_counts = df_f['Tipo'].value_counts()
-                fig_pie = px.pie(values=t_counts.values, names=t_counts.index, title="Distribuição de Carga Horária", hole=.4)
-                st.plotly_chart(fig_pie, use_container_width=True)
-            
-            with g2:
+            col_g1, col_g2 = st.columns(2)
+            with col_g1:
+                fig_tipo = px.pie(df_f, names='Tipo', title="Foco das Aulas", hole=.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+                st.plotly_chart(fig_tipo, use_container_width=True)
+            with col_g2:
                 difs = [d for sub in df_f['Dificuldades'].dropna() for d in sub if d != "Não apresentou dificuldades"]
                 if difs:
                     df_d = pd.Series(difs).value_counts().reset_index()
-                    fig_bar = px.bar(df_d.head(5), x=0, y='index', orientation='h', title="Top 5 Gargalos Técnicos", color=0)
-                    st.plotly_chart(fig_bar, use_container_width=True)
+                    st.plotly_chart(px.bar(df_d.head(5), x=0, y='index', orientation='h', title="Dificuldades Técnicas"), use_container_width=True)
 
-            # --- 🗓️ RODÍZIO E PRÓXIMA PROFESSORA ---
-            st.info("📅 **Informação de Rodízio para Transferência**")
-            proxima_data = (datetime.now() + timedelta(days=7)).strftime("%d/%m/%Y")
-            escala_futura = calendario_db.get(proxima_data, "Não definida")
+            # --- 🔄 LÓGICA DE RODÍZIO (SECRETARIA) ---
+            st.markdown("---")
+            st.subheader("🔄 Informação de Transferência")
             
-            st.write(f"**Próxima Aula:** {proxima_data}")
-            st.write(f"**Professoras Escaladas:** {escala_futura}")
+            # Encontrar próxima aula na escala
+            hoje_dt = datetime.now().date()
+            proxima_aula = "Não agendada"
+            proxima_prof = "Não definida"
+            
+            if calendario_raw:
+                # Ordenar datas do calendário para pegar a próxima
+                cal_df = pd.DataFrame(calendario_raw)
+                cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y').dt.date
+                futuros = cal_df[cal_df['dt_format'] > hoje_dt].sort_values('dt_format')
+                
+                if not futuros.empty:
+                    proxima_aula = futuros.iloc[0]['id']
+                    proxima_prof = futuros.iloc[0]['escala']
 
-            st.divider()
+            st.info(f"📍 **Próxima Aula:** {proxima_aula} | **Escala:** {proxima_prof}")
 
-            # --- 🚀 BOTÃO DA IA (RELATÓRIO PARA PROFESSORAS) ---
+            # --- 🚀 BOTÃO IA (RELATÓRIO PARA PROFESSORAS) ---
             if st.button("✨ GERAR RELATÓRIO PARA PRÓXIMA PROFESSORA"):
                 if model:
-                    with st.spinner("IA consolidando dados para transferência..."):
-                        dados_ia = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao', 'Status']].to_string(index=False)
+                    with st.spinner("IA consolidando análise técnica..."):
+                        historico_txt = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
                         
                         prompt = f"""
-                        Aja como Coordenadora Pedagógica Master. Gere um relatório técnico de transferência para a PRÓXIMA PROFESSORA.
-                        ALUNA: {alu_ia}
-                        PRÓXIMA ESCALA ({proxima_data}): {escala_futura}
+                        Você é a Coordenadora Pedagógica. Gere uma análise técnica para a PRÓXIMA PROFESSORA ({proxima_prof}).
+                        ALUNA: {alu_ia} | APROVEITAMENTO: {perc:.1f}%
                         
-                        ESTRUTURA DO RELATÓRIO:
-                        1. RESUMO EXECUTIVO: Aproveitamento de {perc_aprov:.1f}%.
-                        2. ANÁLISE DIÁRIA (Última Aula): O que foi visto e o que ficou pendente.
-                        3. MAPEAMENTO TÉCNICO: Detalhe Postura, Técnica, Ritmo e Teoria.
-                        4. STATUS DA SECRETARIA: Lições a refazer.
-                        5. METAS PARA A PRÓXIMA AULA: O que a próxima professora deve cobrar.
-                        6. FOCO BANCA SEMESTRAL: Observações críticas.
-                        7. DESTINATÁRIO: Informe claramente que as informações devem ser enviadas para as irmãs: {escala_futura}.
+                        ESTRUTURA:
+                        1. ANÁLISE DIÁRIA: Resumo da última aula.
+                        2. TÉCNICA (Postura, Ritmo, Dedilhado).
+                        3. TEORIA E MÉDOTOS: O que deve ser cobrado.
+                        4. METAS: O que a irmã {proxima_prof} deve focar na aula de {proxima_aula}.
+                        5. BANCA: Observações críticas para o semestre.
 
-                        Seja técnica, direta e use bullet points. Não escreva para a aluna, escreva PARA AS PROFESSORAS.
+                        IMPORTANTE: Linguagem profissional entre professoras. Não envie para a aluna.
+                        DADOS: {historico_txt}
                         """
                         
                         try:
                             res = model.generate_content(prompt)
-                            st.success("✅ Relatório de Transferência Gerado!")
+                            st.success("Relatório pronto para cópia!")
                             st.markdown(res.text)
-                            st.download_button("📥 Congelar e Baixar Relatório", res.text, f"Transferencia_{alu_ia}.txt")
+                            st.download_button("📥 Baixar Relatório", res.text, f"Analise_{alu_ia}.txt")
                         except Exception as e:
                             st.error(f"Erro na IA: {e}")
-                            
