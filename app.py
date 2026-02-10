@@ -443,10 +443,6 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.header("📊 Inteligência Pedagógica Vila Verde")
     
-    if status_ia != "Sucesso":
-        st.error(f"❌ Erro de Conexão com a IA: {status_ia}")
-        st.info("Acesse 'Settings > Secrets' no Streamlit e adicione: GOOGLE_API_KEY = 'sua_chave'")
-    
     if not historico_geral:
         st.warning("⚠️ O banco de dados está vazio.")
     else:
@@ -454,33 +450,30 @@ elif perfil == "📊 Analítico IA":
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         
         c1, c2 = st.columns([2,1])
-        with c1:
-            alu_ia = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
-        with c2:
-            per_ia = st.selectbox("Período:", ["Geral", "Dia", "Mês", "Bimestre", "Semestre"])
+        alu_ia = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
+        per_ia = c2.selectbox("Período:", ["Geral", "Dia", "Mês", "Bimestre", "Semestre"])
         
         df_f = df[df["Aluna"] == alu_ia]
         
         if df_f.empty:
-            st.info(f"Sem registros para {alu_ia} no sistema.")
+            st.info(f"Sem registros para {alu_ia}.")
         else:
-            # DASHBOARDS VISUAIS
-            st.subheader("🎯 Resumo Técnico")
-            col_g1, col_g2 = st.columns(2)
+            # --- 📈 DASHBOARDS ---
+            st.subheader("🎯 Visão de Desempenho")
+            g1, g2 = st.columns(2)
             
-            with col_g1:
-                # Radar de equilíbrio
+            with g1:
+                # Radar de Equilíbrio
                 tipos = df_f['Tipo'].value_counts()
                 fig_radar = go.Figure(data=go.Scatterpolar(
                     r=tipos.values,
                     theta=tipos.index,
-                    fill='toself',
-                    line_color='#1f77b4'
+                    fill='toself'
                 ))
-                fig_radar.update_layout(title="Volume por Área")
+                fig_radar.update_layout(title="Foco por Área (Prática/Teoria/Solfejo)")
                 st.plotly_chart(fig_radar, use_container_width=True)
                 
-            with col_g2:
+            with g2:
                 # Barras de Dificuldades
                 difs = [d for sub in df_f['Dificuldades'].dropna() for d in sub if isinstance(sub, list)]
                 if difs:
@@ -491,39 +484,30 @@ elif perfil == "📊 Analítico IA":
 
             st.divider()
 
-            # BOTÃO DE GERAR RELATÓRIO (Indentação Rigorosa)
-            if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
-                if model:
-                    with st.spinner("Analisando Postura, Técnica, Ritmo e Teoria..."):
-                        # Organização dos dados para o Prompt
-                        dados_texto = ""
-                        for _, row in df_f.iterrows():
-                            dados_texto += f"\nData: {row['Data']} | Área: {row['Tipo']} | Lição: {row['Licao_Atual']}\n"
-                            dados_texto += f"Dificuldades: {row['Dificuldades']}\n"
-                            dados_texto += f"Obs: {row['Observacao']}\n"
-
-                        prompt_master = f"""
-                        Atue como Coordenadora Pedagógica de Órgão Eletrônico.
-                        Gere uma análise completa para a aluna {alu_ia} baseada nestes dados:
-                        {dados_texto}
-
-                        ESTRUTURA OBRIGATÓRIA:
-                        1. Análise de Postura (costas, mãos, pés).
-                        2. Evolução Técnica e Rítmica.
-                        3. Desempenho em Teoria/Solfejo.
-                        4. Resumo da Secretaria (Lições e Pendências).
-                        5. Plano de Melhoria para a Próxima Aula (com metas).
-                        6. Dicas específicas para a Banca Semestral.
-                        """
-                        
-                        try:
-                            response = model.generate_content(prompt_master)
-                            st.markdown("### 📝 Relatório Analítico Final")
-                            st.markdown(response.text)
-                            st.download_button("📥 Baixar Relatório", response.text, f"Analise_{alu_ia}.txt")
-                        except Exception as e:
-                            st.error(f"Erro ao processar conteúdo: {e}")
-                else:
-                    st.error("A IA não está conectada. Verifique sua chave API.")
+            # --- 🚀 BOTÃO GERADOR DE RELATÓRIO ---
+            if st.button("✨ GERAR ANÁLISE COMPLETA (13 SEÇÕES)"):
+                with st.spinner("IA processando dados técnicos e pedagógicos..."):
+                    # Formata os dados para a IA entender melhor
+                    dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
                     
-
+                    prompt = f"""
+                    Você é a Coordenadora Pedagógica Master de Órgão Eletrônico.
+                    Analise o histórico da aluna {alu_ia} e gere o relatório pedagógico completo com 13 seções.
+                    
+                    DADOS:
+                    {dados_texto}
+                    
+                    REQUISITOS:
+                    - Separe as dificuldades por: Postura, Técnica, Ritmo e Teoria.
+                    - Inclua o resumo da secretaria.
+                    - Defina metas mensuráveis.
+                    - Dê dicas específicas para a banca semestral.
+                    """
+                    
+                    try:
+                        response = model.generate_content(prompt)
+                        st.markdown("### 📝 Relatório Analítico Final")
+                        st.markdown(response.text)
+                        st.download_button("📥 Baixar Análise Congelada", response.text, f"Analise_{alu_ia}.txt")
+                    except Exception as e:
+                        st.error(f"Erro na IA: {e}")
