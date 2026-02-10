@@ -50,13 +50,6 @@ def carregar_dados_globais():
 
 historico_geral, calendario_raw = carregar_dados_globais()
 
-# @st.cache_resource
-# def init_supabase():
-  #   try: return create_client(SUPABASE_URL, SUPABASE_KEY)
-    # except: return None
-
-# supabase = init_supabase()
-
 # --- FUNÇÕES DE BANCO ---
 def db_get_calendario():
     try:
@@ -728,6 +721,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
