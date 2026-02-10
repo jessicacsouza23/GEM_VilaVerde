@@ -599,26 +599,57 @@ elif perfil == "📊 Analítico IA":
         # --- BOTÃO IA (Relatório Pedagógico Completo) ---
         if st.button("✨ GERAR ANÁLISE COMPLETA PARA PROFESSORAS"):
             if model:
-                with st.spinner("IA processando relatório técnico..."):
-                    dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
-                    prompt = f"""
-                    Aja como Coordenadora Pedagógica. Gere um relatório de transferência para: {proxima_prof}.
-                    ALUNA: {alu_ia} | PERÍODO: {tipo_periodo}.
-                    
-                    REGRAS:
-                    1. Analise por Áreas: Postura, Técnica, Ritmo e Teoria.
-                    2. Resumo da Secretaria (Pendências).
-                    3. Metas para a Próxima Aula ({proxima_aula}).
-                    4. Dicas específicas para a BANCA SEMESTRAL.
-                    5. Linguagem Técnica entre Professoras. NÃO ENVIAR PARA ALUNA.
-                    
-                    DADOS DO HISTÓRICO:
-                    {dados_texto}
-                    """
-                    res = model.generate_content(prompt)
-                    st.markdown("### 📝 Relatório Técnico de Transferência")
-                    st.write(res.text)
-                    st.download_button("📥 Congelar Análise", res.text, f"Analise_{alu_ia}_{tipo_periodo}.txt")
+                try:
+                    with st.spinner("IA consolidando dados técnicos..."):
+                        # Organização dos dados para a IA
+                        dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
+                        
+                        prompt = f"""
+                        Aja como Coordenadora Pedagógica Master do GEM Vila Verde. 
+                        Gere uma análise pedagógica completa para transferência de bastão.
+
+                        DESTINATÁRIAS (Professoras da Próxima Aula): {proxima_prof}
+                        ALUNA: {alu_ia} 
+                        PERÍODO DE ANÁLISE: {tipo_periodo}
+                        DATA DA PRÓXIMA AULA: {proxima_aula}
+
+                        ESTRUTURE O RELATÓRIO COM OS SEGUINTES TÓPICOS:
+                        1. 🎹 **POSTURA E TÉCNICA**: Avalie o posicionamento e dedilhado.
+                        2. 🥁 **RITMO E MÉTRICA**: Como está a evolução com o metrônomo.
+                        3. 📖 **TEORIA E SOLFEJO**: Progresso nos métodos teóricos.
+                        4. 📝 **RESUMO DA SECRETARIA**: Lições pendentes ou registros de faltas.
+                        5. 🎯 **METAS PRÓXIMA AULA**: O que deve ser cobrado em {proxima_aula}.
+                        6. 🏛️ **DICAS PARA BANCA**: Foco crítico para o exame semestral.
+
+                        DADOS TÉCNICOS:
+                        {dados_texto}
+                        
+                        Linguagem técnica e profissional.
+                        """
+                        
+                        # Chamada da IA com tratamento de erro de cota
+                        res = model.generate_content(prompt)
+                        
+                        st.markdown("---")
+                        st.markdown("### 📝 Relatório Técnico de Transferência")
+                        st.write(res.text)
+                        
+                        # Botão para "Congelar" (Baixar)
+                        st.download_button(
+                            label="📥 Congelar Análise para Consulta Futura",
+                            data=res.text,
+                            file_name=f"Analise_{alu_ia}_{datetime.now().strftime('%Y%m%d')}.txt",
+                            mime="text/plain"
+                        )
+
+                except Exception as e:
+                    # Se o erro for de Cota Excedida (ResourceExhausted)
+                    if "429" in str(e) or "ResourceExhausted" in str(e):
+                        st.error("⚠️ **Limite de IA Atingido:** O Google permite apenas algumas análises por hora no plano gratuito. Por favor, aguarde cerca de 1 a 2 minutos e tente clicar novamente.")
+                    else:
+                        st.error(f"Ocorreu um erro inesperado: {e}")
+            else:
+                st.warning("IA não configurada ou sem chave de acesso.")
 
 
 # --- 🔄 LÓGICA DE RODÍZIO FILTRADA (PROTEGIDA) ---
@@ -666,6 +697,7 @@ if 'alu_ia' in locals() or 'alu_ia' in globals():
     st.success(f"👩‍🏫 **Escala de {alu_ia}:** {proxima_prof}")
 else:
     st.warning("⚠️ Selecione uma aluna acima para visualizar a escala de rodízio.")
+
 
 
 
