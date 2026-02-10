@@ -618,7 +618,7 @@ elif perfil == "📊 Analítico IA":
                 dia_sel = st.date_input("📅 Data da aula analisada:", value=datas_disponiveis[0])
                 df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
 
-        # --- [1] MÉTRICAS RESUMIDAS ---
+        # --- [1] MÉTRICAS ---
         st.markdown(f"### 📜 Consolidação Pedagógica - {alu_ia}")
         total_aulas = len(df_f)
         realizadas = len(df_f[df_f['Status'].astype(str).str.contains("Realizada|OK", na=False, case=False)]) if 'Status' in df_f.columns else 0
@@ -629,8 +629,7 @@ elif perfil == "📊 Analítico IA":
         m2.metric("Aproveitamento", realizadas)
         m3.metric("Frequência", f"{freq:.0f}%")
 
-        # --- [2] CARDS COM TEXTOS HUMANIZADOS ---
-        # Coleta dificuldades
+        # --- [2] CARDS COM LÓGICA DE DESEMPENHO (BOM VS RUIM) ---
         todas_difs = []
         if 'Dificuldades' in df_f.columns:
             for item in df_f['Dificuldades'].dropna():
@@ -638,37 +637,33 @@ elif perfil == "📊 Analítico IA":
                 else: todas_difs.append(str(item))
         
         lista_final = [str(d) for d in todas_difs if d and str(d).lower() != 'none']
-        
-        tecnicos = [d for d in lista_final if any(x in d.lower() for x in ["postura", "dedo", "punho", "mão", "falange"])]
-        ritmicos = [d for d in lista_final if any(x in d.lower() for x in ["ritmo", "metrônomo", "solfejo", "tempo", "métrica"])]
+        tecnicos = [d for d in lista_final if any(x in d.lower() for x in ["postura", "dedo", "punho", "mão", "falange", "articulação"])]
+        ritmicos = [d for d in lista_final if any(x in d.lower() for x in ["ritmo", "metrônomo", "solfejo", "tempo", "métrica", "divisão"])]
 
-        # Lógica de texto para Postura
-        if tecnicos:
-            txt_tec = "⚠️ **Atenção aos pontos:** " + " • ".join(set(tecnicos))
-            cor_tec = "error"
-        else:
-            txt_tec = "✅ **Excelente!** A aluna demonstra bom domínio postural, estabilidade de punhos e articulação clara das falanges. Mantenha o foco na leveza do toque."
-            cor_tec = "success"
-
-        # Lógica de texto para Ritmo
-        if ritmicos:
-            txt_rit = "⚠️ **Atenção aos pontos:** " + " • ".join(set(ritmicos))
-            cor_rit = "warning"
-        else:
-            txt_rit = "✅ **Ritmo Estável!** A leitura rítmica está fluindo bem e a pulsação demonstra segurança. Continue utilizando o metrônomo para refinar passagens rápidas."
-            cor_rit = "success"
-
-        st.markdown("#### 📝 Parecer de Desempenho Atual")
+        st.markdown("#### 📝 Parecer Técnico")
         c_esq, c_dir = st.columns(2)
-        with c_esq:
-            if cor_tec == "error": st.error(f"**🎹 Postura e Técnica**\n\n{txt_tec}")
-            else: st.success(f"**🎹 Postura e Técnica**\n\n{txt_tec}")
         
-        with c_dir:
-            if cor_rit == "warning": st.warning(f"**🎶 Ritmo e Teoria**\n\n{txt_rit}")
-            else: st.success(f"**🎶 Ritmo e Teoria**\n\n{txt_rit}")
+        with c_esq:
+            if tecnicos:
+                st.error(f"**🎹 Postura e Técnica (Requer Atenção)**\n\nIdentificamos falhas de execução: {' • '.join(set(tecnicos))}. É necessário corrigir a posição antes que se torne um vício de difícil remoção.")
+            else:
+                st.success("**🎹 Postura e Técnica (Evoluindo)**\n\nDesempenho postural sólido. A aluna mantém a curvatura correta dos dedos e punhos relaxados. Continue priorizando a simetria das mãos.")
 
-        # --- [3] IA E CONGELAMENTO ---
+        with c_dir:
+            if ritmicos:
+                st.warning(f"**🎶 Ritmo e Teoria (Instável)**\n\nHá dificuldades rítmicas: {' • '.join(set(ritmicos))}. A aluna está perdendo a pulsação em passagens específicas. Reforce o uso do metrônomo em velocidade reduzida.")
+            else:
+                st.success("**🎶 Ritmo e Teoria (Seguro)**\n\nDomínio rítmico satisfatório. A pulsação está constante e a compreensão das figuras musicais está clara. Pronta para novos desafios métricos.")
+
+        # --- [3] DICAS PARA A PRÓXIMA AULA ---
+        st.markdown("#### 💡 Dicas para a Próxima Aula")
+        if tecnicos or ritmicos:
+            dica_texto = "Focar intensamente na correção dos pontos vermelhos/amarelos citados acima. Iniciar a aula com exercícios de técnica pura (Hanon/Escalas) antes de passar para o método."
+        else:
+            dica_texto = "Aproveitar o bom desempenho para avançar no cronograma. Introduzir novos conceitos teóricos ou aumentar gradativamente o BPM das lições atuais."
+        st.info(dica_texto)
+
+        # --- [4] IA E CONGELAMENTO ---
         st.divider()
         analise_previa = None
         try:
@@ -687,17 +682,17 @@ elif perfil == "📊 Analítico IA":
                 with st.spinner("IA Processando análise técnica..."):
                     hist_texto = df_f[['Data', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
                     prompt = f"""
-                    Aja como coordenadora musical. Gere uma análise técnica para {alu_ia}.
+                    Gere uma análise técnica para {alu_ia}.
                     HISTÓRICO: {hist_texto}
-                    
                     ESTRUTURA:
                     # 🎼 ANÁLISE TÉCNICA PARA BANCA
-                    ## 🧍 1. POSTURA E POSICIONAMENTO
-                    ## 🎹 2. TÉCNICA E ARTICULAÇÃO
-                    ## 🥁 3. RITMO E SOLFEJO
-                    ## 📖 4. TEORIA E MSA
-                    ## 📋 5. RESUMO DA SECRETARIA
-                    ## 🏛️ 6. RECOMENDAÇÕES PARA EXAME (BANCA)
+                    ## 🧍 1. POSTURA
+                    ## 🎹 2. TÉCNICA
+                    ## 🥁 3. RITMO
+                    ## 📖 4. TEORIA
+                    ## 📋 5. RESUMO SECRETARIA
+                    ## 🎯 7. DICAS PARA A PRÓXIMA AULA
+                    ## 🏛️ 8. PREPARAÇÃO PARA BANCA
                     """
                     try:
                         response = model.generate_content(prompt)
@@ -706,7 +701,7 @@ elif perfil == "📊 Analítico IA":
                         st.rerun()
                     except Exception as e:
                         if "429" in str(e):
-                            st.error("⏳ Limite da IA atingido. Tente novamente em alguns minutos ou consulte a análise salva acima.")
+                            st.error("⏳ Limite da IA atingido. Tente novamente em alguns minutos.")
                         else:
                             st.error(f"Erro: {e}")
 
@@ -716,6 +711,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
