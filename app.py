@@ -502,85 +502,65 @@ elif perfil == "👩‍🏫 Professora":
 # MÓDULO ANÁLISE DE IA
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.title("📊 Painel Pedagógico Vila Verde")
+    st.title("📊 Análise Pedagógica e Transferência")
     
-    if model is None:
-        st.sidebar.warning(f"⚠️ IA Temporariamente Indisponível: {status_ia}")
-    else:
-        st.sidebar.success(f"🚀 IA Ativa: {status_ia}")
+    # 1. Seleção Única de Aluna (O sistema usará esta variável para tudo)
+    alu_ia = st.selectbox("Selecione a Aluna para Análise:", ALUNAS_LISTA)
+    per_ia = st.selectbox("Período:", ["Geral", "Dia", "Mês", "Bimestre", "Semestre", "Ano"])
+    
+    # ... (Seu código de gráficos e filtros aqui) ...
 
-    if not historico_geral:
-        st.warning("Aguardando dados do banco de dados...")
-    else:
-        df = pd.DataFrame(historico_geral)
-        df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
+    # --- 🔄 SEÇÃO DE RODÍZIO (LIMPA E FILTRADA) ---
+    st.markdown("---")
+    st.subheader("📅 Próxima Aula e Escala")
+    
+    proxima_aula = "Não agendada"
+    proxima_prof = "Não definida"
+    hoje_ref = datetime.now().date()
+
+    if calendario_raw:
+        cal_df = pd.DataFrame(calendario_raw)
+        cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
         
-        c1, c2 = st.columns([2, 1])
-        alu_ia = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
-        per_ia = c2.selectbox("Período:", ["Geral", "Dia", "Mês", "Bimestre", "Semestre", "Ano"])
+        # Pega a próxima data válida
+        futuros = cal_df[cal_df['dt_format'] >= hoje_ref].sort_values('dt_format')
         
-        hoje = datetime.now().date()
-        df_aluna = df[df["Aluna"] == alu_ia]
-        
-        filtros = {
-            "Dia": hoje, "Mês": hoje - timedelta(days=30),
-            "Bimestre": hoje - timedelta(days=60), "Semestre": hoje - timedelta(days=180),
-            "Ano": hoje - timedelta(days=365)
-        }
-        
-        df_f = df_aluna[df_aluna['dt_obj'] >= filtros[per_ia]] if per_ia != "Geral" else df_aluna
-        df_f = df_f.sort_values("dt_obj", ascending=False)
-        
-        if df_f.empty:
-            st.info(f"Sem registros para {alu_ia} neste período.")
-        else:
-            # --- DASHBOARD VISUAL ---
-            total = len(df_f)
-            aprovadas = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
-            perc_aprov = (aprovadas / total * 100) if total > 0 else 0
+        if not futuros.empty:
+            proxima_aula = futuros.iloc[0]['id']
+            escala_bruta = futuros.iloc[0]['escala']
             
-            k1, k2, k3 = st.columns(3)
-            k1.metric("Registros", total)
-            k2.metric("Aproveitamento", f"{perc_aprov:.1f}%")
-            k3.metric("Pendências", total - aprovadas)
-
-            g1, g2 = st.columns(2)
-            with g1:
-                st.plotly_chart(px.pie(df_f, names='Tipo', hole=0.5, title="Foco por Área"), use_container_width=True)
-            with g2:
-                difs = [d for sub in df_f['Dificuldades'].dropna() for d in sub if d != "Não apresentou dificuldades"]
-                if difs:
-                    df_d = pd.Series(difs).value_counts().reset_index()
-                    st.plotly_chart(px.bar(df_d.head(5), x=0, y='index', orientation='h', title="Gargalos Técnicos"), use_container_width=True)
-
-            # --- RODÍZIO ---
-            st.markdown("---")
-            proxima_aula, proxima_prof = "Não agendada", "Não definida"
-            if calendario_raw:
-                cal_df = pd.DataFrame(calendario_raw)
-                cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
-                futuros = cal_df[cal_df['dt_format'] >= hoje].sort_values('dt_format')
-                if not futuros.empty:
-                    proxima_aula = futuros.iloc[0]['id']
-                    proxima_prof = futuros.iloc[0]['escala']
-            
-            st.info(f"🔄 **Próxima Professora:** {proxima_prof} em {proxima_aula}")
-
-            # --- BOTÃO IA ---
-            if st.button("🚀 GERAR RELATÓRIO TÉCNICO PARA PROFESSORA"):
-                if model:
-                    try:
-                        with st.spinner("IA Analisando..."):
-                            dados_ia = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
-                            prompt = f"Aja como Coordenadora Pedagógica. Analise a aluna {alu_ia} para a próxima professora {proxima_prof}. Foco em Postura, Técnica, Ritmo e Teoria. Dados: {dados_ia}"
-                            res = model.generate_content(prompt)
-                            st.markdown("### 📝 Relatório de Transferência")
-                            st.write(res.text)
-                    except Exception as e:
-                        if "429" in str(e): st.error("Cota do Google atingida. Tente gerar novamente em 1 minuto.")
-                        else: st.error(f"Erro: {e}")
+            # FILTRAGEM CIRÚRGICA: Busca apenas a aluna selecionada no selectbox lá de cima
+            if isinstance(escala_bruta, list):
+                dados_aluna = next((item for item in escala_bruta if item.get('Aluna') == alu_ia), None)
+                
+                if dados_aluna:
+                    # Formata a exibição para ficar bonitinha e sem códigos
+                    h2 = dados_aluna.get('09h35 (H2)', '---')
+                    h3 = dados_aluna.get('10h10 (H3)', '---')
+                    h4 = dados_aluna.get('10h45 (H4)', '---')
+                    proxima_prof = f"🎹 **Piano:** {h3} | 📚 **Teoria:** {h2} | 🔊 **Coro/Outros:** {h4}"
                 else:
-                    st.error("IA indisponível no momento devido ao limite de quota.")
+                    proxima_prof = "Aluna não encontrada na escala para esta data."
+            else:
+                proxima_prof = "Escala ainda não processada pela secretaria."
+
+    # Exibição Final (Limpa)
+    st.info(f"📆 **Data da Próxima Aula:** {proxima_aula}")
+    st.success(f"👩‍🏫 **Professoras de {alu_ia}:** {proxima_prof}")
+
+    # --- 🚀 BOTÃO DA IA ---
+    if st.button("✨ GERAR RELATÓRIO PARA AS PROFESSORAS"):
+        if model:
+            with st.spinner("IA consolidando dados..."):
+                # O prompt agora já sabe quem são as professoras
+                prompt = f"""
+                Analise a aluna {alu_ia}. 
+                Envie as instruções para as professoras da próxima aula ({proxima_prof}).
+                Foque em Postura, Técnica, Ritmo e Teoria.
+                Este é um relatório interno de transferência.
+                """
+                res = model.generate_content(prompt)
+                st.markdown(res.text)
 
 
 
@@ -629,4 +609,5 @@ if 'alu_ia' in locals() or 'alu_ia' in globals():
     st.success(f"👩‍🏫 **Escala de {alu_ia}:** {proxima_prof}")
 else:
     st.warning("⚠️ Selecione uma aluna acima para visualizar a escala de rodízio.")
+
 
