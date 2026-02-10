@@ -590,6 +590,7 @@ elif perfil == "📊 Analítico IA":
         alu_ia = st.selectbox("Selecione a Aluna para Relatório:", ALUNAS_LISTA)
 
         if 'Data' in df.columns:
+            # Converte as datas com segurança
             df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
             df_aluna = df[df["Aluna"] == alu_ia]
 
@@ -599,21 +600,24 @@ elif perfil == "📊 Analítico IA":
                 horizontal=True
             )
 
-            # --- FILTRAGEM ---
+            # --- FILTRAGEM DINÂMICA ---
             df_f = pd.DataFrame()
             if tipo_periodo == "Diária":
-                datas_disponiveis = sorted(df_aluna['dt_obj'].unique(), reverse=True)
-                if datas_disponiveis:
-                    dia_sel = st.selectbox("Escolha o dia:", datas_disponiveis)
-                    df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
+                # Busca datas no histórico E permite selecionar datas futuras via calendário se quiser
+                datas_h = sorted(df_aluna['dt_obj'].unique(), reverse=True)
+                dia_sel = st.date_input("Escolha o dia da aula:", value=datas_h[0] if datas_h else datetime.now().date())
+                df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
+                
             elif tipo_periodo == "Mensal":
                 meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
                 mes_sel = st.selectbox("Escolha o mês:", meses, index=datetime.now().month - 1)
                 df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month == meses.index(mes_sel) + 1]
+                
             elif tipo_periodo == "Bimestral":
-                mapa_bim = {"1º Bim (Jan/Fev)": [1,2], "2º Bim (Mar/Abr)": [3,4], "3º Bim (Mai/Jun)": [5,6], "4º Bim (Jul/Ago)": [7,8]}
+                mapa_bim = {"1º Bim (Jan/Fev)": [1,2], "2º Bim (Mar/Abr)": [3,4], "3º Bim (Mai/Jun)": [5,6], "4º Bim (Jul/Ago)": [7,8], "5º Bim (Set/Out)": [9,10], "6º Bim (Nov/Dez)": [11,12]}
                 bim_sel = st.selectbox("Bimestre:", list(mapa_bim.keys()))
                 df_f = df_aluna[df_aluna['dt_obj'].apply(lambda x: x.month if x else 0).isin(mapa_bim[bim_sel])]
+            
             elif tipo_periodo == "Semestral":
                 sem_sel = st.selectbox("Semestre:", ["1º Semestre", "2º Semestre"])
                 meses_sem = [1,2,3,4,5,6] if sem_sel == "1º Semestre" else [7,8,9,10,11,12]
@@ -621,55 +625,77 @@ elif perfil == "📊 Analítico IA":
             else:
                 df_f = df_aluna
 
+            # --- BUSCA DO RODÍZIO (PRÓXIMA SEMANA) ---
+            st.markdown("---")
+            proxima_aula, proxima_prof = "Não encontrada", "Não definida"
+            
+            # Tenta buscar no calendário_raw (que vem do Supabase)
+            if 'calendario_raw' in locals() and calendario_raw:
+                try:
+                    cal_df = pd.DataFrame(calendario_raw)
+                    cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
+                    # Busca a próxima data de rodízio a partir de HOJE
+                    futuros = cal_df[cal_df['dt_format'] >= datetime.now().date()].sort_values('dt_format')
+                    
+                    if not futuros.empty:
+                        for _, row in futuros.iterrows():
+                            escala = row['escala']
+                            # Procura a aluna dentro da escala do dia
+                            dados_aluna = next((item for item in escala if item.get('Aluna') == alu_ia), None)
+                            if dados_aluna:
+                                proxima_aula = row['id']
+                                # Pega os horários H2, H3, H4
+                                h2 = dados_aluna.get('09h35 (H2)', 'Livre')
+                                h3 = dados_aluna.get('10h10 (H3)', 'Livre')
+                                h4 = dados_aluna.get('10h45 (H4)', 'Livre')
+                                proxima_prof = f"H2: {h2} | H3: {h3} | H4: {h4}"
+                                break
+                except Exception as e:
+                    proxima_prof = f"Erro ao ler escala: {e}"
+
+            st.info(f"📍 **Próxima Aula no Rodízio:** {proxima_aula}  \n👩‍🏫 **Escala Prevista:** {proxima_prof}")
+
             if df_f.empty:
-                st.warning(f"Sem registros para {alu_ia} neste período.")
+                st.warning(f"Sem registros de aulas no histórico para {alu_ia} neste período selecionado.")
             else:
                 # --- [1] PARTE GRÁFICA ---
                 st.subheader("📈 Indicadores e Gráficos")
                 total_aulas = len(df_f)
-                realizadas = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
+                # Conta presenças reais (ajuste o critério de 'Status' se necessário)
+                realizadas = len(df_f[df_f['Status'].str.contains("Realizada|OK|Corrigido", na=False, case=False)])
                 pendentes = total_aulas - realizadas
                 aproveitamento = (realizadas / total_aulas * 100) if total_aulas > 0 else 0
 
                 c1, c2, c3 = st.columns(3)
-                c1.metric("Total de Aulas", total_aulas)
+                c1.metric("Aulas Analisadas", total_aulas)
                 c2.metric("Aproveitamento", f"{aproveitamento:.1f}%")
                 c3.metric("Faltas/Pendências", pendentes)
 
                 g1, g2 = st.columns(2)
                 with g1:
-                    fig_pizza = px.pie(df_f, names='Tipo', hole=0.4, title="Áreas Trabalhadas", color_discrete_sequence=px.colors.qualitative.Set3)
+                    fig_pizza = px.pie(df_f, names='Tipo', hole=0.4, title="Áreas Trabalhadas", color_discrete_sequence=px.colors.qualitative.Pastel)
                     st.plotly_chart(fig_pizza, use_container_width=True)
                 with g2:
-                    difs = [d for sub in df_f['Dificuldades'].dropna() for d in sub if d != "Não apresentou dificuldades"]
+                    # Explode a lista de dificuldades para contar individualmente
+                    difs_raw = df_f['Dificuldades'].dropna().tolist()
+                    difs = []
+                    for item in difs_raw:
+                        if isinstance(item, list): difs.extend(item)
+                        else: difs.append(item)
+                    
+                    difs = [d for d in difs if d not in ["Não apresentou dificuldades", "None", ""]]
+                    
                     if difs:
                         df_d = pd.Series(difs).value_counts().reset_index()
                         df_d.columns = ['Dificuldade', 'Qtd']
                         fig_barra = px.bar(df_d.head(5), x='Qtd', y='Dificuldade', orientation='h', title="Top Dificuldades", color='Qtd', color_continuous_scale='Reds')
                         st.plotly_chart(fig_barra, use_container_width=True)
 
-                # --- [2] RODÍZIO DA SECRETARIA ---
-                st.markdown("---")
-                proxima_aula, proxima_prof = "Não definida", "Não definida"
-                if 'calendario_raw' in locals() and calendario_raw:
-                    try:
-                        cal_df = pd.DataFrame(calendario_raw)
-                        cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
-                        futuros = cal_df[cal_df['dt_format'] >= datetime.now().date()].sort_values('dt_format')
-                        if not futuros.empty:
-                            proxima_aula = futuros.iloc[0]['id']
-                            escala = futuros.iloc[0]['escala']
-                            dados_aluna = next((item for item in escala if item.get('Aluna') == alu_ia), None)
-                            if dados_aluna:
-                                proxima_prof = f"H2: {dados_aluna.get('09h35 (H2)')} | H3: {dados_aluna.get('10h10 (H3)')} | H4: {dados_aluna.get('10h45 (H4)')}"
-                    except: pass
-                
-                st.info(f"📍 **Próxima Aula:** {proxima_aula}  \n👩‍🏫 **Escala de Professores:** {proxima_prof}")
-
-                # --- [3] ANÁLISE IA CONGELADA ---
+                # --- [3] RELATÓRIO IA ---
                 st.markdown("---")
                 st.subheader("📝 Relatório Pedagógico Detalhado")
 
+                # Função interna para buscar análise já salva
                 def carregar_congelada(aluna, periodo):
                     try:
                         res = supabase.table("analises_congeladas").select("*").eq("aluna", aluna).eq("periodo", periodo).order("data_geracao", descending=True).limit(1).execute()
@@ -691,32 +717,41 @@ elif perfil == "📊 Analítico IA":
                                 try:
                                     dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
                                     prompt = f"""
-                                    Aja como Coordenadora Pedagógica Master. Analise o histórico da aluna {alu_ia}.
-                                    ESTRUTURA OBRIGATÓRIA:
+                                    Aja como Coordenadora Pedagógica Master da escola de música. Analise o histórico da aluna {alu_ia}.
+                                    
+                                    ESTRUTURA OBRIGATÓRIA DA RESPOSTA:
                                     ## 🎹 1. POSTURA E TÉCNICA
+                                    (Analise como a aluna está se portando e sua técnica instrumental)
                                     ## 🥁 2. RITMO E MÉTRICA
+                                    (Avalie a precisão rítmica baseada nas lições)
                                     ## 📖 3. TEORIA E DESENVOLVIMENTO
+                                    (Progresso nos métodos e lições atuais)
                                     ## 🏠 4. RESUMO DA SECRETARIA (FALTAS/PENDÊNCIAS)
-                                    Baseado em: {realizadas} aulas feitas e {pendentes} pendências.
+                                    (Baseado em: {realizadas} aulas feitas e {pendentes} pendências no período)
                                     ## 🎯 5. METAS PARA A PRÓXIMA AULA ({proxima_aula})
-                                    O que cobrar especificamente na escala: {proxima_prof}.
+                                    (Sugira o que as professoras da escala {proxima_prof} devem focar)
                                     ## 🏛️ 6. DICAS PARA A BANCA SEMESTRAL
-                                    DADOS: {dados_texto}
+                                    (Conselho final para preparação da prova semestral)
+
+                                    DADOS PARA ANÁLISE:
+                                    {dados_texto}
                                     """
                                     res = model.generate_content(prompt)
                                     
-                                    # SALVAR NO BANCO
-                                    nova_data = {"aluna": alu_ia, "periodo": tipo_periodo, "conteudo": res.text, "professoras_escala": proxima_prof}
+                                    # SALVAR NO SUPABASE PARA CONGELAR
+                                    nova_data = {
+                                        "aluna": alu_ia, 
+                                        "periodo": tipo_periodo, 
+                                        "conteudo": res.text, 
+                                        "professoras_escala": proxima_prof
+                                    }
                                     supabase.table("analises_congeladas").insert(nova_data).execute()
                                     st.rerun()
 
                                 except Exception as e:
-                                    if "429" in str(e) or "ResourceExhausted" in str(e):
-                                        st.error("⚠️ Cota de IA atingida! Por favor, aguarde 60 segundos ou consulte análises já salvas no banco.")
-                                    else:
-                                        st.error(f"Erro ao processar: {e}")
+                                    st.error(f"Erro ao processar análise: {e}")
         else:
-            st.error("Erro: Coluna 'Data' não encontrada.")
+            st.error("Erro: Coluna 'Data' não encontrada no banco de dados.")
 
 # --- FIM DO MÓDULO ---
 
@@ -724,6 +759,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
