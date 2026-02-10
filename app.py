@@ -160,62 +160,62 @@ if perfil == "🏠 Secretaria":
     with tab_lição:
         st.subheader("📝 Controle de Lições (Secretaria)")
         
-        # Seleção da Aluna
+        # Seleção Superior
+        c_sec, c_dat = st.columns(2)
+        sec_resp = c_sec.selectbox("Secretária responsável:", SECRETARIAS_LISTA)
+        data_atual_form = c_dat.date_input("Data da aula/correção:", datetime.now())
+        
         alu_sel = st.selectbox("Selecione a Aluna:", ["Selecione..."] + ALUNAS_LISTA)
         
         if alu_sel != "Selecione...":
-            # --- ÁREA DINÂMICA DE PENDÊNCIAS ---
+            # --- LÓGICA AUTOMÁTICA DE PENDÊNCIAS ---
             df_hist = pd.DataFrame(historico_geral)
             if not df_hist.empty:
-                # Filtra o que está pendente para esta aluna
-                df_alu_pend = df_hist[
+                # Converter datas para comparação
+                df_hist['date_obj'] = pd.to_datetime(df_hist['Data'], format='%d/%m/%Y').dt.date
+                
+                # Filtrar pendências com os nomes exatos solicitados e data anterior à do formulário
+                pendencias = df_hist[
                     (df_hist["Aluna"] == alu_sel) & 
                     (df_hist["Tipo"] == "Controle_Licao") & 
-                    (df_hist["Status"].isin(["Realizada - devolvida para refazer", "Não realizada"]))
-                ].copy()
+                    (df_hist["Status"].isin(["Realizada - devolvida para refazer", "Não realizada"])) &
+                    (df_hist["date_obj"] < data_atual_form)
+                ].sort_values("date_obj", ascending=False)
 
-                if not df_alu_pend.empty:
-                    st.error(f"🚨 **PENDÊNCIAS PARA {alu_sel.split(' - ')[0].upper()}**")
-                    
-                    # Formata a visualização das pendências
-                    for _, row in df_alu_pend.iterrows():
+                if not pendencias.empty:
+                    st.error(f"🚨 **ATIVIDADES PENDENTES DETECTADAS:**")
+                    for _, row in pendencias.iterrows():
                         with st.container(border=True):
-                            st.markdown(f"📅 **Data Original: {row['Data']}**")
-                            st.markdown(f"📖 **{row['Categoria']}**: {row.get('Licao_Detalhe', 'Sem detalhe')}")
-                            st.info(f"Status: {row['Status']} | Obs: {row.get('Observacao', 'Nenhuma')}")
+                            st.markdown(f"🗓️ **Data: {row['Data']}**")
+                            st.markdown(f"📖 **{row['Categoria']}**: {row.get('Licao_Detalhe', '---')}")
+                            st.info(f"Motivo: {row['Status']} | Obs: {row.get('Observacao', 'Sem observação.')}")
                 else:
-                    st.success(f"✅ {alu_sel.split(' - ')[0]} está em dia com as lições!")
+                    st.success(f"✅ Nenhuma pendência anterior para {alu_sel.split(' - ')[0]}.")
 
-            # --- FORMULÁRIO DE REGISTRO / ATUALIZAÇÃO ---
-            with st.form("f_controle_licoes", clear_on_submit=True):
-                st.markdown("### ✍️ Registrar Atividade de Hoje")
-                c1, c2 = st.columns(2)
-                sec_resp = c1.selectbox("Secretária:", SECRETARIAS_LISTA)
-                data_hj = c2.date_input("Data da correção:", datetime.now())
-                
-                st.divider()
-                st.markdown("**Qual lição está sendo avaliada?**")
+            # --- FORMULÁRIO DE NOVO REGISTRO ---
+            with st.form("f_registro_liçao", clear_on_submit=True):
+                st.markdown("### ✍️ Novo Registro / Correção")
                 col_c, col_d = st.columns([1, 2])
                 cat_sel = col_c.radio("Categoria:", CATEGORIAS_LICAO)
-                detalhe_licao = col_d.text_input("Lição / Página:", placeholder="Ex: Lição 10 pág 22")
+                detalhe_licao = col_d.text_input("Lição / Página:", placeholder="Ex: Lição 07 pág 15")
                 
                 st.divider()
-                status_sel = st.radio("Novo Status:", STATUS_LICAO, horizontal=True)
-                obs_liçao = st.text_area("Observações/Motivo:")
+                status_sel = st.radio("Status da lição hoje:", STATUS_LICAO, horizontal=True)
+                obs_liçao = st.text_area("Observações técnicas:")
                 
                 if st.form_submit_button("❄️ CONGELAR E SALVAR REGISTRO"):
-                    dados_licao = {
+                    novo_registro = {
                         "Aluna": alu_sel,
                         "Tipo": "Controle_Licao",
-                        "Data": data_hj.strftime("%d/%m/%Y"),
+                        "Data": data_atual_form.strftime("%d/%m/%Y"),
                         "Secretaria": sec_resp,
                         "Categoria": cat_sel,
                         "Licao_Detalhe": detalhe_licao,
                         "Status": status_sel,
                         "Observacao": obs_liçao
                     }
-                    db_save_historico(dados_licao)
-                    st.success("Salvo! A pendência será atualizada no sistema.")
+                    db_save_historico(novo_registro)
+                    st.success("Registro arquivado com sucesso!")
                     st.rerun()
                     
 # ==========================================
@@ -292,6 +292,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
