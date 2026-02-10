@@ -596,60 +596,77 @@ elif perfil == "📊 Analítico IA":
         st.info(f"📍 **Próxima Aula:** {proxima_aula}")
         st.success(f"👩‍🏫 **Professoras de {alu_ia}:** {proxima_prof}")
 
-        # --- BOTÃO IA (Relatório Pedagógico Completo) ---
-        if st.button("✨ GERAR ANÁLISE COMPLETA PARA PROFESSORAS"):
-            if model:
-                try:
-                    with st.spinner("IA consolidando dados técnicos..."):
-                        # Organização dos dados para a IA
-                        dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
-                        
-                        prompt = f"""
-                        Aja como Coordenadora Pedagógica Master do GEM Vila Verde. 
-                        Gere uma análise pedagógica completa para transferência de bastão.
+       # --- 🚀 SISTEMA DE ANÁLISE COM MEMÓRIA (CACHE NO BANCO) ---
+        st.markdown("---")
+        st.subheader("📝 Relatório Pedagógico Congelado")
 
-                        DESTINATÁRIAS (Professoras da Próxima Aula): {proxima_prof}
-                        ALUNA: {alu_ia} 
-                        PERÍODO DE ANÁLISE: {tipo_periodo}
-                        DATA DA PRÓXIMA AULA: {proxima_aula}
+        # Função para buscar análise já existente
+        def buscar_analise_salva(aluna, periodo):
+            try:
+                res = supabase.table("analises_congeladas")\
+                    .select("*")\
+                    .eq("aluna", aluna)\
+                    .eq("periodo", periodo)\
+                    .order("data_geracao", descending=True)\
+                    .limit(1).execute()
+                return res.data[0] if res.data else None
+            except: return None
 
-                        ESTRUTURE O RELATÓRIO COM OS SEGUINTES TÓPICOS:
-                        1. 🎹 **POSTURA E TÉCNICA**: Avalie o posicionamento e dedilhado.
-                        2. 🥁 **RITMO E MÉTRICA**: Como está a evolução com o metrônomo.
-                        3. 📖 **TEORIA E SOLFEJO**: Progresso nos métodos teóricos.
-                        4. 📝 **RESUMO DA SECRETARIA**: Lições pendentes ou registros de faltas.
-                        5. 🎯 **METAS PRÓXIMA AULA**: O que deve ser cobrado em {proxima_aula}.
-                        6. 🏛️ **DICAS PARA BANCA**: Foco crítico para o exame semestral.
+        # Tenta carregar do banco primeiro
+        analise_existente = buscar_analise_salva(alu_ia, tipo_periodo)
 
-                        DADOS TÉCNICOS:
-                        {dados_texto}
-                        
-                        Linguagem técnica e profissional.
-                        """
-                        
-                        # Chamada da IA com tratamento de erro de cota
-                        res = model.generate_content(prompt)
-                        
-                        st.markdown("---")
-                        st.markdown("### 📝 Relatório Técnico de Transferência")
-                        st.write(res.text)
-                        
-                        # Botão para "Congelar" (Baixar)
-                        st.download_button(
-                            label="📥 Congelar Análise para Consulta Futura",
-                            data=res.text,
-                            file_name=f"Analise_{alu_ia}_{datetime.now().strftime('%Y%m%d')}.txt",
-                            mime="text/plain"
-                        )
+        if analise_existente:
+            st.success(f"✅ Análise carregada da memória (Salva em: {analise_existente['data_geracao'][:10]})")
+            st.markdown(analise_existente['conteudo'])
+            
+            if st.button("🔄 Gerar Nova (Atualizar com IA)"):
+                # Se clicar aqui, ele ignora o cache e força a IA a rodar (cuidado com a cota!)
+                analise_existente = None 
 
-                except Exception as e:
-                    # Se o erro for de Cota Excedida (ResourceExhausted)
-                    if "429" in str(e) or "ResourceExhausted" in str(e):
-                        st.error("⚠️ **Limite de IA Atingido:** O Google permite apenas algumas análises por hora no plano gratuito. Por favor, aguarde cerca de 1 a 2 minutos e tente clicar novamente.")
-                    else:
-                        st.error(f"Ocorreu um erro inesperado: {e}")
-            else:
-                st.warning("IA não configurada ou sem chave de acesso.")
+        # Se não existe análise ou se pediu para atualizar
+        if not analise_existente:
+            if st.button("✨ GERAR ANÁLISE COMPLETA (IA)"):
+                if model:
+                    try:
+                        with st.spinner("IA processando relatório técnico..."):
+                            dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
+                            
+                            prompt = f"""
+                            Aja como Coordenadora Pedagógica Master. Gere uma análise técnica para: {proxima_prof}.
+                            ALUNA: {alu_ia} | PERÍODO: {tipo_periodo} | PRÓXIMA AULA: {proxima_aula}.
+
+                            ESTRUTURA OBRIGATÓRIA:
+                            1. 🎹 POSTURA E TÉCNICA: Detalhes de dedilhado e forma.
+                            2. 🥁 RITMO: Uso do metrônomo e divisão.
+                            3. 📖 TEORIA: Progresso nos métodos.
+                            4. 🏠 SECRETARIA: Resumo de faltas/pendências.
+                            5. 🎯 METAS: O que cobrar em {proxima_aula}.
+                            6. 🏛️ BANCA: Dicas para o exame semestral.
+
+                            DADOS: {dados_texto}
+                            """
+                            
+                            res = model.generate_content(prompt)
+                            texto_gerado = res.text
+                            
+                            # SALVAR NO SUPABASE PARA NÃO GASTAR COTA DE NOVO
+                            nova_analise = {
+                                "aluna": alu_ia,
+                                "periodo": tipo_periodo,
+                                "conteudo": texto_gerado,
+                                "professoras_escala": proxima_prof
+                            }
+                            supabase.table("analises_congeladas").insert(nova_analise).execute()
+                            
+                            st.markdown(texto_gerado)
+                            st.balloons()
+                            st.rerun() # Recarrega para mostrar como "carregada da memória"
+
+                    except Exception as e:
+                        if "429" in str(e) or "ResourceExhausted" in str(e):
+                            st.error("⚠️ Cota atingida. Use as análises já salvas ou aguarde 1 minuto.")
+                        else:
+                            st.error(f"Erro: {e}")
 
 
 # --- 🔄 LÓGICA DE RODÍZIO FILTRADA (PROTEGIDA) ---
@@ -703,5 +720,6 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
