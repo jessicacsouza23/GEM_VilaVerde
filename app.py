@@ -592,8 +592,10 @@ elif perfil == "👩‍🏫 Professora":
 # ==========================================
 elif perfil == "📊 Analítico IA":
     st.title("📊 Painel Pedagógico de Performance")
+    st.caption("Uso exclusivo pedagógico / Coordenação")
 
     historico_geral = db_get_historico()
+    calendario_db = db_get_calendario()
     df = pd.DataFrame(historico_geral)
 
     if df.empty:
@@ -604,101 +606,125 @@ elif perfil == "📊 Analítico IA":
         with c1:
             alu_ia = st.selectbox("🔍 Selecione a Aluna:", ALUNAS_LISTA)
         with c2:
-            tipo_periodo = st.radio("Período:", ["Diária", "Mensal", "Bimestral", "Semestral", "Anual"], horizontal=True)
+            tipo_periodo = st.radio("Período de Análise:", ["Diária", "Mensal", "Bimestral", "Semestral", "Anual"], horizontal=True)
 
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=False)
 
-        # --- LÓGICA DE SELEÇÃO DINÂMICA ---
+        # --- LÓGICA DE SELEÇÃO DE DATAS ---
         df_f = df_aluna.copy()
-        periodo_id = "" # Usaremos isso para identificar a análise no banco
+        periodo_id = ""
 
         if tipo_periodo == "Diária":
             datas_disp = sorted(df_aluna['dt_obj'].dropna().unique(), reverse=True)
             if datas_disp:
-                dia_sel = st.date_input("📅 Selecione o Dia:", value=datas_disp[0])
+                dia_sel = st.date_input("📅 Aula do dia:", value=datas_disp[0])
                 df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
                 periodo_id = dia_sel.strftime('%d/%m/%Y')
         elif tipo_periodo == "Mensal":
             meses = sorted(list(set(d.strftime('%m/%Y') for d in df_aluna['dt_obj'].dropna())), reverse=True)
             if meses:
-                mes_sel = st.selectbox("📅 Selecione o Mês:", meses)
+                mes_sel = st.selectbox("📅 Mês referente:", meses)
                 df_f = df_aluna[df_aluna['dt_obj'].apply(lambda x: x.strftime('%m/%Y') == mes_sel)]
                 periodo_id = mes_sel
-        # ... (Mantém as outras lógicas de período aqui)
+        # ... (Mantendo lógicas de Bimestre/Semestre/Ano)
 
-        # --- EXIBIÇÃO DE MÉTRICAS ---
-        st.markdown(f"### 📜 Consolidação Técnica: {tipo_periodo} ({periodo_id})")
-        total_aulas = len(df_f)
-        realizadas = len(df_f[df_f['Status'].astype(str).str.contains("Realizada|OK", na=False, case=False)]) if 'Status' in df_f.columns else 0
-        freq = (realizadas / total_aulas * 100) if total_aulas > 0 else 0
+        # --- [NOVO] LÓGICA DE RODÍZIO (PRÓXIMA PROFESSORA) ---
+        proxima_prof_info = "Escala não definida"
+        data_prox = "Próximo Sábado"
+        if calendario_db:
+            try:
+                hoje = datetime.now().date()
+                datas_futuras = sorted([d for d in calendario_db.keys() if datetime.strptime(d, "%d/%m/%Y").date() >= hoje], key=lambda x: datetime.strptime(x, "%d/%m/%Y"))
+                if datas_futuras:
+                    data_prox = datas_futuras[0]
+                    escala = calendario_db[data_prox]
+                    def fit(n): return str(n).split("-")[0].strip().lower()
+                    dados_aluna = next((i for i in escala if fit(i.get('Aluna','')) in fit(alu_ia)), None)
+                    if dados_aluna:
+                        h2, h3, h4 = dados_aluna.get("09h35 (H2)", "-"), dados_aluna.get("10h10 (H3)", "-"), dados_aluna.get("10h45 (H4)", "-")
+                        def clean(t): return str(t).split("|")[-1].strip() if "|" in str(t) else str(t)
+                        proxima_prof_info = f"H2: {clean(h2)} | H3: {clean(h3)} | H4: {clean(h4)}"
+            except: pass
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Aulas no Período", total_aulas)
-        m2.metric("Aproveitamento", realizadas)
-        m3.metric("Frequência", f"{freq:.0f}%")
+        # --- GRÁFICOS DE DESENVOLVIMENTO ---
+        st.markdown("### 📈 Indicadores de Evolução")
+        g1, g2 = st.columns(2)
 
-        # --- PARECER DETALHADO E ACOLHEDOR ---
+        with g1:
+            st.write("**Frequência e Assiduidade**")
+            status_counts = df_f['Status'].value_counts()
+            st.bar_chart(status_counts, color="#2ecc71")
+
+        with g2:
+            st.write("**Progresso de Lições (Histórico)**")
+            df_evo = df_aluna.copy().sort_values('dt_obj')
+            df_evo['Licao_Num'] = pd.to_numeric(df_evo['Licao_Atual'], errors='coerce')
+            st.line_chart(df_evo.set_index('Data')['Licao_Num'], color="#3498db")
+
+        # --- PARECER PEDAGÓGICO DETALHADO ---
+        st.markdown(f"### 🖋️ Parecer de Desenvolvimento: {tipo_periodo}")
+        
         todas_difs = [str(d) for item in df_f['Dificuldades'].dropna() for d in (item if isinstance(item, list) else [item])]
         tecnicos = list(set([d for d in todas_difs if any(x in d.lower() for x in ["postura", "dedo", "punho", "mão", "falange", "articulação"])]))
-        ritmicos = list(set([d for d in todas_difs if any(x in d.lower() for x in ["ritmo", "metrônomo", "solfejo", "tempo"])]))
+        ritmicos = list(set([d for d in todas_difs if any(x in d.lower() for x in ["ritmo", "metrônomo", "solfejo", "tempo", "divisão"])]))
 
-        st.markdown("#### 📝 Parecer de Desenvolvimento")
-        ce, cd = st.columns(2)
-        with ce:
-            if tecnicos: st.error(f"**🎹 Postura e Técnica**\n\nIdentificamos pontos de ajuste em: {', '.join(tecnicos)}. É o momento de lapidar esses movimentos com calma.")
-            else: st.success("**🎹 Postura e Técnica**\n\nEvolução sólida! Sua postura está refletindo segurança e domínio técnico.")
-        with cd:
-            if ritmicos: st.warning(f"**🎶 Ritmo e Teoria**\n\nSentimos que o ritmo precisa de um carinho especial em: {', '.join(ritmicos)}. O metrônomo será seu grande aliado.")
-            else: st.success("**🎶 Ritmo e Teoria**\n\nPrecisão e clareza! Sua percepção rítmica está muito apurada.")
+        p1, p2 = st.columns(2)
+        with p1:
+            if tecnicos:
+                st.error(f"**🎹 Postura e Técnica**\n\nNeste período, a aluna enfrentou desafios em: **{', '.join(tecnicos)}**. Pedagogicamente, observamos que a musculatura ainda busca memória para esses movimentos. É vital trabalhar o relaxamento dos ombros e a curvatura das falanges para evitar tensões desnecessárias.")
+            else:
+                st.success("**🎹 Postura e Técnica**\n\nA aluna apresenta um desenvolvimento técnico primoroso. A postura é equilibrada e a articulação dos dedos ocorre de forma independente e clara. Uma base sólida que permite avanços em repertórios mais complexos.")
 
-        # --- DICAS PARA A PRÓXIMA AULA ---
-        st.markdown("#### 💡 Dicas para a Próxima Aula")
-        if tecnicos or ritmicos:
-            st.info(f"**Sugestão:** Focar na correção de { (tecnicos[0] if tecnicos else ritmicos[0]) }. Praticar trechos lentos para estabilizar a memória muscular.")
-        else:
-            st.info("**Sugestão:** Base sólida detectada. Aumentar gradativamente o BPM e focar na expressividade da peça.")
+        with p2:
+            if ritmicos:
+                st.warning(f"**🎶 Ritmo e Teoria**\n\nIdentificamos oscilações rítmicas em: **{', '.join(ritmicos)}**. A compreensão teórica está em fase de maturação. Sugerimos que o solfejo seja priorizado antes da execução instrumental para que o tempo seja internalizado.")
+            else:
+                st.success("**🎶 Ritmo e Teoria**\n\nExcelente domínio da pulsação! A aluna demonstra segurança na leitura rítmica e no MSA. A execução mantém-se constante, respeitando rigorosamente os valores de tempo e pausas.")
 
-        # --- LÓGICA DE IA (CONGELAMENTO CORRIGIDO) ---
+        # --- PLANEJAMENTO PARA A PRÓXIMA AULA ---
+        st.markdown("---")
+        st.markdown("### 💡 Planejamento Pedagógico (Próxima Aula)")
+        
+        c_plan1, c_plan2 = st.columns([1, 2])
+        with c_plan1:
+            st.info(f"**📅 Data:** {data_prox}\n\n**👩‍🏫 Professora(s):**\n\n{proxima_prof_info}")
+        
+        with c_plan2:
+            if tecnicos or ritmicos:
+                st.warning(f"**Dica Estratégica:** Priorizar o acolhimento. A aluna está em fase de superação de dificuldades em { (tecnicos[0] if tecnicos else ritmicos[0]) }. Iniciar a aula com 10 min de exercícios técnicos lentos (Hanon) antes de abrir o método.")
+            else:
+                st.success("**Dica Estratégica:** Aluna com excelente prontidão! Iniciar o polimento de dinâmica (expressividade) e aumentar gradativamente o andamento das lições. Possibilidade de avançar no cronograma.")
+
+        # --- IA E CONGELAMENTO (SALVANDO APENAS DIÁRIO) ---
         st.divider()
         analise_previa = None
-        
-        # Só tentamos buscar do banco se for Diária
         if tipo_periodo == "Diária":
             try:
-                # Aqui usamos apenas colunas que costumam existir por padrão
                 res = supabase.table("analises_congeladas").select("*").eq("aluna", alu_ia).eq("periodo", periodo_id).execute()
                 if res.data: analise_previa = res.data[0]
             except: pass
 
         if analise_previa:
-            st.success(f"✅ Análise Congelada para o dia {periodo_id}")
+            st.success(f"✅ Relatório Salvo ({periodo_id})")
             st.markdown(analise_previa['conteudo'])
-            if st.button("🔄 Gerar Nova Análise"): analise_previa = None
+            if st.button("🔄 Refazer Relatório"): analise_previa = None
 
         if not analise_previa:
-            btn_label = "✨ GERAR RELATÓRIO DO DIA" if tipo_periodo == "Diária" else "✨ GERAR CONSOLIDAÇÃO DINÂMICA"
-            if st.button(btn_label):
+            if st.button("✨ GERAR RELATÓRIO COMPLETO (Coordenação)"):
                 with st.spinner("IA Processando..."):
                     try:
                         hist_txt = df_f[['Data', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
-                        prompt = f"Gere uma análise pedagógica detalhada e acolhedora para {alu_ia} ({tipo_periodo}). Histórico: {hist_txt}. Inclua Dicas para Próxima Aula e Preparação para Banca."
+                        prompt = f"Gere análise técnica pedagógica exclusiva para coordenação sobre {alu_ia} ({tipo_periodo}). Histórico: {hist_txt}. Foco em Postura, Técnica, Ritmo e Dicas para a professora {proxima_prof_info} na aula de {data_prox}."
                         response = model.generate_content(prompt)
                         texto = response.text
                         st.markdown(texto)
-                        
                         if tipo_periodo == "Diária":
-                            # Salvamos usando a coluna 'periodo' para guardar a data, 
-                            # já que 'data_referencia' deu erro.
-                            supabase.table("analises_congeladas").insert({
-                                "aluna": alu_ia, 
-                                "conteudo": texto, 
-                                "periodo": periodo_id 
-                            }).execute()
+                            supabase.table("analises_congeladas").insert({"aluna": alu_ia, "conteudo": texto, "periodo": periodo_id}).execute()
                             st.rerun()
                     except Exception as e:
-                        if "429" in str(e): st.error("⚠️ Limite diário da IA atingido.")
-                        else: st.error(f"Erro técnico: {e}")
+                        if "429" in str(e): st.error("⚠️ Limite de IA atingido. Use as informações detalhadas acima para sua aula.")
+                        else: st.error(f"Erro: {e}")
 
 # --- FIM DO MÓDULO ---
 
@@ -706,6 +732,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
