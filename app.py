@@ -67,7 +67,7 @@ calendario_db = db_get_calendario()
 # MÓDULO SECRETARIA
 # ==========================================
 if perfil == "🏠 Secretaria":
-    tab_plan, tab_cham, tab_ped = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Análise Pedagógica"])
+    tab_plan, tab_cham, tab_lição = st.tabs(["🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições"])
     
     with tab_plan:
         c1, c2 = st.columns(2)
@@ -162,23 +162,31 @@ if perfil == "🏠 Secretaria":
                 for r in reg_chamada: db_save_historico(r)
                 st.success("Chamada Salva!")
 
-    with tab_ped:
-        st.subheader("✅ Análise Pedagógica Completa")
-        alu_ped = st.selectbox("Aluna:", ALUNAS_LISTA, key="alu_ped_sec")
-        with st.form("f_ped_completo"):
-            c1, c2 = st.columns(2)
-            d_pos = c1.text_area("Postura (Mãos/Coluna/Pés):")
-            d_tec = c2.text_area("Técnica (Dedilhado/Articulação):")
-            d_rit = c1.text_area("Ritmo (Metrônomo/Métrica):")
-            d_teo = c2.text_area("Teoria (Leitura/Claves):")
-            resumo = st.text_area("Resumo Secretaria (Banca Semestral):")
-            meta = st.text_input("Dicas para a próxima aula:")
-            if st.form_submit_button("❄️ CONGELAR ANÁLISE"):
-                db_save_historico({
-                    "Aluna": alu_ped, "Tipo": "Analise_Pedagogica", "Data": datetime.now().strftime("%d/%m/%Y"),
-                    "Dados": {"Postura": d_pos, "Técnica": d_tec, "Ritmo": d_rit, "Teoria": d_teo, "Meta": meta, "Resumo": resumo}
-                })
-                st.success("Análise congelada!")
+    with tab_lição:
+        st.subheader("📝 Controle de Lições (Secretaria)")
+        with st.form("f_controle_licoes"):
+            data_aula = st.date_input("Data da aula:", datetime.now())
+            sec_resp = st.selectbox("Secretária:", SECRETARIAS_LISTA)
+            alu_sel = st.selectbox("Aluna:", ALUNAS_LISTA)
+            cat_sel = st.radio("Categoria:", CATEGORIAS_LICAO)
+            
+            st.divider()
+            status_sel = st.radio("Status das Lições:", STATUS_LICAO)
+            obs_liçao = st.text_area("Observações:")
+            
+            if st.form_submit_button("❄️ CONGELAR CONTROLE DE LIÇÃO"):
+                dados_licao = {
+                    "Aluna": alu_sel,
+                    "Tipo": "Controle_Licao",
+                    "Data": data_aula.strftime("%d/%m/%Y"),
+                    "Secretaria": sec_resp,
+                    "Categoria": cat_sel,
+                    "Status": status_sel,
+                    "Observacao": obs_liçao
+                }
+                db_save_historico(dados_licao)
+                st.success(f"Registro de {alu_sel} congelado com sucesso!")
+                
 
 # ==========================================
 # MÓDULO PROFESSORA
@@ -254,6 +262,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
