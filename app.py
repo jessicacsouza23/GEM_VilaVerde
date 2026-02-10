@@ -189,48 +189,74 @@ if perfil == "🏠 Secretaria":
         alu_sel = st.selectbox("Selecione a Aluna:", ["Selecione..."] + ALUNAS_LISTA)
         
         if alu_sel != "Selecione...":
-            # --- ÁREA DE PENDÊNCIAS ---
             df_hist = pd.DataFrame(historico_geral)
             if not df_hist.empty:
-                # Verificação de segurança para as colunas existirem no DataFrame
-                if 'Data' in df_hist.columns and 'Status' in df_hist.columns:
-                    df_hist['dt_comparar'] = pd.to_datetime(df_hist['Data'], format='%d/%m/%Y').dt.date
-                    
-                    pendentes_bruto = df_hist[
-                        (df_hist["Aluna"] == alu_sel) & 
-                        (df_hist["Tipo"] == "Controle_Licao") & 
-                        (df_hist["Status"].isin(["Realizada - devolvida para refazer", "Não realizada"]))
-                    ].sort_values("dt_comparar", ascending=False)
+                df_hist['dt_comparar'] = pd.to_datetime(df_hist['Data'], format='%d/%m/%Y').dt.date
+                
+                # 1. Busca registros com pendência
+                pendentes_bruto = df_hist[
+                    (df_hist["Aluna"] == alu_sel) & 
+                    (df_hist["Tipo"] == "Controle_Licao") & 
+                    (df_hist["Status"].isin(["Realizada - devolvida para refazer", "Não realizada"]))
+                ].sort_values("dt_comparar", ascending=False)
 
-                    sucessos = df_hist[
-                        (df_hist["Aluna"] == alu_sel) & 
-                        (df_hist["Status"] == "Realizadas - sem pendência")
+                # 2. Busca registros de sucesso
+                sucessos = df_hist[
+                    (df_hist["Aluna"] == alu_sel) & 
+                    (df_hist["Status"] == "Realizadas - sem pendência")
+                ]
+                
+                # 3. Filtra apenas o que NÃO foi resolvido ainda
+                pendencias_reais = []
+                for _, p in pendentes_bruto.iterrows():
+                    resolvida = sucessos[
+                        (sucessos["Categoria"] == p["Categoria"]) & 
+                        (sucessos["Licao_Detalhe"] == p["Licao_Detalhe"]) & 
+                        (sucessos["dt_comparar"] >= p["dt_comparar"])
                     ]
-                    
-                    pendencias_reais = []
-                    for _, p in pendentes_bruto.iterrows():
-                        resolvida = sucessos[
-                            (sucessos["Categoria"] == p["Categoria"]) & 
-                            (sucessos["Licao_Detalhe"] == p["Licao_Detalhe"]) & 
-                            (sucessos["dt_comparar"] >= p["dt_comparar"])
-                        ]
-                        if resolvida.empty:
-                            pendencias_reais.append(p)
+                    if resolvida.empty:
+                        pendencias_reais.append(p)
 
-                    if pendencias_reais:
-                        st.error("🚨 LIÇÕES PENDENTES")
-                        for p in pendencias_reais:
-                            with st.container(border=True):
-                                st.warning(f"**{p['Status']}** | {p['Categoria']} - {p.get('Licao_Detalhe', '')}")
-                                st.caption(f"📅 Primeira correção em: {p['Data']} | Obs: {p.get('Observacao', '-')}")
+                # --- EXIBIÇÃO DAS PENDÊNCIAS COM BOTÃO DE RESOLUÇÃO ---
+                if pendencias_reais:
+                    st.error("🚨 LIÇÕES PENDENTES - ATUALIZE ABAIXO SE ENTREGUE HOJE")
+                    for p in pendencias_reais:
+                        with st.container(border=True):
+                            col_info, col_acao = st.columns([2, 1])
+                            
+                            with col_info:
+                                st.markdown(f"📖 **{p['Categoria']}**")
+                                st.markdown(f"**Lição:** {p.get('Licao_Detalhe', '---')}")
+                                st.caption(f"📅 Primeira correção em: {p['Data']} | Motivo: {p['Status']}")
+                                st.info(f"Obs Antiga: {p.get('Observacao', '-')}")
+                            
+                            with col_acao:
+                                # Mini formulário para resolver a pendência específica
+                                with st.expander("✅ Resolver esta pendência"):
+                                    status_resolv = st.selectbox("Nova Situação:", STATUS_LICAO, key=f"st_{p['id']}")
+                                    obs_resolv = st.text_area("Observação da entrega:", key=f"obs_{p['id']}")
+                                    if st.button("Salvar Atualização", key=f"btn_{p['id']}"):
+                                        dados_update = {
+                                            "Aluna": alu_sel,
+                                            "Tipo": "Controle_Licao",
+                                            "Data": data_hj.strftime("%d/%m/%Y"),
+                                            "Secretaria": sec_resp,
+                                            "Categoria": p["Categoria"],
+                                            "Licao_Detalhe": p["Licao_Detalhe"],
+                                            "Status": status_resolv,
+                                            "Observacao": obs_resolv
+                                        }
+                                        if db_save_historico(dados_update):
+                                            st.success("Salvo com sucesso!")
+                                            st.rerun()
                 else:
-                    st.info("Iniciando banco de dados...")
+                    st.success("✅ Nenhuma pendência encontrada para esta aluna.")
 
             st.divider()
             
-            # --- FORMULÁRIO ---
-            with st.form("f_registro_final", clear_on_submit=True):
-                st.markdown("### ✍️ Registrar Atividade")
+            # --- FORMULÁRIO PARA NOVAS ATIVIDADES ---
+            with st.form("f_nova_atividade", clear_on_submit=True):
+                st.markdown("### ✍️ Registrar Nova Atividade (Diferente das Pendências)")
                 c_cat, c_det = st.columns([1, 2])
                 cat_sel = c_cat.radio("Categoria:", CATEGORIAS_LICAO)
                 det_lic = c_det.text_input("Lição / Página:", placeholder="Ex: Lição 02, pág 05")
@@ -240,7 +266,6 @@ if perfil == "🏠 Secretaria":
                 obs_hoje = st.text_area("Observação Técnica (p/ Análise IA):")
                 
                 if st.form_submit_button("❄️ CONGELAR E SALVAR"):
-                    # Os nomes das chaves (Aluna, Tipo, etc) devem ser IDÊNTICOS aos do banco
                     sucesso = db_save_historico({
                         "Aluna": alu_sel,
                         "Tipo": "Controle_Licao",
@@ -254,8 +279,8 @@ if perfil == "🏠 Secretaria":
                     if sucesso:
                         st.success("✅ Registro salvo com sucesso!")
                         st.balloons()
-                        # st.rerun() # Opcional: recarrega a página para atualizar o mural
-
+                        st.rerun()
+                        
 # ==========================================
 # MÓDULO PROFESSORA
 # ==========================================
@@ -330,6 +355,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
