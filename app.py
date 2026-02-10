@@ -512,30 +512,29 @@ elif perfil == "👩‍🏫 Professora":
 # MÓDULO ANÁLISE DE IA
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.title("📊 Análise Pedagógica e Rodízio")
+ st.title("📊 Análise Pedagógica e Rodízio")
     
-    # 1. PEGAR DADOS DO HISTÓRICO
+    # 1. CARREGAMENTO DOS DADOS
     df = pd.DataFrame(historico_geral)
     
     if df.empty:
         st.info("ℹ️ O banco de dados está vazio. Registre uma aula para iniciar.")
     else:
-        # 2. SELEÇÃO DA ALUNA (Dentro do else para garantir que há dados)
+        # 2. SELEÇÃO DA ALUNA
         alu_ia = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
         
+        # 3. FILTRO DE DATA E PERÍODO
         if 'Data' in df.columns:
-            # Preparação das Datas
             df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
             df_aluna = df[df["Aluna"] == alu_ia]
             
-            # 3. DEFINIÇÃO DO TIPO DE PERÍODO
             tipo_periodo = st.radio(
                 "Selecione o tipo de análise:",
                 ["Diária", "Mensal", "Bimestral", "Semestral", "Anual", "Geral"],
                 horizontal=True
             )
             
-            # 4. FILTROS ESPECÍFICOS POR SELEÇÃO
+            # Inicialização do DataFrame filtrado
             df_f = pd.DataFrame() 
             
             if tipo_periodo == "Diária":
@@ -547,12 +546,11 @@ elif perfil == "📊 Analítico IA":
             elif tipo_periodo == "Mensal":
                 meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
                 mes_sel = st.selectbox("Escolha o mês:", meses, index=datetime.now().month - 1)
-                df_f = df_aluna[(pd.to_datetime(df_aluna['dt_obj']).dt.month == meses.index(mes_sel) + 1) & 
-                                (pd.to_datetime(df_aluna['dt_obj']).dt.year == 2026)]
+                df_f = df_aluna[(pd.to_datetime(df_aluna['dt_obj']).dt.month == meses.index(mes_sel) + 1)]
                 
             elif tipo_periodo == "Bimestral":
-                bim_sel = st.selectbox("Escolha o Bimestre:", ["1º Bimestre (Jan/Fev)", "2º Bimestre (Mar/Abr)", "3º Bimestre (Mai/Jun)", "4º Bimestre (Jul/Ago)", "5º Bimestre (Set/Out)", "6º Bimestre (Nov/Dez)"])
-                mapa_bim = {"1º Bimestre (Jan/Fev)": [1,2], "2º Bimestre (Mar/Abr)": [3,4], "3º Bimestre (Mai/Jun)": [5,6], "4º Bimestre (Jul/Ago)": [7,8], "5º Bimestre (Set/Out)": [9,10], "6º Bimestre (Nov/Dez)": [11,12]}
+                bim_sel = st.selectbox("Escolha o Bimestre:", ["1º Bimestre", "2º Bimestre", "3º Bimestre", "4º Bimestre", "5º Bimestre", "6º Bimestre"])
+                mapa_bim = {"1º Bimestre": [1,2], "2º Bimestre": [3,4], "3º Bimestre": [5,6], "4º Bimestre": [7,8], "5º Bimestre": [9,10], "6º Bimestre": [11,12]}
                 df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(mapa_bim[bim_sel])]
                 
             elif tipo_periodo == "Semestral":
@@ -561,16 +559,14 @@ elif perfil == "📊 Analítico IA":
                 df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(meses_sem)]
                 
             elif tipo_periodo == "Anual":
-                ano_sel = st.selectbox("Escolha o Ano:", [2025, 2026, 2027], index=1)
-                df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.year == ano_sel]
-            else: # Geral
+                df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.year == 2026]
+            else:
                 df_f = df_aluna
 
-            # --- EXIBIÇÃO DOS RESULTADOS ---
+            # 4. EXIBIÇÃO DE INDICADORES (KPIs)
             if df_f.empty:
-                st.info(f"Nenhum registro encontrado para {alu_ia} neste período.")
+                st.warning(f"Sem dados para {alu_ia} neste período.")
             else:
-                # Indicadores Visuais (KPIs)
                 total = len(df_f)
                 aprov = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
                 perc = (aprov/total*100) if total > 0 else 0
@@ -578,7 +574,7 @@ elif perfil == "📊 Analítico IA":
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Registros", total)
                 c2.metric("Aproveitamento", f"{perc:.1f}%")
-                c3.metric("Faltas/Pendências", len(df_f[df_f['Status'] != "Realizadas - sem pendência"]))
+                c3.metric("Pendências", total - aprov)
 
                 # Gráficos
                 g1, g2 = st.columns(2)
@@ -591,87 +587,63 @@ elif perfil == "📊 Analítico IA":
                         df_d.columns = ['Dificuldade', 'Qtd']
                         st.plotly_chart(px.bar(df_d.head(5), x='Qtd', y='Dificuldade', orientation='h', title="Top Dificuldades"), use_container_width=True)
 
-                # --- 🔄 LÓGICA DE RODÍZIO (BUSCA ESCALA DA SECRETARIA) ---
+                # 5. BUSCA DE ESCALA (RODÍZIO)
                 st.markdown("---")
-                st.subheader("🔄 Escala para a Próxima Aula")
-                
                 proxima_aula, proxima_prof = "Não definida", "Não definida"
                 if 'calendario_raw' in locals() and calendario_raw:
-                    try:
-                        cal_df = pd.DataFrame(calendario_raw)
-                        cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
-                        futuros = cal_df[cal_df['dt_format'] >= datetime.now().date()].sort_values('dt_format')
-                        
-                        if not futuros.empty:
-                            proxima_aula = futuros.iloc[0]['id']
-                            escala_bruta = futuros.iloc[0]['escala']
-                            if isinstance(escala_bruta, list):
-                                dados_aluna = next((item for item in escala_bruta if item.get('Aluna') == alu_ia), None)
-                                if dados_aluna:
-                                    proxima_prof = f"**H2:** {dados_aluna.get('09h35 (H2)')} | **H3:** {dados_aluna.get('10h10 (H3)')} | **H4:** {dados_aluna.get('10h45 (H4)')}"
-                    except: pass
+                    cal_df = pd.DataFrame(calendario_raw)
+                    cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
+                    futuros = cal_df[cal_df['dt_format'] >= datetime.now().date()].sort_values('dt_format')
+                    if not futuros.empty:
+                        proxima_aula = futuros.iloc[0]['id']
+                        escala = futuros.iloc[0]['escala']
+                        if isinstance(escala, list):
+                            dados_aluna = next((item for item in escala if item.get('Aluna') == alu_ia), None)
+                            if dados_aluna:
+                                proxima_prof = f"H2: {dados_aluna.get('09h35 (H2)')} | H3: {dados_aluna.get('10h10 (H3)')} | H4: {dados_aluna.get('10h45 (H4)')}"
                 
                 st.info(f"📍 **Próxima Aula:** {proxima_aula}")
-                st.success(f"👩‍🏫 **Professoras de {alu_ia}:** {proxima_prof}")
+                st.success(f"👩‍🏫 **Escala:** {proxima_prof}")
 
-                # --- 🚀 SISTEMA DE ANÁLISE CONGELADA ---
+                # 6. RELATÓRIO CONGELADO (IA)
                 st.markdown("---")
                 st.subheader("📝 Relatório Pedagógico Congelado")
 
-                def buscar_analise_salva(aluna, periodo):
+                def carregar_analise(aluna, periodo):
                     try:
                         res = supabase.table("analises_congeladas").select("*").eq("aluna", aluna).eq("periodo", periodo).order("data_geracao", descending=True).limit(1).execute()
                         return res.data[0] if res.data else None
                     except: return None
 
-                analise_existente = buscar_analise_salva(alu_ia, tipo_periodo)
+                analise_existente = carregar_analise(alu_ia, tipo_periodo)
 
                 if analise_existente:
-                    st.success(f"✅ Análise carregada da memória (Salva em: {analise_existente['data_geracao'][:10]})")
+                    st.success(f"✅ Carregado da memória ({analise_existente['data_geracao'][:10]})")
                     st.markdown(analise_existente['conteudo'])
-                    if st.button("🔄 Gerar Nova (Atualizar com IA)"):
-                        analise_existente = None 
+                    if st.button("🔄 Atualizar Análise com IA"):
+                        analise_existente = None
                 
                 if not analise_existente:
                     if st.button("✨ GERAR ANÁLISE COMPLETA (IA)"):
                         if model:
-                            try:
-                                with st.spinner("IA processando relatório técnico..."):
-                                    dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
-                                    prompt = f"""
-                                    Aja como Coordenadora Pedagógica Master. Gere uma análise técnica para: {proxima_prof}.
-                                    ALUNA: {alu_ia} | PERÍODO: {tipo_periodo} | PRÓXIMA AULA: {proxima_aula}.
-                                    ESTRUTURA OBRIGATÓRIA:
-                                    1. 🎹 POSTURA E TÉCNICA: Detalhes de dedilhado e forma.
-                                    2. 🥁 RITMO: Uso do metrônomo e divisão.
-                                    3. 📖 TEORIA: Progresso nos métodos.
-                                    4. 🏠 SECRETARIA: Resumo de faltas/pendências.
-                                    5. 🎯 METAS: O que cobrar em {proxima_aula}.
-                                    6. 🏛️ BANCA: Dicas para o exame semestral.
-                                    DADOS: {dados_texto}
-                                    """
-                                    res = model.generate_content(prompt)
-                                    texto_gerado = res.text
-                                    
-                                    # SALVAR NO BANCO
-                                    nova_analise = {"aluna": alu_ia, "periodo": tipo_periodo, "conteudo": texto_gerado, "professoras_escala": proxima_prof}
-                                    supabase.table("analises_congeladas").insert(nova_analise).execute()
-                                    
-                                    st.markdown(texto_gerado)
-                                    st.balloons()
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro na IA: {e}")
+                            with st.spinner("IA processando..."):
+                                dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
+                                prompt = f"Aja como Coordenadora. Aluna: {alu_ia}. Período: {tipo_periodo}. Escala: {proxima_prof}. Analise Postura, Técnica, Ritmo, Teoria, Secretaria, Metas e Dicas para a Banca. Dados: {dados_texto}"
+                                res = model.generate_content(prompt)
+                                
+                                nova = {"aluna": alu_ia, "periodo": tipo_periodo, "conteudo": res.text, "professoras_escala": proxima_prof}
+                                supabase.table("analises_congeladas").insert(nova).execute()
+                                st.rerun()
         else:
-            st.warning("Aguardando registros com a coluna 'Data' para análise.")
-  else:
-            st.warning("Aguardando registros com a coluna 'Data' para análise.")
+            st.error("Coluna 'Data' não encontrada.")
 
+# FIM DO BLOCO - Certifique-se de que não há "else" sozinhos abaixo desta linha.
 
 with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
