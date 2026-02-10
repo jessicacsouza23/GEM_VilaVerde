@@ -429,7 +429,6 @@ elif perfil == "👩‍🏫 Professora":
         instr_sel = st.selectbox("Identifique-se:", ["Selecione..."] + PROFESSORAS_LISTA)
     with c2:
         hoje_dt = datetime.now()
-        # Sugere o próximo sábado se hoje não for sábado
         sab_p = hoje_dt + timedelta(days=(5 - hoje_dt.weekday()) % 7)
         data_prof = st.date_input("Data da Aula:", sab_p)
         data_prof_str = data_prof.strftime("%d/%m/%Y")
@@ -449,40 +448,51 @@ elif perfil == "👩‍🏫 Professora":
                 
                 if atendimento:
                     local_info = atendimento[h_sel]
-                    aluna_referencia = atendimento['Aluna']
+                    aluna_ref = atendimento['Aluna']
                     turma_aluna = atendimento.get('Turma', 'Turma 1')
     
                     is_coletiva = "SALA 8" in local_info or "SALA 9" in local_info
                     tipo_aula = "Teoria" if "SALA 8" in local_info else "Solfejo" if "SALA 9" in local_info else "Prática"
                     dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
                     
-                    st.success(f"📍 {local_info} | 👤 Referência: {aluna_referencia}")
+                    st.success(f"📍 {local_info} | 👤 Referência: {aluna_ref}")
 
-                    # --- VERIFICAÇÃO DE REGISTRO EXISTENTE ---
+                    # --- LÓGICA DE VERIFICAÇÃO (INDIVIDUAL OU GRUPO) ---
                     registro_existente = None
+                    alunas_na_turma = TURMAS.get(turma_aluna, [aluna_ref]) if is_coletiva else [aluna_ref]
+                    
                     if not df_historico.empty:
-                        # Filtra por Aluna, Data e Tipo de Aula
-                        condicao = (df_historico['Aluna'] == aluna_referencia) & \
+                        # Verifica se qualquer aluna da turma/atendimento já tem registro hoje neste horário/tipo
+                        condicao = (df_historico['Aluna'].isin(alunas_na_turma)) & \
                                    (df_historico['Data'] == data_prof_str) & \
                                    (df_historico['Tipo'] == f"Aula_{tipo_aula}")
+                        
                         match = df_historico[condicao]
                         if not match.empty:
-                            # Pega o registro mais recente (último da lista)
                             registro_existente = match.iloc[-1].to_dict()
-                            st.warning("⚠️ Já existe um registro para esta aula. Você pode editá-lo abaixo.")
+                            nome_aluna_ja_salva = registro_existente['Aluna']
+                            
+                            if is_coletiva:
+                                st.warning(f"⚠️ Você já preencheu o registro desta turma (visto na aluna: **{nome_aluna_ja_salva}**). Você pode editar os dados abaixo.")
+                            else:
+                                st.warning(f"⚠️ Registro já existente para **{nome_aluna_ja_salva}**. Edite se necessário.")
 
                     # --- CHAMADA ---
                     alunas_selecionadas = []
                     if is_coletiva:
                         st.markdown("### 👥 Chamada da Turma")
-                        alunas_turma = TURMAS.get(turma_aluna, [aluna_referencia])
                         cols_alu = st.columns(3)
-                        for idx_a, aluna in enumerate(alunas_turma):
+                        for idx_a, aluna in enumerate(alunas_na_turma):
+                            # Se já existe registro, marca quem está no banco. Se não, marca todas.
                             def_val = True
+                            if not df_historico.empty:
+                                ja_registrada = not df_historico[(df_historico['Aluna'] == aluna) & (df_historico['Data'] == data_prof_str) & (df_historico['Tipo'] == f"Aula_{tipo_aula}")].empty
+                                if registro_existente and not ja_registrada: def_val = False
+
                             if cols_alu[idx_a % 3].checkbox(aluna, value=def_val, key=f"chk_{aluna}_{h_sel}"):
                                 alunas_selecionadas.append(aluna)
                     else:
-                        alunas_selecionadas = [aluna_referencia]
+                        alunas_selecionadas = [aluna_ref]
     
                     # --- FORMULÁRIO ---
                     with st.form("f_aula_prof", clear_on_submit=False):
@@ -490,8 +500,9 @@ elif perfil == "👩‍🏫 Professora":
                         
                         # Lição Atual
                         idx_lic = 0
-                        if registro_existente and str(registro_existente.get('Licao_Atual')) in OPCOES_LICOES_NUM:
-                            idx_lic = OPCOES_LICOES_NUM.index(str(registro_existente['Licao_Atual']))
+                        lic_salva = str(registro_existente.get('Licao_Atual', ""))
+                        if registro_existente and lic_salva in OPCOES_LICOES_NUM:
+                            idx_lic = OPCOES_LICOES_NUM.index(lic_salva)
                         
                         lic_vol = st.selectbox("Lição/Volume Atual:", OPCOES_LICOES_NUM, index=idx_lic)
                         
@@ -500,7 +511,6 @@ elif perfil == "👩‍🏫 Professora":
                         cols_dif = st.columns(2)
                         difs_selecionadas = []
                         difs_previa = registro_existente.get('Dificuldades', []) if registro_existente else []
-                        if isinstance(difs_previa, str): difs_previa = [difs_previa] # Garante que é lista
                         
                         for i, d in enumerate(dif_lista):
                             target_col = cols_dif[0] if i < len(dif_lista)/2 else cols_dif[1]
@@ -543,13 +553,14 @@ elif perfil == "👩‍🏫 Professora":
                             if not alunas_selecionadas:
                                 st.error("⚠️ Selecione pelo menos uma aluna!")
                             else:
-                                for aluna in alunas_selecionadas:
-                                    db_save_historico({
-                                        "Aluna": aluna, "Tipo": f"Aula_{tipo_aula}", "Data": data_prof_str,
-                                        "Instrutora": instr_sel, "Licao_Atual": lic_vol, 
-                                        "Dificuldades": difs_selecionadas, "Observacao": obs_aula, "Licao_Casa": casa_f
-                                    })
-                                st.success("✅ Registro processado com sucesso!")
+                                with st.spinner("Salvando registros..."):
+                                    for aluna in alunas_selecionadas:
+                                        db_save_historico({
+                                            "Aluna": aluna, "Tipo": f"Aula_{tipo_aula}", "Data": data_prof_str,
+                                            "Instrutora": instr_sel, "Licao_Atual": lic_vol, 
+                                            "Dificuldades": difs_selecionadas, "Observacao": obs_aula, "Licao_Casa": casa_f
+                                        })
+                                st.success("✅ Processado com sucesso!")
                                 st.cache_data.clear()
                                 st.rerun()
                 else:
@@ -705,6 +716,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
