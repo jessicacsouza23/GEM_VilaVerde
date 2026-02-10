@@ -419,18 +419,7 @@ if perfil == "🏠 Secretaria":
 # MÓDULO PROFESSORA
 # ==========================================
 elif perfil == "👩‍🏫 Professora":
-    Essa é uma excelente melhoria para evitar registros duplicados e permitir correções rápidas. A lógica agora será: ao selecionar o horário/aluna, o sistema verifica no banco de dados se já existe um registro para aquele dia, horário e instrutora.
-
-Se existir, ele carrega os dados nos campos e o botão muda para "Atualizar Registro".
-
-Aqui está o código completo e corrigido para o módulo Professora:
-
-Python
-# ==========================================
-# MÓDULO PROFESSORA (COM EDIÇÃO DE DADOS)
-# ==========================================
-elif perfil == "👩‍🏫 Professora":
-    st.header("👩‍🏫 Controle de Desempenho")
+   st.header("👩‍🏫 Controle de Desempenho")
     c1, c2 = st.columns(2)
     with c1:
         instr_sel = st.selectbox("Identifique-se:", ["Selecione..."] + PROFESSORAS_LISTA)
@@ -716,6 +705,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
