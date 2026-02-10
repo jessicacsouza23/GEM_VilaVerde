@@ -35,8 +35,8 @@ else:
     st.sidebar.success("🚀 IA Pronta (Modo Pro)")
     
 # Conexão Supabase
-# SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
-# SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
+SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
+SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
 
 @st.cache_resource
 def init_supabase():
@@ -511,3 +511,4 @@ elif perfil == "📊 Analítico IA":
                             st.error(f"Erro na geração: {e}")
                 else:
                     st.error("Conecte a IA primeiro.")
+
