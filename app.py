@@ -512,7 +512,32 @@ elif perfil == "👩‍🏫 Professora":
 # MÓDULO ANÁLISE DE IA
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.title("📊 Análise Pedagógica e Rodízio")
+    t.title("📊 Análise Pedagógica e Rodízio")
+    
+    # 1. PEGAR DADOS DO HISTÓRICO
+    df = pd.DataFrame(historico_geral)
+
+    # --- TRAVA DE SEGURANÇA: VERIFICA SE O DF ESTÁ VAZIO ---
+    if df.empty:
+        st.info("ℹ️ O banco de dados está vazio. Registre uma aula ou chamada para iniciar as análises.")
+    else:
+        # Se NÃO estiver vazio, ele processa as colunas
+        if 'Data' in df.columns:
+            df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
+            df_aluna = df[df["Aluna"] == alu_ia] if 'alu_ia' in locals() else df
+        else:
+            st.error("⚠️ A coluna 'Data' não foi encontrada no banco de dados.")
+            st.stop()
+
+        # 2. SELEÇÃO DA ALUNA (Movemos para cá para só aparecer se houver dados)
+        alu_ia = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
+        
+        # 3. DEFINIÇÃO DO TIPO DE PERÍODO
+        tipo_periodo = st.radio(
+            "Selecione o tipo de análise:",
+            ["Diária", "Mensal", "Bimestral", "Semestral", "Anual", "Geral"],
+            horizontal=True
+        )
     
     # 1. SELEÇÃO DA ALUNA
     alu_ia = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
@@ -731,6 +756,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
