@@ -584,4 +584,41 @@ elif perfil == "📊 Analítico IA":
 
 
 
+# --- 🔄 LÓGICA DE RODÍZIO FILTRADA ---
+st.markdown("---")
+st.subheader("🔄 Informação de Transferência")
+
+proxima_aula = "Não agendada"
+proxima_prof = "Não definida"
+
+if calendario_raw:
+    cal_df = pd.DataFrame(calendario_raw)
+    cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
+    
+    # 1. Pega a próxima data de aula
+    futuros = cal_df[cal_df['dt_format'] >= hoje].sort_values('dt_format')
+    
+    if not futuros.empty:
+        proxima_aula = futuros.iloc[0]['id']
+        escala_completa = futuros.iloc[0]['escala'] # Aqui está a lista gigante
+        
+        # 2. Tenta encontrar a aluna selecionada dentro dessa lista
+        if isinstance(escala_completa, list):
+            # Procura os dados da aluna selecionada (alu_ia) na lista
+            dados_aluna = next((item for item in escala_completa if item.get('Aluna') == alu_ia), None)
+            
+            if dados_aluna:
+                # Aqui você escolhe qual horário quer mostrar (ex: Piano ou Teoria)
+                # Vamos pegar o H3 (10h10) como exemplo, ou mostrar todos
+                h2 = dados_aluna.get('09h35 (H2)', '')
+                h3 = dados_aluna.get('10h10 (H3)', '')
+                h4 = dados_aluna.get('10h45 (H4)', '')
+                proxima_prof = f"{h2} | {h3} | {h4}"
+            else:
+                proxima_prof = "Aluna não escalada para esta data."
+        else:
+            proxima_prof = str(escala_completa)
+
+st.info(f"📍 **Próxima Aula:** {proxima_aula}")
+st.success(f"👩‍🏫 **Escala de {alu_ia}:** {proxima_prof}")
 
