@@ -98,6 +98,29 @@ DIF_SOLFEJO = ["Não assistiu os vídeos complementares", "Dificuldades em ler a
                "Dificuldades na ordem das notas, ascendente e descendente", "Não realizou as atividades da apostila", "Não estudou nada", 
                "Estudou de forma insatisfatória", "Não apresentou dificuldades"]
 
+# --- FUNÇÃO PARA FILTRAR POR PERÍODO ---
+def filtrar_por_periodo(df, aluna, periodo, data_especifica=None):
+    if df.empty:
+        return df
+    
+    # Converte coluna Data para datetime
+    df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y')
+    df_aluna = df[df["Aluna"] == aluna].sort_values("dt_obj", ascending=False)
+    
+    hoje = datetime.now()
+    
+    if periodo == "Dia" and data_especifica:
+        return df_aluna[df_aluna['dt_obj'].dt.date == data_especifica]
+    elif periodo == "Mês":
+        return df_aluna[df_aluna['dt_obj'] > (hoje - timedelta(days=30))]
+    elif periodo == "Bimestre":
+        return df_aluna[df_aluna['dt_obj'] > (hoje - timedelta(days=60))]
+    elif periodo == "Semestre":
+        return df_aluna[df_aluna['dt_obj'] > (hoje - timedelta(days=180))]
+    elif periodo == "Ano":
+        return df_aluna[df_aluna['dt_obj'] > (hoje - timedelta(days=365))]
+    return df_aluna # Geral
+
 historico_geral = db_get_historico()
 calendario_db = db_get_calendario()
 
@@ -396,43 +419,103 @@ elif perfil == "👩‍🏫 Professora":
             st.error("Rodízio não encontrado para esta data.")
             
 # ==========================================
-# MÓDULO ANALÍTICO IA
+# MÓDULO ANÁLISE DE IA
 # ==========================================
-elif perfil == "📊 Analítico IA":
-    st.header("📊 Inteligência Pedagógica")
-    if not historico_geral: st.info("Sem dados.")
+elif perfil == "📊 Analítico IA"
+    st.header("🤖 Inteligência Artificial Pedagógica")
+    
+    if not historico_geral:
+        st.info("Aguardando dados no histórico para realizar análise.")
     else:
-        df_g = pd.DataFrame(historico_geral)
-        alu = st.selectbox("Aluna:", sorted(df_g["Aluna"].unique()))
-        df_f = df_g[df_g["Aluna"] == alu]
+        df_completo = pd.DataFrame(historico_geral)
         
-        # Filtra a última análise pedagógica
-        df_ped = df_f[df_f["Tipo"] == "Analise_Pedagogica"]
-        if not df_ped.empty:
-            last = df_ped.iloc[-1]["Dados"]
-            with st.container(border=True):
-                st.subheader(f"📋 Ficha de Avaliação: {alu}")
-                c1, c2 = st.columns(2)
-                c1.error(f"**🔹 POSTURA:**\n{last.get('Postura')}")
-                c2.warning(f"**🔹 TÉCNICA:**\n{last.get('Técnica')}")
-                c1.info(f"**🔹 RITMO:**\n{last.get('Ritmo')}")
-                c2.success(f"**🔹 TEORIA:**\n{last.get('Teoria')}")
-                st.divider()
-                st.markdown(f"**🏢 Resumo Secretaria:** {last.get('Resumo')}")
-                st.markdown(f"**💡 Próxima Aula:** {last.get('Meta')}")
+        # --- FILTROS DE INTERFACE ---
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            aluna_analise = st.selectbox("Selecione a Aluna para Análise:", ALUNAS_LISTA)
+        with col2:
+            tipo_periodo = st.selectbox("Período da Análise:", ["Dia", "Mês", "Bimestre", "Semestre", "Ano", "Geral"])
+        with col3:
+            data_alvo = None
+            if tipo_periodo == "Dia":
+                data_alvo = st.date_input("Data específica:", datetime.now())
 
-                # Exportar PNG
-                img = Image.new('RGB', (1000, 700), color=(255, 255, 255))
-                draw = ImageDraw.Draw(img)
-                txt = f"GEM VILA VERDE - RELATORIO\nALUNA: {alu}\n\nPOSTURA: {last.get('Postura')}\nTECNICA: {last.get('Técnica')}\nRITMO: {last.get('Ritmo')}\nTEORIA: {last.get('Teoria')}\n\nBANCA: {last.get('Resumo')}\nMETA: {last.get('Meta')}"
-                draw.text((50, 50), txt, fill=(0,0,0))
-                buf = io.BytesIO()
-                img.save(buf, format="PNG")
-                st.download_button("📥 Exportar PNG Detalhado", buf.getvalue(), f"Analise_{alu}.png")
+        # Aplica o filtro
+        df_filtrado = filtrar_por_periodo(df_completo, aluna_analise, tipo_periodo, data_alvo)
 
-        st.subheader("📂 Histórico de Aulas")
-        st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+        if df_filtrado.empty:
+            st.warning(f"Não foram encontrados registros para {aluna_analise} neste período.")
+        else:
+            st.success(f"Foram encontrados {len(df_filtrado)} registros para análise.")
+            
+            # --- EXIBIÇÃO DOS DADOS BRUTOS (CONGELADOS) ---
+            with st.expander("Ver dados mapeados para a IA"):
+                st.dataframe(df_filtrado, use_container_width=True)
 
+            # --- BOTÃO PARA GERAR ANÁLISE ---
+            if st.button("✨ GERAR ANÁLISE PEDAGÓGICA COMPLETA"):
+                with st.spinner("A IA está analisando posturas, técnicas e evolução..."):
+                    
+                    # Preparação do Contexto para a IA
+                    texto_dados = df_filtrado.to_csv(index=False)
+                    
+                    # Determinar quem é a próxima instrutora (se for análise diária)
+                    proxima_info = ""
+                    if tipo_periodo == "Dia" and data_alvo:
+                        # Lógica para buscar no calendário quem atende ela no próximo sábado
+                        prox_sabado = (data_alvo + timedelta(days=(5 - data_alvo.weekday()) % 7)).strftime("%d/%m/%Y")
+                        escala_prox = calendario_db.get(prox_sabado, [])
+                        instr_prox = next((atend for atend in escala_prox if atend['Aluna'] == aluna_analise), None)
+                        if instr_prox:
+                            proxima_info = f"\n⚠️ ATENÇÃO: Esta análise deve ser encaminhada para a Instrutora que dará a próxima aula: {instr_prox}."
+
+                    # MONTAGEM DO PROMPT (Unindo seus dois prompts)
+                    prompt_final = f"""
+                    {proxima_info}
+                    
+                    CONTEXTO: Você é uma especialista em pedagogia musical para órgão eletrônico.
+                    PERÍODO SOLICITADO: {tipo_periodo}
+                    DADOS BRUTOS:
+                    {texto_dados}
+                    
+                    INSTRUÇÕES DE RIGOR:
+                    1. Mapeie: Nome (Aluna), Prática (Lição_Atual, Dificuldades, Observacao), Teoria/Solfejo (Tipo, Dificuldades), Data.
+                    2. Organize por bloco: [NOME DA ALUNA EM NEGRITO].
+                    3. Regra de Ouro: Não resuma dados literais das professoras, mas interprete pedagogicamente na análise final.
+                    
+                    ESTRUTURA DO RELATÓRIO:
+                    - SEÇÃO 1: Identificação e Resumo Executivo (Evolução lenta, moderada ou rápida).
+                    - SEÇÃO 2: Análise por Disciplina (Prática: Postura, Técnica, Ritmo; Teoria; Solfejo).
+                    - SEÇÃO 3: Comportamento e Perfil.
+                    - SEÇÃO 4: Dificuldades Frequentes (Quantificar se houver mais de uma aula).
+                    - SEÇÃO 5: PLANO DE MELHORIA REALISTA (Dicas de exercícios e metas mensuráveis).
+                    - SEÇÃO 6: DICAS ESPECÍFICAS PARA A BANCA SEMESTRAL.
+                    
+                    Seja técnico, real e motivador.
+                    """
+                    
+                    # Chamada simulada da IA (Aqui você integrará com a API do Gemini/OpenAI)
+                    # Por enquanto, exibiremos o container onde o texto aparecerá:
+                    st.markdown("---")
+                    st.header(f"📝 Relatório Pedagógico - {aluna_analise}")
+                    
+                    # Exemplo de como o resultado será estruturado
+                    st.info(f"Relatório gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+                    
+                    # Aqui entra o componente que recebe a resposta da IA
+                    st.markdown(f"""
+                    ### 🧾 SEÇÃO 1 — IDENTIFICAÇÃO
+                    **Aluna:** {aluna_analise}  
+                    **Período:** {tipo_periodo}  
+                    {proxima_info}
+                    
+                    *(A análise completa aparecerá aqui após integração com a chave de API)*
+                    """)
+                    
+                    # Botão para "Congelar" (Salvar a análise pronta num banco de dados de relatórios)
+                    if st.button("💾 Congelar Relatório para Consulta Futura"):
+                        st.success("Relatório salvo no histórico de análises da aluna!")
 
 
 
