@@ -69,74 +69,6 @@ calendario_db = db_get_calendario()
 if perfil == "🏠 Secretaria":
     tab_plan, tab_cham, tab_ped = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Análise Pedagógica"])
 
-    Entendido perfeitamente. O que você precisa é de um rodízio dinâmico (carrossel): a cada novo sábado, o sistema deve deslocar a escala para que a aluna não repita a mesma professora e nem a mesma sala da semana anterior.
-
-Para resolver isso, implementei uma lógica de "Salto por Data". O sistema calcula quantos sábados se passaram desde uma data base e usa esse número para "pular" as professoras na lista. Assim, se a Amanda teve aula com a Cassia na Sala 1 este sábado, no próximo ela terá com a Elaine na Sala 2, e assim por diante.
-
-Aqui está o código completo com o Rodízio Infinito e Dinâmico:
-
-Python
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-import calendar
-from supabase import create_client, Client
-
-# --- 1. CONFIGURAÇÕES E CONEXÃO ---
-st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
-
-SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
-SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
-
-@st.cache_resource
-def init_supabase():
-    try: return create_client(SUPABASE_URL, SUPABASE_KEY)
-    except: return None
-
-supabase = init_supabase()
-
-# --- FUNÇÕES DE BANCO ---
-def db_get_calendario():
-    try:
-        res = supabase.table("calendario").select("*").execute()
-        return {item['id']: item['escala'] for item in res.data}
-    except: return {}
-
-def db_get_historico():
-    try:
-        res = supabase.table("historico_geral").select("*").execute()
-        return res.data
-    except: return []
-
-def db_save_historico(dados):
-    try: supabase.table("historico_geral").insert(dados).execute()
-    except Exception as e: st.error(f"Erro ao salvar: {e}")
-
-# --- 2. DADOS MESTRE ---
-PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
-ALUNAS_LISTA = sorted([
-    "Amanda S.", "Ana Marcela S.", "Caroline C.", "Elisa F.", "Emilly O.", "Gabrielly V.",
-    "Heloísa R.", "Ingrid M.", "Júlia Cristina", "Júlia S.", "Julya O.", "Mellina S.",
-    "Micaelle S.", "Raquel L.", "Rebeca R.", "Rebecca A.", "Rebeka S.", "Sarah S.",
-    "Stephany O.", "Vitória A.", "Vitória Bella T."
-])
-TURMAS = {
-    "Turma 1": ["Rebecca A.", "Amanda S.", "Ingrid M.", "Rebeka S.", "Mellina S.", "Rebeca R.", "Caroline C."],
-    "Turma 2": ["Vitória A.", "Elisa F.", "Sarah S.", "Gabrielly V.", "Emily O.", "Julya O.", "Stephany O."],
-    "Turma 3": ["Heloísa R.", "Ana Marcela S.", "Vitória Bella T.", "Júlia S.", "Micaelle S.", "Raquel L.", "Júlia Cristina"]
-}
-HORARIOS = ["08h45 (Igreja)", "09h35 (H2)", "10h10 (H3)", "10h45 (H4)"]
-
-# --- 3. INTERFACE ---
-st.title("🎼 GEM Vila Verde - Gestão 2026")
-perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
-
-historico_geral = db_get_historico()
-calendario_db = db_get_calendario()
-
-if perfil == "🏠 Secretaria":
-    tab_plan, tab_cham, tab_ped = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Análise Pedagógica"])
-    
     with tab_plan:
         c1, c2 = st.columns(2)
         mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
@@ -319,6 +251,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
