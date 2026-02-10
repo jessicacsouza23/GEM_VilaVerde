@@ -628,7 +628,6 @@ elif perfil == "📊 Analítico IA":
                 periodo_selecionado = mes_sel
 
         elif tipo_periodo == "Bimestral":
-            # Ex: 1º Bimestre 2026
             opcoes_bim = ["1º Bimestre (Jan/Fev)", "2º Bimestre (Mar/Abr)", "3º Bimestre (Mai/Jun)", "4º Bimestre (Jul/Ago)", "5º Bimestre (Set/Out)", "6º Bimestre (Nov/Dez)"]
             bim_sel = st.selectbox("📅 Selecione o Bimestre:", opcoes_bim)
             mes_inicio = (opcoes_bim.index(bim_sel) * 2) + 1
@@ -643,39 +642,66 @@ elif perfil == "📊 Analítico IA":
 
         elif tipo_periodo == "Anual":
             anos = sorted(list(set(d.year for d in df_aluna['dt_obj'].dropna())), reverse=True)
-            ano_sel = st.selectbox("📅 Selecione o Ano:", anos)
-            df_f = df_aluna[df_aluna['dt_obj'].apply(lambda x: x.year == ano_sel)]
-            periodo_selecionado = str(ano_sel)
+            if anos:
+                ano_sel = st.selectbox("📅 Selecione o Ano:", anos)
+                df_f = df_aluna[df_aluna['dt_obj'].apply(lambda x: x.year == ano_sel)]
+                periodo_selecionado = str(ano_sel)
 
         # --- EXIBIÇÃO DE MÉTRICAS ---
-        st.markdown(f"### 📜 Consolidação: {tipo_periodo} ({periodo_selecionado})")
+        st.markdown(f"### 📜 Consolidação Técnica: {tipo_periodo} ({periodo_selecionado})")
         total_aulas = len(df_f)
         realizadas = len(df_f[df_f['Status'].astype(str).str.contains("Realizada|OK", na=False, case=False)]) if 'Status' in df_f.columns else 0
         freq = (realizadas / total_aulas * 100) if total_aulas > 0 else 0
 
         m1, m2, m3 = st.columns(3)
-        m1.metric("Volume no Período", total_aulas)
+        m1.metric("Aulas no Período", total_aulas)
         m2.metric("Aproveitamento", realizadas)
-        m3.metric("Assiduidade", f"{freq:.0f}%")
+        m3.metric("Frequência", f"{freq:.0f}%")
 
-        # --- CARDS DE PARECER (DINÂMICOS) ---
+        # --- PROCESSAMENTO DE DIFICULDADES ---
         todas_difs = [str(d) for item in df_f['Dificuldades'].dropna() for d in (item if isinstance(item, list) else [item])]
-        tecnicos = [d for d in todas_difs if any(x in d.lower() for x in ["postura", "dedo", "punho", "mão", "falange"])]
-        ritmicos = [d for d in todas_difs if any(x in d.lower() for x in ["ritmo", "metrônomo", "solfejo", "tempo"])]
+        tecnicos = list(set([d for d in todas_difs if any(x in d.lower() for x in ["postura", "dedo", "punho", "mão", "falange", "articulação", "dedilhado"])]))
+        ritmicos = list(set([d for d in todas_difs if any(x in d.lower() for x in ["ritmo", "metrônomo", "solfejo", "tempo", "métrica", "divisão", "pausa"])]))
 
+        # --- CARDS DE PARECER DETALHADO E ACOLHEDOR ---
+        st.markdown("#### 📝 Parecer de Desenvolvimento")
         c_esq, c_dir = st.columns(2)
+        
         with c_esq:
-            if tecnicos: st.error(f"**🎹 Postura e Técnica**\n\n{', '.join(set(tecnicos))}")
-            else: st.success("**🎹 Postura e Técnica**\n\nEvolução técnica estável e postura correta identificada no período.")
+            if tecnicos:
+                st.error(f"""**🎹 Postura e Técnica (Pontos de Atenção)** Durante este período, observamos que o desenvolvimento técnico apresentou alguns desafios. Notamos recorrência em: **{', '.join(tecnicos)}**.  
+                *Pedagogicamente:* É comum enfrentar esses obstáculos ao aumentar a dificuldade das lições. O foco deve ser o relaxamento muscular e a consciência de cada movimento para evitar vícios.""")
+            else:
+                st.success(f"""**🎹 Postura e Técnica (Evolução Brilhante)** A aluna tem demonstrado uma postura exemplar e muita segurança na articulação. O posicionamento de mãos e o dedilhado estão fluindo de forma natural e correta.  
+                *Pedagogicamente:* Parabéns pela dedicação! Esta base sólida permitirá avanços mais rápidos em lições complexas.""")
+
         with c_dir:
-            if ritmicos: st.warning(f"**🎶 Ritmo e Teoria**\n\n{', '.join(set(ritmicos))}")
-            else: st.success("**🎶 Ritmo e Teoria**\n\nDomínio rítmico e compreensão teórica satisfatórios.")
+            if ritmicos:
+                st.warning(f"""**🎶 Ritmo e Teoria (Em Construção)** A percepção rítmica e a compreensão teórica estão em fase de amadurecimento. Notamos dificuldades em: **{', '.join(ritmicos)}**.  
+                *Pedagogicamente:* O ritmo é a pulsação da música. Não desanime! O uso constante do metrônomo e o solfejo falado serão seus melhores aliados para superar esses pontos.""")
+            else:
+                st.success(f"""**🎶 Ritmo e Teoria (Domínio Consistente)** Excelente compreensão rítmica! A aluna consegue manter a pulsação constante e demonstra clareza na leitura das figuras musicais e pausas.  
+                *Pedagogicamente:* A segurança teórica apresentada reflete um estudo disciplinado. Continue explorando diferentes dinâmicas e métricas.""")
+
+        # --- [NOVO] DICAS PARA A PRÓXIMA AULA ---
+        st.markdown("#### 💡 Dicas para a Próxima Aula")
+        if tecnicos or ritmicos:
+            st.info(f"""
+            **Abordagem Sugerida:** 1. **Início Técnico:** Dedique os primeiros 10 minutos exclusivamente a exercícios de falanges e escalas lentas para corrigir: {', '.join(tecnicos[:2])}.  
+            2. **Metrônomo:** Nas lições do método, reduza o BPM pela metade até que o(a) {', '.join(ritmicos[:1])} esteja perfeito.  
+            3. **Acolhimento:** Reforce positivamente cada pequeno acerto para manter a motivação da aluna alta.
+            """)
+        else:
+            st.info(f"""
+            **Abordagem Sugerida:** 1. **Desafio:** Como a base está sólida, aumente gradativamente o andamento (BPM) das lições atuais.  
+            2. **Novos Horizontes:** Introduza a próxima lição ou conceito teórico do MSA, pois a aluna demonstra prontidão.  
+            3. **Repertório:** Inicie o polimento de uma peça para a banca semestral, focando em interpretação e dinâmica.
+            """)
 
         # --- LÓGICA DE IA (CONGELADA VS DINÂMICA) ---
         st.divider()
         analise_previa = None
         
-        # SÓ BUSCA/SALVA SE FOR DIÁRIA
         if tipo_periodo == "Diária":
             try:
                 res = supabase.table("analises_congeladas").select("*").eq("aluna", alu_ia).eq("data_referencia", periodo_selecionado).execute()
@@ -685,20 +711,40 @@ elif perfil == "📊 Analítico IA":
         if analise_previa:
             st.success(f"✅ Análise Congelada para o dia {periodo_selecionado}")
             st.markdown(analise_previa['conteudo'])
-            if st.button("🔄 Atualizar Análise do Dia"): analise_previa = None
+            if st.button("🔄 Atualizar Relatório da IA"): analise_previa = None
 
         if not analise_previa:
-            btn_label = "✨ GERAR RELATÓRIO DO DIA (SALVAR)" if tipo_periodo == "Diária" else f"✨ GERAR CONSOLIDAÇÃO {tipo_periodo.upper()} (DINÂMICA)"
+            btn_label = "✨ GERAR RELATÓRIO COMPLETO (SALVAR)" if tipo_periodo == "Diária" else f"✨ GERAR CONSOLIDAÇÃO {tipo_periodo.upper()} (DINÂMICA)"
             if st.button(btn_label):
-                with st.spinner("IA Processando..."):
+                with st.spinner("IA Processando Análise Pedagógica..."):
                     hist_txt = df_f[['Data', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
-                    prompt = f"Gere análise pedagógica {tipo_periodo} para {alu_ia}. Dados: {hist_txt}. Foco: Postura, Técnica, Ritmo, Teoria, Dicas para Próxima Aula e Banca."
+                    prompt = f"""
+                    Aja como uma Coordenadora Pedagógica Musical experiente.
+                    Gere uma análise completa e acolhedora para a aluna {alu_ia} referente ao período {tipo_periodo} ({periodo_selecionado}).
+                    
+                    Use o histórico: {hist_txt}
+                    
+                    ESTRUTURA:
+                    # 🎼 ANÁLISE PEDAGÓGICA {tipo_periodo.upper()}
+                    (Dê as boas-vindas e faça um resumo do desenvolvimento).
+                    
+                    ## 🧍 1. POSTURA E TÉCNICA
+                    (Seja detalhista sobre falanges, punhos e posição, tratando os erros com dicas de correção).
+                    
+                    ## 🥁 2. RITMO E TEORIA
+                    (Comente sobre a pulsação, MSA e compreensão das figuras).
+                    
+                    ## 🎯 3. DICAS PARA A PRÓXIMA AULA
+                    (Instruções práticas para o professor).
+                    
+                    ## 🏛️ 4. PREPARAÇÃO PARA BANCA
+                    (O que falta para a aprovação final).
+                    """
                     try:
                         response = model.generate_content(prompt)
                         texto = response.text
                         st.markdown(texto)
                         
-                        # SALVA APENAS SE FOR DIÁRIA
                         if tipo_periodo == "Diária":
                             supabase.table("analises_congeladas").insert({
                                 "aluna": alu_ia, 
@@ -707,7 +753,7 @@ elif perfil == "📊 Analítico IA":
                             }).execute()
                             st.rerun()
                     except Exception as e:
-                        st.error(f"Erro: {e}")
+                        st.error(f"Erro na IA: {e}")
 
 # --- FIM DO MÓDULO ---
 
@@ -715,6 +761,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
