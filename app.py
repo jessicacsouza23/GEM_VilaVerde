@@ -9,37 +9,28 @@ import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 
-# --- 1. CONFIGURAÇÕES E CONEXÃO ---
+# --- 1. CONFIGURAÇÕES E CONEXÕES SEGURAS ---
 st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
 
-# Função Robusta para Inicializar IA
-def inicializar_ia():
-    # Tenta buscar a chave de 3 lugares diferentes para não falhar
-    api_key = None
-    if "GOOGLE_API_KEY" in st.secrets:
-        api_key = st.secrets["GOOGLE_API_KEY"]
-    elif "google_api_key" in st.secrets:
-        api_key = st.secrets["google_api_key"]
+# Carrega chaves dos Secrets do Streamlit
+try:
+    GENAI_KEY = st.secrets["GOOGLE_API_KEY"]
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     
-    if not api_key:
-        return None, "Chave API não encontrada nos Secrets."
-
-    try:
-        genai.configure(api_key=api_key)
-        # Forçamos o modelo 1.5-flash que é o mais estável para o Free Tier
-        modelo = genai.GenerativeModel('gemini-1.5-flash')
-        # Teste de pulso
-        modelo.generate_content("oi", generation_config={"max_output_tokens": 1})
-        return modelo, "Sucesso"
-    except Exception as e:
-        return None, str(e)
-
-model, status_ia = inicializar_ia()
-
+    # Inicializa IA
+    genai.configure(api_key=GENAI_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    # Inicializa Supabase
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    st.error(f"❌ Erro de Configuração: Verifique os Secrets do Streamlit. Detalhe: {e}")
+    st.stop()
 
 # Conexão Supabase
-SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
-SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
+# SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
+# SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
 
 @st.cache_resource
 def init_supabase():
@@ -535,3 +526,4 @@ elif perfil == "📊 Analítico IA":
                 else:
                     st.error("A IA não está conectada. Verifique sua chave API.")
                     
+
