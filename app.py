@@ -415,42 +415,42 @@ if perfil == "🏠 Secretaria":
 
         st.divider()
     
-# BLOCO DE LIMPEZA (Alinhado com o st.header acima)
-with st.expander("🚨 ÁREA DE PERIGO - Limpeza de Banco de Dados"):
-    st.warning("Atenção: As ações abaixo apagam permanentemente os dados do sistema.")
-    
-    confirmar_limpeza = st.checkbox("Eu entendo que esta ação não pode ser desfeita.", key="conf_limpeza")
-    
-    if confirmar_limpeza:
-        col1, col2 = st.columns(2)
+    # BLOCO DE LIMPEZA (Alinhado com o st.header acima)
+    with st.expander("🚨 ÁREA DE PERIGO - Limpeza de Banco de Dados"):
+        st.warning("Atenção: As ações abaixo apagam permanentemente os dados do sistema.")
         
-        # 1. Limpar Histórico, Presenças e Lições
-        if col1.button("🗑️ Apagar Lições e Presenças", use_container_width=True):
-            try:
-                supabase.table("historico_geral").delete().neq("Aluna", "").execute()
-                st.success("✅ Histórico limpo!")
-                st.cache_data.clear()
-            except Exception as e:
-                st.error(f"Erro: {e}")
-
-        # 2. Limpar Análises da IA
-        if col2.button("🗑️ Apagar Análises da IA", use_container_width=True):
-            try:
-                supabase.table("analises_congeladas").delete().neq("aluna", "").execute()
-                st.success("✅ Memória de IA limpa!")
-            except Exception as e:
-                st.error(f"Erro: {e}")
-
-        st.write("---")
+        confirmar_limpeza = st.checkbox("Eu entendo que esta ação não pode ser desfeita.", key="conf_limpeza")
         
-        # 3. Limpar Rodízio
-        if st.button("🗑️ Resetar Calendário de Rodízio", use_container_width=True):
-            try:
-                # Verifique se o nome da sua tabela é 'calendario_geral' ou 'calendario_escalas'
-                supabase.table("calendario_geral").delete().neq("id", "").execute()
-                st.success("✅ Rodízio apagado!")
-            except Exception as e:
-                st.error(f"Erro: {e}")
+        if confirmar_limpeza:
+            col1, col2 = st.columns(2)
+            
+            # 1. Limpar Histórico, Presenças e Lições
+            if col1.button("🗑️ Apagar Lições e Presenças", use_container_width=True):
+                try:
+                    supabase.table("historico_geral").delete().neq("Aluna", "").execute()
+                    st.success("✅ Histórico limpo!")
+                    st.cache_data.clear()
+                except Exception as e:
+                    st.error(f"Erro: {e}")
+    
+            # 2. Limpar Análises da IA
+            if col2.button("🗑️ Apagar Análises da IA", use_container_width=True):
+                try:
+                    supabase.table("analises_congeladas").delete().neq("aluna", "").execute()
+                    st.success("✅ Memória de IA limpa!")
+                except Exception as e:
+                    st.error(f"Erro: {e}")
+    
+            st.write("---")
+            
+            # 3. Limpar Rodízio
+            if st.button("🗑️ Resetar Calendário de Rodízio", use_container_width=True):
+                try:
+                    # Verifique se o nome da sua tabela é 'calendario_geral' ou 'calendario_escalas'
+                    supabase.table("calendario_geral").delete().neq("id", "").execute()
+                    st.success("✅ Rodízio apagado!")
+                except Exception as e:
+                    st.error(f"Erro: {e}")
                     
 # ==========================================
 # MÓDULO PROFESSORA
@@ -768,6 +768,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
