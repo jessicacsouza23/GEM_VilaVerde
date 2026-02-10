@@ -236,67 +236,76 @@ if perfil == "🏠 Secretaria":
                 supabase.table("calendario").delete().eq("id", data_sel_str).execute()
                 st.rerun()
 
-    # --- ABA 2: CHAMADA GERAL ---
+  # --- ABA 2: CHAMADA GERAL ---
     with tab_cham:
         st.subheader("📍 Chamada Geral")
+        
+        # 1. Seleção da Data
         data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_chamada_unica")
         presenca_padrao = st.toggle("Marcar todas como Presente por padrão", value=True)
         st.write("---")
+        
         registros_chamada = []
         alunas_lista = sorted([a for l in TURMAS.values() for a in l])
-        for aluna in alunas_lista:
+        
+        # 2. Loop Único para construir a lista de chamada
+        for idx, aluna in enumerate(alunas_lista):
             col1, col2, col3 = st.columns([2, 3, 3])
+            
             col1.write(f"**{aluna}**")
-            status = col2.radio(f"Status {aluna}", ["Presente", "Falta", "Justificada"], index=0 if presenca_padrao else 1, key=f"status_{aluna}_{data_ch_sel}", horizontal=True, label_visibility="collapsed")
-            motivo = ""
-       # --- LOGICA DA CHAMADA (DENTRO DO LOOP DE ALUNAS) ---
-        col1, col2, col3 = st.columns([2, 2, 3])
-        status = col2.radio(f"Status para {aluna}", ["Presente", "Ausente", "Justificada"], key=f"status_{aluna}_{data_ch_sel}")
-        
-        # Inicializamos o motivo como vazio
-        motivo = ""
-        
-        # Se for justificada, aparece o campo. Usamos o session_state para garantir que o valor não suma
-        if status == "Justificada":
-            motivo = col3.text_input(
-                f"Motivo justificativa", 
-                key=f"motivo_input_{aluna}_{data_ch_sel}", 
-                placeholder="Informe o motivo...", 
+            
+            # Chave ÚNICA combinando índice, nome e data para evitar DuplicateKey
+            chave_status = f"status_{idx}_{aluna}_{data_ch_sel}"
+            
+            status = col2.radio(
+                f"Status {aluna}", 
+                ["Presente", "Ausente", "Justificada"], 
+                index=0 if presenca_padrao else 1, 
+                key=chave_status, 
+                horizontal=True, 
                 label_visibility="collapsed"
             )
-        
-        # Adicionamos à lista temporária que será processada no botão
-        registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
-        
-        # --- BOTÃO DE SALVAMENTO ---
-        if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
-            # PROTEÇÃO: Verificamos se data_ch_sel existe, se não, usamos a data de hoje
-            try:
-                data_string = data_ch_sel.strftime("%d/%m/%Y")
-            except NameError:
-                data_string = datetime.now().strftime("%d/%m/%Y")
             
+            motivo = ""
+            if status == "Justificada":
+                # Chave ÚNICA para o input de motivo
+                chave_motivo = f"motivo_input_{idx}_{aluna}_{data_ch_sel}"
+                motivo = col3.text_input(
+                    "Motivo justificativa", 
+                    key=chave_motivo, 
+                    placeholder="Por que justificou?", 
+                    label_visibility="collapsed"
+                )
+            
+            # Adiciona à lista que será salva
+            registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
+
+        st.write("---")
+        
+        # 3. Botão de Salvamento (FORA DO LOOP para processar todas as alunas de uma vez)
+        if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
             novos_registros = []
             
+            # Como data_ch_sel já vem formatada do selectbox como string, usamos ela direto
             for reg in registros_chamada:
                 novos_registros.append({
-                    "Data": data_string,
+                    "Data": data_ch_sel,
                     "Aluna": reg["Aluna"],
                     "Tipo": "Chamada",
                     "Status": reg["Status"],
-                    "Observacao": reg["Motivo"],  # Salvamos o motivo aqui para a IA ler depois
-                    "Licao_Atual": "Chamada Diária",
+                    "Observacao": reg["Motivo"],
+                    "Licao_Atual": "Presença em Aula",
                     "Dificuldades": []
                 })
         
             try:
-                # 1. Salva no Supabase
+                # Salva no Supabase
                 supabase.table("historico_geral").insert(novos_registros).execute()
                 
-                # 2. Limpa o cache para a aba de Análise de IA atualizar
+                # Limpa cache para atualizar os gráficos de IA
                 st.cache_data.clear()
                 
-                st.success(f"✅ Chamada de {data_string} salva com sucesso!")
+                st.success(f"✅ Chamada de {data_ch_sel} salva com sucesso!")
                 st.balloons()
             except Exception as e:
                 st.error(f"Erro ao salvar no banco de dados: {e}")
@@ -572,6 +581,7 @@ elif perfil == "📊 Analítico IA":
                         else: st.error(f"Erro: {e}")
                 else:
                     st.error("IA indisponível no momento devido ao limite de quota.")
+
 
 
 
