@@ -612,57 +612,67 @@ elif perfil == "📊 Analítico IA":
         # Preparação dos Dados do Histórico
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=False)
-        
-        # --- [1] LÓGICA DE CONVERSA COM O RODÍZIO (FILTRADO POR SÁBADO) ---
+
+        # --- [1] LÓGICA DE CONVERSA COM O RODÍZIO (BUSCA FLEXÍVEL) ---
         proxima_aula, proxima_prof, prof_teoria = "Não encontrada", "Não definida", "Não definida"
         
         if calendario_db:
             try:
                 hoje = datetime.now().date()
-                
-                # Descobre qual é a data do próximo sábado (ou hoje, se hoje for sábado)
-                proximo_sabado_alvo = hoje + timedelta(days=(5 - hoje.weekday()) % 7)
-                
-                datas_validas = []
+                datas_no_db = []
                 for d_str in calendario_db.keys():
                     try:
-                        # Converte a chave do banco para objeto date
-                        d_dt = datetime.strptime(d_str, "%d/%m/%Y").date()
-                        
-                        # Só aceita datas que sejam SÁBADO e que sejam hoje ou futuro
-                        if d_dt.weekday() == 5 and d_dt >= hoje:
-                            datas_validas.append((d_dt, d_str))
+                        d_dt = datetime.strptime(d_str.strip(), "%d/%m/%Y").date()
+                        if d_dt >= hoje:
+                            datas_no_db.append((d_dt, d_str))
                     except: continue
                 
-                # Ordena para garantir que a data mais próxima venha primeiro
-                datas_validas.sort() 
+                datas_no_db.sort() 
 
-                if datas_validas:
-                    # Pega o primeiro sábado encontrado no banco (o mais próximo de hoje)
-                    data_escolhida_dt, data_escolhida_str = datas_validas[0]
+                if datas_no_db:
+                    # Pega a data mais próxima
+                    data_escolhida_dt, data_escolhida_str = datas_no_db[0]
                     escala_do_dia = calendario_db[data_escolhida_str]
                     
-                    # Localiza a aluna na lista de dicionários daquela data
-                    dados_escala_aluna = next((item for item in escala_do_dia if item.get('Aluna') == alu_ia), None)
+                    # BUSCA FLEXÍVEL: Compara apenas o primeiro nome ou ignora espaços
+                    # Isso evita erro se no banco estiver "Amanda S." e no selectbox "Amanda S. - Vila Verde"
+                    def comparar_nomes(nome_banco, nome_selecionado):
+                        n1 = str(nome_banco).split("-")[0].strip().lower()
+                        n2 = str(nome_selecionado).split("-")[0].strip().lower()
+                        return n1 in n2 or n2 in n1
+
+                    dados_escala_aluna = next((item for item in escala_do_dia if comparar_nomes(item.get('Aluna', ''), alu_ia)), None)
                     
                     if dados_escala_aluna:
                         proxima_aula = data_escolhida_str
                         
-                        # Extrai os horários (H2, H3, H4)
-                        h2 = dados_escala_aluna.get("09h35 (H2)", "-")
-                        h3 = dados_escala_aluna.get("10h10 (H3)", "-")
-                        h4 = dados_escala_aluna.get("10h45 (H4)", "-")
+                        # Extrai os nomes das professoras que estão nos campos de horário
+                        # No seu gerador, o texto é: "🎹 SALA 1 | Professora"
+                        h2_raw = dados_escala_aluna.get("09h35 (H2)", "-")
+                        h3_raw = dados_escala_aluna.get("10h10 (H3)", "-")
+                        h4_raw = dados_escala_aluna.get("10h45 (H4)", "-")
                         
-                        proxima_prof = f"H2: {h2} | H3: {h3} | H4: {h4}"
-                        
-                        # Identifica a aula teórica (Sala 8 ou 9)
-                        teorias = [h for h in [h2, h3, h4] if any(s in h for s in ["SALA 8", "SALA 9"])]
-                        prof_teoria = teorias[0] if teorias else "Apenas Prática/Igreja"
-                    else:
-                        proxima_aula = f"{data_escolhida_str} (Aluna não escalada)"
-            except Exception as e:
-                st.error(f"Erro ao processar rodízio: {e}")
+                        # Limpa os nomes (remove o "SALA X |") para ficar legível
+                        def limpar_nome_prof(texto):
+                            if "|" in str(texto): return str(texto).split("|")[-1].strip()
+                            return str(texto)
 
+                        p2 = limpar_nome_prof(h2_raw)
+                        p3 = limpar_nome_prof(h3_raw)
+                        p4 = limpar_nome_prof(h4_raw)
+                        
+                        proxima_prof = f"H2: {p2} | H3: {p3} | H4: {p4}"
+                        
+                        # Define quem é a teoria (SALA 8 ou 9)
+                        teorias = []
+                        if "SALA 8" in str(h2_raw) or "SALA 9" in str(h2_raw): teorias.append(f"H2 ({p2})")
+                        if "SALA 8" in str(h3_raw) or "SALA 9" in str(h3_raw): teorias.append(f"H3 ({p3})")
+                        if "SALA 8" in str(h4_raw) or "SALA 9" in str(h4_raw): teorias.append(f"H4 ({p4})")
+                        
+                        prof_teoria = " / ".join(teorias) if teorias else "Não identificada"
+            except Exception as e:
+                st.error(f"Erro técnico na busca: {e}")
+                
         # --- [2] FILTRAGEM DO HISTÓRICO PARA O DASHBOARD ---
         df_f = pd.DataFrame()
         if tipo_periodo == "Diária":
@@ -778,6 +788,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
