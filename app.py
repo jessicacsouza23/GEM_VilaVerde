@@ -613,42 +613,46 @@ elif perfil == "📊 Analítico IA":
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=False)
 
-        # --- [1] LÓGICA DE CONVERSA COM O RODÍZIO (CONEXÃO DIRETA COM DB) ---
         proxima_aula, proxima_prof, prof_teoria = "Não encontrada", "Não definida", "Não definida"
         
         if calendario_db:
             try:
-                # Ordenar as datas do calendário que são de hoje em diante
                 hoje = datetime.now().date()
-                datas_disponiveis = []
+                # 1. Extrair todas as datas que existem no banco e transformar em objetos de data reais
+                datas_validas = []
                 for d_str in calendario_db.keys():
-                    d_dt = datetime.strptime(d_str, "%d/%m/%Y").date()
-                    if d_dt >= hoje:
-                        datas_disponiveis.append((d_dt, d_str))
+                    try:
+                        d_dt = datetime.strptime(d_str, "%d/%m/%Y").date()
+                        if d_dt >= hoje:
+                            datas_validas.append((d_dt, d_str))
+                    except: continue
                 
-                datas_disponiveis.sort() # Pega a mais próxima primeiro
+                # 2. Ordenar para pegar a data mais próxima (futura)
+                datas_validas.sort() 
 
-                for d_dt, d_str in datas_disponiveis:
-                    escala_do_dia = calendario_db[d_str]
-                    # Busca a aluna na escala (escala_do_dia é uma lista de dicts)
+                if datas_validas:
+                    data_escolhida_dt, data_escolhida_str = datas_validas[0]
+                    escala_do_dia = calendario_db[data_escolhida_str]
+                    
+                    # 3. Localizar a aluna dentro da lista de dicionários daquele dia
+                    # Como o 'escala' é uma lista de dicts: [{'Aluna': '...', '09h35...': '...'}, ...]
                     dados_escala_aluna = next((item for item in escala_do_dia if item.get('Aluna') == alu_ia), None)
                     
                     if dados_escala_aluna:
-                        proxima_aula = d_str
-                        # Mapeamento conforme seus horários
-                        h2 = dados_escala_aluna.get('09h35 (H2)', '-')
-                        h3 = dados_escala_aluna.get('10h10 (H3)', '-')
-                        h4 = dados_escala_aluna.get('10h45 (H4)', '-')
+                        proxima_aula = data_escolhida_str
+                        
+                        # Captura os textos de cada horário
+                        h2 = dados_escala_aluna.get("09h35 (H2)", "-")
+                        h3 = dados_escala_aluna.get("10h10 (H3)", "-")
+                        h4 = dados_escala_aluna.get("10h45 (H4)", "-")
+                        
                         proxima_prof = f"H2: {h2} | H3: {h3} | H4: {h4}"
                         
-                        # Tenta identificar qual dessas é a de Teoria (Sala 8/9)
-                        prof_teoria = "Ver detalhes nos horários acima"
-                        for h in [h2, h3, h4]:
-                            if "SALA 8" in h or "SALA 9" in h:
-                                prof_teoria = h
-                        break
+                        # Identifica qual professor/sala é de teoria/solfejo
+                        teorias = [h for h in [h2, h3, h4] if "SALA 8" in h or "SALA 9" in h]
+                        prof_teoria = teorias[0] if teorias else "Apenas Prática/Igreja"
             except Exception as e:
-                st.error(f"Erro ao ler rodízio: {e}")
+                st.error(f"Erro ao processar rodízio: {e}")
 
         # --- [2] FILTRAGEM DO HISTÓRICO PARA O DASHBOARD ---
         df_f = pd.DataFrame()
@@ -765,6 +769,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
