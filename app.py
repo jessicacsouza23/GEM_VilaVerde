@@ -622,7 +622,53 @@ elif perfil == "📊 Analítico IA":
             if st.button("🔄 Gerar Nova (Atualizar com IA)"):
                 # Se clicar aqui, ele ignora o cache e força a IA a rodar (cuidado com a cota!)
                 analise_existente = None 
+                
+# --- 🔄 LÓGICA DE RODÍZIO FILTRADA (PROTEGIDA) ---
+st.markdown("---")
+st.subheader("🔄 Informação de Transferência")
 
+# 1. Garantimos que a variável 'alu_ia' existe antes de prosseguir
+if 'alu_ia' in locals() or 'alu_ia' in globals():
+    proxima_aula = "Não agendada"
+    proxima_prof = "Não definida"
+
+    if calendario_raw:
+        try:
+            cal_df = pd.DataFrame(calendario_raw)
+            # Converte 'id' (data) para objeto de data para comparar
+            cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
+            
+            # Pega apenas datas futuras ou hoje
+            hoje_ref = datetime.now().date()
+            futuros = cal_df[cal_df['dt_format'] >= hoje_ref].sort_values('dt_format')
+            
+            if not futuros.empty:
+                proxima_aula = futuros.iloc[0]['id']
+                escala_bruta = futuros.iloc[0]['escala']
+                
+                # Se a escala for uma lista de dicionários (o seu caso)
+                if isinstance(escala_bruta, list):
+                    # Procuramos a aluna selecionada dentro da lista da secretaria
+                    dados_aluna = next((item for item in escala_bruta if item.get('Aluna') == alu_ia), None)
+                    
+                    if dados_aluna:
+                        h2 = dados_aluna.get('09h35 (H2)', 'N/A')
+                        h3 = dados_aluna.get('10h10 (H3)', 'N/A')
+                        h4 = dados_aluna.get('10h45 (H4)', 'N/A')
+                        proxima_prof = f"**H2:** {h2} | **H3:** {h3} | **H4:** {h4}"
+                    else:
+                        proxima_prof = "Aluna não encontrada na escala desta data."
+                else:
+                    proxima_prof = "Escala não está no formato de lista esperado."
+        except Exception as e:
+            proxima_prof = f"Erro ao processar escala: {e}"
+
+    # Exibição Final
+    st.info(f"📍 **Próxima Aula:** {proxima_aula}")
+    st.success(f"👩‍🏫 **Escala de {alu_ia}:** {proxima_prof}")
+else:
+    st.warning("⚠️ Selecione uma aluna acima para visualizar a escala de rodízio.")
+        
         # Se não existe análise ou se pediu para atualizar
         if not analise_existente:
             if st.button("✨ GERAR ANÁLISE COMPLETA (IA)"):
@@ -669,57 +715,13 @@ elif perfil == "📊 Analítico IA":
                             st.error(f"Erro: {e}")
 
 
-# --- 🔄 LÓGICA DE RODÍZIO FILTRADA (PROTEGIDA) ---
-st.markdown("---")
-st.subheader("🔄 Informação de Transferência")
-
-# 1. Garantimos que a variável 'alu_ia' existe antes de prosseguir
-if 'alu_ia' in locals() or 'alu_ia' in globals():
-    proxima_aula = "Não agendada"
-    proxima_prof = "Não definida"
-
-    if calendario_raw:
-        try:
-            cal_df = pd.DataFrame(calendario_raw)
-            # Converte 'id' (data) para objeto de data para comparar
-            cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
-            
-            # Pega apenas datas futuras ou hoje
-            hoje_ref = datetime.now().date()
-            futuros = cal_df[cal_df['dt_format'] >= hoje_ref].sort_values('dt_format')
-            
-            if not futuros.empty:
-                proxima_aula = futuros.iloc[0]['id']
-                escala_bruta = futuros.iloc[0]['escala']
-                
-                # Se a escala for uma lista de dicionários (o seu caso)
-                if isinstance(escala_bruta, list):
-                    # Procuramos a aluna selecionada dentro da lista da secretaria
-                    dados_aluna = next((item for item in escala_bruta if item.get('Aluna') == alu_ia), None)
-                    
-                    if dados_aluna:
-                        h2 = dados_aluna.get('09h35 (H2)', 'N/A')
-                        h3 = dados_aluna.get('10h10 (H3)', 'N/A')
-                        h4 = dados_aluna.get('10h45 (H4)', 'N/A')
-                        proxima_prof = f"**H2:** {h2} | **H3:** {h3} | **H4:** {h4}"
-                    else:
-                        proxima_prof = "Aluna não encontrada na escala desta data."
-                else:
-                    proxima_prof = "Escala não está no formato de lista esperado."
-        except Exception as e:
-            proxima_prof = f"Erro ao processar escala: {e}"
-
-    # Exibição Final
-    st.info(f"📍 **Próxima Aula:** {proxima_aula}")
-    st.success(f"👩‍🏫 **Escala de {alu_ia}:** {proxima_prof}")
-else:
-    st.warning("⚠️ Selecione uma aluna acima para visualizar a escala de rodízio.")
 
 
 with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
