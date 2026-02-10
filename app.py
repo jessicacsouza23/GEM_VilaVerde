@@ -249,14 +249,43 @@ if perfil == "🏠 Secretaria":
             col1.write(f"**{aluna}**")
             status = col2.radio(f"Status {aluna}", ["Presente", "Falta", "Justificada"], index=0 if presenca_padrao else 1, key=f"status_{aluna}_{data_ch_sel}", horizontal=True, label_visibility="collapsed")
             motivo = ""
-            if status == "Justificada":
-                motivo = col3.text_input(f"Motivo justificativa", key=f"motivo_{aluna}_{data_ch_sel}", placeholder="Informe o motivo...", label_visibility="collapsed")
-            registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
+            # --- LÓGICA DA CHAMADA ---
+        if status == "Justificada":
+            motivo = col3.text_input(f"Motivo justificativa", key=f"motivo_{aluna}_{data_ch_sel}", placeholder="Informe o motivo...", label_visibility="collapsed")
+        else:
+            motivo = "" # Garante que a variável exista mesmo se não for justificada
+            
+        registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
         
         if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
+            novos_registros = []
             for reg in registros_chamada:
-                st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": reg["Aluna"], "Tipo": "Chamada", "Status": reg["Status"], "Motivo": reg["Motivo"]})
-            st.success(f"Chamada de {data_ch_sel} salva!")
+                # Criamos o dicionário no formato que o seu banco Supabase aceita
+                dado_formatado = {
+                    "Data": data_ch_sel.strftime("%d/%m/%Y"),
+                    "Aluna": reg["Aluna"],
+                    "Tipo": "Chamada",
+                    "Status": reg["Status"],
+                    "Observacao": reg["Motivo"], # Usamos 'Observacao' para bater com a análise de IA
+                    "Licao_Atual": "N/A",
+                    "Dificuldades": []
+                }
+                novos_registros.append(dado_formatado)
+            
+            try:
+                # 1. SALVA NO BANCO DE DADOS (SUPABASE)
+                supabase.table("historico_geral").insert(novos_registros).execute()
+                
+                # 2. ATUALIZA A MEMÓRIA LOCAL (SESSION STATE)
+                if "historico_geral" not in st.session_state:
+                    st.session_state.historico_geral = []
+                st.session_state.historico_geral.extend(novos_registros)
+                
+                st.success(f"✅ Chamada de {data_ch_sel.strftime('%d/%m/%Y')} salva no banco de dados!")
+                st.cache_data.clear() # Limpa o cache para a análise de IA ler os dados novos
+            except Exception as e:
+                st.error(f"Erro ao salvar no banco: {e}")
+        
    
     with tab_lição:
         st.subheader("📝 Controle de Lições e Pendências")
@@ -528,4 +557,5 @@ elif perfil == "📊 Analítico IA":
                         else: st.error(f"Erro: {e}")
                 else:
                     st.error("IA indisponível no momento devido ao limite de quota.")
+
 
