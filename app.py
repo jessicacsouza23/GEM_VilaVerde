@@ -9,30 +9,33 @@ import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 
-# --- CONFIGURAÇÃO DA IA (RESOLUÇÃO 404 DEFINITIVA) ---
+# --- CONFIGURAÇÃO DA IA (MODO AUTO-DETECÇÃO) ---
 def inicializar_ia():
     try:
         if "GOOGLE_API_KEY" not in st.secrets:
-            return None, "Chave não configurada nos Secrets."
+            return None, "Chave não encontrada nos Secrets."
         
-        api_key = st.secrets["GOOGLE_API_KEY"]
-        genai.configure(api_key=api_key)
+        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
         
-        # Usando o caminho completo para evitar erro de versão da API
-        modelo = genai.GenerativeModel('models/gemini-1.5-flash')
+        # Procura automaticamente um modelo que suporte geração de conteúdo
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                modelo_nome = m.name
+                modelo = genai.GenerativeModel(modelo_nome)
+                # Teste rápido
+                modelo.generate_content("oi", generation_config={"max_output_tokens": 1})
+                return modelo, f"Conectado ({modelo_nome})"
         
-        # Teste de conexão
-        modelo.generate_content("teste", generation_config={"max_output_tokens": 1})
-        return modelo, "Sucesso"
+        return None, "Nenhum modelo compatível encontrado na sua conta."
     except Exception as e:
         return None, str(e)
 
-model, msg_erro_ia = inicializar_ia()
+model, status_ia = inicializar_ia()
 
 if model is None:
-    st.sidebar.error(f"⚠️ IA Desconectada: {msg_erro_ia}")
+    st.sidebar.error(f"⚠️ IA Desconectada: {status_ia}")
 else:
-    st.sidebar.success("🚀 IA Conectada (v1 Estável)")
+    st.sidebar.success(f"🚀 IA Ativa: {status_ia}")
     
 # Conexão Supabase
 SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
@@ -516,3 +519,4 @@ elif perfil == "📊 Analítico IA":
                         st.download_button("📥 Baixar Relatório", response.text, f"Relatorio_{alu_ia}.txt")
                     except Exception as e:
                         st.error(f"Erro na IA: {e}")
+
