@@ -594,90 +594,99 @@ elif perfil == "📊 Analítico IA":
         with c2:
             tipo_periodo = st.radio("Período:", ["Diária", "Mensal", "Bimestral", "Semestral", "Geral"], horizontal=True)
 
-        # Preparação dos Dados
+        # Preparação dos Dados do Histórico
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=False)
 
-        # Filtro de Data Dinâmico
+        # --- [1] LÓGICA DE CONVERSA COM O RODÍZIO (CONVERTENDO DATAS) ---
+        proxima_aula, proxima_prof, prof_teoria = "Não encontrada", "Não definida", "Não definida"
+        
+        # Tentamos ler o calendário_raw que vem da página de planejamento
+        if 'calendario_raw' in locals() and calendario_raw:
+            try:
+                # Criamos um dataframe temporário da escala
+                cal_df = pd.DataFrame(calendario_raw)
+                
+                # Normalizamos a data do ID (ex: '14/02/2026') para objeto de data
+                cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
+                
+                # Filtramos apenas datas de HOJE para frente
+                hoje = datetime.now().date()
+                futuros = cal_df[cal_df['dt_format'] >= hoje].sort_values('dt_format')
+                
+                if not futuros.empty:
+                    # Varremos os dias futuros para encontrar a aluna na escala
+                    for _, row in futuros.iterrows():
+                        escala_dia = row.get('escala', [])
+                        
+                        # Procuramos a linha da aluna selecionada
+                        dados_escala_aluna = next((item for item in escala_dia if item.get('Aluna') == alu_ia), None)
+                        
+                        if dados_escala_aluna:
+                            proxima_aula = row['id'] # Mantém o formato string '14/02/2026'
+                            
+                            # Mapeamento de Horários Individual
+                            h2 = dados_escala_aluna.get('09h35 (H2)', '-')
+                            h3 = dados_escala_aluna.get('10h10 (H3)', '-')
+                            h4 = dados_escala_aluna.get('10h45 (H4)', '-')
+                            proxima_prof = f"H2: {h2} | H3: {h3} | H4: {h4}"
+                            
+                            # Mapeamento de Aula em Grupo (Teoria) - Geralmente H1
+                            prof_teoria = dados_escala_aluna.get('09h00 (H1)', 'Não definida')
+                            break # Encontrou a primeira aula futura, para de procurar
+            except Exception as e:
+                st.error(f"Erro ao sincronizar rodízio: {e}")
+
+        # --- [2] FILTRAGEM DO HISTÓRICO PARA O DASHBOARD ---
         df_f = pd.DataFrame()
         if tipo_periodo == "Diária":
             datas_h = sorted(df_aluna['dt_obj'].unique(), reverse=True)
-            dia_sel = st.date_input("Consultar data:", value=datas_h[0] if datas_h else datetime.now().date())
+            dia_sel = st.date_input("Consultar data do histórico:", value=datas_h[0] if datas_h else datetime.now().date())
             df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
         else:
             df_f = df_aluna 
 
-        # --- [1] BUSCA DO RODÍZIO E PROFESSORAS (INDIVIDUAL E GRUPO) ---
-        proxima_aula, proxima_prof, prof_teoria = "Não definida", "Não definida", "Não definida"
-        if 'calendario_raw' in locals() and calendario_raw:
-            try:
-                cal_df = pd.DataFrame(calendario_raw)
-                cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
-                futuros = cal_df[cal_df['dt_format'] >= datetime.now().date()].sort_values('dt_format')
-                
-                if not futuros.empty:
-                    for _, row in futuros.iterrows():
-                        escala = row.get('escala', [])
-                        dados_aluna = next((item for item in escala if item.get('Aluna') == alu_ia), None)
-                        
-                        if dados_aluna:
-                            proxima_aula = row['id']
-                            # Individual (H2, H3, H4)
-                            h2 = dados_aluna.get('09h35 (H2)', '-')
-                            h3 = dados_aluna.get('10h10 (H3)', '-')
-                            h4 = dados_aluna.get('10h45 (H4)', '-')
-                            proxima_prof = f"H2: {h2} | H3: {h3} | H4: {h4}"
-                            
-                            # Grupo (Teoria/Solfejo - Geralmente H1 ou campo específico)
-                            prof_teoria = dados_aluna.get('09h00 (H1)', 'Coletiva/Teoria')
-                            break
-            except: pass
-
-        if df_f.empty:
-            st.warning(f"Sem registros para {alu_ia} no período selecionado.")
+        # --- [3] DASHBOARD VISUAL (IGUAL À IMAGEM) ---
+        if df_f.empty and proxima_aula == "Não encontrada":
+            st.warning(f"Sem dados para {alu_ia}. Verifique se o nome está correto no rodízio e no histórico.")
         else:
-            # --- [2] DASHBOARD DE PREVIEW ---
             st.markdown(f"### 📜 Consolidação Pedagógica - {alu_ia}")
             
-            # Métricas corrigidas (realizadas no plural)
+            # Métricas
             total_aulas = len(df_f)
             realizadas = len(df_f[df_f['Status'].isin(["Realizada", "Corrigido", "OK", "Realizadas - sem pendência"])])
             faltas = len(df_f[df_f['Status'].isin(["Falta", "Faltou"])])
             freq = (1 - (faltas/total_aulas)) * 100 if total_aulas > 0 else 0
 
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Média de Evolução", "8.5" if realizadas > 0 else "0.0")
+            m1.metric("Média Evolução", "8.5" if realizadas > 0 else "---")
             m2.metric("Total Aulas", total_aulas)
             m3.metric("Frequência", f"{freq:.0f}%")
-            m4.metric("Próxima Aula", proxima_aula)
+            m4.metric("Próximo Rodízio", proxima_aula)
 
-            # --- [3] PARECER TÉCNICO ---
-            st.markdown("#### 📝 Resumo das Dificuldades e Observações")
+            # Boxes de Dificuldades (Dados Reais)
+            st.markdown("#### 📝 Parecer Técnico Prévio")
             todas_difs = [d for sub in df_f['Dificuldades'].dropna() for d in (sub if isinstance(sub, list) else [sub])]
             
             c_post, c_rit = st.columns(2)
             with c_post:
-                st.markdown(f"""<div style="background-color: #fff0f0; padding: 15px; border-radius: 10px; border-left: 5px solid #ff4b4b; min-height: 120px;">
+                st.markdown(f"""<div style="background-color: #fff0f0; padding: 15px; border-radius: 10px; border-left: 5px solid #ff4b4b; min-height: 100px;">
                 <b style="color: #ff4b4b;">🎹 Postura e Técnica:</b><br>
-                <small>{' • '.join(set([d for d in todas_difs if d in ["Postura Incorreta", "Mão Tensa", "Dedilhado", "Articulação"]])) or "Sem intercorrências técnicas."}</small>
+                <small>{' • '.join(set([d for d in todas_difs if d in ["Postura Incorreta", "Mão Tensa", "Dedilhado", "Articulação"]])) or "Sem pendências técnicas."}</small>
                 </div>""", unsafe_allow_html=True)
 
             with c_rit:
-                st.markdown(f"""<div style="background-color: #ffffec; padding: 15px; border-radius: 10px; border-left: 5px solid #f1c40f; min-height: 120px;">
+                st.markdown(f"""<div style="background-color: #ffffec; padding: 15px; border-radius: 10px; border-left: 5px solid #f1c40f; min-height: 100px;">
                 <b style="color: #d4ac0d;">📖 Ritmo e Teoria:</b><br>
-                <small>{' • '.join(set([d for d in todas_difs if d in ["Erros de Ritmo", "Solfejo", "Teoria", "Métrica Incorreta"]])) or "Desenvolvimento teórico regular."}</small>
+                <small>{' • '.join(set([d for d in todas_difs if d in ["Erros de Ritmo", "Solfejo", "Teoria", "Métrica Incorreta"]])) or "Conceitos teóricos em dia."}</small>
                 </div>""", unsafe_allow_html=True)
-
-            dica_texto = df_f.iloc[0].get('Licao_Casa', "Focar na fixação dos exercícios atuais.")
-            if not dica_texto or dica_texto == "None": dica_texto = "Revisar conteúdo da última aula."
-            st.info(f"💡 **Dica Pedagógica Imediata:** {dica_texto}")
 
             # --- [4] GRÁFICOS ---
             st.divider()
             g1, g2 = st.columns(2)
             with g1:
-                fig_p = px.pie(df_f, names='Tipo', hole=0.4, title="Áreas Focadas")
-                st.plotly_chart(fig_p, use_container_width=True)
+                fig_p = px.pie(df_f, names='Tipo', hole=0.4, title="Áreas Focadas") if not df_f.empty else None
+                if fig_p: st.plotly_chart(fig_p, use_container_width=True)
             with g2:
                 difs_limpas = [d for d in todas_difs if d not in ["Não apresentou dificuldades", "None"]]
                 if difs_limpas:
@@ -686,16 +695,12 @@ elif perfil == "📊 Analítico IA":
                     fig_b = px.bar(df_d, x='Qtd', y='Dificuldade', orientation='h', title="Top Dificuldades", color='Qtd')
                     st.plotly_chart(fig_b, use_container_width=True)
 
-            # --- [5] ENCAMINHAMENTO E RODÍZIO ---
-            with st.expander("📬 Destinatários do Relatório (Próximo Rodízio)", expanded=True):
-                st.markdown(f"""
-                **Este relatório deve ser encaminhado para:**
-                * **Aulas Individuais:** {proxima_prof}
-                * **Aula em Grupo (Teoria):** {prof_teoria}
-                * **Coordenação:** Para arquivamento na ficha da aluna.
-                
-                *Obs: As metas abaixo serão geradas pela IA focando especificamente nestas instrutoras.*
-                """)
+            # --- [5] ENCAMINHAMENTO (A "CONVERSA" COM O RODÍZIO) ---
+            with st.expander("📬 Para quem encaminhar este relatório?", expanded=True):
+                st.write(f"**Data da Próxima Escala:** {proxima_aula}")
+                col_e1, col_e2 = st.columns(2)
+                col_e1.warning(f"👩‍🏫 **Professoras Individual:**\n\n{proxima_prof}")
+                col_e2.info(f"👥 **Professora Teoria/Grupo:**\n\n{prof_teoria}")
 
             # --- [6] ANÁLISE IA CONGELADA ---
             st.divider()
@@ -706,38 +711,44 @@ elif perfil == "📊 Analítico IA":
                     return res.data[0] if res.data else None
                 except: return None
 
-            analise_congelada = buscar_analise(alu_ia, tipo_periodo)
+            analise_salva = buscar_analise(alu_ia, tipo_periodo)
 
-            if analise_congelada:
-                st.success(f"✅ Análise IA Congelada ({analise_congelada['data_geracao'][:10]})")
-                st.markdown(analise_congelada['conteudo'])
-                if st.button("🔄 Dados mudaram? Gerar Novo Relatório"):
-                    analise_congelada = None
+            if analise_salva:
+                st.success(f"✅ Análise Carregada (Congelada em {analise_salva['data_geracao'][:10]})")
+                st.markdown(analise_salva['conteudo'])
+                if st.button("🔄 Gerar Nova Análise (Os dados mudaram)"):
+                    analise_salva = None
 
-            if not analise_congelada:
+            if not analise_salva:
                 if st.button("✨ GERAR RELATÓRIO PEDAGÓGICO COMPLETO (IA)"):
-                    with st.spinner("IA processando dados..."):
+                    with st.spinner("IA consolidando histórico + rodízio..."):
                         try:
-                            dados_contexto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
+                            contexto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
                             prompt = f"""
-                            Aja como Coordenadora Pedagógica Master. Aluna: {alu_ia}.
+                            Aja como Coordenadora Pedagógica Master. Gere um relatório para {alu_ia}.
+                            
+                            DADOS DO HISTÓRICO:
+                            {contexto}
+                            
+                            DADOS DO PRÓXIMO RODÍZIO ({proxima_aula}):
+                            Individual: {proxima_prof} | Teoria: {prof_teoria}
+                            
                             ESTRUTURA:
                             ## 🎹 1. POSTURA E TÉCNICA
                             ## 🥁 2. RITMO E MÉTRICA
                             ## 📖 3. TEORIA E DESENVOLVIMENTO
                             ## 🏠 4. RESUMO DA SECRETARIA (Frequência: {freq:.0f}%)
                             ## 🎯 5. METAS PARA A PRÓXIMA AULA ({proxima_aula})
-                            Encaminhar metas para: {proxima_prof} e {prof_teoria}.
+                            (Especifique o que {proxima_prof} e {prof_teoria} devem cobrar)
                             ## 🏛️ 6. DICAS PARA A BANCA SEMESTRAL
-                            DADOS: {dados_contexto}
                             """
                             res_ia = model.generate_content(prompt)
                             supabase.table("analises_congeladas").insert({
-                                "aluna": alu_ia, "periodo": tipo_periodo, "conteudo": res_ia.text
+                                "aluna": aluna_ia, "periodo": tipo_periodo, "conteudo": res_ia.text
                             }).execute()
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Erro na IA: {e}")
+                            st.error(f"Erro IA: {e}")
 
 # --- FIM DO MÓDULO ---
 
@@ -745,4 +756,5 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
