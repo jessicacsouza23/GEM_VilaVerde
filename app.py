@@ -9,31 +9,26 @@ import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 
-# --- CONFIGURAÇÃO DA IA (MODO COMPATIBILIDADE TOTAL) ---
+# --- CONFIGURAÇÃO DA IA (VERSÃO SIMPLIFICADA) ---
+# Tenta pegar a chave do painel Secrets do Streamlit
 if "GOOGLE_API_KEY" in st.secrets:
     GENAI_KEY = st.secrets["GOOGLE_API_KEY"]
 else:
-    GENAI_KEY = "SUA_CHAVE_AQUI" # Se não usar Secrets, cole aqui
+    # SE NÃO USAR SECRETS, COLE SUA CHAVE ENTRE AS ASPAS ABAIXO:
+    GENAI_KEY = "COLE_AQUI_SUA_CHAVE_SEM_ESPAÇOS"
 
-genai.configure(api_key=GENAI_KEY)
-
-# Lista de modelos por ordem de prioridade
-modelos_para_testar = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
-
-@st.cache_resource
-def carregar_modelo_ia():
-    for nome_modelo in modelos_para_testar:
-        try:
-            m = genai.GenerativeModel(nome_modelo)
-            # Teste rápido para ver se o modelo responde
-            m.generate_content("teste", generation_config={"max_output_tokens": 1})
-            return m
-        except:
-            continue
-    return None
-
-model = carregar_modelo_ia()
-
+if GENAI_KEY and GENAI_KEY != "COLE_AQUI_SUA_CHAVE_SEM_ESPAÇOS":
+    try:
+        genai.configure(api_key=GENAI_KEY)
+        # O nome oficial e mais atual da API v1 estável:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+    except Exception as e:
+        st.error(f"Erro na configuração da IA: {e}")
+        model = None
+else:
+    st.error("⚠️ Chave API não encontrada! Configure no painel Secrets do Streamlit ou cole no código.")
+    model = None
+    
 # Conexão Supabase
 SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
 SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
@@ -495,28 +490,34 @@ elif perfil == "📊 Analítico IA":
             st.divider()
 
             # --- 🚀 BOTÃO GERADOR DE RELATÓRIO ---
-            if st.button("✨ GERAR ANÁLISE PEDAGÓGICA COMPLETA"):
-                with st.spinner(f"Usando {model.model_name} para analisar as 13 seções..."):
-                    dados_ia = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
-                    
-                    prompt = f"""
-                    Você é uma Coordenadora Pedagógica Master de Órgão Eletrônico.
-                    Analise o histórico da aluna {alu_ia} e gere o RELATÓRIO COMPLETO DE 13 SEÇÕES.
-                    
-                    DADOS:
-                    {dados_ia}
-                    
-                    Lembre-se de separar as dificuldades por: Postura, Técnica, Ritmo e Teoria. 
-                    Dê dicas para a próxima aula e para a banca semestral.
-                    """
-                    
-                    try:
-                        response = model.generate_content(prompt)
-                        st.markdown("### 📝 Relatório Analítico Final")
-                        st.markdown(response.text)
-                        st.download_button("📥 Baixar Relatório", response.text, f"Relatorio_{alu_ia}.txt")
-                    except Exception as e:
-                        st.error(f"Erro na geração do texto: {e}")
+            if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
+                if model:
+                    with st.spinner("Analisando dados..."):
+                        # Pegamos os dados e transformamos em texto simples
+                        dados_brutos = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_csv(index=False)
+                        
+                        prompt_ia = f"""
+                        Você é uma Coordenadora Pedagógica de Órgão Eletrônico. 
+                        Analise os dados abaixo da aluna {alu_ia} e gere um relatório técnico de 13 seções.
+                        DADOS:
+                        {dados_brutos}
+                        """
+                        
+                        try:
+                            # Chamada simplificada
+                            response = model.generate_content(prompt_ia)
+                            
+                            st.markdown("---")
+                            st.subheader("📝 Relatório Analítico Final")
+                            st.markdown(response.text)
+                            
+                            st.download_button("📥 Baixar Relatório", response.text, f"Relatorio_{alu_ia}.txt")
+                        except Exception as e:
+                            st.error(f"Erro ao gerar conteúdo: {e}")
+                            st.info("Verifique se sua chave tem permissão para o modelo 'gemini-1.5-flash'.")
+                else:
+                    st.error("Modelo de IA não carregado. Verifique a chave API.")
+
 
 
 
