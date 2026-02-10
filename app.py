@@ -12,10 +12,17 @@ import google.generativeai as genai
 # --- CONFIGURAÇÃO DA API (Substitua pela sua chave) ---
 st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
 
-# Substitua pela sua chave real do Google AI Studio
-GENAI_KEY = st.secrets["GOOGLE_API_KEY"]
+# --- CONFIGURAÇÃO DA API CORRIGIDA ---
+try:
+    GENAI_KEY = st.secrets["GOOGLE_API_KEY"] # Recomendado usar Secrets do Streamlit
+except:
+    GENAI_KEY = "SUA_CHAVE_AQUI_CASO_NAO_USE_SECRETS"
+
 genai.configure(api_key=GENAI_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Use este nome de modelo exato para evitar o erro 404
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
 
 # Conexão Supabase
 SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
@@ -527,4 +534,5 @@ elif perfil == "📊 Analítico IA":
                         st.download_button("Baixar Análise Congelada", response.text, f"Analise_{aluna_analise}.txt")
                     except Exception as e:
                         st.error(f"Erro ao processar IA: {e}")
+
 
