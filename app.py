@@ -336,13 +336,12 @@ elif perfil == "👩‍🏫 Professora":
                 local_info = atendimento[h_sel]
                 st.success(f"📍 {local_info} | 👤 Aluna: {aluna_atual}")
 
-                # Lógica de formulário por Sala
                 if "SALA 8" in local_info:
-                    tipo, difs, label_lic = "Teoria", DIF_TEORIA, "Desempenho Teoria"
+                    tipo, dif_lista, label_lic = "Teoria", DIF_TEORIA, "Desempenho Teoria"
                 elif "SALA 9" in local_info:
-                    tipo, difs, label_lic = "Solfejo", DIF_SOLFEJO, "Desempenho Solfejo"
+                    tipo, dif_lista, label_lic = "Solfejo", DIF_SOLFEJO, "Desempenho Solfejo"
                 else:
-                    tipo, difs, label_lic = "Prática", DIF_PRATICA, "Prática Instrumental"
+                    tipo, dif_lista, label_lic = "Prática", DIF_PRATICA, "Prática Instrumental"
 
                 with st.form("f_aula_prof", clear_on_submit=True):
                     st.subheader(f"Controle de {tipo}")
@@ -350,31 +349,44 @@ elif perfil == "👩‍🏫 Professora":
                     lic_vol = st.selectbox(f"{label_lic} - Lição/Volume:", OPCOES_LICOES_NUM)
                     if lic_vol == "Outro": lic_vol = st.text_input("Especifique a Lição:")
                     
-                    difs_selected = st.multiselect("Dificuldades:", difs)
-                    obs_aula = st.text_area("Observações:")
+                    # --- DIFICULDADES COM CHECKBOX (Organizado em colunas) ---
+                    st.markdown("**Dificuldades Detectadas:**")
+                    cols_check = st.columns(2)
+                    difs_selecionadas = []
+                    
+                    for i, d in enumerate(dif_lista):
+                        target_col = cols_check[0] if i < len(dif_lista)/2 else cols_check[1]
+                        if target_col.checkbox(d, key=f"check_{i}"):
+                            difs_selecionadas.append(d)
+                    
+                    obs_aula = st.text_area("Observações Técnicas:")
                     
                     st.divider()
                     st.subheader("Lição de Casa")
                     if tipo == "Prática":
-                        c_v, c_a = st.columns(2)
-                        casa_v = c_v.selectbox("Lição de casa - Volume prática:", ["Nenhum"] + OPCOES_LICOES_NUM)
-                        casa_a = c_a.text_input("Lição de casa - Apostila:")
+                        col_v, col_a = st.columns(2)
+                        casa_v = col_v.selectbox("Lição de casa - Volume prática:", ["Nenhum"] + OPCOES_LICOES_NUM)
+                        casa_a = col_a.text_input("Lição de casa - Apostila:")
                         casa_f = f"Vol: {casa_v} | Apo: {casa_a}"
                     else:
                         casa_f = st.text_input("Lição de casa:")
 
                     if st.form_submit_button("❄️ CONGELAR E SALVAR AULA"):
-                        db_save_historico({
-                            "Aluna": aluna_atual, "Tipo": f"Aula_{tipo}", "Data": data_prof_str,
-                            "Instrutora": instr_sel, "Licao_Atual": lic_vol, "Dificuldades": difs_selected,
-                            "Observacao": obs_aula, "Licao_Casa": casa_f
-                        })
-                        st.success("Salvo com sucesso!")
-                        st.balloons()
+                        # Validação mínima
+                        if not difs_selecionadas:
+                            st.warning("Por favor, selecione ao menos uma opção em 'Dificuldades' (mesmo que seja 'Não apresentou dificuldades').")
+                        else:
+                            db_save_historico({
+                                "Aluna": aluna_atual, "Tipo": f"Aula_{tipo}", "Data": data_prof_str,
+                                "Instrutora": instr_sel, "Licao_Atual": lic_vol, "Dificuldades": difs_selecionadas,
+                                "Observacao": obs_aula, "Licao_Casa": casa_f
+                            })
+                            st.success("✅ Registro salvo com sucesso!")
+                            st.balloons()
             else:
-                st.warning("Nenhuma aluna escalada para você neste horário.")
+                st.warning("Nenhuma aluna encontrada na sua escala para este horário.")
         else:
-            st.error("Rodízio não encontrado para esta data.")
+            st.error("Rodízio não encontrado no sistema para esta data.")
             
 # ==========================================
 # MÓDULO ANALÍTICO IA
@@ -413,6 +425,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
