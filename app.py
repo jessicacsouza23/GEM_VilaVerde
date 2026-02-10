@@ -147,6 +147,17 @@ def filtrar_por_periodo(df, periodo):
     elif periodo == "Semestre": return df[df['dt_obj'] >= (hoje - timedelta(days=180))]
     elif periodo == "Ano": return df[df['dt_obj'] >= (hoje - timedelta(days=365))]
     return df # Geral
+
+def carregar_planejamento():
+    try:
+        # Busca o registro mais recente do planejamento
+        res = supabase.table("planejamento").select("*").order("created_at", descending=True).limit(1).execute()
+        if res.data:
+            # Retorna a coluna onde você guarda o JSON da escala
+            return res.data[0]['dados_escala'] 
+        return []
+    except:
+        return []
     
 historico_geral = db_get_historico()
 calendario_db = db_get_calendario()
@@ -752,6 +763,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
