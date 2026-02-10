@@ -173,33 +173,60 @@ if perfil == "🏠 Secretaria":
 
     with tab_lição:
         st.subheader("📝 Controle de Lições (Secretaria)")
-        with st.form("f_controle_licoes", clear_on_submit=True):
-            data_aula = st.date_input("Data da aula:", datetime.now())
-            sec_resp = st.selectbox("Secretária responsável:", SECRETARIAS_LISTA)
-            alu_sel = st.selectbox("Aluna:", ALUNAS_LISTA)
-            
-            st.divider()
-            c1, c2 = st.columns([1, 2])
-            cat_sel = c1.radio("Categoria:", CATEGORIAS_LICAO)
-            detalhe_licao = c2.text_input("Lição / Página:", placeholder="Ex: Lição 02 a 10, pág 15")
-            
-            st.divider()
-            status_sel = st.radio("Status das Lições:", STATUS_LICAO, horizontal=True)
-            obs_liçao = st.text_area("Observações Adicionais:")
-            
-            if st.form_submit_button("❄️ CONGELAR CONTROLE DE LIÇÃO"):
-                dados_licao = {
-                    "Aluna": alu_sel,
-                    "Tipo": "Controle_Licao",
-                    "Data": data_aula.strftime("%d/%m/%Y"),
-                    "Secretaria": sec_resp,
-                    "Categoria": cat_sel,
-                    "Licao_Detalhe": detalhe_licao, # NOVO CAMPO
-                    "Status": status_sel,
-                    "Observacao": obs_liçao
-                }
-                db_save_historico(dados_licao)
-                st.success(f"Registro de {alu_sel} salvo com sucesso!")
+        
+        # Seleção de Aluna FORA do form para habilitar a busca instantânea de pendências
+        alu_sel = st.selectbox("Selecione a Aluna:", ["Selecione..."] + ALUNAS_LISTA)
+        
+        if alu_sel != "Selecione...":
+            # --- BUSCA DE PENDÊNCIAS ---
+            df_historico = pd.DataFrame(historico_geral)
+            if not df_historico.empty:
+                pendencias = df_historico[
+                    (df_historico["Aluna"] == alu_sel) & 
+                    (df_historico["Tipo"] == "Controle_Licao") & 
+                    (df_historico["Status"].isin(["Realizada - devolvida para refazer", "Não realizada"]))
+                ]
+                
+                if not pendencias.empty:
+                    st.error(f"⚠️ **PENDÊNCIAS ENCONTRADAS PARA {alu_sel.split(' - ')[0]}:**")
+                    for idx, row in pendencias.iterrows():
+                        st.markdown(f"**Data:** {row['Data']} | **Lição:** {row.get('Licao_Detalhe', 'N/A')} ({row['Categoria']})")
+                        st.caption(f"Status anterior: {row['Status']} | Obs: {row.get('Observacao', '-')}")
+                else:
+                    st.success("✅ Nenhuma lição pendente para esta aluna.")
+
+            # --- FORMULÁRIO DE REGISTRO ---
+            with st.form("f_controle_licoes", clear_on_submit=True):
+                st.markdown("### 📋 Novo Registro / Resolução")
+                c_sec, c_dat = st.columns(2)
+                sec_resp = c_sec.selectbox("Secretária responsável:", SECRETARIAS_LISTA)
+                data_aula = c_dat.date_input("Data da aula:", datetime.now())
+                
+                st.divider()
+                st.markdown("**Qual lição está sendo tratada hoje?**")
+                col_cat, col_det = st.columns([1, 2])
+                cat_sel = col_cat.radio("Categoria:", CATEGORIAS_LICAO)
+                detalhe_licao = col_det.text_input("Lição / Página:", placeholder="Ex: Lição 02 a 10, pág 15")
+                
+                st.divider()
+                status_sel = st.radio("Status Atual:", STATUS_LICAO, horizontal=True)
+                obs_liçao = st.text_area("Observações e orientações para a aluna:")
+                
+                if st.form_submit_button("❄️ CONGELAR REGISTRO"):
+                    dados_licao = {
+                        "Aluna": alu_sel,
+                        "Tipo": "Controle_Licao",
+                        "Data": data_aula.strftime("%d/%m/%Y"),
+                        "Secretaria": sec_resp,
+                        "Categoria": cat_sel,
+                        "Licao_Detalhe": detalhe_licao,
+                        "Status": status_sel,
+                        "Observacao": obs_liçao
+                    }
+                    db_save_historico(dados_licao)
+                    st.success(f"Registro atualizado para {alu_sel}!")
+                    st.rerun()
+                    
 # ==========================================
 # MÓDULO PROFESSORA
 # ==========================================
@@ -274,6 +301,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
