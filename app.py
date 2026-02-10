@@ -163,18 +163,21 @@ if perfil == "🏠 Secretaria":
                 st.success("Chamada Salva!")
 
     with tab_lição:
-        st.subheader("📝 Controle de Lições (Secretaria)")
-        with st.form("f_controle_licoes"):
+        st.subheader("📝 Controle de Lições")
+        with st.form("f_controle_licoes", clear_on_submit=True):
             data_aula = st.date_input("Data da aula:", datetime.now())
-            sec_resp = st.selectbox("Secretária:", SECRETARIAS_LISTA)
+            sec_resp = st.selectbox("Secretária responsável:", SECRETARIAS_LISTA)
             alu_sel = st.selectbox("Aluna:", ALUNAS_LISTA)
             cat_sel = st.radio("Categoria:", CATEGORIAS_LICAO)
             
             st.divider()
             status_sel = st.radio("Status das Lições:", STATUS_LICAO)
-            obs_liçao = st.text_area("Observações:")
+            obs_liçao = st.text_area("Observações (Detalhes das lições):")
             
-            if st.form_submit_button("❄️ CONGELAR CONTROLE DE LIÇÃO"):
+            # O BOTÃO DE SUBMIT DEVE ESTAR DENTRO DO BLOCO 'WITH'
+            submit_licao = st.form_submit_button("❄️ CONGELAR CONTROLE DE LIÇÃO")
+            
+            if submit_licao:
                 dados_licao = {
                     "Aluna": alu_sel,
                     "Tipo": "Controle_Licao",
@@ -185,8 +188,7 @@ if perfil == "🏠 Secretaria":
                     "Observacao": obs_liçao
                 }
                 db_save_historico(dados_licao)
-                st.success(f"Registro de {alu_sel} congelado com sucesso!")
-                
+                st.success(f"Registro de {alu_sel} salvo com sucesso!")                
 
 # ==========================================
 # MÓDULO PROFESSORA
@@ -262,6 +264,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
