@@ -593,7 +593,7 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.title("📊 Painel Pedagógico de Performance")
 
-    # Atualização de dados
+    # 1. Busca de Dados
     historico_geral = db_get_historico()
     calendario_db = db_get_calendario()
     df = pd.DataFrame(historico_geral)
@@ -608,6 +608,7 @@ elif perfil == "📊 Analítico IA":
         with c2:
             tipo_periodo = st.radio("Período:", ["Geral", "Mensal", "Semestral"], horizontal=True)
 
+        # Tratamento de Datas e Lições
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=True)
 
@@ -631,7 +632,7 @@ elif perfil == "📊 Analítico IA":
                         prof_teoria = " / ".join(teos) if teos else "Apenas Prática"
             except: pass
 
-        # --- [2] MÉTRICAS PRINCIPAIS (ESTILO DASHBOARD) ---
+        # --- [2] MÉTRICAS E GRÁFICOS ---
         st.markdown(f"## 📜 Relatório Consolidado - {alu_ia}")
         
         total_aulas = len(df_aluna)
@@ -640,76 +641,85 @@ elif perfil == "📊 Analítico IA":
         freq = (1 - (faltas/total_aulas)) * 100 if total_aulas > 0 else 100
         
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Média Geral", "63%") # Exemplo fixo ou calculado
-        m2.metric("Aulas", total_aulas)
+        m1.metric("Aulas Total", total_aulas)
+        m2.metric("Realizadas", realizadas)
         m3.metric("Frequência", f"{freq:.0f}%")
-        m4.metric("Atividades", "Em dia")
+        m4.metric("Próxima Aula", proxima_aula)
 
-        # --- [3] GRÁFICOS DE DESEMPENHO ---
-        st.subheader("📈 Evolução de Conteúdo")
-        if not df_aluna.empty:
-            # Gráfico simples de barras por data
-            chart_data = df_aluna.copy()
-            st.bar_chart(chart_data, x="Data", y="Licao_Atual" if "Licao_Atual" in chart_data.columns else None)
-        
-        # --- [4] PARECER VISUAL (CARDS COLORIDOS COMO NA IMAGEM) ---
-        st.markdown("### 📝 Parecer Pedagógico Detalhado")
-        
+        # Gráfico de Evolução (Linha)
+        if not df_aluna.empty and 'Licao_Atual' in df_aluna.columns:
+            st.subheader("📈 Evolução nas Lições")
+            # Converte lição para número para o gráfico não bugar
+            df_plot = df_aluna.copy()
+            df_plot['Licao_Num'] = pd.to_numeric(df_plot['Licao_Atual'], errors='coerce')
+            st.line_chart(df_plot.set_index('Data')['Licao_Num'])
+
+        # --- [3] PARECER VISUAL (CARDS) ---
         todas_difs = []
         if 'Dificuldades' in df_aluna.columns:
             for item in df_aluna['Dificuldades'].dropna():
                 if isinstance(item, list): todas_difs.extend(item)
                 else: todas_difs.append(str(item))
         
-        col_esq, col_dir = st.columns(2)
-        
-        with col_esq:
+        c_esq, c_dir = st.columns(2)
+        with c_esq:
             tecnicos = [d for d in todas_difs if any(x in d.lower() for x in ["postura", "dedo", "punho", "mão"])]
-            cor_t = "#f8d7da" if tecnicos else "#e2f0d9"
-            st.markdown(f"""
-                <div style="background-color: {cor_t}; padding: 20px; border-radius: 10px; border-left: 5px solid #dc3545; height: 100%;">
-                    <h4 style="margin-top:0;">⚠️ Postura e Técnica</h4>
-                    <p>{' • '.join(set(tecnicos)) if tecnicos else "Nenhuma dificuldade técnica crítica observada."}</p>
-                </div>
-            """, unsafe_content_html=True)
+            st.markdown(f"""<div style="background-color: #f8d7da; padding: 15px; border-radius: 10px; border-left: 5px solid #dc3545;">
+                <h4 style="color: #721c24; margin:0;">🎹 Postura e Técnica</h4>
+                <p style="color: #721c24;">{' • '.join(set(tecnicos)) if tecnicos else "Sem observações críticas."}</p>
+            </div>""", unsafe_content_html=True)
 
-        with col_dir:
+        with c_dir:
             ritmicos = [d for d in todas_difs if any(x in d.lower() for x in ["ritmo", "metrônomo", "solfejo", "tempo"])]
-            st.markdown(f"""
-                <div style="background-color: #fff3cd; padding: 20px; border-radius: 10px; border-left: 5px solid #ffc107; height: 100%;">
-                    <h4 style="margin-top:0;">🎶 Ritmo e Teoria</h4>
-                    <p>{' • '.join(set(ritmicos)) if ritmicos else "Desempenho rítmico estável."}</p>
-                </div>
-            """, unsafe_content_html=True)
+            st.markdown(f"""<div style="background-color: #fff3cd; padding: 15px; border-radius: 10px; border-left: 5px solid #ffc107;">
+                <h4 style="color: #856404; margin:0;">🎶 Ritmo e Teoria</h4>
+                <p style="color: #856404;">{' • '.join(set(ritmicos)) if ritmicos else "Desempenho estável."}</p>
+            </div>""", unsafe_content_html=True)
 
-        # --- [5] ÁREA DA IA (CONGELAMENTO E ANÁLISE PROFUNDA) ---
+        # --- [4] IA COM TABELA CORRIGIDA (analises_congeladas) ---
         st.divider()
-        
-        # Busca análise congelada
         analise_previa = None
         try:
-            res = supabase.table("analises_pedagogicas").select("*").eq("aluna", alu_ia).order("created_at", descending=True).limit(1).execute()
+            # AQUI FOI A CORREÇÃO DO NOME DA TABELA
+            res = supabase.table("analises_congeladas").select("*").eq("aluna", alu_ia).order("created_at", descending=True).limit(1).execute()
             if res.data: analise_previa = res.data[0]
-        except: pass
+        except Exception as e:
+            st.warning("Tabela de histórico não encontrada. A análise será gerada mas não será salva.")
 
         if analise_previa:
             st.success(f"✅ Análise Congelada ({analise_previa['created_at'][:10]})")
             st.markdown(analise_previa['conteudo'])
-            if st.button("🔄 Atualizar Análise"): analise_previa = None
+            if st.button("🔄 Gerar Nova Análise"): analise_previa = None
 
         if not analise_previa:
-            if st.button("✨ GERAR ANÁLISE COMPLETA PARA BANCA"):
-                with st.spinner("IA Analisando histórico..."):
-                    hist_texto = df_aluna[['Data', 'Licao_Atual', 'Dificuldades', 'Observacao']].tail(10).to_string()
-                    prompt = f"Gere uma análise pedagógica completa para {alu_ia} baseada em: {hist_texto}. Separe em: Postura, Técnica, Ritmo, Teoria, Metas para {proxima_aula} e Dicas para a Banca Semestral."
+            if st.button("✨ GERAR ANÁLISE PEDAGÓGICA COMPLETA"):
+                with st.spinner("IA Processando..."):
+                    hist_texto = df_aluna[['Data', 'Licao_Atual', 'Dificuldades', 'Observacao']].tail(8).to_string()
+                    prompt = f"""Gere uma análise pedagógica completa para {alu_ia}:
+                    HISTÓRICO: {hist_texto}
+                    PRÓXIMA AULA: {proxima_prof}
+                    
+                    ESTRUTURA:
+                    1. Postura (detalhada)
+                    2. Técnica
+                    3. Ritmo
+                    4. Teoria/MSA
+                    5. Resumo Secretaria
+                    6. Metas para {proxima_aula}
+                    7. Dicas para Banca Semestral"""
                     
                     try:
                         response = model.generate_content(prompt)
                         texto = response.text
-                        supabase.table("analises_pedagogicas").insert({"aluna": alu_ia, "conteudo": texto}).execute()
+                        # Salva na tabela sugerida pelo erro
+                        supabase.table("analises_congeladas").insert({
+                            "aluna": alu_ia, 
+                            "conteudo": texto,
+                            "periodo": tipo_periodo
+                        }).execute()
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Erro: {e}")
+                        st.error(f"Erro ao salvar: {e}")
 
 # --- FIM DO MÓDULO ---
 
@@ -717,6 +727,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
