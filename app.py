@@ -155,7 +155,13 @@ calendario_db = db_get_calendario()
 # MÓDULO SECRETARIA
 # ==========================================
 if perfil == "🏠 Secretaria":
-    tab_plan, tab_cham, tab_lição = st.tabs(["🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "💰 Financeiro"])
+    # CORREÇÃO: Agora as 4 variáveis correspondem aos 4 itens da lista
+    tab_plan, tab_cham, tab_licao, tab_fin = st.tabs([
+        "🗓️ Planejamento", 
+        "📍 Chamada", 
+        "📝 Controle de Lições", 
+        "💰 Financeiro"
+    ])
     
     with tab_plan:
         c1, c2 = st.columns(2)
@@ -727,6 +733,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
