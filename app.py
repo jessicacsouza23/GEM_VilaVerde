@@ -68,10 +68,35 @@ TURMAS = {
     "Turma 3": ["Heloísa R.", "Ana Marcela S.", "Vitória Bella T.", "Júlia S.", "Micaelle S.", "Raquel L.", "Júlia Cristina"]
 }
 HORARIOS = ["08h45 (Igreja)", "09h35 (H2)", "10h10 (H3)", "10h45 (H4)"]
+OPCOES_LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
 
 # --- 3. INTERFACE ---
 st.title("🎼 GEM Vila Verde - Gestão 2026")
 perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
+
+# Listas de Dificuldades (Restauradas conforme seu envio)
+DIF_PRATICA = ["Não estudou nada", "Estudou de forma insatisfatória", "Não assistiu os vídeos dos métodos", 
+               "Dificuldade ritmica", "Dificuldade em distinguir os nomes das figuras ritmicas", "Está adentrando às teclas", 
+               "Dificuldade com a postura (costas, ombros e braços)", "Está deixando o punho alto ou baixo", "Não senta no centro da banqueta", 
+               "Está quebrando as falanges", "Unhas muito compridas", "Dificuldade em deixar os dedos arredondados", 
+               "Esquece de colocar o pé direito no pedal de expressão", "Faz movimentos desnecessários com o pé esquerdo na pedaleira", 
+               "Dificuldade com o uso do metrônomo", "Estuda sem o metrônomo", "Dificuldades em ler as notas na clave de sol", 
+               "Dificuldades em ler as notas na clave de fá", "Não realizou as atividades da apostila", "Dificuldade em fazer a articulação ligada e semiligada",
+               "Dificuldade com as respirações", "Dificuldade com as respirações sobre passagem", 
+               "Dificuldades em recurso de dedilhado (passagem, alargamento, contração, mudança ou substituição)", "Dificuldade em fazer nota de apoio", 
+               "Não apresentou dificuldades"]
+
+DIF_TEORIA = ["Não assistiu os vídeos complementares", "Não apresentou dificuldades", "Não participou da aula", "Dificuldade em utilizar o metrônomo", 
+              "Não compreende o que é música na igreja", "Não compreende o que é música", "Não compreende o que é som", "Dificuldade em compreender os elementos da música", 
+              "Dificuldade em compreender as propriedades do som", "Dificuldade de leitura de clave de sol", "Dificuldade de leitura de clave de fá", 
+              "Não realizou as atividades da apostila", "Não estudou", "Não realizou as atividades para casa", "Ficou dispersa durante a aula", 
+              "Não realizou as atividades durante a aula", "Não trouxe o material necessário", "Demonstra insegurança ao lidar com o conteúdo"]
+
+DIF_SOLFEJO = ["Não assistiu os vídeos complementares", "Dificuldades em ler as notas na clave de sol", "Dificuldades em ler as notas na clave de fá", 
+               "Está com dificuldades no uso do metrônomo", "Estuda em metrônomo", "Não realizou as atividades", "Dificuldade em leitura ritmica", 
+               "Dificuldades em leitura métrica", "Dificuldade em solfejo (afinação)", "Dificuldades no movimento da mão", 
+               "Dificuldades na ordem das notas, ascendente e descendente", "Não realizou as atividades da apostila", "Não estudou nada", 
+               "Estudou de forma insatisfatória", "Não apresentou dificuldades"]
 
 historico_geral = db_get_historico()
 calendario_db = db_get_calendario()
@@ -289,79 +314,67 @@ if perfil == "🏠 Secretaria":
 # MÓDULO PROFESSORA
 # ==========================================
 elif perfil == "👩‍🏫 Professora":
-    st.header("👩‍🏫 Painel de Controle de Aula")
+    st.header("👩‍🏫 Controle de Desempenho")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        instr_sel = st.selectbox("Identifique-se:", ["Selecione seu nome..."] + PROFESSORAS_LISTA)
-    with col2:
-        # Permite escolher a data da aula (padrão é o sábado mais próximo)
-        hoje = datetime.now()
-        sabado_prox = hoje + timedelta(days=(5 - hoje.weekday()) % 7)
-        data_escolhida = st.date_input("Data da Aula:", sabado_prox)
-        data_str = data_escolhida.strftime("%d/%m/%Y")
+    c1, c2 = st.columns(2)
+    with c1:
+        instr_sel = st.selectbox("Identifique-se:", ["Selecione..."] + PROFESSORAS_LISTA)
+    with c2:
+        hoje_dt = datetime.now()
+        sab_p = hoje_dt + timedelta(days=(5 - hoje_dt.weekday()) % 7)
+        data_prof = st.date_input("Data da Aula:", sab_p)
+        data_prof_str = data_prof.strftime("%d/%m/%Y")
 
-    if instr_sel != "Selecione seu nome...":
-        # Busca o rodízio pela data selecionada
-        if data_str in calendario_db:
-            st.success(f"🗓️ Rodízio localizado para {data_str}")
-            h_sel = st.radio("Selecione o Horário:", HORARIOS, horizontal=True)
-            
-            # Localiza a aluna e sala no rodízio
-            escala_dia = calendario_db[data_str]
+    if instr_sel != "Selecione...":
+        if data_prof_str in calendario_db:
+            h_sel = st.radio("Horário:", HORARIOS, horizontal=True)
+            escala_dia = calendario_db[data_prof_str]
             atendimento = next((r for r in escala_dia if instr_sel in str(r.get(h_sel, ""))), None)
             
             if atendimento:
                 aluna_atual = atendimento['Aluna']
                 local_info = atendimento[h_sel]
-                
-                st.info(f"📍 **{local_info}** | 👤 **Aluna:** {aluna_atual}")
+                st.success(f"📍 {local_info} | 👤 Aluna: {aluna_atual}")
 
-                # Determina o tipo de formulário
+                # Lógica de formulário por Sala
                 if "SALA 8" in local_info:
-                    tipo, difs = "Teoria", DIF_TEORIA
+                    tipo, difs, label_lic = "Teoria", DIF_TEORIA, "Desempenho Teoria"
                 elif "SALA 9" in local_info:
-                    tipo, difs = "Solfejo", DIF_SOLFEJO
+                    tipo, difs, label_lic = "Solfejo", DIF_SOLFEJO, "Desempenho Solfejo"
                 else:
-                    tipo, difs = "Prática", DIF_PRATICA
+                    tipo, difs, label_lic = "Prática", DIF_PRATICA, "Prática Instrumental"
 
-                with st.form("f_aula_pro", clear_on_submit=True):
-                    st.markdown(f"### Registro de Desempenho - {tipo}")
+                with st.form("f_aula_prof", clear_on_submit=True):
+                    st.subheader(f"Controle de {tipo}")
                     
-                    lic_vol = st.selectbox("Lição/Volume:", OPCOES_LICOES)
-                    if lic_vol == "Outro": lic_vol = st.text_input("Qual Lição?")
+                    lic_vol = st.selectbox(f"{label_lic} - Lição/Volume:", OPCOES_LICOES_NUM)
+                    if lic_vol == "Outro": lic_vol = st.text_input("Especifique a Lição:")
                     
-                    dificuldades = st.multiselect("Dificuldades Detectadas:", difs)
-                    obs = st.text_area("Observações da Aula:")
+                    difs_selected = st.multiselect("Dificuldades:", difs)
+                    obs_aula = st.text_area("Observações:")
                     
-                    st.markdown("---")
-                    st.markdown("#### Tarefa para Casa")
+                    st.divider()
+                    st.subheader("Lição de Casa")
                     if tipo == "Prática":
                         c_v, c_a = st.columns(2)
-                        casa_v = c_v.selectbox("Volume Casa:", ["Nenhum"] + OPCOES_LICOES)
-                        casa_a = c_a.text_input("Apostila Casa:")
-                        casa_final = f"Vol: {casa_v} | Apo: {casa_a}"
+                        casa_v = c_v.selectbox("Lição de casa - Volume prática:", ["Nenhum"] + OPCOES_LICOES_NUM)
+                        casa_a = c_a.text_input("Lição de casa - Apostila:")
+                        casa_f = f"Vol: {casa_v} | Apo: {casa_a}"
                     else:
-                        casa_final = st.text_input("Tarefa/Estudo para casa:")
+                        casa_f = st.text_input("Lição de casa:")
 
                     if st.form_submit_button("❄️ CONGELAR E SALVAR AULA"):
-                        dados = {
-                            "Aluna": aluna_atual,
-                            "Tipo": f"Aula_{tipo}",
-                            "Data": data_str,
-                            "Instrutora": instr_sel,
-                            "Licao_Atual": lic_vol,
-                            "Dificuldades": dificuldades,
-                            "Observacao": obs,
-                            "Licao_Casa": casa_final
-                        }
-                        if db_save_historico(dados):
-                            st.success("✅ Aula salva com sucesso no banco de dados!")
-                            st.balloons()
+                        db_save_historico({
+                            "Aluna": aluna_atual, "Tipo": f"Aula_{tipo}", "Data": data_prof_str,
+                            "Instrutora": instr_sel, "Licao_Atual": lic_vol, "Dificuldades": difs_selected,
+                            "Observacao": obs_aula, "Licao_Casa": casa_f
+                        })
+                        st.success("Salvo com sucesso!")
+                        st.balloons()
             else:
-                st.warning(f"Você não possui aulas registradas no rodízio para o horário {h_sel} em {data_str}.")
+                st.warning("Nenhuma aluna escalada para você neste horário.")
         else:
-            st.error(f"❌ Não existe rodízio gerado para a data {data_str}. Verifique com a Secretaria.")
+            st.error("Rodízio não encontrado para esta data.")
             
 # ==========================================
 # MÓDULO ANALÍTICO IA
@@ -400,6 +413,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
