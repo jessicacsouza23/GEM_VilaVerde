@@ -86,41 +86,51 @@ if perfil == "🏠 Secretaria":
             with col_s:
                 st.subheader("🔊 Solfejo (SALA 9)")
                 p_s = [st.selectbox(f"Prof. Solfejo {h}", PROFESSORAS_LISTA, index=i+3, key=f"s{h}") for i, h in enumerate(["H2", "H3", "H4"])]
-            folgas = st.multiselect("Folgas:", PROFESSORAS_LISTA)
+            
+            folgas = st.multiselect("Professoras de Folga:", PROFESSORAS_LISTA)
 
             if st.button("🚀 Gerar Rodízio"):
                 escala = []
+                # Configuração fixa das turmas por horário
                 fluxo = {
                     HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "ITeo": p_t[0], "ISol": p_s[0]},
                     HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "ITeo": p_t[1], "ISol": p_s[1]},
                     HORARIOS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "ITeo": p_t[2], "ISol": p_s[2]}
                 }
+
                 for t_nome, alunas in TURMAS.items():
                     for idx_alu, aluna in enumerate(alunas):
                         row = {"Aluna": aluna, "Turma": t_nome, HORARIOS[0]: "⛪ Igreja"}
+                        
                         for h_idx in [1, 2, 3]:
                             h_lab = HORARIOS[h_idx]
                             cfg = fluxo[h_lab]
-                            if cfg["Teo"] == t_nome: row[h_lab] = f"📚 SALA 8 | Teoria ({cfg['ITeo']})"
-                            elif cfg["Sol"] == t_nome: row[h_lab] = f"🔊 SALA 9 | Solfejo ({cfg['ISol']})"
+                            
+                            # 1. Verificar se a turma está em aula coletiva
+                            if cfg["Teo"] == t_nome:
+                                row[h_lab] = f"📚 SALA 8 | {cfg['ITeo']}"
+                            elif cfg["Sol"] == t_nome:
+                                row[h_lab] = f"🔊 SALA 9 | {cfg['ISol']}"
                             else:
-                                p_livres = [p for p in PROFESSORAS_LISTA if p not in [cfg["ITeo"], cfg["ISol"]] + folgas]
-                                instr = p_livres[(idx_alu + h_idx) % len(p_livres)]
-                                num_sala = (PROFESSORAS_LISTA.index(instr) % 7) + 1
-                                row[h_lab] = f"🎹 SALA {num_sala} | {instr}"
+                                # 2. Aula Prática: Filtrar professoras realmente disponíveis neste horário
+                                ocupadas = [cfg["ITeo"], cfg["ISol"]] + folgas
+                                disponiveis = [p for p in PROFESSORAS_LISTA if p not in ocupadas]
+                                
+                                # 3. Distribuição para evitar repetição de professora e sala
+                                # Usamos o índice da aluna dentro da turma para rotacionar
+                                p_index = (idx_alu) % len(disponiveis)
+                                instrutora = disponiveis[p_index]
+                                
+                                # 4. Definir Sala de Prática (1 a 7) baseada na posição da instrutora na lista oficial
+                                num_sala = (PROFESSORAS_LISTA.index(instrutora) % 7) + 1
+                                row[h_lab] = f"🎹 SALA {num_sala} | {instrutora}"
+                        
                         escala.append(row)
+                
                 supabase.table("calendario").upsert({"id": data_sel, "escala": escala}).execute()
+                st.success("Rodízio gerado com sucesso!")
                 st.rerun()
-        else:
-            st.success(f"🗓️ Rodízio Ativo: {data_sel}")
-            df_v = pd.DataFrame(calendario_db[data_sel])
-            # Correção do KeyError: Filtra apenas colunas que realmente existem
-            cols_existentes = [c for c in ["Aluna", "Turma"] + HORARIOS if c in df_v.columns]
-            st.dataframe(df_v[cols_existentes], use_container_width=True)
-            if st.button("🗑️ Excluir Rodízio"):
-                supabase.table("calendario").delete().eq("id", data_sel).execute()
-                st.rerun()
-
+                
     with tab_cham:
         st.subheader("📍 Chamada")
         dt_ch = st.selectbox("Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="dt_ch")
@@ -227,3 +237,4 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
