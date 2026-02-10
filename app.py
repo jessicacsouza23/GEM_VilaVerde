@@ -337,7 +337,7 @@ if perfil == "🏠 Secretaria":
         with c1:
             alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
         with c2:
-            sec_resp = st.selectbox("Responsável:", PROFESSORAS_LISTA, key="sec_resp")
+            sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp")
         with c3:
             data_corr = st.date_input("Data:", data_hj, key="sec_data")
             data_corr_str = data_corr.strftime("%d/%m/%Y")
@@ -732,6 +732,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
