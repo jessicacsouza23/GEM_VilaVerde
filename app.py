@@ -591,10 +591,6 @@ elif perfil == "👩‍🏫 Professora":
 # MÓDULO ANÁLISE DE IA
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    # ==========================================
-# MÓDULO ANÁLISE DE IA (PROTEÇÃO DE COTA)
-# ==========================================
-elif perfil == "📊 Analítico IA":
     st.title("📊 Painel Pedagógico de Performance")
 
     historico_geral = db_get_historico()
@@ -695,6 +691,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
