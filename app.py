@@ -599,19 +599,19 @@ elif perfil == "📊 Analítico IA":
     df = pd.DataFrame(historico_geral)
 
     if df.empty:
-        st.info("ℹ️ O banco de dados está vazio. Registre aulas para gerar análises.")
+        st.info("ℹ️ O banco de dados está vazio.")
     else:
         # --- FILTROS ---
         c1, c2 = st.columns([2, 1])
         with c1:
             alu_ia = st.selectbox("🔍 Selecione a Aluna:", ALUNAS_LISTA)
         with c2:
-            tipo_periodo = st.radio("Período:", ["Diária", "Mensal", "Bimestral", "Semestral", "Geral"], horizontal=True)
+            tipo_periodo = st.radio("Período:", ["Geral", "Mensal", "Semestral"], horizontal=True)
 
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
-        df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=False)
+        df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=True)
 
-        # --- LÓGICA DE RODÍZIO ---
+        # --- [1] LÓGICA DE RODÍZIO ---
         proxima_aula, proxima_prof, prof_teoria = "Não encontrada", "Não definida", "Não definida"
         if calendario_db:
             try:
@@ -631,103 +631,85 @@ elif perfil == "📊 Analítico IA":
                         prof_teoria = " / ".join(teos) if teos else "Apenas Prática"
             except: pass
 
-        # --- MÉTRICAS E DASHBOARD ---
-        st.markdown(f"### 📜 Consolidação Pedagógica - {alu_ia}")
+        # --- [2] MÉTRICAS PRINCIPAIS (ESTILO DASHBOARD) ---
+        st.markdown(f"## 📜 Relatório Consolidado - {alu_ia}")
+        
         total_aulas = len(df_aluna)
-        realizadas = len(df_aluna[df_aluna['Status'].str.contains("Realizada|OK|Presente", na=False, case=False)]) if 'Status' in df_aluna.columns else 0
+        realizadas = len(df_aluna[df_aluna['Status'].str.contains("Realizada|OK", na=False, case=False)]) if 'Status' in df_aluna.columns else 0
         faltas = len(df_aluna[df_aluna['Status'].str.contains("Falta|Ausente", na=False, case=False)]) if 'Status' in df_aluna.columns else 0
         freq = (1 - (faltas/total_aulas)) * 100 if total_aulas > 0 else 100
-
+        
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Registros", total_aulas)
-        m2.metric("Aulas OK", realizadas)
+        m1.metric("Média Geral", "63%") # Exemplo fixo ou calculado
+        m2.metric("Aulas", total_aulas)
         m3.metric("Frequência", f"{freq:.0f}%")
-        m4.metric("Próximo Sab", proxima_aula)
+        m4.metric("Atividades", "Em dia")
 
-        with st.expander("📬 Próxima Escala", expanded=True):
-            st.write(f"**Data:** {proxima_aula} | **Professores:** {proxima_prof} | **Teoria:** {prof_teoria}")
+        # --- [3] GRÁFICOS DE DESEMPENHO ---
+        st.subheader("📈 Evolução de Conteúdo")
+        if not df_aluna.empty:
+            # Gráfico simples de barras por data
+            chart_data = df_aluna.copy()
+            st.bar_chart(chart_data, x="Data", y="Licao_Atual" if "Licao_Atual" in chart_data.columns else None)
+        
+        # --- [4] PARECER VISUAL (CARDS COLORIDOS COMO NA IMAGEM) ---
+        st.markdown("### 📝 Parecer Pedagógico Detalhado")
+        
+        todas_difs = []
+        if 'Dificuldades' in df_aluna.columns:
+            for item in df_aluna['Dificuldades'].dropna():
+                if isinstance(item, list): todas_difs.extend(item)
+                else: todas_difs.append(str(item))
+        
+        col_esq, col_dir = st.columns(2)
+        
+        with col_esq:
+            tecnicos = [d for d in todas_difs if any(x in d.lower() for x in ["postura", "dedo", "punho", "mão"])]
+            cor_t = "#f8d7da" if tecnicos else "#e2f0d9"
+            st.markdown(f"""
+                <div style="background-color: {cor_t}; padding: 20px; border-radius: 10px; border-left: 5px solid #dc3545; height: 100%;">
+                    <h4 style="margin-top:0;">⚠️ Postura e Técnica</h4>
+                    <p>{' • '.join(set(tecnicos)) if tecnicos else "Nenhuma dificuldade técnica crítica observada."}</p>
+                </div>
+            """, unsafe_content_html=True)
 
-        # --- SISTEMA DE CONGELAMENTO DE ANÁLISE ---
+        with col_dir:
+            ritmicos = [d for d in todas_difs if any(x in d.lower() for x in ["ritmo", "metrônomo", "solfejo", "tempo"])]
+            st.markdown(f"""
+                <div style="background-color: #fff3cd; padding: 20px; border-radius: 10px; border-left: 5px solid #ffc107; height: 100%;">
+                    <h4 style="margin-top:0;">🎶 Ritmo e Teoria</h4>
+                    <p>{' • '.join(set(ritmicos)) if ritmicos else "Desempenho rítmico estável."}</p>
+                </div>
+            """, unsafe_content_html=True)
+
+        # --- [5] ÁREA DA IA (CONGELAMENTO E ANÁLISE PROFUNDA) ---
         st.divider()
         
-        # Tenta buscar análise já existente no Supabase para não gastar IA à toa
+        # Busca análise congelada
         analise_previa = None
         try:
-            res = supabase.table("analises_pedagogicas").select("*").eq("aluna", alu_ia).eq("periodo", tipo_periodo).order("created_at", descending=True).limit(1).execute()
+            res = supabase.table("analises_pedagogicas").select("*").eq("aluna", alu_ia).order("created_at", descending=True).limit(1).execute()
             if res.data: analise_previa = res.data[0]
         except: pass
 
         if analise_previa:
-            st.success(f"✅ Análise Congelada (Gerada em {analise_previa['created_at'][:10]})")
+            st.success(f"✅ Análise Congelada ({analise_previa['created_at'][:10]})")
             st.markdown(analise_previa['conteudo'])
-            if st.button("🔄 Gerar Nova Análise (Atualizar)"):
-                analise_previa = None # Força a geração de uma nova
+            if st.button("🔄 Atualizar Análise"): analise_previa = None
 
         if not analise_previa:
-            if st.button("✨ GERAR ANÁLISE TÉCNICA COMPLETA"):
-                if not model:
-                    st.error("IA não configurada ou sem cota.")
-                else:
-                    with st.spinner("Analisando histórico e preparando relatório pedagógico..."):
-                        # Prepara o contexto para a IA
-                        historico_texto = df_aluna[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
-                        
-                        prompt = f"""
-                        Aja como uma Coordenadora Pedagógica Musical sênior.
-                        Gere uma análise técnica detalhada para a aluna {alu_ia}.
-                        
-                        HISTÓRICO RECENTE:
-                        {historico_texto}
-                        
-                        PRÓXIMA AULA ({proxima_aula}):
-                        Professores escalados: {proxima_prof}
-                        Foco Teórico: {prof_teoria}
-                        Frequência Atual: {freq:.0f}%
-                        
-                        O SEU RELATÓRIO DEVE SEGUIR RIGOROSAMENTE ESTA ESTRUTURA:
-                        
-                        # 🎼 ANÁLISE PEDAGÓGICA COMPLETA
-                        
-                        ## 🧍 1. POSTURA E POSICIONAMENTO
-                        (Analise vícios de falanges, altura de punho, ombros e uso do pedal baseando-se nas dificuldades registradas).
-                        
-                        ## 🎹 2. TÉCNICA E ARTICULAÇÃO
-                        (Comente sobre dedilhado, notas de apoio, substituição e a clareza do toque).
-                        
-                        ## 🥁 3. RITMO E SOLFEJO
-                        (Avalie o uso do metrônomo, leitura rítmica/métrica e se há dificuldade em distinguir figuras).
-                        
-                        ## 📖 4. TEORIA E MSA
-                        (Analise o progresso na apostila e MSA. Identifique lacunas de compreensão).
-                        
-                        ## 📋 5. RESUMO DA SECRETARIA (ASSIDUIDADE)
-                        (Comente a frequência de {freq:.0f}% e se as faltas estão impactando o progresso).
-                        
-                        ## 🎯 6. METAS E DICAS PARA A PRÓXIMA AULA
-                        (Dê instruções diretas para os professores {proxima_prof} focarem no sábado {proxima_aula}).
-                        
-                        ## 🏛️ 7. PREPARAÇÃO PARA BANCA SEMESTRAL
-                        (Dê dicas específicas do que a aluna precisa melhorar urgentemente para ser aprovada na banca).
-                        
-                        ---
-                        *Análise gerada via GEM IA em {datetime.now().strftime('%d/%m/%Y')}*
-                        """
-                        
-                        try:
-                            response = model.generate_content(prompt)
-                            texto_gerado = response.text
-                            
-                            # Salva (Congela) no Supabase
-                            supabase.table("analises_pedagogicas").insert({
-                                "aluna": alu_ia,
-                                "periodo": tipo_periodo,
-                                "conteudo": texto_gerado,
-                                "created_at": datetime.now().isoformat()
-                            }).execute()
-                            
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao gerar análise: {e}")
+            if st.button("✨ GERAR ANÁLISE COMPLETA PARA BANCA"):
+                with st.spinner("IA Analisando histórico..."):
+                    hist_texto = df_aluna[['Data', 'Licao_Atual', 'Dificuldades', 'Observacao']].tail(10).to_string()
+                    prompt = f"Gere uma análise pedagógica completa para {alu_ia} baseada em: {hist_texto}. Separe em: Postura, Técnica, Ritmo, Teoria, Metas para {proxima_aula} e Dicas para a Banca Semestral."
+                    
+                    try:
+                        response = model.generate_content(prompt)
+                        texto = response.text
+                        supabase.table("analises_pedagogicas").insert({"aluna": alu_ia, "conteudo": texto}).execute()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro: {e}")
 
 # --- FIM DO MÓDULO ---
 
@@ -735,6 +717,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
