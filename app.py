@@ -593,132 +593,141 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.title("📊 Painel Pedagógico de Performance")
 
-    # Atualização forçada dos dados
+    # Atualização de dados
     historico_geral = db_get_historico()
     calendario_db = db_get_calendario()
-    
     df = pd.DataFrame(historico_geral)
 
     if df.empty:
         st.info("ℹ️ O banco de dados está vazio. Registre aulas para gerar análises.")
     else:
-        # --- FILTROS DE CABEÇALHO ---
+        # --- FILTROS ---
         c1, c2 = st.columns([2, 1])
         with c1:
             alu_ia = st.selectbox("🔍 Selecione a Aluna:", ALUNAS_LISTA)
         with c2:
             tipo_periodo = st.radio("Período:", ["Diária", "Mensal", "Bimestral", "Semestral", "Geral"], horizontal=True)
 
-        # Preparação dos Dados com tratamento de erro de data
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=False)
 
-        # --- [1] LÓGICA DO RODÍZIO (BUSCA FLEXÍVEL POR NOME) ---
+        # --- LÓGICA DE RODÍZIO ---
         proxima_aula, proxima_prof, prof_teoria = "Não encontrada", "Não definida", "Não definida"
-        
         if calendario_db:
             try:
                 hoje = datetime.now().date()
-                datas_sabados = []
-                for d_str in calendario_db.keys():
-                    try:
-                        d_dt = datetime.strptime(d_str.strip(), "%d/%m/%Y").date()
-                        if d_dt >= hoje: datas_sabados.append((d_dt, d_str))
-                    except: continue
-                datas_sabados.sort()
-
-                if datas_sabados:
-                    d_dt_alvo, d_str_alvo = datas_sabados[0]
-                    escala_dia = calendario_db[d_str_alvo]
-                    
-                    # Comparação que ignora se o nome está completo ou tem a congregação
-                    def fit_nome(n): return str(n).split("-")[0].strip().lower()
-                    dados_aluna = next((i for i in escala_dia if fit_nome(i.get('Aluna','')) in fit_nome(alu_ia)), None)
-                    
+                datas = sorted([d for d in calendario_db.keys() if datetime.strptime(d, "%d/%m/%Y").date() >= hoje], key=lambda x: datetime.strptime(x, "%d/%m/%Y"))
+                if datas:
+                    data_alvo = datas[0]
+                    escala = calendario_db[data_alvo]
+                    def fit(n): return str(n).split("-")[0].strip().lower()
+                    dados_aluna = next((i for i in escala if fit(i.get('Aluna','')) in fit(alu_ia)), None)
                     if dados_aluna:
-                        proxima_aula = d_str_alvo
-                        h2 = dados_aluna.get("09h35 (H2)", "-")
-                        h3 = dados_aluna.get("10h10 (H3)", "-")
-                        h4 = dados_aluna.get("10h45 (H4)", "-")
-                        
+                        proxima_aula = data_alvo
+                        h2, h3, h4 = dados_aluna.get("09h35 (H2)", "-"), dados_aluna.get("10h10 (H3)", "-"), dados_aluna.get("10h45 (H4)", "-")
                         def clean(t): return str(t).split("|")[-1].strip() if "|" in str(t) else str(t)
                         proxima_prof = f"H2: {clean(h2)} | H3: {clean(h3)} | H4: {clean(h4)}"
-                        
-                        teos = []
-                        if any(s in str(h2) for s in ["SALA 8", "SALA 9"]): teos.append(f"H2 ({clean(h2)})")
-                        if any(s in str(h3) for s in ["SALA 8", "SALA 9"]): teos.append(f"H3 ({clean(h3)})")
-                        if any(s in str(h4) for s in ["SALA 8", "SALA 9"]): teos.append(f"H4 ({clean(h4)})")
+                        teos = [f"{h[:2]} ({clean(dados_aluna.get(h))})" for h in ["09h35 (H2)", "10h10 (H3)", "10h45 (H4)"] if any(s in str(dados_aluna.get(h)) for s in ["SALA 8", "SALA 9"])]
                         prof_teoria = " / ".join(teos) if teos else "Apenas Prática"
             except: pass
 
-        # --- [2] FILTRAGEM DO HISTÓRICO ---
-        df_f = df_aluna # Por padrão, usa tudo para a análise
-        if tipo_periodo == "Diária":
-            datas_disponiveis = sorted(df_aluna['dt_obj'].dropna().unique(), reverse=True)
-            if datas_disponiveis:
-                dia_sel = st.date_input("Ver histórico de:", value=datas_disponiveis[0])
-                df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
+        # --- MÉTRICAS E DASHBOARD ---
+        st.markdown(f"### 📜 Consolidação Pedagógica - {alu_ia}")
+        total_aulas = len(df_aluna)
+        realizadas = len(df_aluna[df_aluna['Status'].str.contains("Realizada|OK|Presente", na=False, case=False)]) if 'Status' in df_aluna.columns else 0
+        faltas = len(df_aluna[df_aluna['Status'].str.contains("Falta|Ausente", na=False, case=False)]) if 'Status' in df_aluna.columns else 0
+        freq = (1 - (faltas/total_aulas)) * 100 if total_aulas > 0 else 100
 
-        # --- [3] DASHBOARD COM PROTEÇÃO CONTRA KEYERROR ---
-        if df_f.empty and proxima_aula == "Não encontrada":
-            st.warning(f"Sem registros históricos para {alu_ia}.")
-        else:
-            st.markdown(f"### 📜 Consolidação Pedagógica - {alu_ia}")
-            
-            # Cálculo de Métricas com tratamento para colunas ausentes
-            total_aulas = len(df_f)
-            
-            # Proteção: verifica se a coluna 'Status' existe antes de filtrar
-            if 'Status' in df_f.columns:
-                realizadas = len(df_f[df_f['Status'].str.contains("Realizada|OK|Presente|sem pendência", na=False, case=False)])
-                faltas = len(df_f[df_f['Status'].str.contains("Falta|Ausente|Não realizada", na=False, case=False)])
-            else:
-                realizadas = 0
-                faltas = 0
-            
-            freq = (1 - (faltas/total_aulas)) * 100 if total_aulas > 0 else 100
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Registros", total_aulas)
+        m2.metric("Aulas OK", realizadas)
+        m3.metric("Frequência", f"{freq:.0f}%")
+        m4.metric("Próximo Sab", proxima_aula)
 
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Registros", total_aulas)
-            m2.metric("Aproveitamento", realizadas)
-            m3.metric("Frequência", f"{freq:.0f}%")
-            m4.metric("Próximo Rodízio", proxima_aula)
+        with st.expander("📬 Próxima Escala", expanded=True):
+            st.write(f"**Data:** {proxima_aula} | **Professores:** {proxima_prof} | **Teoria:** {prof_teoria}")
 
-            # --- [4] PARECER TÉCNICO (BUSCA EM DIFICULDADES E OBSERVAÇÕES) ---
-            st.markdown("#### 📝 Resumo de Dificuldades")
-            todas_difs = []
-            if 'Dificuldades' in df_f.columns:
-                for item in df_f['Dificuldades'].dropna():
-                    if isinstance(item, list): todas_difs.extend(item)
-                    else: todas_difs.append(str(item))
-            
-            obs_texto = ""
-            if 'Observacao' in df_f.columns:
-                obs_texto = " ".join(df_f['Observacao'].dropna().astype(str)).lower()
+        # --- SISTEMA DE CONGELAMENTO DE ANÁLISE ---
+        st.divider()
+        
+        # Tenta buscar análise já existente no Supabase para não gastar IA à toa
+        analise_previa = None
+        try:
+            res = supabase.table("analises_pedagogicas").select("*").eq("aluna", alu_ia).eq("periodo", tipo_periodo).order("created_at", descending=True).limit(1).execute()
+            if res.data: analise_previa = res.data[0]
+        except: pass
 
-            c_post, c_rit = st.columns(2)
-            with c_post:
-                tecnicos = [d for d in todas_difs if any(x in d.lower() for x in ["postura", "dedo", "falange", "punho", "mão", "tecla"])]
-                if not tecnicos and "postura" in obs_texto: tecnicos.append("Observações de postura relatadas em aula")
-                st.info(f"**🎹 Técnica e Postura:**\n\n " + (" • ".join(set(tecnicos)) if tecnicos else "Sem observações críticas recentes."))
-            
-            with c_rit:
-                ritmicos = [d for d in todas_difs if any(x in d.lower() for x in ["ritmo", "metrônomo", "métrica", "solfejo", "tempo", "divisão"])]
-                if not ritmicos and ("ritmo" in obs_texto or "metrônomo" in obs_texto): ritmicos.append("Dificuldade rítmica mencionada")
-                st.warning(f"**🥁 Ritmo e Teoria:**\n\n " + (" • ".join(set(ritmicos)) if ritmicos else "Desempenho rítmico estável."))
+        if analise_previa:
+            st.success(f"✅ Análise Congelada (Gerada em {analise_previa['created_at'][:10]})")
+            st.markdown(analise_previa['conteudo'])
+            if st.button("🔄 Gerar Nova Análise (Atualizar)"):
+                analise_previa = None # Força a geração de uma nova
 
-            # --- [5] PRÓXIMA AULA ---
-            with st.expander("📬 Escala de Próxima Aula", expanded=True):
-                col_e1, col_e2 = st.columns(2)
-                col_e1.info(f"**Agenda para {proxima_aula}:**\n\n{proxima_prof}")
-                col_e2.success(f"**Foco Teórico:**\n\n{prof_teoria}")
-
-            # --- [6] ANÁLISE IA ---
-            st.divider()
-            # (Aqui continua o seu código de IA que já tínhamos...)
-            if st.button("✨ GERAR RELATÓRIO PEDAGÓGICO COMPLETO (IA)"):
-                st.info("Processando análise técnica...")
-                # O prompt usará freq, proxima_aula, proxima_prof e o texto filtrado acima.
+        if not analise_previa:
+            if st.button("✨ GERAR ANÁLISE TÉCNICA COMPLETA"):
+                if not model:
+                    st.error("IA não configurada ou sem cota.")
+                else:
+                    with st.spinner("Analisando histórico e preparando relatório pedagógico..."):
+                        # Prepara o contexto para a IA
+                        historico_texto = df_aluna[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
+                        
+                        prompt = f"""
+                        Aja como uma Coordenadora Pedagógica Musical sênior.
+                        Gere uma análise técnica detalhada para a aluna {alu_ia}.
+                        
+                        HISTÓRICO RECENTE:
+                        {historico_texto}
+                        
+                        PRÓXIMA AULA ({proxima_aula}):
+                        Professores escalados: {proxima_prof}
+                        Foco Teórico: {prof_teoria}
+                        Frequência Atual: {freq:.0f}%
+                        
+                        O SEU RELATÓRIO DEVE SEGUIR RIGOROSAMENTE ESTA ESTRUTURA:
+                        
+                        # 🎼 ANÁLISE PEDAGÓGICA COMPLETA
+                        
+                        ## 🧍 1. POSTURA E POSICIONAMENTO
+                        (Analise vícios de falanges, altura de punho, ombros e uso do pedal baseando-se nas dificuldades registradas).
+                        
+                        ## 🎹 2. TÉCNICA E ARTICULAÇÃO
+                        (Comente sobre dedilhado, notas de apoio, substituição e a clareza do toque).
+                        
+                        ## 🥁 3. RITMO E SOLFEJO
+                        (Avalie o uso do metrônomo, leitura rítmica/métrica e se há dificuldade em distinguir figuras).
+                        
+                        ## 📖 4. TEORIA E MSA
+                        (Analise o progresso na apostila e MSA. Identifique lacunas de compreensão).
+                        
+                        ## 📋 5. RESUMO DA SECRETARIA (ASSIDUIDADE)
+                        (Comente a frequência de {freq:.0f}% e se as faltas estão impactando o progresso).
+                        
+                        ## 🎯 6. METAS E DICAS PARA A PRÓXIMA AULA
+                        (Dê instruções diretas para os professores {proxima_prof} focarem no sábado {proxima_aula}).
+                        
+                        ## 🏛️ 7. PREPARAÇÃO PARA BANCA SEMESTRAL
+                        (Dê dicas específicas do que a aluna precisa melhorar urgentemente para ser aprovada na banca).
+                        
+                        ---
+                        *Análise gerada via GEM IA em {datetime.now().strftime('%d/%m/%Y')}*
+                        """
+                        
+                        try:
+                            response = model.generate_content(prompt)
+                            texto_gerado = response.text
+                            
+                            # Salva (Congela) no Supabase
+                            supabase.table("analises_pedagogicas").insert({
+                                "aluna": alu_ia,
+                                "periodo": tipo_periodo,
+                                "conteudo": texto_gerado,
+                                "created_at": datetime.now().isoformat()
+                            }).execute()
+                            
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao gerar análise: {e}")
 
 # --- FIM DO MÓDULO ---
 
@@ -726,6 +735,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
