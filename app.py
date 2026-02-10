@@ -9,19 +9,20 @@ import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 
-# --- CONFIGURAÇÃO DA API (Substitua pela sua chave) ---
-st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
-
-# --- CONFIGURAÇÃO DA API CORRIGIDA ---
+# --- CONFIGURAÇÃO DA IA (VERSÃO COMPATÍVEL) ---
 try:
-    GENAI_KEY = st.secrets["GOOGLE_API_KEY"] # Recomendado usar Secrets do Streamlit
+    GENAI_KEY = st.secrets["GOOGLE_API_KEY"]
 except:
-    GENAI_KEY = "SUA_CHAVE_AQUI_CASO_NAO_USE_SECRETS"
+    GENAI_KEY = "SUA_CHAVE_AQUI"
 
 genai.configure(api_key=GENAI_KEY)
 
-# Use este nome de modelo exato para evitar o erro 404
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
+# Tentando o modelo com o prefixo 'models/' que é o padrão da API v1
+try:
+    model = genai.GenerativeModel('models/gemini-1.5-flash')
+except:
+    # Caso falhe, usa o nome simples (depende da versão da lib)
+    model = genai.GenerativeModel('gemini-1.5-flash')
 
 
 # Conexão Supabase
@@ -528,6 +529,7 @@ elif perfil == "📊 Analítico IA":
                     except Exception as e:
                         st.error(f"❌ Erro ao processar IA: {e}")
                         st.info("Dica: Verifique se sua chave API está ativa e se o modelo 'gemini-1.5-flash-latest' está disponível na sua região.")
+
 
 
 
