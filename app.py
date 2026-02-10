@@ -305,7 +305,8 @@ if perfil == "🏠 Secretaria":
         
             try:
                 # Salva no Supabase
-                supabase.table("historico_geral").delete().eq("Data", data_ch_sel).eq("Tipo","Chamada").execute()
+                supabase.table("historico_geral").insert(novos_registros).execute()
+
                 
                 # Limpa cache para atualizar os gráficos de IA
                 st.cache_data.clear()
@@ -721,6 +722,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
