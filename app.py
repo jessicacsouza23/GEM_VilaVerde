@@ -155,7 +155,7 @@ calendario_db = db_get_calendario()
 # MÓDULO SECRETARIA
 # ==========================================
 if perfil == "🏠 Secretaria":
-    tab_plan, tab_cham, tab_lição = st.tabs(["🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições"])
+    tab_plan, tab_cham, tab_lição = st.tabs(["🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "💰 Financeiro"])
     
     with tab_plan:
         c1, c2 = st.columns(2)
@@ -309,28 +309,6 @@ if perfil == "🏠 Secretaria":
                 st.balloons()
             except Exception as e:
                 st.error(f"Erro ao salvar no banco de dados: {e}")
-        
-   
-    Entendido. Vamos unificar a lógica de "Memória de Registro" (verificar se já existe) com a estrutura de "Pendências e Novas Atividades" que você enviou.
-
-O código abaixo faz o seguinte:
-
-Verifica se já existe correção para a aluna no dia, permitindo a edição.
-
-Mantém a lista de pendências visível para resolução rápida.
-
-Organiza o formulário de "Nova Atividade" com a inteligência de carregar dados anteriores se a secretaria estiver apenas editando um registro do mesmo dia.
-
-Aqui está o código completo para copiar e colar:
-
-Python
-# ==========================================
-# MÓDULO SECRETARIA (CONTROLE DE LIÇÕES)
-# ==========================================
-elif perfil == "🏢 Secretaria":
-    st.title("🏢 Gestão de Secretaria")
-    
-    tab_licao, tab_financeiro = st.tabs(["📝 Correção de Lições", "💰 Financeiro"])
 
     with tab_licao:
         st.subheader("Registro de Correção de Lições")
@@ -749,6 +727,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
