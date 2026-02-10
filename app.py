@@ -514,17 +514,14 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.title("📊 Painel Pedagógico de Performance")
 
-    # 1. CARREGAMENTO E SEGURANÇA
     df = pd.DataFrame(historico_geral)
 
     if df.empty:
         st.info("ℹ️ O banco de dados está vazio. Registre aulas para gerar análises.")
     else:
-        # 2. SELEÇÃO DA ALUNA
         alu_ia = st.selectbox("Selecione a Aluna para Relatório:", ALUNAS_LISTA)
 
         if 'Data' in df.columns:
-            # Tratamento de datas
             df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
             df_aluna = df[df["Aluna"] == alu_ia]
 
@@ -534,7 +531,7 @@ elif perfil == "📊 Analítico IA":
                 horizontal=True
             )
 
-            # --- FILTRAGEM TEMPORAL ---
+            # --- FILTRAGEM ---
             df_f = pd.DataFrame()
             if tipo_periodo == "Diária":
                 datas_disponiveis = sorted(df_aluna['dt_obj'].unique(), reverse=True)
@@ -548,11 +545,11 @@ elif perfil == "📊 Analítico IA":
             elif tipo_periodo == "Bimestral":
                 mapa_bim = {"1º Bim (Jan/Fev)": [1,2], "2º Bim (Mar/Abr)": [3,4], "3º Bim (Mai/Jun)": [5,6], "4º Bim (Jul/Ago)": [7,8]}
                 bim_sel = st.selectbox("Bimestre:", list(mapa_bim.keys()))
-                df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(mapa_bim[bim_sel])]
+                df_f = df_aluna[df_aluna['dt_obj'].apply(lambda x: x.month if x else 0).isin(mapa_bim[bim_sel])]
             elif tipo_periodo == "Semestral":
                 sem_sel = st.selectbox("Semestre:", ["1º Semestre", "2º Semestre"])
                 meses_sem = [1,2,3,4,5,6] if sem_sel == "1º Semestre" else [7,8,9,10,11,12]
-                df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(meses_sem)]
+                df_f = df_aluna[df_aluna['dt_obj'].apply(lambda x: x.month if x else 0).isin(meses_sem)]
             else:
                 df_f = df_aluna
 
@@ -601,7 +598,7 @@ elif perfil == "📊 Analítico IA":
                 
                 st.info(f"📍 **Próxima Aula:** {proxima_aula}  \n👩‍🏫 **Escala de Professores:** {proxima_prof}")
 
-                # --- [3] ANÁLISE IA CONGELADA (SALVAMENTO NO BANCO) ---
+                # --- [3] ANÁLISE IA CONGELADA ---
                 st.markdown("---")
                 st.subheader("📝 Relatório Pedagógico Detalhado")
 
@@ -617,52 +614,41 @@ elif perfil == "📊 Analítico IA":
                     st.success(f"✅ Análise carregada da memória (Salva em: {analise_salva['data_geracao'][:10]})")
                     st.markdown(analise_salva['conteudo'])
                     if st.button("🔄 Gerar Nova Análise (Substituir Salva)"):
-                        analise_salva = None # Força a geração de uma nova
+                        analise_salva = None 
 
                 if not analise_salva:
                     if st.button("✨ GERAR RELATÓRIO TÉCNICO COMPLETO"):
                         if model:
                             with st.spinner("IA consolidando dados pedagógicos..."):
-                                dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
-                                
-                                prompt = f"""
-                                Aja como Coordenadora Pedagógica Master. Analise o histórico da aluna {alu_ia}.
-                                
-                                ESTRUTURA OBRIGATÓRIA:
-                                ## 🎹 1. POSTURA E TÉCNICA
-                                Detalhes sobre forma das mãos, dedilhado e postura corporal.
-                                ## 🥁 2. RITMO E MÉTRICA
-                                Avaliação do uso do metrônomo e divisões rítmicas.
-                                ## 📖 3. TEORIA E DESENVOLVIMENTO
-                                Progresso nos métodos e compreensão musical.
-                                ## 🏠 4. RESUMO DA SECRETARIA (FALTAS/PENDÊNCIAS)
-                                Baseado em: {realizadas} aulas feitas e {pendentes} pendências.
-                                ## 🎯 5. METAS PARA A PRÓXIMA AULA ({proxima_aula})
-                                O que cobrar especificamente dos professores na escala: {proxima_prof}.
-                                ## 🏛️ 6. DICAS PARA A BANCA SEMESTRAL
-                                Sugestões técnicas e psicológicas para o exame de banca.
-
-                                DADOS PARA ANÁLISE:
-                                {dados_texto}
-                                """
-                                res = model.generate_content(prompt)
-                                
-                                # SALVANDO NO SUPABASE
                                 try:
-                                    nova_data = {
-                                        "aluna": alu_ia, 
-                                        "periodo": tipo_periodo, 
-                                        "conteudo": res.text, 
-                                        "professoras_escala": proxima_prof
-                                    }
+                                    dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
+                                    prompt = f"""
+                                    Aja como Coordenadora Pedagógica Master. Analise o histórico da aluna {alu_ia}.
+                                    ESTRUTURA OBRIGATÓRIA:
+                                    ## 🎹 1. POSTURA E TÉCNICA
+                                    ## 🥁 2. RITMO E MÉTRICA
+                                    ## 📖 3. TEORIA E DESENVOLVIMENTO
+                                    ## 🏠 4. RESUMO DA SECRETARIA (FALTAS/PENDÊNCIAS)
+                                    Baseado em: {realizadas} aulas feitas e {pendentes} pendências.
+                                    ## 🎯 5. METAS PARA A PRÓXIMA AULA ({proxima_aula})
+                                    O que cobrar especificamente na escala: {proxima_prof}.
+                                    ## 🏛️ 6. DICAS PARA A BANCA SEMESTRAL
+                                    DADOS: {dados_texto}
+                                    """
+                                    res = model.generate_content(prompt)
+                                    
+                                    # SALVAR NO BANCO
+                                    nova_data = {"aluna": alu_ia, "periodo": tipo_periodo, "conteudo": res.text, "professoras_escala": proxima_prof}
                                     supabase.table("analises_congeladas").insert(nova_data).execute()
-                                    st.success("Análise congelada no banco de dados!")
                                     st.rerun()
+
                                 except Exception as e:
-                                    st.error(f"Erro ao salvar: {e}")
-                                    st.markdown(res.text) # Mostra o texto mesmo se falhar o banco
+                                    if "429" in str(e) or "ResourceExhausted" in str(e):
+                                        st.error("⚠️ Cota de IA atingida! Por favor, aguarde 60 segundos ou consulte análises já salvas no banco.")
+                                    else:
+                                        st.error(f"Erro ao processar: {e}")
         else:
-            st.error("Erro: Coluna 'Data' não encontrada no banco de dados.")
+            st.error("Erro: Coluna 'Data' não encontrada.")
 
 # --- FIM DO MÓDULO ---
 
@@ -670,6 +656,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
