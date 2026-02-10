@@ -9,26 +9,30 @@ import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 
-# --- CONFIGURAÇÃO DA IA (VERSÃO SIMPLIFICADA) ---
-# Tenta pegar a chave do painel Secrets do Streamlit
+# --- CONFIGURAÇÃO DA IA (VERSÃO ESTÁVEL v1) ---
 if "GOOGLE_API_KEY" in st.secrets:
     GENAI_KEY = st.secrets["GOOGLE_API_KEY"]
 else:
-    # SE NÃO USAR SECRETS, COLE SUA CHAVE ENTRE AS ASPAS ABAIXO:
-    GENAI_KEY = "COLE_AQUI_SUA_CHAVE_SEM_ESPAÇOS"
+    GENAI_KEY = "SUA_CHAVE_AQUI"
 
-if GENAI_KEY and GENAI_KEY != "COLE_AQUI_SUA_CHAVE_SEM_ESPAÇOS":
-    try:
-        genai.configure(api_key=GENAI_KEY)
-        # O nome oficial e mais atual da API v1 estável:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-    except Exception as e:
-        st.error(f"Erro na configuração da IA: {e}")
-        model = None
-else:
-    st.error("⚠️ Chave API não encontrada! Configure no painel Secrets do Streamlit ou cole no código.")
-    model = None
+genai.configure(api_key=GENAI_KEY)
+
+def carregar_modelo():
+    # Lista de nomes técnicos aceitos pela API v1 estável
+    modelos = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
     
+    for nome in modelos:
+        try:
+            m = genai.GenerativeModel(model_name=nome)
+            # Teste de fumaça (smoke test)
+            m.generate_content("ping") 
+            return m
+        except:
+            continue
+    return None
+
+model = carregar_modelo()
+
 # Conexão Supabase
 SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
 SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
@@ -489,36 +493,44 @@ elif perfil == "📊 Analítico IA":
 
             st.divider()
 
-            # --- 🚀 BOTÃO GERADOR DE RELATÓRIO ---
-            if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
+            # --- 🚀 BOTÃO GERADOR DE RELATÓRIO ---if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
+          if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
                 if model:
-                    with st.spinner("Analisando dados..."):
-                        # Pegamos os dados e transformamos em texto simples
-                        dados_brutos = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_csv(index=False)
+                    with st.spinner(f"Processando com {model.model_name}..."):
+                        # Transformamos o histórico em um formato de lista legível
+                        historico_texto = ""
+                        for _, row in df_f.iterrows():
+                            historico_texto += f"\nData: {row['Data']} | Tipo: {row['Tipo']} | Lição: {row['Licao_Atual']}\n"
+                            historico_texto += f"Dificuldades: {', '.join(row['Dificuldades']) if isinstance(row['Dificuldades'], list) else row['Dificuldades']}\n"
+                            historico_texto += f"Observações: {row['Observacao']}\n"
+            
+                        prompt_completo = f"""
+                        Analise como uma Coordenadora Pedagógica de Órgão Eletrônico:
+                        Aluna: {alu_ia}
                         
-                        prompt_ia = f"""
-                        Você é uma Coordenadora Pedagógica de Órgão Eletrônico. 
-                        Analise os dados abaixo da aluna {alu_ia} e gere um relatório técnico de 13 seções.
-                        DADOS:
-                        {dados_brutos}
+                        DADOS DAS AULAS:
+                        {historico_texto}
+                        
+                        Gere um relatório detalhado com 13 seções, separando:
+                        - Postura (costas, mãos, pés)
+                        - Técnica (articulação, dedilhado)
+                        - Ritmo (metrônomo, pulsação)
+                        - Teoria e Solfejo
+                        - Metas e Dicas para a Banca Semestral.
                         """
-                        
+            
                         try:
-                            # Chamada simplificada
-                            response = model.generate_content(prompt_ia)
-                            
+                            response = model.generate_content(prompt_completo)
                             st.markdown("---")
-                            st.subheader("📝 Relatório Analítico Final")
                             st.markdown(response.text)
-                            
-                            st.download_button("📥 Baixar Relatório", response.text, f"Relatorio_{alu_ia}.txt")
+                            st.download_button("📥 Baixar Relatório", response.text, f"Analise_{alu_ia}.txt")
                         except Exception as e:
                             st.error(f"Erro ao gerar conteúdo: {e}")
-                            st.info("Verifique se sua chave tem permissão para o modelo 'gemini-1.5-flash'.")
-                else:
-                    st.error("Modelo de IA não carregado. Verifique a chave API.")
-
-
-
-
-
+          else:
+            st.error("IA Indisponível. Verifique sua conexão e API Key no Google AI Studio.")
+            
+            
+            
+            
+    
+    
