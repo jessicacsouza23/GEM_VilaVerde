@@ -9,34 +9,31 @@ import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 
-# --- 1. CONFIGURAÇÕES E CONEXÕES SEGURAS ---
-st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
+# --- CONFIGURAÇÃO DA IA COM DIAGNÓSTICO ---
+def inicializar_ia():
+    try:
+        if "GOOGLE_API_KEY" not in st.secrets:
+            return None, "Chave 'GOOGLE_API_KEY' não encontrada nos Secrets do Streamlit."
+        
+        api_key = st.secrets["GOOGLE_API_KEY"]
+        genai.configure(api_key=api_key)
+        
+        # Tentamos o modelo mais estável para o Free Tier em 2026
+        nome_modelo = 'gemini-1.5-flash'
+        modelo = genai.GenerativeModel(nome_modelo)
+        
+        # Teste de fumaça: se isso falhar, o modelo não está disponível
+        modelo.generate_content("oi", generation_config={"max_output_tokens": 1})
+        return modelo, "Sucesso"
+    except Exception as e:
+        return None, str(e)
 
-# --- INICIALIZAÇÃO DA IA (CORREÇÃO ERRO 404) ---
-try:
-    GENAI_KEY = st.secrets["GOOGLE_API_KEY"]
-    genai.configure(api_key=GENAI_KEY)
-    
-    # Lista de nomes possíveis para o mesmo modelo (resolvendo o conflito de versão)
-    model_names = ['gemini-1.5-flash', 'models/gemini-1.5-flash', 'gemini-pro']
-    
-    def get_working_model(names):
-        for name in names:
-            try:
-                m = genai.GenerativeModel(name)
-                # Teste de resposta rápida
-                m.generate_content("ping", generation_config={"max_output_tokens": 1})
-                return m
-            except:
-                continue
-        return None
+model, msg_erro_ia = inicializar_ia()
 
-    model = get_working_model(model_names)
-    
-    if model is None:
-        st.error("Não foi possível carregar o modelo de IA. Verifique se sua chave tem permissão para Gemini 1.5 ou Gemini Pro.")
-except Exception as e:
-    st.error(f"Erro ao configurar IA: {e}")
+if model is None:
+    st.sidebar.error(f"⚠️ IA Desconectada: {msg_erro_ia}")
+else:
+    st.sidebar.success("🚀 IA Pronta para Análise")
     
 
 # Conexão Supabase
@@ -454,72 +451,63 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.header("📊 Inteligência Pedagógica Vila Verde")
     
-    if not historico_geral:
-        st.warning("⚠️ O banco de dados está vazio. Registre aulas primeiro.")
+    if model is None:
+        st.error(f"❌ Erro Crítico de Conexão: {msg_erro_ia}")
+        st.info("Dica: Verifique se sua chave no Google AI Studio tem acesso ao 'Gemini API v1'.")
+    elif not historico_geral:
+        st.warning("⚠️ Banco de dados vazio.")
     else:
         df = pd.DataFrame(historico_geral)
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         
         alu_ia = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
-        df_f = df[df["Aluna"] == alu_ia]
+        df_f = df[df["Aluna"] == alu_ia].sort_values("dt_obj", ascending=False)
         
         if df_f.empty:
             st.info(f"Sem registros para {alu_ia}.")
         else:
-            # --- 📈 DASHBOARDS ---
-            g1, g2 = st.columns(2)
-            with g1:
-                # Gráfico Radar de Equilíbrio
+            # Gráficos
+            c1, c2 = st.columns(2)
+            with c1:
                 tipos = df_f['Tipo'].value_counts()
-                fig_radar = go.Figure(data=go.Scatterpolar(
-                    r=tipos.values,
-                    theta=tipos.index,
-                    fill='toself',
-                    line_color='#2E86C1'
-                ))
-                fig_radar.update_layout(title="Distribuição de Aulas/Atividades")
+                fig_radar = go.Figure(data=go.Scatterpolar(r=tipos.values, theta=tipos.index, fill='toself'))
                 st.plotly_chart(fig_radar, use_container_width=True)
-                
-            with g2:
-                # Top Dificuldades
+            with c2:
                 difs = [d for sub in df_f['Dificuldades'].dropna() for d in sub if isinstance(sub, list)]
                 if difs:
                     df_d = pd.Series(difs).value_counts().reset_index()
-                    df_d.columns = ['Dificuldade', 'Qtd']
-                    fig_bar = px.bar(df_d.head(8), x='Qtd', y='Dificuldade', orientation='h', title="Dificuldades Recorrentes")
-                    st.plotly_chart(fig_bar, use_container_width=True)
+                    st.plotly_chart(px.bar(df_d.head(10), x=0, y='index', orientation='h', title="Dificuldades"), use_container_width=True)
 
             st.divider()
 
-            # --- 🚀 BOTÃO DA IA ---
-            if st.button("✨ GERAR RELATÓRIO COMPLETO (13 SEÇÕES)"):
-                if model:
-                    with st.spinner(f"Processando com {model.model_name}..."):
-                        # Organização técnica dos dados
-                        dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
-                        
-                        prompt_ia = f"""
-                        Você é a Coordenadora Pedagógica Master do GEM Vila Verde.
-                        Analise o histórico da aluna {alu_ia} e gere um relatório técnico com 13 seções.
-                        
-                        SEÇÕES OBRIGATÓRIAS:
-                        - Postura (mãos, costas, pés).
-                        - Técnica e Ritmo (articulação, dedilhado, metrônomo).
-                        - Resumo da Secretaria (lições e pendências).
-                        - Metas para a próxima aula.
-                        - Dicas para a Banca Semestral.
-                        
-                        DADOS:
-                        {dados_texto}
-                        """
-                        
-                        try:
-                            response = model.generate_content(prompt_ia)
-                            st.markdown("### 📝 Relatório Analítico Final")
-                            st.write(response.text)
-                            st.download_button("📥 Baixar Análise", response.text, f"Relatorio_{alu_ia}.txt")
-                        except Exception as e:
-                            st.error(f"Erro ao gerar conteúdo: {e}")
-                else:
-                    st.error("Modelo de IA não carregado corretamente.")
+            # BOTÃO DE GERAR RELATÓRIO
+            if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
+                with st.spinner("IA Analisando Postura, Técnica e Ritmo..."):
+                    # Preparação do histórico para a IA
+                    resumo_historico = ""
+                    for _, row in df_f.iterrows():
+                        resumo_historico += f"Data: {row['Data']} | Área: {row['Tipo']} | Lição: {row['Licao_Atual']}\n"
+                        resumo_historico += f"Dificuldades: {row['Dificuldades']}\nObs: {row['Observacao']}\n---\n"
+
+                    prompt_master = f"""
+                    Aja como Coordenadora Pedagógica Master de Órgão Eletrônico.
+                    Analise o progresso da aluna {alu_ia} e gere o relatório completo de 13 seções.
+                    
+                    DADOS:
+                    {resumo_historico}
+                    
+                    REQUISITOS DA ANÁLISE:
+                    - Separe dificuldades por ÁREAS: Postura (mãos, costas, pés), Técnica (dedilhado, articulação), Ritmo (metrônomo) e Teoria.
+                    - Inclua o resumo da secretaria.
+                    - Defina metas para a próxima aula.
+                    - Dê dicas específicas para a banca semestral.
+                    """
+                    
+                    try:
+                        response = model.generate_content(prompt_master)
+                        st.markdown("### 📝 Relatório Analítico Final")
+                        st.markdown(response.text)
+                        st.download_button("📥 Baixar Análise Congelada", response.text, f"Analise_{alu_ia}.txt")
+                    except Exception as e:
+                        st.error(f"Erro ao processar conteúdo: {e}")
 
