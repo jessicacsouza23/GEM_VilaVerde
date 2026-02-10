@@ -436,7 +436,7 @@ elif perfil == "👩‍🏫 Professora":
 # ==========================================
 # MÓDULO ANÁLISE DE IA
 # ==========================================
-elif perfil == "📊 Analítico de IA":
+elif perfil == "📊 Analítico IA":
     st.header("📊 Inteligência Pedagógica")
     
     if not historico_geral:
@@ -528,6 +528,7 @@ elif perfil == "📊 Analítico de IA":
                     except Exception as e:
                         st.error(f"❌ Erro ao processar IA: {e}")
                         st.info("Dica: Verifique se sua chave API está ativa e se o modelo 'gemini-1.5-flash-latest' está disponível na sua região.")
+
 
 
 
