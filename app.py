@@ -421,7 +421,7 @@ elif perfil == "👩‍🏫 Professora":
 # ==========================================
 # MÓDULO ANÁLISE DE IA
 # ==========================================
-elif perfil == "📊 Analítico IA"
+elif perfil == "📊 Analítico IA": # Alterar o nome no radio da sidebar para "📊 Analítico IA"
     st.header("🤖 Inteligência Artificial Pedagógica")
     
     if not historico_geral:
@@ -516,6 +516,7 @@ elif perfil == "📊 Analítico IA"
                     # Botão para "Congelar" (Salvar a análise pronta num banco de dados de relatórios)
                     if st.button("💾 Congelar Relatório para Consulta Futura"):
                         st.success("Relatório salvo no histórico de análises da aluna!")
+
 
 
 
