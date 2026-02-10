@@ -9,21 +9,30 @@ import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 
-# --- CONFIGURAÇÃO DA IA (VERSÃO COMPATÍVEL) ---
-try:
+# --- CONFIGURAÇÃO DA IA (MODO COMPATIBILIDADE TOTAL) ---
+if "GOOGLE_API_KEY" in st.secrets:
     GENAI_KEY = st.secrets["GOOGLE_API_KEY"]
-except:
-    GENAI_KEY = "SUA_CHAVE_AQUI"
+else:
+    GENAI_KEY = "SUA_CHAVE_AQUI" # Se não usar Secrets, cole aqui
 
 genai.configure(api_key=GENAI_KEY)
 
-# Tentando o modelo com o prefixo 'models/' que é o padrão da API v1
-try:
-    model = genai.GenerativeModel('models/gemini-1.5-flash')
-except:
-    # Caso falhe, usa o nome simples (depende da versão da lib)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+# Lista de modelos por ordem de prioridade
+modelos_para_testar = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
 
+@st.cache_resource
+def carregar_modelo_ia():
+    for nome_modelo in modelos_para_testar:
+        try:
+            m = genai.GenerativeModel(nome_modelo)
+            # Teste rápido para ver se o modelo responde
+            m.generate_content("teste", generation_config={"max_output_tokens": 1})
+            return m
+        except:
+            continue
+    return None
+
+model = carregar_modelo_ia()
 
 # Conexão Supabase
 SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
@@ -440,63 +449,74 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
     st.header("📊 Inteligência Pedagógica Vila Verde")
     
-    if not historico_geral:
-        st.warning("⚠️ Banco de dados sem registros.")
+    if model is None:
+        st.error("❌ Não foi possível conectar com nenhum modelo de IA. Verifique se sua API Key é válida e se você tem saldo/quota no Google AI Studio.")
+    elif not historico_geral:
+        st.warning("⚠️ O banco de dados está vazio.")
     else:
         df = pd.DataFrame(historico_geral)
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         
-        alu_ia = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
+        c1, c2 = st.columns([2,1])
+        alu_ia = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
+        per_ia = c2.selectbox("Período:", ["Geral", "Dia", "Mês", "Bimestre", "Semestre"])
+        
+        hoje = datetime.now().date()
         df_f = df[df["Aluna"] == alu_ia]
         
+        # Filtros de data
+        if per_ia == "Dia": df_f = df_f[df_f['dt_obj'] == hoje]
+        elif per_ia == "Mês": df_f = df_f[df_f['dt_obj'] > (hoje - timedelta(days=30))]
+        elif per_ia == "Bimestre": df_f = df_f[df_f['dt_obj'] > (hoje - timedelta(days=60))]
+        elif per_ia == "Semestre": df_f = df_f[df_f['dt_obj'] > (hoje - timedelta(days=180))]
+
         if df_f.empty:
-            st.info(f"Sem dados para {alu_ia}.")
+            st.info(f"Sem registros para {alu_ia} neste período.")
         else:
-            # --- DASHBOARDS ---
+            # --- 📈 DASHBOARDS ---
+            st.subheader("🎯 Visão Geral de Desempenho")
             g1, g2 = st.columns(2)
+            
             with g1:
-                # Mapeia os tipos reais do banco para o gráfico
-                tipos_banco = df_f['Tipo'].value_counts()
-                categorias_radar = ['Aula_Prática', 'Aula_Teoria', 'Aula_Solfejo', 'Controle_Licao']
-                valores_radar = [tipos_banco.get(c, 0) for c in categorias_radar]
-                
-                fig_radar = go.Figure(data=go.Scatterpolar(
-                    r=valores_radar,
-                    theta=['Prática', 'Teoria', 'Solfejo', 'Secretaria'],
-                    fill='toself'
-                ))
+                # Gráfico Radar
+                cat_radar = ['Aula_Prática', 'Aula_Teoria', 'Aula_Solfejo', 'Controle_Licao']
+                val_radar = [df_f[df_f['Tipo'] == c].shape[0] for c in cat_radar]
+                fig_radar = go.Figure(data=go.Scatterpolar(r=val_radar, theta=['Prática', 'Teoria', 'Solfejo', 'Secretaria'], fill='toself'))
+                fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, max(val_radar)+1])))
                 st.plotly_chart(fig_radar, use_container_width=True)
 
             with g2:
-                # Gráfico de Dificuldades
-                difs_totais = []
-                for d in df_f['Dificuldades'].dropna():
-                    if isinstance(d, list): difs_totais.extend(d)
-                if difs_totais:
-                    df_d = pd.Series(difs_totais).value_counts().reset_index()
-                    df_d.columns = ['Dificuldade', 'Qtd']
-                    st.plotly_chart(px.bar(df_d.head(8), x='Qtd', y='Dificuldade', orientation='h', title="Dificuldades"), use_container_width=True)
+                # Gráfico Dificuldades
+                difs = [item for sublist in df_f['Dificuldades'].dropna() for item in sublist if isinstance(sublist, list)]
+                if difs:
+                    df_d = pd.Series(difs).value_counts().reset_index(name='qtd')
+                    st.plotly_chart(px.bar(df_d.head(8), x='qtd', y='index', orientation='h', title="Dificuldades Recorrentes"), use_container_width=True)
 
             st.divider()
 
-            # --- BOTÃO IA ---
-            if st.button("✨ GERAR ANÁLISE COMPLETA"):
-                with st.spinner("IA processando..."):
+            # --- 🚀 BOTÃO GERADOR DE RELATÓRIO ---
+            if st.button("✨ GERAR ANÁLISE PEDAGÓGICA COMPLETA"):
+                with st.spinner(f"Usando {model.model_name} para analisar as 13 seções..."):
+                    dados_ia = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
+                    
+                    prompt = f"""
+                    Você é uma Coordenadora Pedagógica Master de Órgão Eletrônico.
+                    Analise o histórico da aluna {alu_ia} e gere o RELATÓRIO COMPLETO DE 13 SEÇÕES.
+                    
+                    DADOS:
+                    {dados_ia}
+                    
+                    Lembre-se de separar as dificuldades por: Postura, Técnica, Ritmo e Teoria. 
+                    Dê dicas para a próxima aula e para a banca semestral.
+                    """
+                    
                     try:
-                        # Convertemos os dados para uma string simples para a IA
-                        resumo_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
-                        
-                        prompt = f"Analise pedagogicamente o progresso de {alu_ia} e crie um relatório de 13 seções (Postura, Técnica, Ritmo, Teoria, Metas, Banca Semestral) com base nisso:\n{resumo_texto}"
-                        
-                        # A mágica acontece aqui
                         response = model.generate_content(prompt)
+                        st.markdown("### 📝 Relatório Analítico Final")
                         st.markdown(response.text)
-                        
-                        st.download_button("Baixar Relatório", response.text, f"Relatorio_{alu_ia}.txt")
+                        st.download_button("📥 Baixar Relatório", response.text, f"Relatorio_{alu_ia}.txt")
                     except Exception as e:
-                        st.error(f"Erro na Chamada da IA: {e}")
-                        st.info("Tente mudar o nome do modelo no código para 'gemini-pro'.")
-
+                        st.error(f"Erro na geração do texto: {e}")
 
 
 
