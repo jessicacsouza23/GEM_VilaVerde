@@ -598,46 +598,38 @@ elif perfil == "📊 Analítico IA":
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=False)
 
-        # --- [1] LÓGICA DE CONVERSA COM O RODÍZIO (CONVERTENDO DATAS) ---
+        # --- [1] LÓGICA DE CONVERSA COM O RODÍZIO ---
         proxima_aula, proxima_prof, prof_teoria = "Não encontrada", "Não definida", "Não definida"
         
-        # Tentamos ler o calendário_raw que vem da página de planejamento
-        if 'calendario_raw' in locals() and calendario_raw:
+        # Tenta buscar do local ou do session_state (garante a conversa entre abas)
+        dados_cal = calendario_raw if 'calendario_raw' in locals() else st.session_state.get('calendario_raw', [])
+        
+        if dados_cal:
             try:
-                # Criamos um dataframe temporário da escala
-                cal_df = pd.DataFrame(calendario_raw)
-                
-                # Normalizamos a data do ID (ex: '14/02/2026') para objeto de data
+                cal_df = pd.DataFrame(dados_cal)
                 cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
                 
-                # Filtramos apenas datas de HOJE para frente
                 hoje = datetime.now().date()
                 futuros = cal_df[cal_df['dt_format'] >= hoje].sort_values('dt_format')
                 
                 if not futuros.empty:
-                    # Varremos os dias futuros para encontrar a aluna na escala
                     for _, row in futuros.iterrows():
                         escala_dia = row.get('escala', [])
-                        
-                        # Procuramos a linha da aluna selecionada
-                        dados_escala_aluna = next((item for item in escala_dia if item.get('Aluna') == alu_ia), None)
+                        # Busca ignorando espaços extras para evitar erros de digitação
+                        dados_escala_aluna = next((item for item in escala_dia if str(item.get('Aluna')).strip() == alu_ia.strip()), None)
                         
                         if dados_escala_aluna:
-                            proxima_aula = row['id'] # Mantém o formato string '14/02/2026'
-                            
-                            # Mapeamento de Horários Individual
+                            proxima_aula = row['id']
                             h2 = dados_escala_aluna.get('09h35 (H2)', '-')
                             h3 = dados_escala_aluna.get('10h10 (H3)', '-')
                             h4 = dados_escala_aluna.get('10h45 (H4)', '-')
                             proxima_prof = f"H2: {h2} | H3: {h3} | H4: {h4}"
-                            
-                            # Mapeamento de Aula em Grupo (Teoria) - Geralmente H1
                             prof_teoria = dados_escala_aluna.get('09h00 (H1)', 'Não definida')
-                            break # Encontrou a primeira aula futura, para de procurar
+                            break 
             except Exception as e:
                 st.error(f"Erro ao sincronizar rodízio: {e}")
 
-        # --- [2] FILTRAGEM DO HISTÓRICO PARA O DASHBOARD ---
+        # --- [2] FILTRAGEM DO HISTÓRICO ---
         df_f = pd.DataFrame()
         if tipo_periodo == "Diária":
             datas_h = sorted(df_aluna['dt_obj'].unique(), reverse=True)
@@ -646,7 +638,7 @@ elif perfil == "📊 Analítico IA":
         else:
             df_f = df_aluna 
 
-        # --- [3] DASHBOARD VISUAL (IGUAL À IMAGEM) ---
+        # --- [3] DASHBOARD VISUAL ---
         if df_f.empty and proxima_aula == "Não encontrada":
             st.warning(f"Sem dados para {alu_ia}. Verifique se o nome está correto no rodízio e no histórico.")
         else:
@@ -664,7 +656,7 @@ elif perfil == "📊 Analítico IA":
             m3.metric("Frequência", f"{freq:.0f}%")
             m4.metric("Próximo Rodízio", proxima_aula)
 
-            # Boxes de Dificuldades (Dados Reais)
+            # Boxes de Dificuldades
             st.markdown("#### 📝 Parecer Técnico Prévio")
             todas_difs = [d for sub in df_f['Dificuldades'].dropna() for d in (sub if isinstance(sub, list) else [sub])]
             
@@ -685,8 +677,9 @@ elif perfil == "📊 Analítico IA":
             st.divider()
             g1, g2 = st.columns(2)
             with g1:
-                fig_p = px.pie(df_f, names='Tipo', hole=0.4, title="Áreas Focadas") if not df_f.empty else None
-                if fig_p: st.plotly_chart(fig_p, use_container_width=True)
+                if not df_f.empty:
+                    fig_p = px.pie(df_f, names='Tipo', hole=0.4, title="Áreas Focadas")
+                    st.plotly_chart(fig_p, use_container_width=True)
             with g2:
                 difs_limpas = [d for d in todas_difs if d not in ["Não apresentou dificuldades", "None"]]
                 if difs_limpas:
@@ -695,7 +688,7 @@ elif perfil == "📊 Analítico IA":
                     fig_b = px.bar(df_d, x='Qtd', y='Dificuldade', orientation='h', title="Top Dificuldades", color='Qtd')
                     st.plotly_chart(fig_b, use_container_width=True)
 
-            # --- [5] ENCAMINHAMENTO (A "CONVERSA" COM O RODÍZIO) ---
+            # --- [5] ENCAMINHAMENTO ---
             with st.expander("📬 Para quem encaminhar este relatório?", expanded=True):
                 st.write(f"**Data da Próxima Escala:** {proxima_aula}")
                 col_e1, col_e2 = st.columns(2)
@@ -725,7 +718,7 @@ elif perfil == "📊 Analítico IA":
                         try:
                             contexto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
                             prompt = f"""
-                            Aja como Coordenadora Pedagógica Master. Gere um relatório para {alu_ia}.
+                            Aja como Coordenadora Pedagógica Master. Gere um relatório detalhado para {alu_ia}.
                             
                             DADOS DO HISTÓRICO:
                             {contexto}
@@ -733,18 +726,21 @@ elif perfil == "📊 Analítico IA":
                             DADOS DO PRÓXIMO RODÍZIO ({proxima_aula}):
                             Individual: {proxima_prof} | Teoria: {prof_teoria}
                             
-                            ESTRUTURA:
+                            ESTRUTURA OBRIGATÓRIA:
                             ## 🎹 1. POSTURA E TÉCNICA
                             ## 🥁 2. RITMO E MÉTRICA
                             ## 📖 3. TEORIA E DESENVOLVIMENTO
                             ## 🏠 4. RESUMO DA SECRETARIA (Frequência: {freq:.0f}%)
                             ## 🎯 5. METAS PARA A PRÓXIMA AULA ({proxima_aula})
-                            (Especifique o que {proxima_prof} e {prof_teoria} devem cobrar)
+                            (Especifique o que as professoras {proxima_prof} e {prof_teoria} devem cobrar especificamente)
                             ## 🏛️ 6. DICAS PARA A BANCA SEMESTRAL
                             """
                             res_ia = model.generate_content(prompt)
+                            # CORREÇÃO AQUI: de aluna_ia para alu_ia
                             supabase.table("analises_congeladas").insert({
-                                "aluna": aluna_ia, "periodo": tipo_periodo, "conteudo": res_ia.text
+                                "aluna": alu_ia, 
+                                "periodo": tipo_periodo, 
+                                "conteudo": res_ia.text
                             }).execute()
                             st.rerun()
                         except Exception as e:
@@ -756,5 +752,6 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
