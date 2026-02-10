@@ -69,6 +69,74 @@ calendario_db = db_get_calendario()
 if perfil == "🏠 Secretaria":
     tab_plan, tab_cham, tab_ped = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Análise Pedagógica"])
 
+    Entendi o que está acontecendo: a lógica anterior rodava as alunas entre as professoras, mas as professoras acabavam "presas" à mesma sala em todos os sábados.
+
+Para resolver isso, criei uma Lógica de Deslocamento Duplo. Agora, a "Sala 1" não pertence mais à "Professora 1" para sempre. A cada semana, as professoras também pulam de sala.
+
+Aqui está o código completo com o Carrossel de Salas e Professoras:
+
+Python
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+import calendar
+from supabase import create_client, Client
+
+# --- 1. CONFIGURAÇÕES E CONEXÃO ---
+st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
+
+SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
+SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
+
+@st.cache_resource
+def init_supabase():
+    try: return create_client(SUPABASE_URL, SUPABASE_KEY)
+    except: return None
+
+supabase = init_supabase()
+
+# --- FUNÇÕES DE BANCO ---
+def db_get_calendario():
+    try:
+        res = supabase.table("calendario").select("*").execute()
+        return {item['id']: item['escala'] for item in res.data}
+    except: return {}
+
+def db_get_historico():
+    try:
+        res = supabase.table("historico_geral").select("*").execute()
+        return res.data
+    except: return []
+
+def db_save_historico(dados):
+    try: supabase.table("historico_geral").insert(dados).execute()
+    except Exception as e: st.error(f"Erro ao salvar: {e}")
+
+# --- 2. DADOS MESTRE ---
+PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
+ALUNAS_LISTA = sorted([
+    "Amanda S.", "Ana Marcela S.", "Caroline C.", "Elisa F.", "Emilly O.", "Gabrielly V.",
+    "Heloísa R.", "Ingrid M.", "Júlia Cristina", "Júlia S.", "Julya O.", "Mellina S.",
+    "Micaelle S.", "Raquel L.", "Rebeca R.", "Rebecca A.", "Rebeka S.", "Sarah S.",
+    "Stephany O.", "Vitória A.", "Vitória Bella T."
+])
+TURMAS = {
+    "Turma 1": ["Rebecca A.", "Amanda S.", "Ingrid M.", "Rebeka S.", "Mellina S.", "Rebeca R.", "Caroline C."],
+    "Turma 2": ["Vitória A.", "Elisa F.", "Sarah S.", "Gabrielly V.", "Emily O.", "Julya O.", "Stephany O."],
+    "Turma 3": ["Heloísa R.", "Ana Marcela S.", "Vitória Bella T.", "Júlia S.", "Micaelle S.", "Raquel L.", "Júlia Cristina"]
+}
+HORARIOS = ["08h45 (Igreja)", "09h35 (H2)", "10h10 (H3)", "10h45 (H4)"]
+
+# --- 3. INTERFACE ---
+st.title("🎼 GEM Vila Verde - Gestão 2026")
+perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
+
+historico_geral = db_get_historico()
+calendario_db = db_get_calendario()
+
+if perfil == "🏠 Secretaria":
+    tab_plan, tab_cham, tab_ped = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Análise Pedagógica"])
+    
     with tab_plan:
         c1, c2 = st.columns(2)
         mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
@@ -82,21 +150,21 @@ if perfil == "🏠 Secretaria":
             col_t, col_s = st.columns(2)
             with col_t:
                 st.subheader("📚 Teoria (SALA 8)")
-                pt2 = st.selectbox("Prof. Teoria H2", PROFESSORAS_LISTA, index=0)
-                pt3 = st.selectbox("Prof. Teoria H3", PROFESSORAS_LISTA, index=1)
-                pt4 = st.selectbox("Prof. Teoria H4", PROFESSORAS_LISTA, index=2)
+                pt2 = st.selectbox("Prof. Teoria H2", PROFESSORAS_LISTA, index=0, key="t2")
+                pt3 = st.selectbox("Prof. Teoria H3", PROFESSORAS_LISTA, index=1, key="t3")
+                pt4 = st.selectbox("Prof. Teoria H4", PROFESSORAS_LISTA, index=2, key="t4")
             with col_s:
                 st.subheader("🔊 Solfejo (SALA 9)")
-                ps2 = st.selectbox("Prof. Solfejo H2", PROFESSORAS_LISTA, index=3)
-                ps3 = st.selectbox("Prof. Solfejo H3", PROFESSORAS_LISTA, index=4)
-                ps4 = st.selectbox("Prof. Solfejo H4", PROFESSORAS_LISTA, index=5)
+                ps2 = st.selectbox("Prof. Solfejo H2", PROFESSORAS_LISTA, index=3, key="s2")
+                ps3 = st.selectbox("Prof. Solfejo H3", PROFESSORAS_LISTA, index=4, key="s3")
+                ps4 = st.selectbox("Prof. Solfejo H4", PROFESSORAS_LISTA, index=5, key="s4")
             
             folgas = st.multiselect("Folgas:", PROFESSORAS_LISTA)
 
-            if st.button("🚀 GERAR RODÍZIO DINÂMICO"):
-                # Cálculo do Salto Baseado na Data (para rodar as professoras toda semana)
-                data_obj = datetime.strptime(data_sel_str, "%d/%m/%Y")
-                semana_do_ano = data_obj.isocalendar()[1]
+            if st.button("🚀 GERAR RODÍZIO CARROSSEL TOTAL"):
+                # Semente de rotação baseada na data
+                dt_obj = datetime.strptime(data_sel_str, "%d/%m/%Y")
+                offset = dt_obj.isocalendar()[1] # Semana do ano (ex: 6, 7, 8...)
                 
                 mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
                 for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
@@ -112,27 +180,30 @@ if perfil == "🏠 Secretaria":
                     ocupadas_h = [conf["P_Teo"], conf["P_Sol"]] + folgas
                     profs_livres = [p for p in PROFESSORAS_LISTA if p not in ocupadas_h]
                     
-                    # Ordenar as alunas que vão para a prática
+                    # Rodar a lista de professoras livres baseado na semana
+                    # Isso garante que a Professora que estava na Sala 1 semana passada mude
+                    num_profs = len(profs_livres)
+                    
                     alunas_pratica = []
                     for t_nome, alunas in TURMAS.items():
-                        if conf["Teo"] != t_nome and conf["Sol"] != t_nome:
-                            alunas_pratica.extend(alunas)
+                        if conf["Teo"] == t_nome:
+                            for a in alunas: mapa[a][h] = f"📚 SALA 8 | {conf['P_Teo']}"
+                        elif conf["Sol"] == t_nome:
+                            for a in alunas: mapa[a][h] = f"🔊 SALA 9 | {conf['P_Sol']}"
                         else:
-                            # Preencher Coletivas
-                            tipo = "📚 SALA 8" if conf["Teo"] == t_nome else "🔊 SALA 9"
-                            prof_col = conf["P_Teo"] if conf["Teo"] == t_nome else conf["P_Sol"]
-                            for a in alunas: mapa[a][h] = f"{tipo} | {prof_col}"
+                            alunas_pratica.extend(alunas)
                     
-                    # DISTRIBUIÇÃO CARROSSEL (Não repete sala nem professora)
+                    # Distribuição com deslocamento duplo (Aluna -> Prof -> Sala)
                     for i, aluna_p in enumerate(alunas_pratica):
-                        # O segredo do rodízio: somamos a 'semana_do_ano' ao índice
-                        idx_rotativo = (i + semana_do_ano) % len(profs_livres)
-                        prof_resp = profs_livres[idx_rotativo]
+                        # i + offset garante que a cada semana a aluna pegue uma prof diferente
+                        # e que cada prof pegue uma sala diferente
+                        posicao_rotativa = (i + offset) % num_profs
+                        prof_da_vez = profs_livres[posicao_rotativa]
                         
-                        # A Sala é vinculada à posição da professora na lista livre daquela hora
-                        # Garante 1 sala por professora, sem sobreposição
-                        num_sala = idx_rotativo + 1
-                        mapa[aluna_p][h] = f"🎹 SALA {num_sala} | {prof_resp}"
+                        # Sala rotativa: a sala também muda para a professora
+                        sala_num = ((posicao_rotativa + offset) % 7) + 1
+                        
+                        mapa[aluna_p][h] = f"🎹 SALA {sala_num} | {prof_da_vez}"
 
                 supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                 st.rerun()
@@ -251,6 +322,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
