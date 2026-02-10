@@ -285,39 +285,75 @@ if perfil == "🏠 Secretaria":
 # MÓDULO PROFESSORA
 # ==========================================
 elif perfil == "👩‍🏫 Professora":
-    st.header("👩‍🏫 Diário de Classe")
-    instr = st.selectbox("Professora:", PROFESSORAS_LISTA)
-    data_hj = datetime.now().strftime("%d/%m/%Y")
+    st.header("👩‍🏫 Painel da Professora")
+    instr_sel = st.selectbox("Selecione seu nome:", ["Selecione..."] + PROFESSORAS_LISTA)
 
-    if data_hj in calendario_db:
-        h_atual = st.radio("Horário:", HORARIOS, horizontal=True)
-        escala = calendario_db[data_hj]
-        atend = next((l for l in escala if instr in str(l.get(h_atual, ""))), None)
-        
-        if atend:
-            mat = "Teoria" if "SALA 8" in atend[h_atual] else ("Solfejo" if "SALA 9" in atend[h_atual] else "Prática")
-            st.warning(f"📍 {mat}: {atend['Aluna'] if mat == 'Prática' else atend['Turma']}")
+    if instr_sel != "Selecione...":
+        # --- VERIFICAÇÃO DE ESCALA ---
+        if data_hj in calendario_db:
+            st.info(f"📅 Hoje: {data_hj}")
+            h_sel = st.radio("Selecione o Horário da Aula:", HORARIOS, horizontal=True)
             
-            with st.form("f_aula_prof"):
-                li_hj = st.text_input("Lição dada hoje:")
-                st.write("---")
-                st.write("**Dificuldades:**")
-                lista_dif = ["Postura", "Punho", "Ritmo", "Leitura", "Metrônomo", "Não estudou", "Sem dificuldades"]
-                cols = st.columns(3)
-                difs = [d for i, d in enumerate(lista_dif) if cols[i%3].checkbox(d)]
+            # Busca quem a professora atende neste horário
+            atendimento = next((r for r in calendario_db[data_hj] if instr_sel in str(r.get(h_sel, ""))), None)
+            
+            if atendimento:
+                aluna_atual = atendimento['Aluna']
+                local_aula = atendimento[h_sel] # Ex: "🎹 SALA 1 | Roberta" ou "📚 SALA 8 | Roberta"
                 
-                p_casa = st.text_input("Para casa (Lições/Apostila):")
-                relato = st.text_area("O que observar na próxima aula:")
+                st.success(f"📍 **Local:** {local_aula.split('|')[0]} | **Aluna:** {aluna_atual}")
                 
-                if st.form_submit_button("💾 Salvar Registro"):
-                    db_save_historico({
-                        "Data": data_hj, "Aluna": atend["Aluna"], "Tipo": "Aula", "Materia": mat,
-                        "Licao": li_hj, "Dificuldades": ", ".join(difs), "ParaCasa": p_casa, "Obs": relato, "Instrutora": instr
-                    })
-                    st.success("Aula registrada!")
-        else: st.info("Sem aula agora.")
-    else: st.error("Rodízio não gerado para hoje.")
+                # Define o Tipo de Aula baseado no Local
+                tipo_aula = "Prática"
+                dificuldades_lista = DIF_PRATICA
+                if "SALA 8" in local_aula: 
+                    tipo_aula = "Teoria"
+                    dificuldades_lista = DIF_TEORIA
+                elif "SALA 9" in local_aula: 
+                    tipo_aula = "Solfejo"
+                    dificuldades_lista = DIF_SOLFEJO
 
+                st.divider()
+                st.subheader(f"📝 Controle de Desempenho - {tipo_aula}")
+
+                with st.form("f_aula_prof", clear_on_submit=True):
+                    # --- CAMPOS COMUNS ---
+                    lic_vol = st.selectbox("Lição/Volume Atual:", OPCOES_LICOES)
+                    if lic_vol == "Outro":
+                        lic_vol = st.text_input("Especifique a Lição/Volume:")
+                    
+                    dif_selecionadas = st.multiselect("Dificuldades Observadas:", dificuldades_lista)
+                    obs_aula = st.text_area("Observações Pedagógicas:")
+
+                    # --- CAMPOS EXCLUSIVOS PRÁTICA ---
+                    casa_vol = ""
+                    casa_apo = ""
+                    if tipo_aula == "Prática":
+                        c1, c2 = st.columns(2)
+                        casa_vol = c1.selectbox("Lição de Casa - Volume:", ["Nenhuma"] + OPCOES_LICOES)
+                        casa_apo = c2.text_input("Lição de Casa - Apostila:")
+                    else:
+                        casa_vol = st.text_input("Lição de Casa:")
+
+                    if st.form_submit_button("❄️ CONGELAR E SALVAR AULA"):
+                        dados_aula = {
+                            "Aluna": aluna_atual,
+                            "Tipo": f"Aula_{tipo_aula}",
+                            "Data": data_hj,
+                            "Instrutora": instr_sel,
+                            "Licao_Atual": lic_vol,
+                            "Dificuldades": dif_selecionadas,
+                            "Observacao": obs_aula,
+                            "Licao_Casa": f"Volume: {casa_vol} | Apo: {casa_apo}" if tipo_aula == "Prática" else casa_vol
+                        }
+                        if db_save_historico(dados_aula):
+                            st.success(f"✅ Aula de {tipo_aula} para {aluna_atual} salva com sucesso!")
+                            st.balloons()
+            else:
+                st.warning("Você não está em escala para este horário.")
+        else:
+            st.error("O rodízio de hoje ainda não foi gerado pela secretaria.")
+            
 # ==========================================
 # MÓDULO ANALÍTICO IA
 # ==========================================
@@ -355,6 +391,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
