@@ -612,8 +612,6 @@ elif perfil == "📊 Analítico IA":
         # Preparação dos Dados do Histórico
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=False)
-
-        proxima_aula, proxima_prof, prof_teoria = "Não encontrada", "Não definida", "Não definida"
         
         # --- [1] LÓGICA DE CONVERSA COM O RODÍZIO (FILTRADO POR SÁBADO) ---
         proxima_aula, proxima_prof, prof_teoria = "Não encontrada", "Não definida", "Não definida"
@@ -780,6 +778,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
