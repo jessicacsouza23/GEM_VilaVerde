@@ -502,66 +502,123 @@ elif perfil == "👩‍🏫 Professora":
 # MÓDULO ANÁLISE DE IA
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.title("📊 Análise Pedagógica e Transferência")
+    st.title("📊 Análise Pedagógica e Rodízio")
     
-    # 1. Seleção Única de Aluna (O sistema usará esta variável para tudo)
-    alu_ia = st.selectbox("Selecione a Aluna para Análise:", ALUNAS_LISTA)
-    per_ia = st.selectbox("Período:", ["Geral", "Dia", "Mês", "Bimestre", "Semestre", "Ano"])
+    # 1. SELEÇÃO DA ALUNA
+    alu_ia = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
     
-    # ... (Seu código de gráficos e filtros aqui) ...
+    # 2. DEFINIÇÃO DO TIPO DE PERÍODO
+    tipo_periodo = st.radio(
+        "Selecione o tipo de análise:",
+        ["Diária", "Mensal", "Bimestral", "Semestral", "Anual", "Geral"],
+        horizontal=True
+    )
+    
+    df = pd.DataFrame(historico_geral)
+    df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
+    df_aluna = df[df["Aluna"] == alu_ia]
 
-    # --- 🔄 SEÇÃO DE RODÍZIO (LIMPA E FILTRADA) ---
-    st.markdown("---")
-    st.subheader("📅 Próxima Aula e Escala")
+    # 3. FILTROS ESPECÍFICOS POR SELEÇÃO
+    df_f = pd.DataFrame() # Inicializa vazio
     
-    proxima_aula = "Não agendada"
-    proxima_prof = "Não definida"
-    hoje_ref = datetime.now().date()
+    if tipo_periodo == "Diária":
+        datas_disponiveis = sorted(df_aluna['dt_obj'].unique(), reverse=True)
+        dia_sel = st.selectbox("Escolha o dia da aula:", datas_disponiveis)
+        df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
+        
+    elif tipo_periodo == "Mensal":
+        meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+        mes_sel = st.selectbox("Escolha o mês:", meses, index=datetime.now().month - 1)
+        # Filtra pelo mês e ano atual
+        df_f = df_aluna[(pd.to_datetime(df_aluna['dt_obj']).dt.month == meses.index(mes_sel) + 1) & 
+                        (pd.to_datetime(df_aluna['dt_obj']).dt.year == 2026)]
+        
+    elif tipo_periodo == "Bimestral":
+        bim_sel = st.selectbox("Escolha o Bimestre:", ["1º Bimestre (Jan/Fev)", "2º Bimestre (Mar/Abr)", "3º Bimestre (Mai/Jun)", "4º Bimestre (Jul/Ago)", "5º Bimestre (Set/Out)", "6º Bimestre (Nov/Dez)"])
+        # Lógica de meses para cada bimestre
+        mapa_bim = {"1º Bimestre (Jan/Fev)": [1,2], "2º Bimestre (Mar/Abr)": [3,4], "3º Bimestre (Mai/Jun)": [5,6], "4º Bimestre (Jul/Ago)": [7,8], "5º Bimestre (Set/Out)": [9,10], "6º Bimestre (Nov/Dez)": [11,12]}
+        df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(mapa_bim[bim_sel])]
+        
+    elif tipo_periodo == "Semestral":
+        sem_sel = st.selectbox("Escolha o Semestre:", ["1º Semestre", "2º Semestre"])
+        meses_sem = [1,2,3,4,5,6] if sem_sel == "1º Semestre" else [7,8,9,10,11,12]
+        df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(meses_sem)]
+        
+    elif tipo_periodo == "Anual":
+        ano_sel = st.selectbox("Escolha o Ano:", [2025, 2026, 2027], index=1)
+        df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.year == ano_sel]
+        
+    else: # Geral
+        df_f = df_aluna
 
-    if calendario_raw:
-        cal_df = pd.DataFrame(calendario_raw)
-        cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
+    # --- EXIBIÇÃO DOS RESULTADOS ---
+    if df_f.empty:
+        st.info(f"Nenhum registro encontrado para {alu_ia} neste período.")
+    else:
+        # Indicadores Visuais (KPIs)
+        total = len(df_f)
+        aprov = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
+        perc = (aprov/total*100) if total > 0 else 0
         
-        # Pega a próxima data válida
-        futuros = cal_df[cal_df['dt_format'] >= hoje_ref].sort_values('dt_format')
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Registros", total)
+        c2.metric("Aproveitamento", f"{perc:.1f}%")
+        c3.metric("Faltas/Pendências", len(df_f[df_f['Status'] != "Realizadas - sem pendência"]))
+
+        # Gráficos
+        g1, g2 = st.columns(2)
+        with g1:
+            st.plotly_chart(px.pie(df_f, names='Tipo', hole=0.5, title="Áreas Focadas"), use_container_width=True)
+        with g2:
+            difs = [d for sub in df_f['Dificuldades'].dropna() for d in sub if d != "Não apresentou dificuldades"]
+            if difs:
+                df_d = pd.Series(difs).value_counts().reset_index()
+                st.plotly_chart(px.bar(df_d.head(5), x=0, y='index', orientation='h', title="Top Dificuldades"), use_container_width=True)
+
+        # --- RODÍZIO LIMPO (Usando a alu_ia selecionada) ---
+        st.markdown("---")
+        st.subheader("🔄 Escala para a Próxima Aula")
         
-        if not futuros.empty:
-            proxima_aula = futuros.iloc[0]['id']
-            escala_bruta = futuros.iloc[0]['escala']
+        proxima_aula, proxima_prof = "Não definida", "Não definida"
+        if calendario_raw:
+            cal_df = pd.DataFrame(calendario_raw)
+            cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
+            futuros = cal_df[cal_df['dt_format'] >= datetime.now().date()].sort_values('dt_format')
             
-            # FILTRAGEM CIRÚRGICA: Busca apenas a aluna selecionada no selectbox lá de cima
-            if isinstance(escala_bruta, list):
-                dados_aluna = next((item for item in escala_bruta if item.get('Aluna') == alu_ia), None)
-                
-                if dados_aluna:
-                    # Formata a exibição para ficar bonitinha e sem códigos
-                    h2 = dados_aluna.get('09h35 (H2)', '---')
-                    h3 = dados_aluna.get('10h10 (H3)', '---')
-                    h4 = dados_aluna.get('10h45 (H4)', '---')
-                    proxima_prof = f"🎹 **Piano:** {h3} | 📚 **Teoria:** {h2} | 🔊 **Coro/Outros:** {h4}"
-                else:
-                    proxima_prof = "Aluna não encontrada na escala para esta data."
-            else:
-                proxima_prof = "Escala ainda não processada pela secretaria."
+            if not futuros.empty:
+                proxima_aula = futuros.iloc[0]['id']
+                escala_bruta = futuros.iloc[0]['escala']
+                if isinstance(escala_bruta, list):
+                    dados_aluna = next((item for item in escala_bruta if item.get('Aluna') == alu_ia), None)
+                    if dados_aluna:
+                        proxima_prof = f"**H2:** {dados_aluna.get('09h35 (H2)')} | **H3:** {dados_aluna.get('10h10 (H3)')} | **H4:** {dados_aluna.get('10h45 (H4)')}"
+        
+        st.info(f"📍 **Próxima Aula:** {proxima_aula}")
+        st.success(f"👩‍🏫 **Professoras de {alu_ia}:** {proxima_prof}")
 
-    # Exibição Final (Limpa)
-    st.info(f"📆 **Data da Próxima Aula:** {proxima_aula}")
-    st.success(f"👩‍🏫 **Professoras de {alu_ia}:** {proxima_prof}")
-
-    # --- 🚀 BOTÃO DA IA ---
-    if st.button("✨ GERAR RELATÓRIO PARA AS PROFESSORAS"):
-        if model:
-            with st.spinner("IA consolidando dados..."):
-                # O prompt agora já sabe quem são as professoras
-                prompt = f"""
-                Analise a aluna {alu_ia}. 
-                Envie as instruções para as professoras da próxima aula ({proxima_prof}).
-                Foque em Postura, Técnica, Ritmo e Teoria.
-                Este é um relatório interno de transferência.
-                """
-                res = model.generate_content(prompt)
-                st.markdown(res.text)
-
+        # --- BOTÃO IA (Relatório Pedagógico Completo) ---
+        if st.button("✨ GERAR ANÁLISE COMPLETA PARA PROFESSORAS"):
+            if model:
+                with st.spinner("IA processando relatório técnico..."):
+                    dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
+                    prompt = f"""
+                    Aja como Coordenadora Pedagógica. Gere um relatório de transferência para: {proxima_prof}.
+                    ALUNA: {alu_ia} | PERÍODO: {tipo_periodo}.
+                    
+                    REGRAS:
+                    1. Analise por Áreas: Postura, Técnica, Ritmo e Teoria.
+                    2. Resumo da Secretaria (Pendências).
+                    3. Metas para a Próxima Aula ({proxima_aula}).
+                    4. Dicas específicas para a BANCA SEMESTRAL.
+                    5. Linguagem Técnica entre Professoras. NÃO ENVIAR PARA ALUNA.
+                    
+                    DADOS DO HISTÓRICO:
+                    {dados_texto}
+                    """
+                    res = model.generate_content(prompt)
+                    st.markdown("### 📝 Relatório Técnico de Transferência")
+                    st.write(res.text)
+                    st.download_button("📥 Congelar Análise", res.text, f"Analise_{alu_ia}_{tipo_periodo}.txt")
 
 
 # --- 🔄 LÓGICA DE RODÍZIO FILTRADA (PROTEGIDA) ---
@@ -609,5 +666,6 @@ if 'alu_ia' in locals() or 'alu_ia' in globals():
     st.success(f"👩‍🏫 **Escala de {alu_ia}:** {proxima_prof}")
 else:
     st.warning("⚠️ Selecione uma aluna acima para visualizar a escala de rodízio.")
+
 
 
