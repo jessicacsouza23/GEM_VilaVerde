@@ -179,10 +179,77 @@ if perfil == "🏠 Secretaria":
                 st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": reg["Aluna"], "Tipo": "Chamada", "Status": reg["Status"], "Motivo": reg["Motivo"]})
             st.success(f"Chamada de {data_ch_sel} salva!")
             
+    Entendido! Fiz o ajuste para que, ao clicar em "CONGELAR E SALVAR", o sistema exiba uma mensagem de sucesso clara e visual (st.success), confirmando que os dados foram gravados no banco.
+
+Além disso, mantive todas as regras anteriores: as pendências aparecem no mesmo dia, mostram a data da primeira correção e ficam arquivadas para a análise da IA.
+
+Aqui está o código completo:
+
+Python
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+import calendar
+from supabase import create_client, Client
+
+# --- 1. CONFIGURAÇÕES E CONEXÃO ---
+st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
+
+SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
+SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
+
+@st.cache_resource
+def init_supabase():
+    try: return create_client(SUPABASE_URL, SUPABASE_KEY)
+    except: return None
+
+supabase = init_supabase()
+
+# --- 2. DADOS MESTRE ---
+PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
+SECRETARIAS_LISTA = ["Ester", "Jéssica", "Larissa", "Lourdes", "Natasha", "Roseli"]
+ALUNAS_LISTA = sorted([
+    "Amanda S. - Parque do Carmo II", "Anne da Silva - Vila Verde", "Ana Marcela S. - Vila Verde", 
+    "Caroline C. - Vila Ré", "Elisa F. - Vila Verde", "Emilly O. - Vila Curuçá Velha", 
+    "Gabrielly V. - Vila Verde", "Heloísa R. - Vila Verde", "Ingrid M. - Parque do Carmo II", 
+    "Júlia Cristina - União de Vila Nova", "Júlia S. - Vila Verde", "Julya O. - Vila Curuçá Velha", 
+    "Mellina S. - Jardim Lígia", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", 
+    "Rebeca R. - Vila Ré", "Rebecca A. - Vila Verde", "Rebeka S. - Jardim Lígia", 
+    "Sarah S. - Vila Verde", "Stephany O. - Vila Curuçá Velha", "Vitória A. - Vila Verde", 
+    "Vitória Bella T. - Vila Verde"
+])
+CATEGORIAS_LICAO = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila", "Folhas avulsas (teoria)"]
+STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refazer", "Não realizada"]
+
+# --- FUNÇÕES DE BANCO ---
+def db_get_historico():
+    try:
+        res = supabase.table("historico_geral").select("*").execute()
+        return res.data
+    except: return []
+
+def db_save_historico(dados):
+    try: 
+        supabase.table("historico_geral").insert(dados).execute()
+        st.cache_data.clear()
+        return True
+    except Exception as e: 
+        st.error(f"Erro ao salvar: {e}")
+        return False
+
+# --- 3. INTERFACE ---
+st.title("🎼 GEM Vila Verde - Gestão 2026")
+perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
+
+historico_geral = db_get_historico()
+
+if perfil == "🏠 Secretaria":
+    tab_plan, tab_cham, tab_lição = st.tabs(["🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições"])
+    
     with tab_lição:
         st.subheader("📝 Controle de Lições e Pendências")
         
-        # Seleção Superior
+        # Cabeçalho
         c1, c2 = st.columns(2)
         sec_resp = c1.selectbox("Secretária responsável:", SECRETARIAS_LISTA)
         data_hj = c2.date_input("Data de Hoje:", datetime.now())
@@ -190,29 +257,27 @@ if perfil == "🏠 Secretaria":
         alu_sel = st.selectbox("Selecione a Aluna:", ["Selecione..."] + ALUNAS_LISTA)
         
         if alu_sel != "Selecione...":
-            # --- LÓGICA DE PENDÊNCIAS EM TEMPO REAL ---
+            # --- ÁREA DE PENDÊNCIAS ---
             df_hist = pd.DataFrame(historico_geral)
             if not df_hist.empty:
-                # Filtrar apenas lições com status de erro para ESTA aluna
-                # Agora incluímos o dia de hoje (<= data_hj) para aparecer na hora
                 df_hist['dt_comparar'] = pd.to_datetime(df_hist['Data'], format='%d/%m/%Y').dt.date
                 
-                pendentes = df_hist[
+                # Busca tudo que deu erro
+                pendentes_bruto = df_hist[
                     (df_hist["Aluna"] == alu_sel) & 
                     (df_hist["Tipo"] == "Controle_Licao") & 
                     (df_hist["Status"].isin(["Realizada - devolvida para refazer", "Não realizada"]))
                 ].sort_values("dt_comparar", ascending=False)
 
-                # Regra: Se a lição foi corrigida depois com sucesso, ela sai da lista de pendentes
+                # Busca o que foi corrigido depois
                 sucessos = df_hist[
                     (df_hist["Aluna"] == alu_sel) & 
                     (df_hist["Status"] == "Realizadas - sem pendência")
                 ]
                 
-                # Filtrar pendências que ainda não tiveram um registro de sucesso posterior
-                # Usamos a combinação de Categoria + Lição para saber se já foi resolvida
+                # Filtra o que ainda não foi resolvido
                 pendencias_reais = []
-                for _, p in pendentes.iterrows():
+                for _, p in pendentes_bruto.iterrows():
                     resolvida = sucessos[
                         (sucessos["Categoria"] == p["Categoria"]) & 
                         (sucessos["Licao_Detalhe"] == p["Licao_Detalhe"]) & 
@@ -222,33 +287,31 @@ if perfil == "🏠 Secretaria":
                         pendencias_reais.append(p)
 
                 if pendencias_reais:
-                    st.error("🚨 ATENÇÃO: ATIVIDADES PENDENTES")
+                    st.error("🚨 ATENÇÃO: LIÇÕES AINDA PENDENTES")
                     for p in pendencias_reais:
                         with st.container(border=True):
-                            col_a, col_b = st.columns([1, 3])
-                            col_a.metric("Status", p["Status"])
-                            col_b.markdown(f"### 📖 {p['Categoria']}")
-                            col_b.markdown(f"**📍 Lição/Página:** {p.get('Licao_Detalhe', 'Não especificada')}")
-                            col_b.markdown(f"🗓️ **Primeira Correção em:** {p['Data']}")
-                            col_b.info(f"**Observação anterior:** {p.get('Observacao', 'Sem observações.')}")
+                            col_a, col_b = st.columns([1, 4])
+                            col_a.warning(f"**{p['Status']}**")
+                            col_b.markdown(f"📖 **{p['Categoria']}** - {p.get('Licao_Detalhe', '---')}")
+                            col_b.caption(f"📅 Primeira correção em: {p['Data']} | Obs: {p.get('Observacao', '-')}")
                 else:
-                    st.success("✅ Aluna sem pendências no momento.")
+                    st.success("✅ Aluna sem pendências pendentes.")
 
             st.divider()
             
-            # --- FORMULÁRIO DE REGISTRO ---
+            # --- FORMULÁRIO COM MENSAGEM DE SUCESSO ---
             with st.form("f_registro_final", clear_on_submit=True):
-                st.markdown("### ✍️ Registrar Nova Correção")
+                st.markdown("### ✍️ Registrar Nova Atividade")
                 c_cat, c_det = st.columns([1, 2])
                 cat_sel = c_cat.radio("Categoria:", CATEGORIAS_LICAO)
-                det_lic = c_det.text_input("Lição / Página específica:", placeholder="Ex: Lição 10, pág 20")
+                det_lic = c_det.text_input("Lição / Página:", placeholder="Ex: Lição 02, pág 05")
                 
                 st.divider()
-                status_sel = st.radio("Resultado da avaliação de hoje:", STATUS_LICAO, horizontal=True)
-                obs_hoje = st.text_area("Observação detalhada (ficará salva para a IA):")
+                status_sel = st.radio("Status hoje:", STATUS_LICAO, horizontal=True)
+                obs_hoje = st.text_area("Observação Técnica (p/ Análise IA):")
                 
                 if st.form_submit_button("❄️ CONGELAR E SALVAR"):
-                    db_save_historico({
+                    sucesso = db_save_historico({
                         "Aluna": alu_sel,
                         "Tipo": "Controle_Licao",
                         "Data": data_hj.strftime("%d/%m/%Y"),
@@ -258,9 +321,12 @@ if perfil == "🏠 Secretaria":
                         "Status": status_sel,
                         "Observacao": obs_hoje
                     })
-                    st.success("Registro salvo! Se for uma pendência, o status será atualizado.")
-                    st.rerun()
-                    
+                    if sucesso:
+                        st.balloons() # Efeito visual opcional
+                        st.success("✅ Registro salvo com sucesso! O histórico foi atualizado.")
+                        # O st.rerun() pode ser removido ou colocado após um pequeno delay se quiser que a mensagem dure mais
+                        # st.rerun()
+
 # ==========================================
 # MÓDULO PROFESSORA
 # ==========================================
@@ -335,6 +401,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
