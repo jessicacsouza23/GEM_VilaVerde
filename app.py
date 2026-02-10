@@ -178,74 +178,7 @@ if perfil == "🏠 Secretaria":
             for reg in registros_chamada:
                 st.session_state.historico_geral.append({"Data": data_ch_sel, "Aluna": reg["Aluna"], "Tipo": "Chamada", "Status": reg["Status"], "Motivo": reg["Motivo"]})
             st.success(f"Chamada de {data_ch_sel} salva!")
-            
-    Entendido! Fiz o ajuste para que, ao clicar em "CONGELAR E SALVAR", o sistema exiba uma mensagem de sucesso clara e visual (st.success), confirmando que os dados foram gravados no banco.
-
-Além disso, mantive todas as regras anteriores: as pendências aparecem no mesmo dia, mostram a data da primeira correção e ficam arquivadas para a análise da IA.
-
-Aqui está o código completo:
-
-Python
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-import calendar
-from supabase import create_client, Client
-
-# --- 1. CONFIGURAÇÕES E CONEXÃO ---
-st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
-
-SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
-SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
-
-@st.cache_resource
-def init_supabase():
-    try: return create_client(SUPABASE_URL, SUPABASE_KEY)
-    except: return None
-
-supabase = init_supabase()
-
-# --- 2. DADOS MESTRE ---
-PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
-SECRETARIAS_LISTA = ["Ester", "Jéssica", "Larissa", "Lourdes", "Natasha", "Roseli"]
-ALUNAS_LISTA = sorted([
-    "Amanda S. - Parque do Carmo II", "Anne da Silva - Vila Verde", "Ana Marcela S. - Vila Verde", 
-    "Caroline C. - Vila Ré", "Elisa F. - Vila Verde", "Emilly O. - Vila Curuçá Velha", 
-    "Gabrielly V. - Vila Verde", "Heloísa R. - Vila Verde", "Ingrid M. - Parque do Carmo II", 
-    "Júlia Cristina - União de Vila Nova", "Júlia S. - Vila Verde", "Julya O. - Vila Curuçá Velha", 
-    "Mellina S. - Jardim Lígia", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", 
-    "Rebeca R. - Vila Ré", "Rebecca A. - Vila Verde", "Rebeka S. - Jardim Lígia", 
-    "Sarah S. - Vila Verde", "Stephany O. - Vila Curuçá Velha", "Vitória A. - Vila Verde", 
-    "Vitória Bella T. - Vila Verde"
-])
-CATEGORIAS_LICAO = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila", "Folhas avulsas (teoria)"]
-STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refazer", "Não realizada"]
-
-# --- FUNÇÕES DE BANCO ---
-def db_get_historico():
-    try:
-        res = supabase.table("historico_geral").select("*").execute()
-        return res.data
-    except: return []
-
-def db_save_historico(dados):
-    try: 
-        supabase.table("historico_geral").insert(dados).execute()
-        st.cache_data.clear()
-        return True
-    except Exception as e: 
-        st.error(f"Erro ao salvar: {e}")
-        return False
-
-# --- 3. INTERFACE ---
-st.title("🎼 GEM Vila Verde - Gestão 2026")
-perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
-
-historico_geral = db_get_historico()
-
-if perfil == "🏠 Secretaria":
-    tab_plan, tab_cham, tab_lição = st.tabs(["🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições"])
-    
+   
     with tab_lição:
         st.subheader("📝 Controle de Lições e Pendências")
         
@@ -401,6 +334,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
