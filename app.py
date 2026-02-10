@@ -611,23 +611,24 @@ elif perfil == "📊 Analítico IA":
 
         # --- LÓGICA DE SELEÇÃO DINÂMICA ---
         df_f = df_aluna.copy()
-        periodo_selecionado = ""
+        periodo_id = "" # Usaremos isso para identificar a análise no banco
 
         if tipo_periodo == "Diária":
             datas_disp = sorted(df_aluna['dt_obj'].dropna().unique(), reverse=True)
             if datas_disp:
                 dia_sel = st.date_input("📅 Selecione o Dia:", value=datas_disp[0])
                 df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
-                periodo_selecionado = dia_sel.strftime('%d/%m/%Y')
+                periodo_id = dia_sel.strftime('%d/%m/%Y')
         elif tipo_periodo == "Mensal":
             meses = sorted(list(set(d.strftime('%m/%Y') for d in df_aluna['dt_obj'].dropna())), reverse=True)
             if meses:
-                mes_sel = st.selectbox("📅 Selecione o Mês:", meses); df_f = df_aluna[df_aluna['dt_obj'].apply(lambda x: x.strftime('%m/%Y') == mes_sel)]
-                periodo_selecionado = mes_sel
-        # ... (Mantém as lógicas de Bimestral/Semestral/Anual conforme código anterior)
+                mes_sel = st.selectbox("📅 Selecione o Mês:", meses)
+                df_f = df_aluna[df_aluna['dt_obj'].apply(lambda x: x.strftime('%m/%Y') == mes_sel)]
+                periodo_id = mes_sel
+        # ... (Mantém as outras lógicas de período aqui)
 
         # --- EXIBIÇÃO DE MÉTRICAS ---
-        st.markdown(f"### 📜 Consolidação Técnica: {tipo_periodo} ({periodo_selecionado})")
+        st.markdown(f"### 📜 Consolidação Técnica: {tipo_periodo} ({periodo_id})")
         total_aulas = len(df_f)
         realizadas = len(df_f[df_f['Status'].astype(str).str.contains("Realizada|OK", na=False, case=False)]) if 'Status' in df_f.columns else 0
         freq = (realizadas / total_aulas * 100) if total_aulas > 0 else 0
@@ -637,7 +638,7 @@ elif perfil == "📊 Analítico IA":
         m2.metric("Aproveitamento", realizadas)
         m3.metric("Frequência", f"{freq:.0f}%")
 
-        # --- CARDS DE PARECER DETALHADO ---
+        # --- PARECER DETALHADO E ACOLHEDOR ---
         todas_difs = [str(d) for item in df_f['Dificuldades'].dropna() for d in (item if isinstance(item, list) else [item])]
         tecnicos = list(set([d for d in todas_difs if any(x in d.lower() for x in ["postura", "dedo", "punho", "mão", "falange", "articulação"])]))
         ritmicos = list(set([d for d in todas_difs if any(x in d.lower() for x in ["ritmo", "metrônomo", "solfejo", "tempo"])]))
@@ -645,44 +646,58 @@ elif perfil == "📊 Analítico IA":
         st.markdown("#### 📝 Parecer de Desenvolvimento")
         ce, cd = st.columns(2)
         with ce:
-            if tecnicos: st.error(f"**🎹 Postura e Técnica**\n\nIdentificamos: {', '.join(tecnicos)}. É essencial focar no relaxamento e precisão dos movimentos.")
-            else: st.success("**🎹 Postura e Técnica**\n\nDesempenho sólido e postura correta identificada no período.")
+            if tecnicos: st.error(f"**🎹 Postura e Técnica**\n\nIdentificamos pontos de ajuste em: {', '.join(tecnicos)}. É o momento de lapidar esses movimentos com calma.")
+            else: st.success("**🎹 Postura e Técnica**\n\nEvolução sólida! Sua postura está refletindo segurança e domínio técnico.")
         with cd:
-            if ritmicos: st.warning(f"**🎶 Ritmo e Teoria**\n\nHá pontos de atenção em: {', '.join(ritmicos)}. Sugerimos reforço no solfejo e uso constante do metrônomo.")
-            else: st.success("**🎶 Ritmo e Teoria**\n\nDomínio rítmico e compreensão teórica satisfatórios.")
+            if ritmicos: st.warning(f"**🎶 Ritmo e Teoria**\n\nSentimos que o ritmo precisa de um carinho especial em: {', '.join(ritmicos)}. O metrônomo será seu grande aliado.")
+            else: st.success("**🎶 Ritmo e Teoria**\n\nPrecisão e clareza! Sua percepção rítmica está muito apurada.")
 
-        # --- 💡 DICAS PARA A PRÓXIMA AULA (FIXO) ---
-        st.info(f"**💡 Dica Pedagógica:** {'Iniciar com exercícios de Hanon/Escalas para corrigir postura.' if tecnicos else 'Avançar no cronograma e aumentar o BPM das lições atuais.'}")
+        # --- DICAS PARA A PRÓXIMA AULA ---
+        st.markdown("#### 💡 Dicas para a Próxima Aula")
+        if tecnicos or ritmicos:
+            st.info(f"**Sugestão:** Focar na correção de { (tecnicos[0] if tecnicos else ritmicos[0]) }. Praticar trechos lentos para estabilizar a memória muscular.")
+        else:
+            st.info("**Sugestão:** Base sólida detectada. Aumentar gradativamente o BPM e focar na expressividade da peça.")
 
-        # --- LÓGICA DE IA COM PROTEÇÃO DE COTA ---
+        # --- LÓGICA DE IA (CONGELAMENTO CORRIGIDO) ---
         st.divider()
         analise_previa = None
+        
+        # Só tentamos buscar do banco se for Diária
         if tipo_periodo == "Diária":
             try:
-                res = supabase.table("analises_congeladas").select("*").eq("aluna", alu_ia).eq("data_referencia", periodo_selecionado).execute()
+                # Aqui usamos apenas colunas que costumam existir por padrão
+                res = supabase.table("analises_congeladas").select("*").eq("aluna", alu_ia).eq("periodo", periodo_id).execute()
                 if res.data: analise_previa = res.data[0]
             except: pass
 
         if analise_previa:
-            st.success(f"✅ Análise Congelada para o dia {periodo_selecionado}")
+            st.success(f"✅ Análise Congelada para o dia {periodo_id}")
             st.markdown(analise_previa['conteudo'])
-            if st.button("🔄 Forçar Nova Geração (Gasta Cota)"): analise_previa = None
+            if st.button("🔄 Gerar Nova Análise"): analise_previa = None
 
         if not analise_previa:
-            if st.button("✨ GERAR RELATÓRIO COMPLETO"):
-                with st.spinner("IA Analisando..."):
+            btn_label = "✨ GERAR RELATÓRIO DO DIA" if tipo_periodo == "Diária" else "✨ GERAR CONSOLIDAÇÃO DINÂMICA"
+            if st.button(btn_label):
+                with st.spinner("IA Processando..."):
                     try:
                         hist_txt = df_f[['Data', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
-                        prompt = f"Gere análise técnica acolhedora para {alu_ia} ({tipo_periodo}). Histórico: {hist_txt}. Foco: Postura, Técnica, Ritmo, Teoria, Dicas Próxima Aula e Banca."
+                        prompt = f"Gere uma análise pedagógica detalhada e acolhedora para {alu_ia} ({tipo_periodo}). Histórico: {hist_txt}. Inclua Dicas para Próxima Aula e Preparação para Banca."
                         response = model.generate_content(prompt)
                         texto = response.text
                         st.markdown(texto)
                         
                         if tipo_periodo == "Diária":
-                            supabase.table("analises_congeladas").insert({"aluna": alu_ia, "conteudo": texto, "data_referencia": periodo_selecionado}).execute()
+                            # Salvamos usando a coluna 'periodo' para guardar a data, 
+                            # já que 'data_referencia' deu erro.
+                            supabase.table("analises_congeladas").insert({
+                                "aluna": alu_ia, 
+                                "conteudo": texto, 
+                                "periodo": periodo_id 
+                            }).execute()
+                            st.rerun()
                     except Exception as e:
-                        if "429" in str(e):
-                            st.error("⚠️ **Limite Diário da IA Atingido (Cota do Google)**\n\nVocê já realizou cerca de 20 consultas hoje. O Google bloqueia novas gerações por segurança. **As análises que você já fez e salvou continuam disponíveis!** Tente gerar novos relatórios amanhã.")
+                        if "429" in str(e): st.error("⚠️ Limite diário da IA atingido.")
                         else: st.error(f"Erro técnico: {e}")
 
 # --- FIM DO MÓDULO ---
@@ -691,6 +706,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
