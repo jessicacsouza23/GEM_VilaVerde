@@ -9,33 +9,46 @@ import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 
-# --- CONFIGURAÇÃO DA IA (MODO AUTO-DETECÇÃO) ---
-def inicializar_ia():
+# --- 1. CONFIGURAÇÕES INICIAIS ---
+st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
+
+# Inicialização de Variáveis de Segurança
+historico_geral = []
+calendario_raw = []
+
+# --- 2. CONEXÃO IA COM ECONOMIA DE QUOTA (CACHE) ---
+@st.cache_resource(show_spinner=False)
+def inicializar_ia_economica():
     try:
-        if "GOOGLE_API_KEY" not in st.secrets:
-            return None, "Chave não encontrada nos Secrets."
-        
+        if "GOOGLE_API_KEY" not in st.secrets: return None, "Chave ausente."
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        
-        # Procura automaticamente um modelo que suporte geração de conteúdo
+        # Lista modelos, mas não faz chamadas de teste desnecessárias
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
-                modelo_nome = m.name
-                modelo = genai.GenerativeModel(modelo_nome)
-                # Teste rápido
-                modelo.generate_content("oi", generation_config={"max_output_tokens": 1})
-                return modelo, f"Conectado ({modelo_nome})"
-        
-        return None, "Nenhum modelo compatível encontrado na sua conta."
-    except Exception as e:
+                return genai.GenerativeModel(m.name), m.name
+        return None, "Sem modelo compatível."
+    except Exception as e: 
+        if "429" in str(e): return None, "Cota diária esgotada (Limite de 20/dia). Tente novamente em alguns minutos."
         return None, str(e)
 
-model, status_ia = inicializar_ia()
+model, status_ia = inicializar_ia_economica()
 
-if model is None:
-    st.sidebar.error(f"⚠️ IA Desconectada: {status_ia}")
-else:
-    st.sidebar.success(f"🚀 IA Ativa: {status_ia}")
+try:
+    supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+except Exception as e:
+    st.error(f"Erro Supabase: {e}")
+
+# --- 3. FUNÇÕES DE DADOS ---
+@st.cache_data(ttl=60)
+def carregar_dados_globais():
+    try:
+        h = supabase.table("historico_geral").select("*").execute()
+        c = supabase.table("calendario").select("*").execute()
+        return h.data, c.data
+    except:
+        return [], []
+
+historico_geral, calendario_raw = carregar_dados_globais()
     
 # Conexão Supabase
 SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
@@ -436,91 +449,83 @@ elif perfil == "👩‍🏫 Professora":
 # MÓDULO ANÁLISE DE IA
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.title("📊 Análise Pedagógica e Rodízio")
+    st.title("📊 Painel Pedagógico Vila Verde")
     
+    if model is None:
+        st.sidebar.warning(f"⚠️ IA Temporariamente Indisponível: {status_ia}")
+    else:
+        st.sidebar.success(f"🚀 IA Ativa: {status_ia}")
+
     if not historico_geral:
-        st.warning("Sem dados para analisar.")
+        st.warning("Aguardando dados do banco de dados...")
     else:
         df = pd.DataFrame(historico_geral)
         df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
         
         c1, c2 = st.columns([2, 1])
         alu_ia = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
-        per_ia = c2.selectbox("Filtro de Período:", ["Geral", "Dia", "Mês", "Bimestre", "Semestre", "Ano"])
+        per_ia = c2.selectbox("Período:", ["Geral", "Dia", "Mês", "Bimestre", "Semestre", "Ano"])
         
-        # Aplicar Filtros
+        hoje = datetime.now().date()
         df_aluna = df[df["Aluna"] == alu_ia]
-        df_f = filtrar_por_periodo(df_aluna, per_ia).sort_values("dt_obj", ascending=False)
+        
+        filtros = {
+            "Dia": hoje, "Mês": hoje - timedelta(days=30),
+            "Bimestre": hoje - timedelta(days=60), "Semestre": hoje - timedelta(days=180),
+            "Ano": hoje - timedelta(days=365)
+        }
+        
+        df_f = df_aluna[df_aluna['dt_obj'] >= filtros[per_ia]] if per_ia != "Geral" else df_aluna
+        df_f = df_f.sort_values("dt_obj", ascending=False)
         
         if df_f.empty:
-            st.info(f"Nenhum registro encontrado para {alu_ia} neste período.")
+            st.info(f"Sem registros para {alu_ia} neste período.")
         else:
-            # --- 📈 DASHBOARD RESUMIDO ---
+            # --- DASHBOARD VISUAL ---
             total = len(df_f)
-            aprov = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
-            perc = (aprov/total*100) if total > 0 else 0
+            aprovadas = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
+            perc_aprov = (aprovadas / total * 100) if total > 0 else 0
             
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Registros no Período", total)
-            m2.metric("Aproveitamento", f"{perc:.1f}%")
-            m3.metric("Lições Pendentes", len(df_f[df_f['Status'] != "Realizadas - sem pendência"]))
+            k1, k2, k3 = st.columns(3)
+            k1.metric("Registros", total)
+            k2.metric("Aproveitamento", f"{perc_aprov:.1f}%")
+            k3.metric("Pendências", total - aprovadas)
 
-            col_g1, col_g2 = st.columns(2)
-            with col_g1:
-                fig_tipo = px.pie(df_f, names='Tipo', title="Foco das Aulas", hole=.4, color_discrete_sequence=px.colors.qualitative.Pastel)
-                st.plotly_chart(fig_tipo, use_container_width=True)
-            with col_g2:
+            g1, g2 = st.columns(2)
+            with g1:
+                st.plotly_chart(px.pie(df_f, names='Tipo', hole=0.5, title="Foco por Área"), use_container_width=True)
+            with g2:
                 difs = [d for sub in df_f['Dificuldades'].dropna() for d in sub if d != "Não apresentou dificuldades"]
                 if difs:
                     df_d = pd.Series(difs).value_counts().reset_index()
-                    st.plotly_chart(px.bar(df_d.head(5), x=0, y='index', orientation='h', title="Dificuldades Técnicas"), use_container_width=True)
+                    st.plotly_chart(px.bar(df_d.head(5), x=0, y='index', orientation='h', title="Gargalos Técnicos"), use_container_width=True)
 
-            # --- 🔄 LÓGICA DE RODÍZIO (SECRETARIA) ---
+            # --- RODÍZIO ---
             st.markdown("---")
-            st.subheader("🔄 Informação de Transferência")
-            
-            # Encontrar próxima aula na escala
-            hoje_dt = datetime.now().date()
-            proxima_aula = "Não agendada"
-            proxima_prof = "Não definida"
-            
+            proxima_aula, proxima_prof = "Não agendada", "Não definida"
             if calendario_raw:
-                # Ordenar datas do calendário para pegar a próxima
                 cal_df = pd.DataFrame(calendario_raw)
-                cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y').dt.date
-                futuros = cal_df[cal_df['dt_format'] > hoje_dt].sort_values('dt_format')
-                
+                cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
+                futuros = cal_df[cal_df['dt_format'] >= hoje].sort_values('dt_format')
                 if not futuros.empty:
                     proxima_aula = futuros.iloc[0]['id']
                     proxima_prof = futuros.iloc[0]['escala']
+            
+            st.info(f"🔄 **Próxima Professora:** {proxima_prof} em {proxima_aula}")
 
-            st.info(f"📍 **Próxima Aula:** {proxima_aula} | **Escala:** {proxima_prof}")
-
-            # --- 🚀 BOTÃO IA (RELATÓRIO PARA PROFESSORAS) ---
-            if st.button("✨ GERAR RELATÓRIO PARA PRÓXIMA PROFESSORA"):
+            # --- BOTÃO IA ---
+            if st.button("🚀 GERAR RELATÓRIO TÉCNICO PARA PROFESSORA"):
                 if model:
-                    with st.spinner("IA consolidando análise técnica..."):
-                        historico_txt = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
-                        
-                        prompt = f"""
-                        Você é a Coordenadora Pedagógica. Gere uma análise técnica para a PRÓXIMA PROFESSORA ({proxima_prof}).
-                        ALUNA: {alu_ia} | APROVEITAMENTO: {perc:.1f}%
-                        
-                        ESTRUTURA:
-                        1. ANÁLISE DIÁRIA: Resumo da última aula.
-                        2. TÉCNICA (Postura, Ritmo, Dedilhado).
-                        3. TEORIA E MÉDOTOS: O que deve ser cobrado.
-                        4. METAS: O que a irmã {proxima_prof} deve focar na aula de {proxima_aula}.
-                        5. BANCA: Observações críticas para o semestre.
-
-                        IMPORTANTE: Linguagem profissional entre professoras. Não envie para a aluna.
-                        DADOS: {historico_txt}
-                        """
-                        
-                        try:
+                    try:
+                        with st.spinner("IA Analisando..."):
+                            dados_ia = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
+                            prompt = f"Aja como Coordenadora Pedagógica. Analise a aluna {alu_ia} para a próxima professora {proxima_prof}. Foco em Postura, Técnica, Ritmo e Teoria. Dados: {dados_ia}"
                             res = model.generate_content(prompt)
-                            st.success("Relatório pronto para cópia!")
-                            st.markdown(res.text)
-                            st.download_button("📥 Baixar Relatório", res.text, f"Analise_{alu_ia}.txt")
-                        except Exception as e:
-                            st.error(f"Erro na IA: {e}")
+                            st.markdown("### 📝 Relatório de Transferência")
+                            st.write(res.text)
+                    except Exception as e:
+                        if "429" in str(e): st.error("Cota do Google atingida. Tente gerar novamente em 1 minuto.")
+                        else: st.error(f"Erro: {e}")
+                else:
+                    st.error("IA indisponível no momento devido ao limite de quota.")
+
