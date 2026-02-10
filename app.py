@@ -452,314 +452,314 @@ if perfil == "🏠 Secretaria":
                 except Exception as e:
                     st.error(f"Erro: {e}")
                     
-# ==========================================
-# MÓDULO PROFESSORA
-# ==========================================
-elif perfil == "👩‍🏫 Professora":
-    st.header("👩‍🏫 Controle de Desempenho")
-c1, c2 = st.columns(2)
-with c1:
-    instr_sel = st.selectbox("Identifique-se:", ["Selecione..."] + PROFESSORAS_LISTA)
-with c2:
-    hoje_dt = datetime.now()
-    sab_p = hoje_dt + timedelta(days=(5 - hoje_dt.weekday()) % 7)
-    data_prof = st.date_input("Data da Aula:", sab_p)
-    data_prof_str = data_prof.strftime("%d/%m/%Y")
-
-if instr_sel != "Selecione...":
-    if data_prof_str in calendario_db:
-        escala_dia = calendario_db[data_prof_str]
-        esta_na_escala = any(instr_sel in str(atend) for atend in escala_dia for atend in atend.values())
-
-        if not esta_na_escala:
-            st.divider()
-            st.balloons()
-            st.markdown(f'<div style="background-color: #f0f2f6; padding: 30px; border-radius: 15px; text-align: center; border: 2px dashed #ff4b4b;"><h2 style="color: #ff4b4b;">🌸 Hoje não, Irmã {instr_sel}!</h2><p style="font-size: 1.2em;">Hoje é sua folga. Aproveite o seu dia!</p></div>', unsafe_allow_html=True)
-        else:
-            h_sel = st.radio("Selecione o Horário:", HORARIOS, horizontal=True)
-            atendimento = next((r for r in escala_dia if instr_sel in str(r.get(h_sel, ""))), None)
-            
-            if atendimento:
-                local_info = atendimento[h_sel]
-                aluna_referencia = atendimento['Aluna']
-                turma_aluna = atendimento.get('Turma', 'Turma 1')
-
-                # Identifica se é aula coletiva (Salas 8 ou 9)
-                is_coletiva = "SALA 8" in local_info or "SALA 9" in local_info
-                tipo = "Teoria" if "SALA 8" in local_info else "Solfejo" if "SALA 9" in local_info else "Prática"
-                dif_lista = DIF_TEORIA if tipo == "Teoria" else DIF_SOLFEJO if tipo == "Solfejo" else DIF_PRATICA
-                label_lic = f"Desempenho {tipo}"
-
-                st.success(f"📍 {local_info} | 👤 Referência: {aluna_referencia}")
-
-                # --- SEÇÃO DE CHECKLIST DE ALUNAS ---
-                alunas_selecionadas = []
-                
-                if is_coletiva:
-                    st.markdown("### 👥 Chamada da Turma")
-                    st.caption("Marque as alunas que estão presentes nesta aula:")
-                    alunas_turma = TURMAS.get(turma_aluna, [aluna_referencia])
-                    
-                    # Cria colunas para os checkboxes de alunas não ocuparem muito espaço vertical
-                    cols_alu = st.columns(3)
-                    for idx_a, aluna in enumerate(alunas_turma):
-                        # Se for a aluna que está na escala principal, já vem marcada
-                        default_val = True if aluna == aluna_referencia else True
-                        if cols_alu[idx_a % 3].checkbox(aluna, value=default_val, key=f"check_alu_{idx_a}"):
-                            alunas_selecionadas.append(aluna)
-                else:
-                    alunas_selecionadas = [aluna_referencia]
-
-                # --- FORMULÁRIO DE LANÇAMENTO ---
-                with st.form("f_aula_prof", clear_on_submit=True):
-                    st.subheader(f"📝 Registro de {tipo}")
-                    
-                    lic_vol = st.selectbox(f"{label_lic} - Lição/Volume:", OPCOES_LICOES_NUM)
-                    if lic_vol == "Outro": lic_vol = st.text_input("Especifique:")
-                    
-                    st.markdown("**Dificuldades Detectadas:**")
-                    cols_dif = st.columns(2)
-                    difs_selecionadas = []
-                    for i, d in enumerate(dif_lista):
-                        target_col = cols_dif[0] if i < len(dif_lista)/2 else cols_dif[1]
-                        if target_col.checkbox(d, key=f"diff_{i}"):
-                            difs_selecionadas.append(d)
-                    
-                    obs_aula = st.text_area("Observações Técnicas para a Turma:")
-                    casa_f = st.text_input("Tarefa para casa (Todas):")
-
-                    if st.form_submit_button("❄️ CONGELAR E SALVAR AULA"):
-                        if not alunas_selecionadas:
-                            st.error("⚠️ Nenhuma aluna selecionada para o registro!")
-                        else:
-                            for aluna in alunas_selecionadas:
-                                db_save_historico({
-                                    "Aluna": aluna, "Tipo": f"Aula_{tipo}", "Data": data_prof_str,
-                                    "Instrutora": instr_sel, "Licao_Atual": lic_vol, 
-                                    "Dificuldades": difs_selecionadas, "Observacao": obs_aula, "Licao_Casa": casa_f
-                                })
-                            st.success(f"✅ Aula salva para: {', '.join(alunas_selecionadas)}")
-                            st.cache_data.clear()
+    # ==========================================
+    # MÓDULO PROFESSORA
+    # ==========================================
+    elif perfil == "👩‍🏫 Professora":
+        st.header("👩‍🏫 Controle de Desempenho")
+    c1, c2 = st.columns(2)
+    with c1:
+        instr_sel = st.selectbox("Identifique-se:", ["Selecione..."] + PROFESSORAS_LISTA)
+    with c2:
+        hoje_dt = datetime.now()
+        sab_p = hoje_dt + timedelta(days=(5 - hoje_dt.weekday()) % 7)
+        data_prof = st.date_input("Data da Aula:", sab_p)
+        data_prof_str = data_prof.strftime("%d/%m/%Y")
+    
+    if instr_sel != "Selecione...":
+        if data_prof_str in calendario_db:
+            escala_dia = calendario_db[data_prof_str]
+            esta_na_escala = any(instr_sel in str(atend) for atend in escala_dia for atend in atend.values())
+    
+            if not esta_na_escala:
+                st.divider()
+                st.balloons()
+                st.markdown(f'<div style="background-color: #f0f2f6; padding: 30px; border-radius: 15px; text-align: center; border: 2px dashed #ff4b4b;"><h2 style="color: #ff4b4b;">🌸 Hoje não, Irmã {instr_sel}!</h2><p style="font-size: 1.2em;">Hoje é sua folga. Aproveite o seu dia!</p></div>', unsafe_allow_html=True)
             else:
-                st.info(f"Irmã {instr_sel}, sem agenda para este horário.")
-    else:
-        st.error("Rodízio não encontrado.")
-            
-# ==========================================
-# MÓDULO ANÁLISE DE IA
-# ==========================================
-elif perfil == "📊 Analítico IA":
-    st.title("📊 Análise Pedagógica e Rodízio")
-    
-    # 1. SELEÇÃO DA ALUNA
-    alu_ia = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
-    
-    # 2. DEFINIÇÃO DO TIPO DE PERÍODO
-    tipo_periodo = st.radio(
-        "Selecione o tipo de análise:",
-        ["Diária", "Mensal", "Bimestral", "Semestral", "Anual", "Geral"],
-        horizontal=True
-    )
-    
-    df = pd.DataFrame(historico_geral)
-    df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
-    df_aluna = df[df["Aluna"] == alu_ia]
-
-    # 3. FILTROS ESPECÍFICOS POR SELEÇÃO
-    df_f = pd.DataFrame() # Inicializa vazio
-    
-    if tipo_periodo == "Diária":
-        datas_disponiveis = sorted(df_aluna['dt_obj'].unique(), reverse=True)
-        dia_sel = st.selectbox("Escolha o dia da aula:", datas_disponiveis)
-        df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
-        
-    elif tipo_periodo == "Mensal":
-        meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
-        mes_sel = st.selectbox("Escolha o mês:", meses, index=datetime.now().month - 1)
-        # Filtra pelo mês e ano atual
-        df_f = df_aluna[(pd.to_datetime(df_aluna['dt_obj']).dt.month == meses.index(mes_sel) + 1) & 
-                        (pd.to_datetime(df_aluna['dt_obj']).dt.year == 2026)]
-        
-    elif tipo_periodo == "Bimestral":
-        bim_sel = st.selectbox("Escolha o Bimestre:", ["1º Bimestre (Jan/Fev)", "2º Bimestre (Mar/Abr)", "3º Bimestre (Mai/Jun)", "4º Bimestre (Jul/Ago)", "5º Bimestre (Set/Out)", "6º Bimestre (Nov/Dez)"])
-        # Lógica de meses para cada bimestre
-        mapa_bim = {"1º Bimestre (Jan/Fev)": [1,2], "2º Bimestre (Mar/Abr)": [3,4], "3º Bimestre (Mai/Jun)": [5,6], "4º Bimestre (Jul/Ago)": [7,8], "5º Bimestre (Set/Out)": [9,10], "6º Bimestre (Nov/Dez)": [11,12]}
-        df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(mapa_bim[bim_sel])]
-        
-    elif tipo_periodo == "Semestral":
-        sem_sel = st.selectbox("Escolha o Semestre:", ["1º Semestre", "2º Semestre"])
-        meses_sem = [1,2,3,4,5,6] if sem_sel == "1º Semestre" else [7,8,9,10,11,12]
-        df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(meses_sem)]
-        
-    elif tipo_periodo == "Anual":
-        ano_sel = st.selectbox("Escolha o Ano:", [2025, 2026, 2027], index=1)
-        df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.year == ano_sel]
-        
-    else: # Geral
-        df_f = df_aluna
-
-    # --- EXIBIÇÃO DOS RESULTADOS ---
-    if df_f.empty:
-        st.info(f"Nenhum registro encontrado para {alu_ia} neste período.")
-    else:
-        # Indicadores Visuais (KPIs)
-        total = len(df_f)
-        aprov = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
-        perc = (aprov/total*100) if total > 0 else 0
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Registros", total)
-        c2.metric("Aproveitamento", f"{perc:.1f}%")
-        c3.metric("Faltas/Pendências", len(df_f[df_f['Status'] != "Realizadas - sem pendência"]))
-
-        # Gráficos
-        g1, g2 = st.columns(2)
-        with g1:
-            st.plotly_chart(px.pie(df_f, names='Tipo', hole=0.5, title="Áreas Focadas"), use_container_width=True)
-        with g2:
-            difs = [d for sub in df_f['Dificuldades'].dropna() for d in sub if d != "Não apresentou dificuldades"]
-            if difs:
-                df_d = pd.Series(difs).value_counts().reset_index()
-                st.plotly_chart(px.bar(df_d.head(5), x=0, y='index', orientation='h', title="Top Dificuldades"), use_container_width=True)
-
-        # --- RODÍZIO LIMPO (Usando a alu_ia selecionada) ---
-        st.markdown("---")
-        st.subheader("🔄 Escala para a Próxima Aula")
-        
-        proxima_aula, proxima_prof = "Não definida", "Não definida"
-        if calendario_raw:
-            cal_df = pd.DataFrame(calendario_raw)
-            cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
-            futuros = cal_df[cal_df['dt_format'] >= datetime.now().date()].sort_values('dt_format')
-            
-            if not futuros.empty:
-                proxima_aula = futuros.iloc[0]['id']
-                escala_bruta = futuros.iloc[0]['escala']
-                if isinstance(escala_bruta, list):
-                    dados_aluna = next((item for item in escala_bruta if item.get('Aluna') == alu_ia), None)
-                    if dados_aluna:
-                        proxima_prof = f"**H2:** {dados_aluna.get('09h35 (H2)')} | **H3:** {dados_aluna.get('10h10 (H3)')} | **H4:** {dados_aluna.get('10h45 (H4)')}"
-        
-        st.info(f"📍 **Próxima Aula:** {proxima_aula}")
-        st.success(f"👩‍🏫 **Professoras de {alu_ia}:** {proxima_prof}")
-
-       # --- 🚀 SISTEMA DE ANÁLISE COM MEMÓRIA (CACHE NO BANCO) ---
-        st.markdown("---")
-        st.subheader("📝 Relatório Pedagógico Congelado")
-
-        # Função para buscar análise já existente
-        def buscar_analise_salva(aluna, periodo):
-            try:
-                res = supabase.table("analises_congeladas")\
-                    .select("*")\
-                    .eq("aluna", aluna)\
-                    .eq("periodo", periodo)\
-                    .order("data_geracao", descending=True)\
-                    .limit(1).execute()
-                return res.data[0] if res.data else None
-            except: return None
-
-        # Tenta carregar do banco primeiro
-        analise_existente = buscar_analise_salva(alu_ia, tipo_periodo)
-
-        if analise_existente:
-            st.success(f"✅ Análise carregada da memória (Salva em: {analise_existente['data_geracao'][:10]})")
-            st.markdown(analise_existente['conteudo'])
-            
-            if st.button("🔄 Gerar Nova (Atualizar com IA)"):
-                # Se clicar aqui, ele ignora o cache e força a IA a rodar (cuidado com a cota!)
-                analise_existente = None 
+                h_sel = st.radio("Selecione o Horário:", HORARIOS, horizontal=True)
+                atendimento = next((r for r in escala_dia if instr_sel in str(r.get(h_sel, ""))), None)
                 
-        # --- 🔄 LÓGICA DE RODÍZIO FILTRADA (PROTEGIDA) ---
-        st.markdown("---")
-        st.subheader("🔄 Informação de Transferência")
-        
-        # 1. Garantimos que a variável 'alu_ia' existe antes de prosseguir
-        if 'alu_ia' in locals() or 'alu_ia' in globals():
-            proxima_aula = "Não agendada"
-            proxima_prof = "Não definida"
-        
-            if calendario_raw:
-                try:
-                    cal_df = pd.DataFrame(calendario_raw)
-                    # Converte 'id' (data) para objeto de data para comparar
-                    cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
+                if atendimento:
+                    local_info = atendimento[h_sel]
+                    aluna_referencia = atendimento['Aluna']
+                    turma_aluna = atendimento.get('Turma', 'Turma 1')
+    
+                    # Identifica se é aula coletiva (Salas 8 ou 9)
+                    is_coletiva = "SALA 8" in local_info or "SALA 9" in local_info
+                    tipo = "Teoria" if "SALA 8" in local_info else "Solfejo" if "SALA 9" in local_info else "Prática"
+                    dif_lista = DIF_TEORIA if tipo == "Teoria" else DIF_SOLFEJO if tipo == "Solfejo" else DIF_PRATICA
+                    label_lic = f"Desempenho {tipo}"
+    
+                    st.success(f"📍 {local_info} | 👤 Referência: {aluna_referencia}")
+    
+                    # --- SEÇÃO DE CHECKLIST DE ALUNAS ---
+                    alunas_selecionadas = []
                     
-                    # Pega apenas datas futuras ou hoje
-                    hoje_ref = datetime.now().date()
-                    futuros = cal_df[cal_df['dt_format'] >= hoje_ref].sort_values('dt_format')
-                    
-                    if not futuros.empty:
-                        proxima_aula = futuros.iloc[0]['id']
-                        escala_bruta = futuros.iloc[0]['escala']
+                    if is_coletiva:
+                        st.markdown("### 👥 Chamada da Turma")
+                        st.caption("Marque as alunas que estão presentes nesta aula:")
+                        alunas_turma = TURMAS.get(turma_aluna, [aluna_referencia])
                         
-                        # Se a escala for uma lista de dicionários (o seu caso)
-                        if isinstance(escala_bruta, list):
-                            # Procuramos a aluna selecionada dentro da lista da secretaria
-                            dados_aluna = next((item for item in escala_bruta if item.get('Aluna') == alu_ia), None)
-                            
-                            if dados_aluna:
-                                h2 = dados_aluna.get('09h35 (H2)', 'N/A')
-                                h3 = dados_aluna.get('10h10 (H3)', 'N/A')
-                                h4 = dados_aluna.get('10h45 (H4)', 'N/A')
-                                proxima_prof = f"**H2:** {h2} | **H3:** {h3} | **H4:** {h4}"
+                        # Cria colunas para os checkboxes de alunas não ocuparem muito espaço vertical
+                        cols_alu = st.columns(3)
+                        for idx_a, aluna in enumerate(alunas_turma):
+                            # Se for a aluna que está na escala principal, já vem marcada
+                            default_val = True if aluna == aluna_referencia else True
+                            if cols_alu[idx_a % 3].checkbox(aluna, value=default_val, key=f"check_alu_{idx_a}"):
+                                alunas_selecionadas.append(aluna)
+                    else:
+                        alunas_selecionadas = [aluna_referencia]
+    
+                    # --- FORMULÁRIO DE LANÇAMENTO ---
+                    with st.form("f_aula_prof", clear_on_submit=True):
+                        st.subheader(f"📝 Registro de {tipo}")
+                        
+                        lic_vol = st.selectbox(f"{label_lic} - Lição/Volume:", OPCOES_LICOES_NUM)
+                        if lic_vol == "Outro": lic_vol = st.text_input("Especifique:")
+                        
+                        st.markdown("**Dificuldades Detectadas:**")
+                        cols_dif = st.columns(2)
+                        difs_selecionadas = []
+                        for i, d in enumerate(dif_lista):
+                            target_col = cols_dif[0] if i < len(dif_lista)/2 else cols_dif[1]
+                            if target_col.checkbox(d, key=f"diff_{i}"):
+                                difs_selecionadas.append(d)
+                        
+                        obs_aula = st.text_area("Observações Técnicas para a Turma:")
+                        casa_f = st.text_input("Tarefa para casa (Todas):")
+    
+                        if st.form_submit_button("❄️ CONGELAR E SALVAR AULA"):
+                            if not alunas_selecionadas:
+                                st.error("⚠️ Nenhuma aluna selecionada para o registro!")
                             else:
-                                proxima_prof = "Aluna não encontrada na escala desta data."
-                        else:
-                            proxima_prof = "Escala não está no formato de lista esperado."
-                except Exception as e:
-                    proxima_prof = f"Erro ao processar escala: {e}"
-        
-            # Exibição Final
-            st.info(f"📍 **Próxima Aula:** {proxima_aula}")
-            st.success(f"👩‍🏫 **Escala de {alu_ia}:** {proxima_prof}")
+                                for aluna in alunas_selecionadas:
+                                    db_save_historico({
+                                        "Aluna": aluna, "Tipo": f"Aula_{tipo}", "Data": data_prof_str,
+                                        "Instrutora": instr_sel, "Licao_Atual": lic_vol, 
+                                        "Dificuldades": difs_selecionadas, "Observacao": obs_aula, "Licao_Casa": casa_f
+                                    })
+                                st.success(f"✅ Aula salva para: {', '.join(alunas_selecionadas)}")
+                                st.cache_data.clear()
+                else:
+                    st.info(f"Irmã {instr_sel}, sem agenda para este horário.")
         else:
-            st.warning("⚠️ Selecione uma aluna acima para visualizar a escala de rodízio.")
+            st.error("Rodízio não encontrado.")
+                
+    # ==========================================
+    # MÓDULO ANÁLISE DE IA
+    # ==========================================
+    elif perfil == "📊 Analítico IA":
+        st.title("📊 Análise Pedagógica e Rodízio")
         
-        # Se não existe análise ou se pediu para atualizar
-        if not analise_existente:
-            if st.button("✨ GERAR ANÁLISE COMPLETA (IA)"):
-                if model:
+        # 1. SELEÇÃO DA ALUNA
+        alu_ia = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
+        
+        # 2. DEFINIÇÃO DO TIPO DE PERÍODO
+        tipo_periodo = st.radio(
+            "Selecione o tipo de análise:",
+            ["Diária", "Mensal", "Bimestral", "Semestral", "Anual", "Geral"],
+            horizontal=True
+        )
+        
+        df = pd.DataFrame(historico_geral)
+        df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
+        df_aluna = df[df["Aluna"] == alu_ia]
+    
+        # 3. FILTROS ESPECÍFICOS POR SELEÇÃO
+        df_f = pd.DataFrame() # Inicializa vazio
+        
+        if tipo_periodo == "Diária":
+            datas_disponiveis = sorted(df_aluna['dt_obj'].unique(), reverse=True)
+            dia_sel = st.selectbox("Escolha o dia da aula:", datas_disponiveis)
+            df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
+            
+        elif tipo_periodo == "Mensal":
+            meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+            mes_sel = st.selectbox("Escolha o mês:", meses, index=datetime.now().month - 1)
+            # Filtra pelo mês e ano atual
+            df_f = df_aluna[(pd.to_datetime(df_aluna['dt_obj']).dt.month == meses.index(mes_sel) + 1) & 
+                            (pd.to_datetime(df_aluna['dt_obj']).dt.year == 2026)]
+            
+        elif tipo_periodo == "Bimestral":
+            bim_sel = st.selectbox("Escolha o Bimestre:", ["1º Bimestre (Jan/Fev)", "2º Bimestre (Mar/Abr)", "3º Bimestre (Mai/Jun)", "4º Bimestre (Jul/Ago)", "5º Bimestre (Set/Out)", "6º Bimestre (Nov/Dez)"])
+            # Lógica de meses para cada bimestre
+            mapa_bim = {"1º Bimestre (Jan/Fev)": [1,2], "2º Bimestre (Mar/Abr)": [3,4], "3º Bimestre (Mai/Jun)": [5,6], "4º Bimestre (Jul/Ago)": [7,8], "5º Bimestre (Set/Out)": [9,10], "6º Bimestre (Nov/Dez)": [11,12]}
+            df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(mapa_bim[bim_sel])]
+            
+        elif tipo_periodo == "Semestral":
+            sem_sel = st.selectbox("Escolha o Semestre:", ["1º Semestre", "2º Semestre"])
+            meses_sem = [1,2,3,4,5,6] if sem_sel == "1º Semestre" else [7,8,9,10,11,12]
+            df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(meses_sem)]
+            
+        elif tipo_periodo == "Anual":
+            ano_sel = st.selectbox("Escolha o Ano:", [2025, 2026, 2027], index=1)
+            df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.year == ano_sel]
+            
+        else: # Geral
+            df_f = df_aluna
+    
+        # --- EXIBIÇÃO DOS RESULTADOS ---
+        if df_f.empty:
+            st.info(f"Nenhum registro encontrado para {alu_ia} neste período.")
+        else:
+            # Indicadores Visuais (KPIs)
+            total = len(df_f)
+            aprov = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
+            perc = (aprov/total*100) if total > 0 else 0
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Registros", total)
+            c2.metric("Aproveitamento", f"{perc:.1f}%")
+            c3.metric("Faltas/Pendências", len(df_f[df_f['Status'] != "Realizadas - sem pendência"]))
+    
+            # Gráficos
+            g1, g2 = st.columns(2)
+            with g1:
+                st.plotly_chart(px.pie(df_f, names='Tipo', hole=0.5, title="Áreas Focadas"), use_container_width=True)
+            with g2:
+                difs = [d for sub in df_f['Dificuldades'].dropna() for d in sub if d != "Não apresentou dificuldades"]
+                if difs:
+                    df_d = pd.Series(difs).value_counts().reset_index()
+                    st.plotly_chart(px.bar(df_d.head(5), x=0, y='index', orientation='h', title="Top Dificuldades"), use_container_width=True)
+    
+            # --- RODÍZIO LIMPO (Usando a alu_ia selecionada) ---
+            st.markdown("---")
+            st.subheader("🔄 Escala para a Próxima Aula")
+            
+            proxima_aula, proxima_prof = "Não definida", "Não definida"
+            if calendario_raw:
+                cal_df = pd.DataFrame(calendario_raw)
+                cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
+                futuros = cal_df[cal_df['dt_format'] >= datetime.now().date()].sort_values('dt_format')
+                
+                if not futuros.empty:
+                    proxima_aula = futuros.iloc[0]['id']
+                    escala_bruta = futuros.iloc[0]['escala']
+                    if isinstance(escala_bruta, list):
+                        dados_aluna = next((item for item in escala_bruta if item.get('Aluna') == alu_ia), None)
+                        if dados_aluna:
+                            proxima_prof = f"**H2:** {dados_aluna.get('09h35 (H2)')} | **H3:** {dados_aluna.get('10h10 (H3)')} | **H4:** {dados_aluna.get('10h45 (H4)')}"
+            
+            st.info(f"📍 **Próxima Aula:** {proxima_aula}")
+            st.success(f"👩‍🏫 **Professoras de {alu_ia}:** {proxima_prof}")
+    
+           # --- 🚀 SISTEMA DE ANÁLISE COM MEMÓRIA (CACHE NO BANCO) ---
+            st.markdown("---")
+            st.subheader("📝 Relatório Pedagógico Congelado")
+    
+            # Função para buscar análise já existente
+            def buscar_analise_salva(aluna, periodo):
+                try:
+                    res = supabase.table("analises_congeladas")\
+                        .select("*")\
+                        .eq("aluna", aluna)\
+                        .eq("periodo", periodo)\
+                        .order("data_geracao", descending=True)\
+                        .limit(1).execute()
+                    return res.data[0] if res.data else None
+                except: return None
+    
+            # Tenta carregar do banco primeiro
+            analise_existente = buscar_analise_salva(alu_ia, tipo_periodo)
+    
+            if analise_existente:
+                st.success(f"✅ Análise carregada da memória (Salva em: {analise_existente['data_geracao'][:10]})")
+                st.markdown(analise_existente['conteudo'])
+                
+                if st.button("🔄 Gerar Nova (Atualizar com IA)"):
+                    # Se clicar aqui, ele ignora o cache e força a IA a rodar (cuidado com a cota!)
+                    analise_existente = None 
+                    
+            # --- 🔄 LÓGICA DE RODÍZIO FILTRADA (PROTEGIDA) ---
+            st.markdown("---")
+            st.subheader("🔄 Informação de Transferência")
+            
+            # 1. Garantimos que a variável 'alu_ia' existe antes de prosseguir
+            if 'alu_ia' in locals() or 'alu_ia' in globals():
+                proxima_aula = "Não agendada"
+                proxima_prof = "Não definida"
+            
+                if calendario_raw:
                     try:
-                        with st.spinner("IA processando relatório técnico..."):
-                            dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
+                        cal_df = pd.DataFrame(calendario_raw)
+                        # Converte 'id' (data) para objeto de data para comparar
+                        cal_df['dt_format'] = pd.to_datetime(cal_df['id'], format='%d/%m/%Y', errors='coerce').dt.date
+                        
+                        # Pega apenas datas futuras ou hoje
+                        hoje_ref = datetime.now().date()
+                        futuros = cal_df[cal_df['dt_format'] >= hoje_ref].sort_values('dt_format')
+                        
+                        if not futuros.empty:
+                            proxima_aula = futuros.iloc[0]['id']
+                            escala_bruta = futuros.iloc[0]['escala']
                             
-                            prompt = f"""
-                            Aja como Coordenadora Pedagógica Master. Gere uma análise técnica para: {proxima_prof}.
-                            ALUNA: {alu_ia} | PERÍODO: {tipo_periodo} | PRÓXIMA AULA: {proxima_aula}.
-
-                            ESTRUTURA OBRIGATÓRIA:
-                            1. 🎹 POSTURA E TÉCNICA: Detalhes de dedilhado e forma.
-                            2. 🥁 RITMO: Uso do metrônomo e divisão.
-                            3. 📖 TEORIA: Progresso nos métodos.
-                            4. 🏠 SECRETARIA: Resumo de faltas/pendências.
-                            5. 🎯 METAS: O que cobrar em {proxima_aula}.
-                            6. 🏛️ BANCA: Dicas para o exame semestral.
-
-                            DADOS: {dados_texto}
-                            """
-                            
-                            res = model.generate_content(prompt)
-                            texto_gerado = res.text
-                            
-                            # SALVAR NO SUPABASE PARA NÃO GASTAR COTA DE NOVO
-                            nova_analise = {
-                                "aluna": alu_ia,
-                                "periodo": tipo_periodo,
-                                "conteudo": texto_gerado,
-                                "professoras_escala": proxima_prof
-                            }
-                            supabase.table("analises_congeladas").insert(nova_analise).execute()
-                            
-                            st.markdown(texto_gerado)
-                            st.balloons()
-                            st.rerun() # Recarrega para mostrar como "carregada da memória"
-
+                            # Se a escala for uma lista de dicionários (o seu caso)
+                            if isinstance(escala_bruta, list):
+                                # Procuramos a aluna selecionada dentro da lista da secretaria
+                                dados_aluna = next((item for item in escala_bruta if item.get('Aluna') == alu_ia), None)
+                                
+                                if dados_aluna:
+                                    h2 = dados_aluna.get('09h35 (H2)', 'N/A')
+                                    h3 = dados_aluna.get('10h10 (H3)', 'N/A')
+                                    h4 = dados_aluna.get('10h45 (H4)', 'N/A')
+                                    proxima_prof = f"**H2:** {h2} | **H3:** {h3} | **H4:** {h4}"
+                                else:
+                                    proxima_prof = "Aluna não encontrada na escala desta data."
+                            else:
+                                proxima_prof = "Escala não está no formato de lista esperado."
                     except Exception as e:
-                        if "429" in str(e) or "ResourceExhausted" in str(e):
-                            st.error("⚠️ Cota atingida. Use as análises já salvas ou aguarde 1 minuto.")
-                        else:
-                            st.error(f"Erro: {e}")
+                        proxima_prof = f"Erro ao processar escala: {e}"
+            
+                # Exibição Final
+                st.info(f"📍 **Próxima Aula:** {proxima_aula}")
+                st.success(f"👩‍🏫 **Escala de {alu_ia}:** {proxima_prof}")
+            else:
+                st.warning("⚠️ Selecione uma aluna acima para visualizar a escala de rodízio.")
+            
+            # Se não existe análise ou se pediu para atualizar
+            if not analise_existente:
+                if st.button("✨ GERAR ANÁLISE COMPLETA (IA)"):
+                    if model:
+                        try:
+                            with st.spinner("IA processando relatório técnico..."):
+                                dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
+                                
+                                prompt = f"""
+                                Aja como Coordenadora Pedagógica Master. Gere uma análise técnica para: {proxima_prof}.
+                                ALUNA: {alu_ia} | PERÍODO: {tipo_periodo} | PRÓXIMA AULA: {proxima_aula}.
+    
+                                ESTRUTURA OBRIGATÓRIA:
+                                1. 🎹 POSTURA E TÉCNICA: Detalhes de dedilhado e forma.
+                                2. 🥁 RITMO: Uso do metrônomo e divisão.
+                                3. 📖 TEORIA: Progresso nos métodos.
+                                4. 🏠 SECRETARIA: Resumo de faltas/pendências.
+                                5. 🎯 METAS: O que cobrar em {proxima_aula}.
+                                6. 🏛️ BANCA: Dicas para o exame semestral.
+    
+                                DADOS: {dados_texto}
+                                """
+                                
+                                res = model.generate_content(prompt)
+                                texto_gerado = res.text
+                                
+                                # SALVAR NO SUPABASE PARA NÃO GASTAR COTA DE NOVO
+                                nova_analise = {
+                                    "aluna": alu_ia,
+                                    "periodo": tipo_periodo,
+                                    "conteudo": texto_gerado,
+                                    "professoras_escala": proxima_prof
+                                }
+                                supabase.table("analises_congeladas").insert(nova_analise).execute()
+                                
+                                st.markdown(texto_gerado)
+                                st.balloons()
+                                st.rerun() # Recarrega para mostrar como "carregada da memória"
+    
+                        except Exception as e:
+                            if "429" in str(e) or "ResourceExhausted" in str(e):
+                                st.error("⚠️ Cota atingida. Use as análises já salvas ou aguarde 1 minuto.")
+                            else:
+                                st.error(f"Erro: {e}")
 
 
 
@@ -768,6 +768,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
