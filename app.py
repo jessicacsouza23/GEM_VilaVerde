@@ -514,7 +514,7 @@ elif perfil == "👩‍🏫 Professora":
 elif perfil == "📊 Analítico IA":
  st.title("📊 Análise Pedagógica e Rodízio")
     
-    # 1. CARREGAMENTO DOS DADOS
+    # 1. CARREGAMENTO DOS DADOS (Certifique-se que esta linha tem 4 espaços de recuo)
     df = pd.DataFrame(historico_geral)
     
     if df.empty:
@@ -534,7 +534,6 @@ elif perfil == "📊 Analítico IA":
                 horizontal=True
             )
             
-            # Inicialização do DataFrame filtrado
             df_f = pd.DataFrame() 
             
             if tipo_periodo == "Diária":
@@ -546,7 +545,7 @@ elif perfil == "📊 Analítico IA":
             elif tipo_periodo == "Mensal":
                 meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
                 mes_sel = st.selectbox("Escolha o mês:", meses, index=datetime.now().month - 1)
-                df_f = df_aluna[(pd.to_datetime(df_aluna['dt_obj']).dt.month == meses.index(mes_sel) + 1)]
+                df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month == meses.index(mes_sel) + 1]
                 
             elif tipo_periodo == "Bimestral":
                 bim_sel = st.selectbox("Escolha o Bimestre:", ["1º Bimestre", "2º Bimestre", "3º Bimestre", "4º Bimestre", "5º Bimestre", "6º Bimestre"])
@@ -563,17 +562,16 @@ elif perfil == "📊 Analítico IA":
             else:
                 df_f = df_aluna
 
-            # 4. EXIBIÇÃO DE INDICADORES (KPIs)
+            # 4. EXIBIÇÃO DE RESULTADOS
             if df_f.empty:
                 st.warning(f"Sem dados para {alu_ia} neste período.")
             else:
                 total = len(df_f)
                 aprov = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
-                perc = (aprov/total*100) if total > 0 else 0
                 
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Registros", total)
-                c2.metric("Aproveitamento", f"{perc:.1f}%")
+                c2.metric("Aproveitamento", f"{(aprov/total*100) if total > 0 else 0:.1f}%")
                 c3.metric("Pendências", total - aprov)
 
                 # Gráficos
@@ -609,13 +607,14 @@ elif perfil == "📊 Analítico IA":
                 st.markdown("---")
                 st.subheader("📝 Relatório Pedagógico Congelado")
 
-                def carregar_analise(aluna, periodo):
+                # Função interna para evitar NameError
+                def carregar_analise_banco(aluna, periodo):
                     try:
                         res = supabase.table("analises_congeladas").select("*").eq("aluna", aluna).eq("periodo", periodo).order("data_geracao", descending=True).limit(1).execute()
                         return res.data[0] if res.data else None
                     except: return None
 
-                analise_existente = carregar_analise(alu_ia, tipo_periodo)
+                analise_existente = carregar_analise_banco(alu_ia, tipo_periodo)
 
                 if analise_existente:
                     st.success(f"✅ Carregado da memória ({analise_existente['data_geracao'][:10]})")
@@ -628,21 +627,20 @@ elif perfil == "📊 Analítico IA":
                         if model:
                             with st.spinner("IA processando..."):
                                 dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
-                                prompt = f"Aja como Coordenadora. Aluna: {alu_ia}. Período: {tipo_periodo}. Escala: {proxima_prof}. Analise Postura, Técnica, Ritmo, Teoria, Secretaria, Metas e Dicas para a Banca. Dados: {dados_texto}"
+                                prompt = f"Aja como Coordenadora Pedagógica. Gere análise técnica para {alu_ia}. Período: {tipo_periodo}. Escala: {proxima_prof}. Detalhe: Postura, Técnica, Ritmo, Teoria, Secretaria, Metas e Banca. Dados: {dados_texto}"
                                 res = model.generate_content(prompt)
                                 
                                 nova = {"aluna": alu_ia, "periodo": tipo_periodo, "conteudo": res.text, "professoras_escala": proxima_prof}
                                 supabase.table("analises_congeladas").insert(nova).execute()
                                 st.rerun()
         else:
-            st.error("Coluna 'Data' não encontrada.")
-
-# FIM DO BLOCO - Certifique-se de que não há "else" sozinhos abaixo desta linha.
+            st.error("Coluna 'Data' não encontrada no banco.")
 
 with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
