@@ -512,37 +512,41 @@ elif perfil == "👩‍🏫 Professora":
 # MÓDULO ANÁLISE DE IA
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.title("📊 Análise Pedagógica e Rodízio")
+    st.title("📊 Painel Pedagógico de Performance")
 
+    # 1. CARREGAMENTO E SEGURANÇA
     df = pd.DataFrame(historico_geral)
 
     if df.empty:
-        st.info("ℹ️ O banco de dados está vazio. Registre uma aula para iniciar.")
+        st.info("ℹ️ O banco de dados está vazio. Registre aulas para gerar análises.")
     else:
-        alu_ia = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
+        # 2. SELEÇÃO DA ALUNA
+        alu_ia = st.selectbox("Selecione a Aluna para Relatório:", ALUNAS_LISTA)
 
         if 'Data' in df.columns:
+            # Tratamento de datas
             df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
             df_aluna = df[df["Aluna"] == alu_ia]
 
             tipo_periodo = st.radio(
-                "Selecione o tipo de análise:",
-                ["Diária", "Mensal", "Bimestral", "Semestral", "Anual", "Geral"],
+                "Período da Análise:",
+                ["Diária", "Mensal", "Bimestral", "Semestral", "Geral"],
                 horizontal=True
             )
 
+            # --- FILTRAGEM TEMPORAL ---
             df_f = pd.DataFrame()
             if tipo_periodo == "Diária":
                 datas_disponiveis = sorted(df_aluna['dt_obj'].unique(), reverse=True)
                 if datas_disponiveis:
-                    dia_sel = st.selectbox("Escolha o dia da aula:", datas_disponiveis)
+                    dia_sel = st.selectbox("Escolha o dia:", datas_disponiveis)
                     df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
             elif tipo_periodo == "Mensal":
                 meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
                 mes_sel = st.selectbox("Escolha o mês:", meses, index=datetime.now().month - 1)
                 df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month == meses.index(mes_sel) + 1]
             elif tipo_periodo == "Bimestral":
-                mapa_bim = {"1º Bimestre": [1,2], "2º Bimestre": [3,4], "3º Bimestre": [5,6], "4º Bimestre": [7,8], "5º Bimestre": [9,10], "6º Bimestre": [11,12]}
+                mapa_bim = {"1º Bim (Jan/Fev)": [1,2], "2º Bim (Mar/Abr)": [3,4], "3º Bim (Mai/Jun)": [5,6], "4º Bim (Jul/Ago)": [7,8]}
                 bim_sel = st.selectbox("Bimestre:", list(mapa_bim.keys()))
                 df_f = df_aluna[pd.to_datetime(df_aluna['dt_obj']).dt.month.isin(mapa_bim[bim_sel])]
             elif tipo_periodo == "Semestral":
@@ -555,13 +559,31 @@ elif perfil == "📊 Analítico IA":
             if df_f.empty:
                 st.warning(f"Sem registros para {alu_ia} neste período.")
             else:
-                # KPIs e Gráficos (Resumido para o código ficar limpo)
-                total = len(df_f)
-                c1, c2 = st.columns(2)
-                c1.metric("Total de Aulas", total)
-                c2.metric("Aproveitamento", f"{(len(df_f[df_f['Status'] == 'Realizadas - sem pendência'])/total*100):.1f}%")
+                # --- [1] PARTE GRÁFICA ---
+                st.subheader("📈 Indicadores e Gráficos")
+                total_aulas = len(df_f)
+                realizadas = len(df_f[df_f['Status'] == "Realizadas - sem pendência"])
+                pendentes = total_aulas - realizadas
+                aproveitamento = (realizadas / total_aulas * 100) if total_aulas > 0 else 0
 
-                # ESCALA
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Total de Aulas", total_aulas)
+                c2.metric("Aproveitamento", f"{aproveitamento:.1f}%")
+                c3.metric("Faltas/Pendências", pendentes)
+
+                g1, g2 = st.columns(2)
+                with g1:
+                    fig_pizza = px.pie(df_f, names='Tipo', hole=0.4, title="Áreas Trabalhadas", color_discrete_sequence=px.colors.qualitative.Set3)
+                    st.plotly_chart(fig_pizza, use_container_width=True)
+                with g2:
+                    difs = [d for sub in df_f['Dificuldades'].dropna() for d in sub if d != "Não apresentou dificuldades"]
+                    if difs:
+                        df_d = pd.Series(difs).value_counts().reset_index()
+                        df_d.columns = ['Dificuldade', 'Qtd']
+                        fig_barra = px.bar(df_d.head(5), x='Qtd', y='Dificuldade', orientation='h', title="Top Dificuldades", color='Qtd', color_continuous_scale='Reds')
+                        st.plotly_chart(fig_barra, use_container_width=True)
+
+                # --- [2] RODÍZIO DA SECRETARIA ---
                 st.markdown("---")
                 proxima_aula, proxima_prof = "Não definida", "Não definida"
                 if 'calendario_raw' in locals() and calendario_raw:
@@ -577,10 +599,11 @@ elif perfil == "📊 Analítico IA":
                                 proxima_prof = f"H2: {dados_aluna.get('09h35 (H2)')} | H3: {dados_aluna.get('10h10 (H3)')} | H4: {dados_aluna.get('10h45 (H4)')}"
                     except: pass
                 
-                st.info(f"📍 Próxima Aula: {proxima_aula} | {proxima_prof}")
+                st.info(f"📍 **Próxima Aula:** {proxima_aula}  \n👩‍🏫 **Escala de Professores:** {proxima_prof}")
 
-                # ANÁLISE CONGELADA
-                st.subheader("📝 Relatório Pedagógico")
+                # --- [3] ANÁLISE IA CONGELADA (SALVAMENTO NO BANCO) ---
+                st.markdown("---")
+                st.subheader("📝 Relatório Pedagógico Detalhado")
 
                 def carregar_congelada(aluna, periodo):
                     try:
@@ -588,36 +611,66 @@ elif perfil == "📊 Analítico IA":
                         return res.data[0] if res.data else None
                     except: return None
 
-                analise = carregar_congelada(alu_ia, tipo_periodo)
+                analise_salva = carregar_congelada(alu_ia, tipo_periodo)
 
-                if analise:
-                    st.success(f"Análise salva em {analise['data_geracao'][:10]}")
-                    st.markdown(analise['conteudo'])
-                    if st.button("🔄 Gerar Nova Atualização"):
-                        analise = None
+                if analise_salva:
+                    st.success(f"✅ Análise carregada da memória (Salva em: {analise_salva['data_geracao'][:10]})")
+                    st.markdown(analise_salva['conteudo'])
+                    if st.button("🔄 Gerar Nova Análise (Substituir Salva)"):
+                        analise_salva = None # Força a geração de uma nova
 
-                if not analise:
-                    if st.button("✨ GERAR ANÁLISE COMPLETA (IA)"):
+                if not analise_salva:
+                    if st.button("✨ GERAR RELATÓRIO TÉCNICO COMPLETO"):
                         if model:
-                            with st.spinner("IA processando relatório técnico..."):
+                            with st.spinner("IA consolidando dados pedagógicos..."):
                                 dados_texto = df_f[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string(index=False)
-                                prompt = f"Gere análise pedagógica master para {alu_ia}. Próxima aula: {proxima_aula}. Escala: {proxima_prof}. Organize por: Postura, Técnica, Ritmo, Teoria, Secretaria, Metas e Banca. Dados: {dados_texto}"
+                                
+                                prompt = f"""
+                                Aja como Coordenadora Pedagógica Master. Analise o histórico da aluna {alu_ia}.
+                                
+                                ESTRUTURA OBRIGATÓRIA:
+                                ## 🎹 1. POSTURA E TÉCNICA
+                                Detalhes sobre forma das mãos, dedilhado e postura corporal.
+                                ## 🥁 2. RITMO E MÉTRICA
+                                Avaliação do uso do metrônomo e divisões rítmicas.
+                                ## 📖 3. TEORIA E DESENVOLVIMENTO
+                                Progresso nos métodos e compreensão musical.
+                                ## 🏠 4. RESUMO DA SECRETARIA (FALTAS/PENDÊNCIAS)
+                                Baseado em: {realizadas} aulas feitas e {pendentes} pendências.
+                                ## 🎯 5. METAS PARA A PRÓXIMA AULA ({proxima_aula})
+                                O que cobrar especificamente dos professores na escala: {proxima_prof}.
+                                ## 🏛️ 6. DICAS PARA A BANCA SEMESTRAL
+                                Sugestões técnicas e psicológicas para o exame de banca.
+
+                                DADOS PARA ANÁLISE:
+                                {dados_texto}
+                                """
                                 res = model.generate_content(prompt)
                                 
+                                # SALVANDO NO SUPABASE
                                 try:
-                                    nova = {"aluna": alu_ia, "periodo": tipo_periodo, "conteudo": res.text, "professoras_escala": proxima_prof}
-                                    supabase.table("analises_congeladas").insert(nova).execute()
+                                    nova_data = {
+                                        "aluna": alu_ia, 
+                                        "periodo": tipo_periodo, 
+                                        "conteudo": res.text, 
+                                        "professoras_escala": proxima_prof
+                                    }
+                                    supabase.table("analises_congeladas").insert(nova_data).execute()
+                                    st.success("Análise congelada no banco de dados!")
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"Erro ao salvar: Verifique se a tabela existe no Supabase. Detalhe: {e}")
-                                    st.markdown(res.text) # Mostra a análise mesmo se não salvar
+                                    st.error(f"Erro ao salvar: {e}")
+                                    st.markdown(res.text) # Mostra o texto mesmo se falhar o banco
         else:
-            st.error("Coluna 'Data' ausente.")
+            st.error("Erro: Coluna 'Data' não encontrada no banco de dados.")
+
+# --- FIM DO MÓDULO ---
 
 with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
