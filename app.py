@@ -69,15 +69,83 @@ calendario_db = db_get_calendario()
 if perfil == "🏠 Secretaria":
     tab_plan, tab_cham, tab_ped = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Análise Pedagógica"])
 
+    Entendido perfeitamente. O que você precisa é de um rodízio dinâmico (carrossel): a cada novo sábado, o sistema deve deslocar a escala para que a aluna não repita a mesma professora e nem a mesma sala da semana anterior.
+
+Para resolver isso, implementei uma lógica de "Salto por Data". O sistema calcula quantos sábados se passaram desde uma data base e usa esse número para "pular" as professoras na lista. Assim, se a Amanda teve aula com a Cassia na Sala 1 este sábado, no próximo ela terá com a Elaine na Sala 2, e assim por diante.
+
+Aqui está o código completo com o Rodízio Infinito e Dinâmico:
+
+Python
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+import calendar
+from supabase import create_client, Client
+
+# --- 1. CONFIGURAÇÕES E CONEXÃO ---
+st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
+
+SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
+SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
+
+@st.cache_resource
+def init_supabase():
+    try: return create_client(SUPABASE_URL, SUPABASE_KEY)
+    except: return None
+
+supabase = init_supabase()
+
+# --- FUNÇÕES DE BANCO ---
+def db_get_calendario():
+    try:
+        res = supabase.table("calendario").select("*").execute()
+        return {item['id']: item['escala'] for item in res.data}
+    except: return {}
+
+def db_get_historico():
+    try:
+        res = supabase.table("historico_geral").select("*").execute()
+        return res.data
+    except: return []
+
+def db_save_historico(dados):
+    try: supabase.table("historico_geral").insert(dados).execute()
+    except Exception as e: st.error(f"Erro ao salvar: {e}")
+
+# --- 2. DADOS MESTRE ---
+PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
+ALUNAS_LISTA = sorted([
+    "Amanda S.", "Ana Marcela S.", "Caroline C.", "Elisa F.", "Emilly O.", "Gabrielly V.",
+    "Heloísa R.", "Ingrid M.", "Júlia Cristina", "Júlia S.", "Julya O.", "Mellina S.",
+    "Micaelle S.", "Raquel L.", "Rebeca R.", "Rebecca A.", "Rebeka S.", "Sarah S.",
+    "Stephany O.", "Vitória A.", "Vitória Bella T."
+])
+TURMAS = {
+    "Turma 1": ["Rebecca A.", "Amanda S.", "Ingrid M.", "Rebeka S.", "Mellina S.", "Rebeca R.", "Caroline C."],
+    "Turma 2": ["Vitória A.", "Elisa F.", "Sarah S.", "Gabrielly V.", "Emily O.", "Julya O.", "Stephany O."],
+    "Turma 3": ["Heloísa R.", "Ana Marcela S.", "Vitória Bella T.", "Júlia S.", "Micaelle S.", "Raquel L.", "Júlia Cristina"]
+}
+HORARIOS = ["08h45 (Igreja)", "09h35 (H2)", "10h10 (H3)", "10h45 (H4)"]
+
+# --- 3. INTERFACE ---
+st.title("🎼 GEM Vila Verde - Gestão 2026")
+perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
+
+historico_geral = db_get_historico()
+calendario_db = db_get_calendario()
+
+if perfil == "🏠 Secretaria":
+    tab_plan, tab_cham, tab_ped = st.tabs(["🗓️ Planejamento", "📍 Chamada", "✅ Análise Pedagógica"])
+    
     with tab_plan:
         c1, c2 = st.columns(2)
         mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
         ano = c2.selectbox("Ano:", [2026, 2027])
         sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
                    for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
-        data_sel = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
+        data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
 
-        if data_sel not in calendario_db:
+        if data_sel_str not in calendario_db:
             st.warning("Rodízio não gerado.")
             col_t, col_s = st.columns(2)
             with col_t:
@@ -93,7 +161,11 @@ if perfil == "🏠 Secretaria":
             
             folgas = st.multiselect("Folgas:", PROFESSORAS_LISTA)
 
-            if st.button("🚀 GERAR RODÍZIO OFICIAL"):
+            if st.button("🚀 GERAR RODÍZIO DINÂMICO"):
+                # Cálculo do Salto Baseado na Data (para rodar as professoras toda semana)
+                data_obj = datetime.strptime(data_sel_str, "%d/%m/%Y")
+                semana_do_ano = data_obj.isocalendar()[1]
+                
                 mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
                 for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
 
@@ -103,42 +175,44 @@ if perfil == "🏠 Secretaria":
                     HORARIOS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "P_Teo": pt4, "P_Sol": ps4}
                 }
 
-                # LÓGICA DE DISTRIBUIÇÃO BLINDADA POR HORÁRIO
                 for h in [HORARIOS[1], HORARIOS[2], HORARIOS[3]]:
                     conf = config_h[h]
                     ocupadas_h = [conf["P_Teo"], conf["P_Sol"]] + folgas
                     profs_livres = [p for p in PROFESSORAS_LISTA if p not in ocupadas_h]
                     
-                    alunas_na_pratica = []
+                    # Ordenar as alunas que vão para a prática
+                    alunas_pratica = []
                     for t_nome, alunas in TURMAS.items():
-                        if conf["Teo"] == t_nome:
-                            for a in alunas: mapa[a][h] = f"📚 SALA 8 | {conf['P_Teo']}"
-                        elif conf["Sol"] == t_nome:
-                            for a in alunas: mapa[a][h] = f"🔊 SALA 9 | {conf['P_Sol']}"
+                        if conf["Teo"] != t_nome and conf["Sol"] != t_nome:
+                            alunas_pratica.extend(alunas)
                         else:
-                            alunas_na_pratica.extend(alunas)
+                            # Preencher Coletivas
+                            tipo = "📚 SALA 8" if conf["Teo"] == t_nome else "🔊 SALA 9"
+                            prof_col = conf["P_Teo"] if conf["Teo"] == t_nome else conf["P_Sol"]
+                            for a in alunas: mapa[a][h] = f"{tipo} | {prof_col}"
                     
-                    # DISTRIBUIÇÃO ÚNICA: Cada professora livre recebe um índice que define sua SALA ÚNICA
-                    for i, aluna_p in enumerate(alunas_na_pratica):
-                        # i % len(profs_livres) garante que as alunas se distribuam entre as profs
-                        prof_resp = profs_livres[i % len(profs_livres)]
+                    # DISTRIBUIÇÃO CARROSSEL (Não repete sala nem professora)
+                    for i, aluna_p in enumerate(alunas_pratica):
+                        # O segredo do rodízio: somamos a 'semana_do_ano' ao índice
+                        idx_rotativo = (i + semana_do_ano) % len(profs_livres)
+                        prof_resp = profs_livres[idx_rotativo]
                         
-                        # SALA É DEFINIDA PELA POSIÇÃO DA PROFESSORA NA LISTA DE DISPONÍVEIS DO HORÁRIO
-                        # Isso garante que se a Professora X está na Sala 1, ninguém mais está na Sala 1 no mesmo horário h
-                        num_sala = profs_livres.index(prof_resp) + 1 
+                        # A Sala é vinculada à posição da professora na lista livre daquela hora
+                        # Garante 1 sala por professora, sem sobreposição
+                        num_sala = idx_rotativo + 1
                         mapa[aluna_p][h] = f"🎹 SALA {num_sala} | {prof_resp}"
 
-                supabase.table("calendario").upsert({"id": data_sel, "escala": list(mapa.values())}).execute()
+                supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                 st.rerun()
         else:
-            st.success(f"🗓️ Rodízio: {data_sel}")
-            df_raw = pd.DataFrame(calendario_db[data_sel])
-            cols_atuais = [c for c in ["Aluna", "Turma"] + HORARIOS if c in df_raw.columns]
-            st.dataframe(df_raw[cols_atuais], use_container_width=True, hide_index=True)
-            if st.button("🗑️ Excluir Rodízio"):
-                supabase.table("calendario").delete().eq("id", data_sel).execute()
+            st.success(f"🗓️ Rodízio Ativo: {data_sel_str}")
+            df_raw = pd.DataFrame(calendario_db[data_sel_str])
+            cols = [c for c in ["Aluna", "Turma"] + HORARIOS if c in df_raw.columns]
+            st.dataframe(df_raw[cols], use_container_width=True, hide_index=True)
+            if st.button("🗑️ Deletar Rodízio"):
+                supabase.table("calendario").delete().eq("id", data_sel_str).execute()
                 st.rerun()
-        
+                
     with tab_cham:
             st.subheader("📍 Chamada")
             dt_ch = st.selectbox("Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="dt_ch")
@@ -245,6 +319,7 @@ elif perfil == "📊 Analítico IA":
 
         st.subheader("📂 Histórico de Aulas")
         st.dataframe(df_f[df_f["Tipo"] == "Aula"][["Data", "Materia", "Licao", "Dificuldades", "Instrutora"]], use_container_width=True)
+
 
 
 
