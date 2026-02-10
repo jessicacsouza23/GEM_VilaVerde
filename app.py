@@ -423,7 +423,6 @@ with c1:
     instr_sel = st.selectbox("Identifique-se:", ["Selecione..."] + PROFESSORAS_LISTA)
 with c2:
     hoje_dt = datetime.now()
-    # Sugere o próximo sábado
     sab_p = hoje_dt + timedelta(days=(5 - hoje_dt.weekday()) % 7)
     data_prof = st.date_input("Data da Aula:", sab_p)
     data_prof_str = data_prof.strftime("%d/%m/%Y")
@@ -431,104 +430,81 @@ with c2:
 if instr_sel != "Selecione...":
     if data_prof_str in calendario_db:
         escala_dia = calendario_db[data_prof_str]
-        
-        # Verifica se a professora está na escala
         esta_na_escala = any(instr_sel in str(atend) for atend in escala_dia for atend in atend.values())
 
         if not esta_na_escala:
             st.divider()
             st.balloons()
-            st.markdown(f"""
-            <div style="background-color: #f0f2f6; padding: 30px; border-radius: 15px; text-align: center; border: 2px dashed #ff4b4b;">
-                <h2 style="color: #ff4b4b;">🌸 Hoje não, Irmã {instr_sel}!</h2>
-                <p style="font-size: 1.2em; color: #31333f;">
-                    <b>Hoje é sua folga. Aproveite o seu dia para descansar!</b> ✨
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f'<div style="background-color: #f0f2f6; padding: 30px; border-radius: 15px; text-align: center; border: 2px dashed #ff4b4b;"><h2 style="color: #ff4b4b;">🌸 Hoje não, Irmã {instr_sel}!</h2><p style="font-size: 1.2em;">Hoje é sua folga. Aproveite o seu dia!</p></div>', unsafe_allow_html=True)
         else:
             h_sel = st.radio("Selecione o Horário:", HORARIOS, horizontal=True)
             atendimento = next((r for r in escala_dia if instr_sel in str(r.get(h_sel, ""))), None)
             
             if atendimento:
                 local_info = atendimento[h_sel]
-                aluna_da_escala = atendimento['Aluna']
-                turma_aluna = atendimento.get('Turma', 'Turma 1') # Pega a turma da escala
+                aluna_referencia = atendimento['Aluna']
+                turma_aluna = atendimento.get('Turma', 'Turma 1')
 
-                # --- LÓGICA DE DETECÇÃO DE TIPO ---
+                # Identifica se é aula coletiva (Salas 8 ou 9)
                 is_coletiva = "SALA 8" in local_info or "SALA 9" in local_info
+                tipo = "Teoria" if "SALA 8" in local_info else "Solfejo" if "SALA 9" in local_info else "Prática"
+                dif_lista = DIF_TEORIA if tipo == "Teoria" else DIF_SOLFEJO if tipo == "Solfejo" else DIF_PRATICA
+                label_lic = f"Desempenho {tipo}"
+
+                st.success(f"📍 {local_info} | 👤 Referência: {aluna_referencia}")
+
+                # --- SEÇÃO DE CHECKLIST DE ALUNAS ---
+                alunas_selecionadas = []
                 
-                if "SALA 8" in local_info:
-                    tipo, dif_lista, label_lic = "Teoria", DIF_TEORIA, "Desempenho Teoria"
-                elif "SALA 9" in local_info:
-                    tipo, dif_lista, label_lic = "Solfejo", DIF_SOLFEJO, "Desempenho Solfejo"
-                else:
-                    tipo, dif_lista, label_lic = "Prática", DIF_PRATICA, "Prática Instrumental"
-
-                st.success(f"📍 {local_info} | 👤 Referência: {aluna_da_escala}")
-
-                # --- SELEÇÃO DE ALUNAS (INDIVIDUAL OU TURMA) ---
-                alunas_finais = []
                 if is_coletiva:
-                    st.info(f"📚 Aula Coletiva detectada ({tipo}). Selecione as alunas presentes:")
-                    alunas_turma = TURMAS.get(turma_aluna, [aluna_da_escala])
+                    st.markdown("### 👥 Chamada da Turma")
+                    st.caption("Marque as alunas que estão presentes nesta aula:")
+                    alunas_turma = TURMAS.get(turma_aluna, [aluna_referencia])
                     
-                    sel_todas = st.checkbox(f"Selecionar todas as alunas da {turma_aluna}", value=True)
-                    if sel_todas:
-                        alunas_finais = alunas_turma
-                    else:
-                        alunas_finais = st.multiselect("Marque as alunas presentes:", alunas_turma, default=[aluna_da_escala])
+                    # Cria colunas para os checkboxes de alunas não ocuparem muito espaço vertical
+                    cols_alu = st.columns(3)
+                    for idx_a, aluna in enumerate(alunas_turma):
+                        # Se for a aluna que está na escala principal, já vem marcada
+                        default_val = True if aluna == aluna_referencia else True
+                        if cols_alu[idx_a % 3].checkbox(aluna, value=default_val, key=f"check_alu_{idx_a}"):
+                            alunas_selecionadas.append(aluna)
                 else:
-                    alunas_finais = [aluna_da_escala]
+                    alunas_selecionadas = [aluna_referencia]
 
                 # --- FORMULÁRIO DE LANÇAMENTO ---
                 with st.form("f_aula_prof", clear_on_submit=True):
-                    st.subheader(f"Controle de {tipo}")
-                    if is_coletiva: st.caption(f"Lançando para {len(alunas_finais)} alunas simultaneamente.")
-
+                    st.subheader(f"📝 Registro de {tipo}")
+                    
                     lic_vol = st.selectbox(f"{label_lic} - Lição/Volume:", OPCOES_LICOES_NUM)
                     if lic_vol == "Outro": lic_vol = st.text_input("Especifique:")
                     
                     st.markdown("**Dificuldades Detectadas:**")
-                    cols_check = st.columns(2)
+                    cols_dif = st.columns(2)
                     difs_selecionadas = []
                     for i, d in enumerate(dif_lista):
-                        target_col = cols_check[0] if i < len(dif_lista)/2 else cols_check[1]
+                        target_col = cols_dif[0] if i < len(dif_lista)/2 else cols_dif[1]
                         if target_col.checkbox(d, key=f"diff_{i}"):
                             difs_selecionadas.append(d)
                     
-                    obs_aula = st.text_area("Observações Técnicas:")
-                    st.divider()
-
-                    if tipo == "Prática":
-                        col_v, col_a = st.columns(2)
-                        casa_v = col_v.selectbox("Volume Casa:", ["Nenhum"] + OPCOES_LICOES_NUM)
-                        casa_a = col_a.text_input("Apostila Casa:")
-                        casa_f = f"Vol: {casa_v} | Apo: {casa_a}"
-                    else:
-                        casa_f = st.text_input("Tarefa para casa:")
+                    obs_aula = st.text_area("Observações Técnicas para a Turma:")
+                    casa_f = st.text_input("Tarefa para casa (Todas):")
 
                     if st.form_submit_button("❄️ CONGELAR E SALVAR AULA"):
-                        if not alunas_finais:
-                            st.error("Selecione pelo menos uma aluna!")
+                        if not alunas_selecionadas:
+                            st.error("⚠️ Nenhuma aluna selecionada para o registro!")
                         else:
-                            for aluna in alunas_finais:
+                            for aluna in alunas_selecionadas:
                                 db_save_historico({
-                                    "Aluna": aluna, 
-                                    "Tipo": f"Aula_{tipo}", 
-                                    "Data": data_prof_str,
-                                    "Instrutora": instr_sel, 
-                                    "Licao_Atual": lic_vol, 
-                                    "Dificuldades": difs_selecionadas, 
-                                    "Observacao": obs_aula, 
-                                    "Licao_Casa": casa_f
+                                    "Aluna": aluna, "Tipo": f"Aula_{tipo}", "Data": data_prof_str,
+                                    "Instrutora": instr_sel, "Licao_Atual": lic_vol, 
+                                    "Dificuldades": difs_selecionadas, "Observacao": obs_aula, "Licao_Casa": casa_f
                                 })
-                            st.success(f"✅ Aula de {tipo} salva para {len(alunas_finais)} alunas!")
+                            st.success(f"✅ Aula salva para: {', '.join(alunas_selecionadas)}")
                             st.cache_data.clear()
             else:
-                st.info(f"Irmã {instr_sel}, você não tem aula agendada para o horário de {h_sel}.")
+                st.info(f"Irmã {instr_sel}, sem agenda para este horário.")
     else:
-        st.error("Rodízio não encontrado para esta data.")
+        st.error("Rodízio não encontrado.")
             
 # ==========================================
 # MÓDULO ANÁLISE DE IA
@@ -753,6 +729,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
