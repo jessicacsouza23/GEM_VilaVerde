@@ -494,43 +494,43 @@ elif perfil == "📊 Analítico IA":
             st.divider()
 
             # --- 🚀 BOTÃO GERADOR DE RELATÓRIO ---if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
-          if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
-                if model:
-                    with st.spinner(f"Processando com {model.model_name}..."):
-                        # Transformamos o histórico em um formato de lista legível
-                        historico_texto = ""
-                        for _, row in df_f.iterrows():
-                            historico_texto += f"\nData: {row['Data']} | Tipo: {row['Tipo']} | Lição: {row['Licao_Atual']}\n"
-                            historico_texto += f"Dificuldades: {', '.join(row['Dificuldades']) if isinstance(row['Dificuldades'], list) else row['Dificuldades']}\n"
-                            historico_texto += f"Observações: {row['Observacao']}\n"
+if st.button("🚀 GERAR RELATÓRIO PEDAGÓGICO COMPLETO"):
+    if model:
+        with st.spinner(f"Processando com {model.model_name}..."):
+            # Transformamos o histórico em um formato de lista legível
+            historico_texto = ""
+            for _, row in df_f.iterrows():
+                historico_texto += f"\nData: {row['Data']} | Tipo: {row['Tipo']} | Lição: {row['Licao_Atual']}\n"
+                historico_texto += f"Dificuldades: {', '.join(row['Dificuldades']) if isinstance(row['Dificuldades'], list) else row['Dificuldades']}\n"
+                historico_texto += f"Observações: {row['Observacao']}\n"
+
+            prompt_completo = f"""
+            Analise como uma Coordenadora Pedagógica de Órgão Eletrônico:
+            Aluna: {alu_ia}
             
-                        prompt_completo = f"""
-                        Analise como uma Coordenadora Pedagógica de Órgão Eletrônico:
-                        Aluna: {alu_ia}
-                        
-                        DADOS DAS AULAS:
-                        {historico_texto}
-                        
-                        Gere um relatório detalhado com 13 seções, separando:
-                        - Postura (costas, mãos, pés)
-                        - Técnica (articulação, dedilhado)
-                        - Ritmo (metrônomo, pulsação)
-                        - Teoria e Solfejo
-                        - Metas e Dicas para a Banca Semestral.
-                        """
+            DADOS DAS AULAS:
+            {historico_texto}
             
-                        try:
-                            response = model.generate_content(prompt_completo)
-                            st.markdown("---")
-                            st.markdown(response.text)
-                            st.download_button("📥 Baixar Relatório", response.text, f"Analise_{alu_ia}.txt")
-                        except Exception as e:
-                            st.error(f"Erro ao gerar conteúdo: {e}")
-          else:
-            st.error("IA Indisponível. Verifique sua conexão e API Key no Google AI Studio.")
-            
+            Gere um relatório detalhado com 13 seções, separando:
+            - Postura (costas, mãos, pés)
+            - Técnica (articulação, dedilhado)
+            - Ritmo (metrônomo, pulsação)
+            - Teoria e Solfejo
+            - Metas e Dicas para a Banca Semestral.
+            """
+
+            try:
+                response = model.generate_content(prompt_completo)
+                st.markdown("---")
+                st.markdown(response.text)
+                st.download_button("📥 Baixar Relatório", response.text, f"Analise_{alu_ia}.txt")
+            except Exception as e:
+                st.error(f"Erro ao gerar conteúdo: {e}")
+    else:
+        st.error("IA Indisponível. Verifique sua conexão e API Key no Google AI Studio.")
             
             
             
     
     
+
