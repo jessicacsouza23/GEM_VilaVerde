@@ -312,42 +312,79 @@ if perfil == "🏠 Secretaria":
         
    
     with tab_lição:
-        st.subheader("📝 Controle de Lições e Pendências")
+        t.subheader("Registro de Correção de Lições")
+        
+        # Garante o histórico para consulta
+        df_historico = pd.DataFrame(historico_geral)
         
         c1, c2 = st.columns(2)
-        sec_resp = c1.selectbox("Secretária responsável:", SECRETARIAS_LISTA)
-        data_hj = c2.date_input("Data de Hoje:", datetime.now())
-        
-        alu_sel = st.selectbox("Selecione a Aluna:", ["Selecione..."] + ALUNAS_LISTA)
-        
-        if alu_sel != "Selecione...":
-            df_hist = pd.DataFrame(historico_geral)
-            if not df_hist.empty:
-                df_hist['dt_comparar'] = pd.to_datetime(df_hist['Data'], format='%d/%m/%Y').dt.date
-                
-                # 1. Busca registros com pendência
-                pendentes_bruto = df_hist[
-                    (df_hist["Aluna"] == alu_sel) & 
-                    (df_hist["Tipo"] == "Controle_Licao") & 
-                    (df_hist["Status"].isin(["Realizada - devolvida para refazer", "Não realizada"]))
-                ].sort_values("dt_comparar", ascending=False)
+        with c1:
+            aluna_corr = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
+        with c2:
+            data_corr = st.date_input("Data da Correção:", datetime.now(), key="sec_data")
+            data_corr_str = data_corr.strftime("%d/%m/%Y")
 
-                # 2. Busca registros de sucesso
-                sucessos = df_hist[
-                    (df_hist["Aluna"] == alu_sel) & 
-                    (df_hist["Status"] == "Realizadas - sem pendência")
-                ]
-                
-                # 3. Filtra apenas o que NÃO foi resolvido ainda
-                pendencias_reais = []
-                for _, p in pendentes_bruto.iterrows():
-                    resolvida = sucessos[
-                        (sucessos["Categoria"] == p["Categoria"]) & 
-                        (sucessos["Licao_Detalhe"] == p["Licao_Detalhe"]) & 
-                        (sucessos["dt_comparar"] >= p["dt_comparar"])
-                    ]
-                    if resolvida.empty:
-                        pendencias_reais.append(p)
+        # --- VERIFICAÇÃO DE REGISTRO EXISTENTE ---
+        registro_previo = None
+        if not df_historico.empty:
+            # Busca registros de "Correção" para esta aluna nesta data
+            condicao = (df_historico['Aluna'] == aluna_corr) & \
+                       (df_historico['Data'] == data_corr_str) & \
+                       (df_historico['Tipo'] == "Correção")
+            
+            match = df_historico[condicao]
+            if not match.empty:
+                registro_previo = match.iloc[-1].to_dict()
+                st.warning(f"⚠️ Já existe um registro de correção para {aluna_corr} nesta data. Você pode alterá-lo abaixo.")
+
+        with st.form("f_correcao_sec", clear_on_submit=False):
+            # Quem está realizando a correção?
+            instr_corr = st.selectbox("Responsável pela Correção:", PROFESSORAS_LISTA, 
+                                     index=PROFESSORAS_LISTA.index(registro_previo['Instrutora']) if registro_previo and registro_previo['Instrutora'] in PROFESSORAS_LISTA else 0)
+            
+            # Dados da Lição
+            lic_atual = st.text_input("Lição Corrigida (Ex: MSA Cap 2 / Apostila Pág 5):", 
+                                     value=registro_previo.get('Licao_Atual', "") if registro_previo else "")
+            
+            # Dificuldades na correção
+            st.markdown("**Dificuldades Observadas na Correção:**")
+            difs_previa = registro_previo.get('Dificuldades', []) if registro_previo else []
+            if isinstance(difs_previa, str): difs_previa = [difs_previa]
+            
+            cols_d = st.columns(2)
+            difs_selecionadas = []
+            # Lista padrão de dificuldades para teoria/correção
+            lista_dificuldades_sec = ["Erros de Teoria", "Falta de Atenção", "Caligrafia Musical", "Métrica Incorreta", "Escrita de Notas", "Não realizou a lição"]
+            
+            for i, d in enumerate(lista_dificuldades_sec):
+                t_col = cols_d[0] if i < 3 else cols_d[1]
+                if t_col.checkbox(d, value=(d in difs_previa), key=f"sec_diff_{d}"):
+                    difs_selecionadas.append(d)
+            
+            obs_sec = st.text_area("Observações Adicionais:", value=registro_previo.get('Observacao', "") if registro_previo else "")
+            
+            # Botão Dinâmico
+            btn_label = "🔄 ATUALIZAR CORREÇÃO" if registro_previo else "💾 SALVAR CORREÇÃO"
+            if st.form_submit_button(btn_label):
+                if not lic_atual:
+                    st.error("⚠️ Informe qual lição foi corrigida.")
+                else:
+                    db_save_historico({
+                        "Aluna": aluna_corr,
+                        "Tipo": "Correção",
+                        "Data": data_corr_str,
+                        "Instrutora": instr_corr,
+                        "Licao_Atual": lic_atual,
+                        "Dificuldades": difs_selecionadas,
+                        "Observacao": obs_sec,
+                        "Status": "Corrigido"
+                    })
+                    st.success(f"✅ Correção de {aluna_corr} salva com sucesso!")
+                    st.cache_data.clear()
+                    st.rerun()
+
+    with tab_financeiro:
+        st.info("Módulo financeiro em desenvolvimento...")
 
                 # --- EXIBIÇÃO DAS PENDÊNCIAS COM BOTÃO DE RESOLUÇÃO ---
                 if pendencias_reais:
@@ -721,6 +758,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
