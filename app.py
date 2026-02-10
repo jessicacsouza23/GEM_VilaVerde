@@ -463,11 +463,9 @@ elif perfil == "👩‍🏫 Professora":
                         st.caption("Marque as alunas que estão presentes nesta aula:")
                         alunas_turma = TURMAS.get(turma_aluna, [aluna_referencia])
                         
-                        # Cria colunas para os checkboxes de alunas não ocuparem muito espaço vertical
                         cols_alu = st.columns(3)
                         for idx_a, aluna in enumerate(alunas_turma):
-                            # Se for a aluna que está na escala principal, já vem marcada
-                            default_val = True if aluna == aluna_referencia else True
+                            default_val = True
                             if cols_alu[idx_a % 3].checkbox(aluna, value=default_val, key=f"check_alu_{idx_a}"):
                                 alunas_selecionadas.append(aluna)
                     else:
@@ -477,8 +475,8 @@ elif perfil == "👩‍🏫 Professora":
                     with st.form("f_aula_prof", clear_on_submit=True):
                         st.subheader(f"📝 Registro de {tipo}")
                         
-                        lic_vol = st.selectbox(f"{label_lic} - Lição/Volume:", OPCOES_LICOES_NUM)
-                        if lic_vol == "Outro": lic_vol = st.text_input("Especifique:")
+                        lic_vol = st.selectbox(f"{label_lic} - Lição/Volume Atual:", OPCOES_LICOES_NUM)
+                        if lic_vol == "Outro": lic_vol = st.text_input("Especifique a Lição:")
                         
                         st.markdown("**Dificuldades Detectadas:**")
                         cols_dif = st.columns(2)
@@ -488,25 +486,56 @@ elif perfil == "👩‍🏫 Professora":
                             if target_col.checkbox(d, key=f"diff_{i}"):
                                 difs_selecionadas.append(d)
                         
-                        obs_aula = st.text_area("Observações Técnicas para a Turma:")
-                        casa_f = st.text_input("Tarefa para casa (Todas):")
-    
+                        obs_aula = st.text_area("Observações Técnicas (Individual ou Turma):")
+
+                        # --- SEÇÃO DINÂMICA DE LIÇÃO DE CASA ---
+                        st.markdown("---")
+                        st.subheader("🏠 Tarefa para Casa")
+                        
+                        casa_f = "" # String que consolidará as tarefas
+                        
+                        if tipo == "Prática":
+                            col_c1, col_c2 = st.columns(2)
+                            p_prat = col_c1.text_input("Lição Prática (Método):")
+                            p_apos = col_c2.text_input("Lição da Apostila:")
+                            casa_f = f"Método: {p_prat} | Apostila: {p_apos}"
+                            
+                        elif tipo == "Teoria":
+                            col_t1, col_t2, col_t3 = st.columns(3)
+                            t_msa = col_t1.text_input("Lição MSA:")
+                            t_apos = col_t2.text_input("Lição Apostila:")
+                            t_extra = col_t3.text_input("Atividade Extra:")
+                            casa_f = f"MSA: {t_msa} | Apostila: {t_apos} | Extra: {t_extra}"
+                            
+                        elif tipo == "Solfejo":
+                            col_s1, col_s2 = st.columns(2)
+                            s_msa = col_s1.text_input("Lição MSA:")
+                            s_extra = col_s2.text_input("Atividade Extra:")
+                            casa_f = f"MSA: {s_msa} | Extra: {s_extra}"
+
+                        # --- BOTÃO SALVAR ---
                         if st.form_submit_button("❄️ CONGELAR E SALVAR AULA"):
                             if not alunas_selecionadas:
                                 st.error("⚠️ Nenhuma aluna selecionada para o registro!")
                             else:
                                 for aluna in alunas_selecionadas:
                                     db_save_historico({
-                                        "Aluna": aluna, "Tipo": f"Aula_{tipo}", "Data": data_prof_str,
-                                        "Instrutora": instr_sel, "Licao_Atual": lic_vol, 
-                                        "Dificuldades": difs_selecionadas, "Observacao": obs_aula, "Licao_Casa": casa_f
+                                        "Aluna": aluna, 
+                                        "Tipo": f"Aula_{tipo}", 
+                                        "Data": data_prof_str,
+                                        "Instrutora": instr_sel, 
+                                        "Licao_Atual": lic_vol, 
+                                        "Dificuldades": difs_selecionadas, 
+                                        "Observacao": obs_aula, 
+                                        "Licao_Casa": casa_f
                                     })
                                 st.success(f"✅ Aula salva para: {', '.join(alunas_selecionadas)}")
                                 st.cache_data.clear()
+                                st.rerun()
                 else:
                     st.info(f"Irmã {instr_sel}, sem agenda para este horário.")
-    else:
-        st.error("Rodízio não encontrado.")
+        else:
+            st.error("Rodízio não encontrado para esta data.")
             
 # ==========================================
 # MÓDULO ANÁLISE DE IA
@@ -656,6 +685,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
