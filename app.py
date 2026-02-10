@@ -9,20 +9,19 @@ import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
 
-# --- CONFIGURAÇÃO DA IA COM DIAGNÓSTICO ---
+# --- CONFIGURAÇÃO DA IA (MODO ESTÁVEL) ---
 def inicializar_ia():
     try:
         if "GOOGLE_API_KEY" not in st.secrets:
-            return None, "Chave 'GOOGLE_API_KEY' não encontrada nos Secrets do Streamlit."
+            return None, "Chave não configurada nos Secrets."
         
         api_key = st.secrets["GOOGLE_API_KEY"]
         genai.configure(api_key=api_key)
         
-        # Tentamos o modelo mais estável para o Free Tier em 2026
-        nome_modelo = 'gemini-1.5-flash'
-        modelo = genai.GenerativeModel(nome_modelo)
+        # Trocamos para 'gemini-pro' que é o modelo mais estável contra erros 404
+        modelo = genai.GenerativeModel('gemini-pro')
         
-        # Teste de fumaça: se isso falhar, o modelo não está disponível
+        # Teste de pulso
         modelo.generate_content("oi", generation_config={"max_output_tokens": 1})
         return modelo, "Sucesso"
     except Exception as e:
@@ -33,9 +32,8 @@ model, msg_erro_ia = inicializar_ia()
 if model is None:
     st.sidebar.error(f"⚠️ IA Desconectada: {msg_erro_ia}")
 else:
-    st.sidebar.success("🚀 IA Pronta para Análise")
+    st.sidebar.success("🚀 IA Pronta (Modo Pro)")
     
-
 # Conexão Supabase
 # SUPABASE_URL = "https://ixaqtoyqoianumczsjai.supabase.co"
 # SUPABASE_KEY = "sb_publishable_HwYONu26I0AzTR96yoy-Zg_nVxTlJD1"
@@ -510,4 +508,5 @@ elif perfil == "📊 Analítico IA":
                         st.download_button("📥 Baixar Análise Congelada", response.text, f"Analise_{alu_ia}.txt")
                     except Exception as e:
                         st.error(f"Erro ao processar conteúdo: {e}")
+
 
