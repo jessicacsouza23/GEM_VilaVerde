@@ -67,82 +67,82 @@ if perfil == "🏠 Secretaria":
 # ==========================================
 #      MÓDULO: RODÍZIO (SECRETARIA)
 # ==========================================
-
-with tab_gerar:
-    c1, c2 = st.columns(2)
-    mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
-    sabados = [d for sem in calendar.Calendar().monthdatescalendar(2026, mes) for d in sem if d.weekday() == calendar.SATURDAY and d.month == mes]
-    d_str = st.selectbox("Data do Rodízio:", [s.strftime("%d/%m/%Y") for s in sabados])
     
-    cal_db = db_get_calendario()
-
-    if d_str not in cal_db:
-        st.info(f"Configurando Rodízio para {d_str}")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("📚 Teoria (Sala 8)")
-            pt2 = st.selectbox("Prof. H2 (T1):", PROFESSORAS_LISTA, index=0, key="pt2")
-            pt3 = st.selectbox("Prof. H3 (T2):", PROFESSORAS_LISTA, index=1, key="pt3")
-            pt4 = st.selectbox("Prof. H4 (T3):", PROFESSORAS_LISTA, index=2, key="pt4")
-        with col2:
-            st.subheader("🔊 Solfejo (Sala 9)")
-            ps2 = st.selectbox("Prof. H2 (T2):", PROFESSORAS_LISTA, index=3, key="ps2")
-            ps3 = st.selectbox("Prof. H3 (T3):", PROFESSORAS_LISTA, index=4, key="ps3")
-            ps4 = st.selectbox("Prof. H4 (T1):", PROFESSORAS_LISTA, index=5, key="ps4")
+    with tab_gerar:
+        c1, c2 = st.columns(2)
+        mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
+        sabados = [d for sem in calendar.Calendar().monthdatescalendar(2026, mes) for d in sem if d.weekday() == calendar.SATURDAY and d.month == mes]
+        d_str = st.selectbox("Data do Rodízio:", [s.strftime("%d/%m/%Y") for s in sabados])
         
-        folgas = st.multiselect("Professoras de Folga:", PROFESSORAS_LISTA)
-
-        if st.button("🚀 Gerar Rodízio Oficial"):
-            escala_final = []
+        cal_db = db_get_calendario()
+    
+        if d_str not in cal_db:
+            st.info(f"Configurando Rodízio para {d_str}")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("📚 Teoria (Sala 8)")
+                pt2 = st.selectbox("Prof. H2 (T1):", PROFESSORAS_LISTA, index=0, key="pt2")
+                pt3 = st.selectbox("Prof. H3 (T2):", PROFESSORAS_LISTA, index=1, key="pt3")
+                pt4 = st.selectbox("Prof. H4 (T3):", PROFESSORAS_LISTA, index=2, key="pt4")
+            with col2:
+                st.subheader("🔊 Solfejo (Sala 9)")
+                ps2 = st.selectbox("Prof. H2 (T2):", PROFESSORAS_LISTA, index=3, key="ps2")
+                ps3 = st.selectbox("Prof. H3 (T3):", PROFESSORAS_LISTA, index=4, key="ps3")
+                ps4 = st.selectbox("Prof. H4 (T1):", PROFESSORAS_LISTA, index=5, key="ps4")
             
-            # Definição das Coletivas (Salas 8 e 9)
-            fluxo_coletivo = {
-                HORARIOS_LABELS[1]: {"Teo": ("Turma 1", pt2), "Sol": ("Turma 2", ps2)},
-                HORARIOS_LABELS[2]: {"Teo": ("Turma 2", pt3), "Sol": ("Turma 3", ps3)},
-                HORARIOS_LABELS[3]: {"Teo": ("Turma 3", pt4), "Sol": ("Turma 1", ps4)}
-            }
-
-            for t_nome, alunas in TURMAS.items():
-                for i, aluna in enumerate(alunas):
-                    # Criamos a agenda respeitando a ordem das colunas
-                    agenda = {
-                        "Aluna": aluna,
-                        "Turma": t_nome,
-                        HORARIOS_LABELS[0]: "⛪ IGREJA" # 1ª Aula (Sempre Primeiro)
-                    }
-                    
-                    # Processamos H2, H3 e H4
-                    for h_idx in [1, 2, 3]:
-                        h_label = HORARIOS_LABELS[h_idx]
-                        cfg = fluxo_coletivo[h_label]
+            folgas = st.multiselect("Professoras de Folga:", PROFESSORAS_LISTA)
+    
+            if st.button("🚀 Gerar Rodízio Oficial"):
+                escala_final = []
+                
+                # Definição das Coletivas (Salas 8 e 9)
+                fluxo_coletivo = {
+                    HORARIOS_LABELS[1]: {"Teo": ("Turma 1", pt2), "Sol": ("Turma 2", ps2)},
+                    HORARIOS_LABELS[2]: {"Teo": ("Turma 2", pt3), "Sol": ("Turma 3", ps3)},
+                    HORARIOS_LABELS[3]: {"Teo": ("Turma 3", pt4), "Sol": ("Turma 1", ps4)}
+                }
+    
+                for t_nome, alunas in TURMAS.items():
+                    for i, aluna in enumerate(alunas):
+                        # Criamos a agenda respeitando a ordem das colunas
+                        agenda = {
+                            "Aluna": aluna,
+                            "Turma": t_nome,
+                            HORARIOS_LABELS[0]: "⛪ IGREJA" # 1ª Aula (Sempre Primeiro)
+                        }
                         
-                        # Se a turma da aluna está na coletiva naquele horário
-                        if cfg["Teo"][0] == t_nome:
-                            agenda[h_label] = f"📚 SALA 8 | Teoria ({cfg['Teo'][1]})"
-                        elif cfg["Sol"][0] == t_nome:
-                            agenda[h_label] = f"🔊 SALA 9 | Solfejo ({cfg['Sol'][1]})"
-                        else:
-                            # LÓGICA DE PRÁTICA (Salas 1 a 7 apenas)
-                            # 1. Quem não pode dar prática agora? (Quem está na Teo/Sol ou Folga)
-                            p_ocupadas = [cfg["Teo"][1], cfg["Sol"][1]] + folgas
-                            p_livres = [p for p in PROFESSORAS_LISTA if p not in p_ocupadas]
+                        # Processamos H2, H3 e H4
+                        for h_idx in [1, 2, 3]:
+                            h_label = HORARIOS_LABELS[h_idx]
+                            cfg = fluxo_coletivo[h_label]
                             
-                            # 2. Seleciona a professora disponível baseada no índice da aluna
-                            instr_p = p_livres[i % len(p_livres)]
-                            
-                            # 3. Define a sala fixa (1 a 7). 
-                            # O % 7 garante que nunca gere "Sala 10"
-                            idx_prof_original = PROFESSORAS_LISTA.index(instr_p)
-                            num_sala = (idx_prof_original % 7) + 1
-                            
-                            agenda[h_label] = f"🎹 SALA {num_sala} | Prática ({instr_p})"
-                    
-                    escala_final.append(agenda)
-            
-            # Salva no Supabase
-            supabase.table("calendario").upsert({"id": d_str, "escala": escala_final}).execute()
-            st.success("Rodízio gerado com sucesso!")
-            st.rerun()
+                            # Se a turma da aluna está na coletiva naquele horário
+                            if cfg["Teo"][0] == t_nome:
+                                agenda[h_label] = f"📚 SALA 8 | Teoria ({cfg['Teo'][1]})"
+                            elif cfg["Sol"][0] == t_nome:
+                                agenda[h_label] = f"🔊 SALA 9 | Solfejo ({cfg['Sol'][1]})"
+                            else:
+                                # LÓGICA DE PRÁTICA (Salas 1 a 7 apenas)
+                                # 1. Quem não pode dar prática agora? (Quem está na Teo/Sol ou Folga)
+                                p_ocupadas = [cfg["Teo"][1], cfg["Sol"][1]] + folgas
+                                p_livres = [p for p in PROFESSORAS_LISTA if p not in p_ocupadas]
+                                
+                                # 2. Seleciona a professora disponível baseada no índice da aluna
+                                instr_p = p_livres[i % len(p_livres)]
+                                
+                                # 3. Define a sala fixa (1 a 7). 
+                                # O % 7 garante que nunca gere "Sala 10"
+                                idx_prof_original = PROFESSORAS_LISTA.index(instr_p)
+                                num_sala = (idx_prof_original % 7) + 1
+                                
+                                agenda[h_label] = f"🎹 SALA {num_sala} | Prática ({instr_p})"
+                        
+                        escala_final.append(agenda)
+                
+                # Salva no Supabase
+                supabase.table("calendario").upsert({"id": d_str, "escala": escala_final}).execute()
+                st.success("Rodízio gerado com sucesso!")
+                st.rerun()
     else:
         st.success(f"✅ Rodízio ativo: {d_str}")
         df_exibir = pd.DataFrame(cal_db[d_str])
@@ -193,8 +193,8 @@ elif perfil == "👩‍🏫 Professora":
     if data_hj in cal_db:
         df = pd.DataFrame(cal_db[data_hj])
         minha_escala = df[df.apply(lambda row: row.astype(str).str.contains(prof_nome).any(), axis=1)]
-        st.subheader(f"Sua agenda para hoje ({data_hj}):")
         st.table(minha_escala)
+        st.subheader(f"Sua agenda para hoje ({data_hj}):")
     else:
         st.warning("Nenhum rodízio gerado para a data de hoje.")
 
@@ -213,4 +213,5 @@ elif perfil == "📊 Analítico IA":
         st.success(f"💡 **Próxima Aula:** {a['meta']}")
     else:
         st.info("Ainda não há uma análise congelada para esta aluna.")
+
 
