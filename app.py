@@ -33,10 +33,13 @@ def inicializar_ia_economica():
 
 model, status_ia = inicializar_ia_economica()
 
+supabase = None
+
 try:
     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
     st.error(f"Erro Supabase: {e}")
+    st.stop()
 
 # --- 3. FUNÇÕES DE DADOS ---
 @st.cache_data(ttl=60)
@@ -741,6 +744,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
