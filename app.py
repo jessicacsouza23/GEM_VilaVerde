@@ -98,9 +98,9 @@ CATEGORIAS_LICAO = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila"
 STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refazer", "Não realizada"]
 
 TURMAS = {
-    "Turma 1": ["Rebecca A.", "Amanda S.", "Ingrid M.", "Rebeka S.", "Mellina S.", "Rebeca R.", "Caroline C."],
-    "Turma 2": ["Vitória A.", "Elisa F.", "Sarah S.", "Gabrielly V.", "Emily O.", "Julya O.", "Stephany O."],
-    "Turma 3": ["Heloísa R.", "Ana Marcela S.", "Vitória Bella T.", "Júlia S.", "Micaelle S.", "Raquel L.", "Júlia Cristina"]
+    "Turma 1": ["Rebecca A.- Vila Verde", "Amanda S. - Parque do Carmo II", "Ingrid M. - Parque do Carmo II", "Rebeka S. - Jardim Lígia", "Mellina S. - Jardim Lígia", "Rebeca R. - Vila Ré", "Caroline C. - Vila Ré"],
+    "Turma 2": ["Vitória A. - Vila Verde", "Elisa F. - Vila Verde", "Sarah S. - Vila Verde", "Gabrielly V.- Vila Verde", "Emily O. - Vila Curuçá Velha", "Julya O. - Vila Curuçá Velha", "Stephany O. - Vila Curuçá Velha"],
+    "Turma 3": ["Heloísa R. - Vila Verde", "Ana Marcela S.", "Vitória Bella T. - Vila Verde", "Júlia S. - Vila Verde", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", "Júlia Cristina - União de Vila Nova"]
 }
 HORARIOS = ["08h45 (Igreja)", "09h35 (H2)", "10h10 (H3)", "10h45 (H4)"]
 OPCOES_LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
@@ -744,6 +744,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
