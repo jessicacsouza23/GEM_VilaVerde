@@ -48,7 +48,7 @@ def carregar_dados_globais():
     except:
         return [], []
 
-historico_geral = db_get_historico()
+
 
 # --- FUNÇÕES DE BANCO ---
 def db_get_calendario():
@@ -70,6 +70,8 @@ def db_save_historico(dados):
     except Exception as e: 
         st.error(f"Erro ao salvar: {e}")
         return False
+        
+historico_geral = db_get_historico()
 
 # --- 3. DEFINIÇÃO DE VARIÁVEIS GLOBAIS (FIX PARA NAMEERROR) ---
 data_hj = datetime.now().strftime("%d/%m/%Y")
@@ -739,6 +741,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
