@@ -52,7 +52,6 @@ def carregar_dados_globais():
         return [], []
 
 
-
 # --- FUNÇÕES DE BANCO ---
 def db_get_calendario():
     try:
@@ -66,6 +65,7 @@ def db_get_historico():
         return res.data
     except: return []
 
+
 def db_save_historico(dados):
     try: 
         supabase.table("historico_geral").insert(dados).execute()
@@ -74,8 +74,6 @@ def db_save_historico(dados):
         st.error(f"Erro ao salvar: {e}")
         return False
         
-historico_geral = db_get_historico()
-
 # --- 3. DEFINIÇÃO DE VARIÁVEIS GLOBAIS (FIX PARA NAMEERROR) ---
 data_hj = datetime.now().strftime("%d/%m/%Y")
 calendario_db = db_get_calendario()
@@ -84,9 +82,9 @@ calendario_db = db_get_calendario()
 PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
 SECRETARIAS_LISTA = ["Ester", "Jéssica", "Larissa", "Lourdes", "Natasha", "Roseli"]
 ALUNAS_LISTA = sorted([
-    "Amanda S. - Parque do Carmo II", "Anne da Silva - Vila Verde", "Ana Marcela S. - Vila Verde", 
+    "Amanda S. - Pq do Carmo II", "Anne da Silva - Vila Verde", "Ana Marcela S. - Vila Verde", 
     "Caroline C. - Vila Ré", "Elisa F. - Vila Verde", "Emilly O. - Vila Curuçá Velha", 
-    "Gabrielly V. - Vila Verde", "Heloísa R. - Vila Verde", "Ingrid M. - Parque do Carmo II", 
+    "Gabrielly V. - Vila Verde", "Heloísa R. - Vila Verde", "Ingrid M. - Pq do Carmo II", 
     "Júlia Cristina - União de Vila Nova", "Júlia S. - Vila Verde", "Julya O. - Vila Curuçá Velha", 
     "Mellina S. - Jardim Lígia", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", 
     "Rebeca R. - Vila Ré", "Rebecca A. - Vila Verde", "Rebeka S. - Jardim Lígia", 
@@ -98,9 +96,9 @@ CATEGORIAS_LICAO = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila"
 STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refazer", "Não realizada"]
 
 TURMAS = {
-    "Turma 1": ["Rebecca A.- Vila Verde", "Amanda S. - Parque do Carmo II", "Ingrid M. - Parque do Carmo II", "Rebeka S. - Jardim Lígia", "Mellina S. - Jardim Lígia", "Rebeca R. - Vila Ré", "Caroline C. - Vila Ré"],
-    "Turma 2": ["Vitória A. - Vila Verde", "Elisa F. - Vila Verde", "Sarah S. - Vila Verde", "Gabrielly V.- Vila Verde", "Emily O. - Vila Curuçá Velha", "Julya O. - Vila Curuçá Velha", "Stephany O. - Vila Curuçá Velha"],
-    "Turma 3": ["Heloísa R. - Vila Verde", "Ana Marcela S.", "Vitória Bella T. - Vila Verde", "Júlia S. - Vila Verde", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", "Júlia Cristina - União de Vila Nova"]
+    "Turma 1": ["Rebecca A. - Vila Verde", "Amanda S. - Pq do Carmo II", "Ingrid M. - Pq do Carmo II", "Rebeka S. - Jardim Lígia", "Mellina S. - Jardim Lígia", "Rebeca R. - Vila Ré", "Caroline C. - Vila Ré"],
+    "Turma 2": ["Vitória A. - Vila Verde", "Elisa F. - Vila Verde", "Sarah S. - Vila Verde", "Gabrielly V. - Vila Verde", "Emilly O. - Vila Curuçá Velha", "Julya O. - Vila Curuçá Velha", "Stephany O. - Vila Curuçá Velha"],
+    "Turma 3": ["Heloísa R. - Vila Verde", "Ana Marcela S. - Vila Verde", "Vitória Bella T. - Vila Verde", "Júlia S. - Vila Verde", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", "Júlia Cristina - União de Vila Nova"]
 }
 HORARIOS = ["08h45 (Igreja)", "09h35 (H2)", "10h10 (H3)", "10h45 (H4)"]
 OPCOES_LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
@@ -152,9 +150,12 @@ def carregar_planejamento():
         return []
     except:
         return []
-    
-historico_geral = db_get_historico()
-calendario_db = db_get_calendario()
+historico_geral, calendario_raw = carregar_dados_globais()
+calendario_db = {item['id']: item['escala'] for item in calendario_raw}
+
+# historico_geral = db_get_historico()
+# calendario_db = db_get_calendario()
+
 
 # ==========================================
 # MÓDULO SECRETARIA
@@ -583,6 +584,11 @@ elif perfil == "👩‍🏫 Professora":
                             else:
                                 with st.spinner("Salvando..."):
                                     for aluna in alunas_selecionadas:
+                                        supabase.table("historico_geral").delete()\
+                                            .eq("Data", data_prof_str)\
+                                            .eq("Tipo", f"Aula_{tipo_aula}")\
+                                            .eq("Aluna", aluna)\
+                                            .execute()
                                         db_save_historico({
                                             "Aluna": aluna, "Tipo": f"Aula_{tipo_aula}", "Data": data_prof_str,
                                             "Instrutora": instr_sel, "Licao_Atual": lic_vol, 
@@ -601,8 +607,6 @@ elif perfil == "📊 Analítico IA":
     st.title("📊 Painel Pedagógico de Performance")
     st.caption("Uso exclusivo pedagógico / Coordenação")
 
-    historico_geral = db_get_historico()
-    calendario_db = db_get_calendario()
     df = pd.DataFrame(historico_geral)
 
     if df.empty:
@@ -660,14 +664,17 @@ elif perfil == "📊 Analítico IA":
 
         with g1:
             st.write("**Frequência e Assiduidade**")
-            status_counts = df_f['Status'].value_counts()
-            st.bar_chart(status_counts, color="#2ecc71")
+            if "Status" in df_f.columns and df_f["Status"].notna().any():
+                status_counts = df_f["Status"].value_counts()
+                st.bar_chart(status_counts)
+            else:
+                st.info("Sem registros de chamada nesse período.")
 
         with g2:
             st.write("**Progresso de Lições (Histórico)**")
             df_evo = df_aluna.copy().sort_values('dt_obj')
             df_evo['Licao_Num'] = pd.to_numeric(df_evo['Licao_Atual'], errors='coerce')
-            st.line_chart(df_evo.set_index('Data')['Licao_Num'], color="#3498db")
+            st.line_chart(df_evo.set_index('Data')['Licao_Num'])
 
         # --- PARECER PEDAGÓGICO DETALHADO ---
         st.markdown(f"### 🖋️ Parecer de Desenvolvimento: {tipo_periodo}")
@@ -744,6 +751,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
