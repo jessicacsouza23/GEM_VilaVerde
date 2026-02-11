@@ -48,7 +48,7 @@ def carregar_dados_globais():
     except:
         return [], []
 
-historico_geral, calendario_raw = carregar_dados_globais()
+historico_geral = db_get_historico()
 
 # --- FUNÇÕES DE BANCO ---
 def db_get_calendario():
@@ -305,9 +305,14 @@ if perfil == "🏠 Secretaria":
         
             try:
                 # Salva no Supabase
-                supabase.table("historico_geral").insert(novos_registros).execute()
-
+                supabase.table("historico_geral").delete()\
+                    .eq("Data", data_ch_sel)\
+                    .eq("Tipo", "Chamada")\
+                    .execute()
                 
+                supabase.table("historico_geral").insert(novos_registros).execute()
+                
+                                
                 # Limpa cache para atualizar os gráficos de IA
                 st.cache_data.clear()
                 
@@ -338,7 +343,14 @@ if perfil == "🏠 Secretaria":
             df_alu = df_historico[df_historico['Aluna'] == alu_sel]
             if not df_alu.empty:
                 # Pega o último status de cada lição/categoria
-                ultimos_status = df_alu.sort_values('Data').groupby(['Categoria', 'Licao_Detalhe']).last().reset_index()
+                df_alu["dt_obj"] = pd.to_datetime(df_alu["Data"], format="%d/%m/%Y", errors="coerce")
+                ultimos_status = (
+                    df_alu.sort_values("dt_obj")
+                    .groupby(["Categoria", "Licao_Detalhe"])
+                    .last()
+                    .reset_index()
+                )
+                
                 pendencias_reais = ultimos_status[ultimos_status['Status'] != "Realizadas - sem pendência"].to_dict('records')
 
         # --- EXIBIÇÃO DAS PENDÊNCIAS ---
@@ -706,8 +718,13 @@ elif perfil == "📊 Analítico IA":
                     try:
                         hist_txt = df_f[['Data', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
                         prompt = f"Gere análise técnica pedagógica exclusiva para coordenação sobre {alu_ia} ({tipo_periodo}). Histórico: {hist_txt}. Foco em Postura, Técnica, Ritmo e Dicas para a professora {proxima_prof_info} na aula de {data_prox}."
+                        if model is None:
+                            st.error(f"IA indisponível: {status_ia}")
+                            st.stop()
+
                         response = model.generate_content(prompt)
                         texto = response.text
+                        
                         st.markdown(texto)
                         if tipo_periodo == "Diária":
                             supabase.table("analises_congeladas").insert({"aluna": alu_ia, "conteudo": texto, "periodo": periodo_id}).execute()
@@ -722,6 +739,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
