@@ -168,16 +168,26 @@ def salvar_analise_congelada(aluna, periodo_tipo, periodo_id, conteudo):
 
 
 def buscar_analise_congelada(aluna, periodo_tipo, periodo_id):
-    res = supabase.table("analises_congeladas")\
-        .select("*")\
-        .eq("aluna", aluna)\
-        .eq("periodo_tipo", periodo_tipo)\
-        .eq("periodo_id", periodo_id)\
-        .execute()
+    try:
+        res = supabase.table("analises_congeladas") \
+            .select("*") \
+            .eq("aluna", aluna) \
+            .eq("periodo_tipo", periodo_tipo) \
+            .eq("periodo_id", periodo_id) \
+            .execute()
 
-    if res.data:
-        return res.data[0]["conteudo"]
-    return None
+        if res.data:
+            return res.data[0].get("conteudo")
+        return None
+
+    except Exception as e:
+        st.error("❌ Erro ao buscar relatório congelado no Supabase.")
+        st.write("📌 Aluna:", aluna)
+        st.write("📌 Período tipo:", periodo_tipo)
+        st.write("📌 Período id:", periodo_id)
+        st.exception(e)
+        return None
+
 
 
 def buscar_mensais_congelados(aluna, ano, meses):
@@ -956,6 +966,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
