@@ -161,10 +161,11 @@ def salvar_analise_congelada(aluna, periodo_tipo, periodo_id, conteudo):
     }).execute()
 
     supabase.table("analises_congeladas").insert({
-        "aluna": aluna,
+        "aluna": alu_sel,
         "periodo_tipo": periodo_tipo,
         "periodo_id": periodo_id,
-        "conteudo": conteudo
+        "conteudo": conteudo,
+        "user_id": user_id   # ⚠ Essencial para RLS
     }).execute()
 
 
@@ -898,10 +899,11 @@ elif perfil == "📊 Analítico IA":
                     st.markdown(texto)
                     if tipo_periodo == "Diária":
                         supabase.table("analises_congeladas").insert({
-                            "aluna": alu_ia,
-                            "periodo_tipo": tipo_periodo,
+                            "aluna": alu_sel,
+                            "periodo_tipo": periodo_tipo,
                             "periodo_id": periodo_id,
-                            "conteudo": texto
+                            "conteudo": conteudo,
+                            "user_id": user_id   # ⚠ Essencial para RLS
                         }).execute()
                         
                         st.rerun()
@@ -917,6 +919,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
