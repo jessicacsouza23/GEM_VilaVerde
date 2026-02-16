@@ -12,7 +12,6 @@ import io
 
 # --- 1. CONFIGURAÇÕES INICIAIS ---
 st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
-alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
 
 # Inicialização de Variáveis de Segurança
 historico_geral = []
@@ -975,6 +974,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
