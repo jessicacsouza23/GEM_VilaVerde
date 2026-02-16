@@ -458,47 +458,26 @@ if perfil == "🏠 Secretaria":
                     st.error("⚠️ Selecione uma aluna antes de salvar.")
                 else:
                     # Pegando UID do usuário logado para RLS
-                    user_id = st.session_state.user_id  # ou supabase.auth.user().id
-
-        # Inserindo análise congelada
-        supabase.table("analises_congeladas").insert({
-            "aluna": alu_sel,
-            "periodo_tipo": periodo_tipo,
-            "periodo_id": periodo_id,
-            "conteudo": conteudo,
-            "user_id": user_id
-        }).execute()
-        st.success("✅ Análise congelada salva com sucesso!")
-    if not alu_sel:
-        st.error("⚠️ Selecione uma aluna antes de salvar.")
-    else:
-        # Pegando UID do usuário logado para RLS
-        user_id = st.session_state.user_id  # ou supabase.auth.user().id
-
-        # Inserindo análise congelada
-        supabase.table("analises_congeladas").insert({
-            "aluna": alu_sel,
-            "periodo_tipo": periodo_tipo,
-            "periodo_id": periodo_id,
-            "conteudo": conteudo,
-            "user_id": user_id
-        }).execute()
-        st.success("✅ Análise congelada salva com sucesso!")
-    if not alu_sel:
-        st.error("⚠️ Selecione uma aluna antes de salvar.")
-    else:
-        # Pegando UID do usuário logado para RLS
-        user_id = st.session_state.user_id  # ou supabase.auth.user().id
-
-        # Inserindo análise congelada
-        supabase.table("analises_congeladas").insert({
-            "aluna": alu_sel,
-            "periodo_tipo": periodo_tipo,
-            "periodo_id": periodo_id,
-            "conteudo": conteudo,
-            "user_id": user_id
-        }).execute()
-        st.success("✅ Análise congelada salva com sucesso!")
+                    user_id = st.session_state.get("user_id", None)
+                    if not user_id:
+                        st.error("⚠️ Usuário não autenticado. Não é possível salvar.")
+                    else:
+                        # Dados mínimos de exemplo; ajuste conforme sua lógica
+                        periodo_tipo = "diaria"
+                        periodo_id = datetime.now().strftime("%Y-%m-%d")
+                        conteudo = "Análise congelada de teste."  # Substitua pelo conteúdo real
+        
+                        try:
+                            supabase.table("analises_congeladas").insert({
+                                "aluna": alu_sel,
+                                "periodo_tipo": periodo_tipo,
+                                "periodo_id": periodo_id,
+                                "conteudo": conteudo,
+                                "user_id": user_id
+                            }).execute()
+                            st.success("✅ Análise congelada salva com sucesso!")
+                        except Exception as e:
+                            st.error(f"Erro ao salvar análise congelada: {e}")
         with c2:
             sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp")
         with c3:
@@ -965,6 +944,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
