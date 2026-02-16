@@ -872,7 +872,11 @@ elif perfil == "📊 Analítico IA":
     analise_previa = None
     if tipo_periodo == "Diária":
         try:
-            res = supabase.table("analises_congeladas").select("*").eq("aluna", alu_ia).eq("periodo", periodo_id).execute()
+            res = supabase.table("analises_congeladas").select("*")\
+                .eq("aluna", alu_ia)\
+                .eq("periodo_tipo", tipo_periodo)\
+                .eq("periodo_id", periodo_id)\
+                .execute()
             if res.data:
                 analise_previa = res.data[0]
         except: pass
@@ -893,7 +897,13 @@ elif perfil == "📊 Analítico IA":
                     texto = response.text
                     st.markdown(texto)
                     if tipo_periodo == "Diária":
-                        supabase.table("analises_congeladas").insert({"aluna": alu_ia, "conteudo": texto, "periodo": periodo_id}).execute()
+                        supabase.table("analises_congeladas").insert({
+                            "aluna": alu_ia,
+                            "periodo_tipo": tipo_periodo,
+                            "periodo_id": periodo_id,
+                            "conteudo": texto
+                        }).execute()
+                        
                         st.rerun()
                 except Exception as e:
                     if "429" in str(e):
@@ -907,6 +917,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
