@@ -454,11 +454,11 @@ if perfil == "🏠 Secretaria":
         with c1:
             alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
             if st.button("❄️ Congelar análise"):
-    if not alu_sel:
-        st.error("⚠️ Selecione uma aluna antes de salvar.")
-    else:
-        # Pegando UID do usuário logado para RLS
-        user_id = st.session_state.user_id  # ou supabase.auth.user().id
+                if not alu_sel:
+                    st.error("⚠️ Selecione uma aluna antes de salvar.")
+                else:
+                    # Pegando UID do usuário logado para RLS
+                    user_id = st.session_state.user_id  # ou supabase.auth.user().id
 
         # Inserindo análise congelada
         supabase.table("analises_congeladas").insert({
@@ -965,6 +965,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
