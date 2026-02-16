@@ -445,6 +445,7 @@ if perfil == "🏠 Secretaria":
 
     with tab_licao:
         st.subheader("Registro de Correção de Lições")
+        alu_sel = None
         
         # Garante o histórico para consulta
         df_historico = pd.DataFrame(historico_geral)
@@ -452,7 +453,7 @@ if perfil == "🏠 Secretaria":
         
         c1, c2, c3 = st.columns([2, 1, 1])
         with c1:
-            alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
+            alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
             if st.button("❄️ Congelar análise"):
                 if not alu_sel:
                     st.error("⚠️ Selecione uma aluna antes de salvar.")
@@ -760,30 +761,19 @@ elif perfil == "📊 Analítico IA":
         alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
         
         # Só continua se a aluna estiver selecionada
-        if alu_sel:
-            # Pegando UID do usuário logado (para RLS)
-            user_id = st.session_state.get("user_id", "demo_user")  # ou supabase.auth.user().id
-            
-            # Definir os valores necessários para salvar
-            periodo_tipo = st.selectbox("Tipo do período:", ["Diária", "Mensal", "Bimestral", "Semestral", "Anual"])
-            periodo_id = st.text_input("ID do período:", value=datetime.now().strftime("%Y-%m-%d"))
-            conteudo = st.text_area("Conteúdo da análise:", value="Digite aqui a análise...")
-            
-            # Botão para salvar
-            if st.button("❄️ Congelar análise"):
-                try:
-                    supabase.table("analises_congeladas").insert({
-                        "aluna": alu_sel,
-                        "periodo_tipo": normalizar_periodo(periodo_tipo),  # converte para 'diaria', 'mensal', etc.
-                        "periodo_id": periodo_id,
-                        "conteudo": conteudo,
-                        "user_id": user_id
-                    }).execute()
-                    st.success("✅ Análise congelada salva com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro ao salvar análise congelada: {e}")
+        if alu_sel:  # Só executa se houver seleção
+            user_id = st.session_state.user_id  # UID do usuário logado
+            supabase.table("analises_congeladas").insert({
+                "aluna": alu_sel,
+                "periodo_tipo": periodo_tipo,
+                "periodo_id": periodo_id,
+                "conteudo": conteudo,
+                "user_id": user_id
+            }).execute()
+            st.success("✅ Análise congelada salva com sucesso!")
         else:
-            st.info("Selecione uma aluna antes de salvar.")
+            st.error("⚠️ Selecione uma aluna antes de salvar.")
+
 
 
     # --- FILTROS DE CABEÇALHO ---
@@ -974,6 +964,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
