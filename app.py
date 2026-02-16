@@ -165,7 +165,7 @@ def salvar_analise_congelada(aluna, periodo_tipo, periodo_id, conteudo):
         "periodo_tipo": periodo_tipo,
         "periodo_id": periodo_id,
         "conteudo": conteudo,
-        "user_id": user_id   # ⚠ Essencial para RLS
+        "user_id": user_id
     }).execute()
 
 
@@ -755,28 +755,26 @@ elif perfil == "📊 Analítico IA":
     if df.empty:
         st.info("ℹ️ O banco de dados está vazio.")
         st.stop()
+
+        # Seleção da aluna
+        alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
         
-   # Seleção da aluna
-    alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
-    
-    # Só tenta salvar se a aluna foi selecionada
-    if alu_sel:
-        # Usuário logado (RLS)
-        user_id = st.session_state.get("user_id", None)
-        if not user_id:
-            st.error("⚠️ Usuário não autenticado.")
-        else:
-            # Valores obrigatórios para salvar a análise
+        # Só continua se a aluna estiver selecionada
+        if alu_sel:
+            # Pegando UID do usuário logado (para RLS)
+            user_id = st.session_state.get("user_id", "demo_user")  # ou supabase.auth.user().id
+            
+            # Definir os valores necessários para salvar
             periodo_tipo = st.selectbox("Tipo do período:", ["Diária", "Mensal", "Bimestral", "Semestral", "Anual"])
             periodo_id = st.text_input("ID do período:", value=datetime.now().strftime("%Y-%m-%d"))
             conteudo = st.text_area("Conteúdo da análise:", value="Digite aqui a análise...")
-    
+            
             # Botão para salvar
             if st.button("❄️ Congelar análise"):
                 try:
                     supabase.table("analises_congeladas").insert({
                         "aluna": alu_sel,
-                        "periodo_tipo": normalizar_periodo(periodo_tipo),  # transforma em 'diaria', 'mensal', etc.
+                        "periodo_tipo": normalizar_periodo(periodo_tipo),  # converte para 'diaria', 'mensal', etc.
                         "periodo_id": periodo_id,
                         "conteudo": conteudo,
                         "user_id": user_id
@@ -784,8 +782,8 @@ elif perfil == "📊 Analítico IA":
                     st.success("✅ Análise congelada salva com sucesso!")
                 except Exception as e:
                     st.error(f"Erro ao salvar análise congelada: {e}")
-    else:
-        st.info("Selecione uma aluna antes de salvar.")
+        else:
+            st.info("Selecione uma aluna antes de salvar.")
 
 
     # --- FILTROS DE CABEÇALHO ---
@@ -960,7 +958,7 @@ elif perfil == "📊 Analítico IA":
                             "periodo_tipo": periodo_tipo,
                             "periodo_id": periodo_id,
                             "conteudo": conteudo,
-                            "user_id": user_id   # ⚠ Essencial para RLS
+                            "user_id": user_id
                         }).execute()
                         
                         st.rerun()
@@ -976,6 +974,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
