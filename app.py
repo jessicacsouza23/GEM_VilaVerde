@@ -442,10 +442,10 @@ if perfil == "🏠 Secretaria":
                 st.balloons()
             except Exception as e:
                 st.error(f"Erro ao salvar no banco de dados: {e}")
-
+        alu_sel = None
+        
     with tab_licao:
         st.subheader("Registro de Correção de Lições")
-        alu_sel = None
         
         # Garante o histórico para consulta
         df_historico = pd.DataFrame(historico_geral)
@@ -760,9 +760,13 @@ elif perfil == "📊 Analítico IA":
         # Seleção da aluna
         alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
         
-        # Só continua se a aluna estiver selecionada
-        if alu_sel:  # Só executa se houver seleção
-            user_id = st.session_state.user_id  # UID do usuário logado
+        if alu_sel:
+            user_id = st.session_state.get("user_id", None)  # UID do usuário logado
+            periodo_tipo = "mensal"  # ou outro valor definido conforme lógica
+            periodo_id = "2026-02"   # exemplo
+            conteudo = "Texto da análise"
+        
+            # Insere no Supabase
             supabase.table("analises_congeladas").insert({
                 "aluna": alu_sel,
                 "periodo_tipo": periodo_tipo,
@@ -770,9 +774,10 @@ elif perfil == "📊 Analítico IA":
                 "conteudo": conteudo,
                 "user_id": user_id
             }).execute()
+        
             st.success("✅ Análise congelada salva com sucesso!")
         else:
-            st.error("⚠️ Selecione uma aluna antes de salvar.")
+            st.warning("⚠️ Selecione uma aluna antes de salvar.")
 
 
 
@@ -964,6 +969,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
