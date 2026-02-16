@@ -452,7 +452,7 @@ if perfil == "🏠 Secretaria":
         
         c1, c2, c3 = st.columns([2, 1, 1])
         with c1:
-            alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
+            alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
             if st.button("❄️ Congelar análise"):
                 if not alu_sel:
                     st.error("⚠️ Selecione uma aluna antes de salvar.")
@@ -974,6 +974,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
