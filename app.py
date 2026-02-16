@@ -154,24 +154,20 @@ def carregar_planejamento():
 
 def salvar_analise_congelada(aluna, periodo_tipo, periodo_id, conteudo, user_id):
     try:
-        supabase.table("analises_congeladas").upsert({
-            "aluna": aluna,
-            "periodo_tipo": periodo_tipo,
-            "periodo_id": periodo_id,
-            "conteudo": conteudo,
-            "user_id": user_id
-        }).execute()
+        supabase.table("analises_congeladas").upsert(
+            {
+                "aluna": aluna,
+                "periodo_tipo": periodo_tipo,
+                "periodo_id": periodo_id,
+                "conteudo": conteudo,
+                "user_id": user_id
+            },
+            on_conflict=["aluna", "periodo_tipo", "periodo_id"]
+        ).execute()
+
         st.success("✅ Análise congelada salva com sucesso!")
     except Exception as e:
         st.error(f"Erro ao salvar análise congelada: {e}")
-
-    supabase.table("analises_congeladas").insert({
-        "aluna": alu_sel,  # ❌ aqui causa NameError
-        "periodo_tipo": periodo_tipo,
-        "periodo_id": periodo_id,
-        "conteudo": conteudo,
-        "user_id": user_id
-    }).execute()
 
 def buscar_analise_congelada(aluna, periodo_tipo, periodo_id):
     try:
@@ -446,7 +442,7 @@ if perfil == "🏠 Secretaria":
                 st.balloons()
             except Exception as e:
                 st.error(f"Erro ao salvar no banco de dados: {e}")
-        alu_sel = None
+        aluna = None
         
     with tab_licao:
         st.subheader("Registro de Correção de Lições")
@@ -457,9 +453,9 @@ if perfil == "🏠 Secretaria":
         
         c1, c2, c3 = st.columns([2, 1, 1])
         with c1:
-            alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
+            aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
             if st.button("❄️ Congelar análise"):
-                if not alu_sel:
+                if not aluna:
                     st.error("⚠️ Selecione uma aluna antes de salvar.")
                 else:
                     # Pegando UID do usuário logado para RLS
@@ -474,7 +470,7 @@ if perfil == "🏠 Secretaria":
         
                         try:
                             supabase.table("analises_congeladas").insert({
-                                "aluna": alu_sel,
+                                "aluna": aluna,
                                 "periodo_tipo": periodo_tipo,
                                 "periodo_id": periodo_id,
                                 "conteudo": conteudo,
@@ -492,7 +488,7 @@ if perfil == "🏠 Secretaria":
         # --- LÓGICA DE PENDÊNCIAS ---
         pendencias_reais = []
         if not df_historico.empty:
-            df_alu = df_historico[df_historico['Aluna'] == alu_sel]
+            df_alu = df_historico[df_historico['Aluna'] == aluna]
             if not df_alu.empty:
                 # Pega o último status de cada lição/categoria
                 df_alu["dt_obj"] = pd.to_datetime(df_alu["Data"], format="%d/%m/%Y", errors="coerce")
@@ -507,7 +503,7 @@ if perfil == "🏠 Secretaria":
 
         # --- EXIBIÇÃO DAS PENDÊNCIAS ---
         if pendencias_reais:
-            st.error(f"🚨 LIÇÕES PENDENTES PARA {alu_sel.upper()}")
+            st.error(f"🚨 LIÇÕES PENDENTES PARA {aluna.upper()}")
             for p in pendencias_reais:
                 with st.container(border=True):
                     col_info, col_acao = st.columns([2, 1])
@@ -521,7 +517,7 @@ if perfil == "🏠 Secretaria":
                             obs_res = st.text_area("Obs entrega:", key=f"obs_{key_id}")
                             if st.button("Salvar Atualização", key=f"btn_{key_id}"):
                                 db_save_historico({
-                                    "Aluna": alu_sel, "Tipo": "Controle_Licao", "Data": data_corr_str,
+                                    "Aluna": aluna, "Tipo": "Controle_Licao", "Data": data_corr_str,
                                     "Secretaria": sec_resp, "Categoria": p["Categoria"],
                                     "Licao_Detalhe": p["Licao_Detalhe"], "Status": st_res, "Observacao": obs_res
                                 })
@@ -534,7 +530,7 @@ if perfil == "🏠 Secretaria":
         # --- VERIFICAÇÃO DE REGISTRO EXISTENTE ---
         registro_previo = None
         if not df_historico.empty:
-            condicao = (df_historico['Aluna'] == alu_sel) & \
+            condicao = (df_historico['Aluna'] == aluna) & \
                        (df_historico['Data'] == data_corr_str) & \
                        (df_historico['Tipo'] == "Controle_Licao")
             match = df_historico[condicao]
@@ -573,7 +569,7 @@ if perfil == "🏠 Secretaria":
                     st.error("⚠️ Informe a Lição/Página!")
                 else:
                     sucesso = db_save_historico({
-                        "Aluna": alu_sel, "Tipo": "Controle_Licao", "Data": data_corr_str,
+                        "Aluna": aluna, "Tipo": "Controle_Licao", "Data": data_corr_str,
                         "Secretaria": sec_resp, "Categoria": cat_sel, "Licao_Detalhe": det_lic,
                         "Status": status_sel, "Observacao": obs_hoje
                     })
@@ -762,10 +758,10 @@ elif perfil == "📊 Analítico IA":
         st.stop()
 
         # Seleção da aluna
-        alu_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
+        aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
 
         if st.button("❄️ Congelar análise"):
-            if not alu_sel:
+            if not aluna:
                 st.error("⚠️ Selecione uma aluna antes de salvar.")
             else:
                 user_id = st.session_state.get("user_id", None)
@@ -774,10 +770,16 @@ elif perfil == "📊 Analítico IA":
                 else:
                     periodo_tipo = "diaria"
                     periodo_id = datetime.now().strftime("%Y-%m-%d")
-                    conteudo = "Análise congelada de teste."
+                    conteudo = "Análise congelada de teste."  # Substitua pelo conteúdo real
         
-                    salvar_analise_congelada(alu_sel, periodo_tipo, periodo_id, conteudo, user_id)
-
+                    # AQUI PASSAMOS alu_sel COMO ARGUMENTO
+                    salvar_analise_congelada(
+                        aluna=alu_sel, 
+                        periodo_tipo=periodo_tipo, 
+                        periodo_id=periodo_id, 
+                        conteudo=conteudo, 
+                        user_id=user_id
+                    )
 
 
 
@@ -949,7 +951,7 @@ elif perfil == "📊 Analítico IA":
                     st.markdown(texto)
                     if tipo_periodo == "Diária":
                         supabase.table("analises_congeladas").insert({
-                            "aluna": alu_sel,
+                            "aluna": aluna,
                             "periodo_tipo": periodo_tipo,
                             "periodo_id": periodo_id,
                             "conteudo": conteudo,
@@ -969,6 +971,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
