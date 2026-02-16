@@ -1,13 +1,14 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
 import calendar
 from supabase import create_client, Client
-import io
 from PIL import Image, ImageDraw
 import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
+from datetime import datetime, timedelta, date
+from fpdf import FPDF
+import io
 
 # --- 1. CONFIGURAÇÕES INICIAIS ---
 st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
@@ -150,11 +151,98 @@ def carregar_planejamento():
         return []
     except:
         return []
+
+def salvar_analise_congelada(aluna, periodo_tipo, periodo_id, conteudo):
+    supabase.table("analises_congeladas").delete()\
+        .eq("aluna", aluna)\
+        .eq("periodo_tipo", periodo_tipo)\
+        .eq("periodo_id", periodo_id)\
+        .execute()
+
+    supabase.table("analises_congeladas").insert({
+        "aluna": aluna,
+        "periodo_tipo": periodo_tipo,
+        "periodo_id": periodo_id,
+        "conteudo": conteudo
+    }).execute()
+
+
+def buscar_analise_congelada(aluna, periodo_tipo, periodo_id):
+    res = supabase.table("analises_congeladas")\
+        .select("*")\
+        .eq("aluna", aluna)\
+        .eq("periodo_tipo", periodo_tipo)\
+        .eq("periodo_id", periodo_id)\
+        .execute()
+
+    if res.data:
+        return res.data[0]["conteudo"]
+    return None
+
+
+def buscar_mensais_congelados(aluna, ano, meses):
+    textos = []
+    meses_faltando = []
+
+    for mes in meses:
+        periodo_id = f"{ano}-{mes:02d}"
+        conteudo = buscar_analise_congelada(aluna, "mensal", periodo_id)
+        if conteudo:
+            textos.append((periodo_id, conteudo))
+        else:
+            meses_faltando.append(periodo_id)
+
+    return textos, meses_faltando
+
+
+def obter_bimestre(mes):
+    return (mes - 1) // 2 + 1
+
+def obter_semestre(mes):
+    return 1 if mes <= 6 else 2
+
+def meses_do_bimestre(bimestre):
+    inicio = (bimestre - 1) * 2 + 1
+    return [inicio, inicio + 1]
+    
+def meses_do_semestre(semestre):
+    if semestre == 1:
+        return [1, 2, 3, 4, 5, 6]
+    else:
+        return [7, 8, 9, 10, 11, 12]
+
 historico_geral, calendario_raw = carregar_dados_globais()
-calendario_db = {item['id']: item['escala'] for item in calendario_raw}
+df = pd.DataFrame(historico_geral)
+
+calendario_db = {item.get('id'): item.get('escala', []) for item in calendario_raw if item.get("id")}
 
 # historico_geral = db_get_historico()
 # calendario_db = db_get_calendario()
+
+def gerar_pdf(texto):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_font("Arial", size=12)
+
+    for linha in texto.split("\n"):
+        linha = linha.encode("latin-1", "replace").decode("latin-1")
+        pdf.multi_cell(0, 8, linha)
+
+    return pdf.output(dest="S").encode("latin-1")
+    
+def limpar_nome_arquivo(texto):
+    return "".join(c for c in texto if c.isalnum() or c in ["_", "-"]).replace(" ", "_")
+
+def normalizar_periodo(tipo):
+    mapa = {
+        "Diária": "diaria",
+        "Mensal": "mensal",
+        "Bimestral": "bimestral",
+        "Semestral": "semestral",
+        "Anual": "anual"
+    }
+    return mapa.get(tipo, tipo.lower())
 
 
 # ==========================================
@@ -604,146 +692,263 @@ elif perfil == "👩‍🏫 Professora":
 # MÓDULO ANÁLISE DE IA
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.title("📊 Painel Pedagógico de Performance")
-    st.caption("Uso exclusivo pedagógico / Coordenação")
+    st.title("📊 Painel Analítico com IA")
+    st.info("Relatórios pedagógicos gerados por IA com congelamento mensal/bimestral/semestral/anual.")
 
-    df = pd.DataFrame(historico_geral)
+    # --- Seleção de aluna ---
+    if df.empty or "Aluna" not in df.columns:
+        st.warning("⚠️ Ainda não existem registros no histórico para gerar relatórios.")
+        st.stop()
 
-    if df.empty:
-        st.info("ℹ️ O banco de dados está vazio.")
+    alunas = df["Aluna"].dropna().unique().tolist()
+    if not alunas:
+        st.warning("⚠️ Nenhuma aluna encontrada no histórico.")
+        st.stop()                                                
+    alu_ia = st.selectbox("Selecione a aluna:", alunas)
+
+    # --- Tipo de período ---
+    tipo_periodo = st.selectbox(
+        "Selecione o tipo de relatório:",
+        ["Diária", "Mensal", "Bimestral", "Semestral", "Anual"]
+    )
+
+    hoje = datetime.today().date()
+
+    # ===========================
+    #  DEFINIR PERIODO_ID
+    # ===========================
+
+    periodo_id = ""
+    meses_necessarios = []
+    meses_encontrados = []
+    meses_faltando = []
+
+    if tipo_periodo == "Diária":
+        data_sel_ia = st.date_input("Selecione a data:", value=hoje)
+        periodo_id = data_sel_ia.strftime("%Y-%m-%d")
+
+    elif tipo_periodo == "Mensal":
+        ano_num = st.selectbox("Ano:", [hoje.year - 1, hoje.year, hoje.year + 1])
+        mes_num = st.selectbox("Mês:", list(range(1, 13)))
+        periodo_id = f"{ano_num}-{mes_num:02d}"
+
+    elif tipo_periodo == "Bimestral":
+        ano_num = st.selectbox("Ano:", [hoje.year - 1, hoje.year, hoje.year + 1])
+        bimestre = st.selectbox("Bimestre:", [1, 2, 3, 4, 5, 6])
+
+        meses = meses_do_bimestre(bimestre)
+        periodo_id = f"{ano_num}-B{bimestre}"
+
+        meses_necessarios = [f"{ano_num}-{m:02d}" for m in meses]
+
+    elif tipo_periodo == "Semestral":
+        ano_num = st.selectbox("Ano:", [hoje.year - 1, hoje.year, hoje.year + 1])
+        semestre = st.selectbox("Semestre:", [1, 2])
+        
+        meses = meses_do_semestre(semestre)
+        periodo_id = f"{ano_num}-S{semestre}"
+
+        meses_necessarios = [f"{ano_num}-{m:02d}" for m in meses]
+
+    elif tipo_periodo == "Anual":
+        ano_num = st.selectbox("Ano:", [hoje.year - 1, hoje.year, hoje.year + 1])
+        periodo_id = f"{ano_num}"
+
+        meses_necessarios = [f"{ano_num}-{m:02d}" for m in range(1, 13)]
+
+    # ===========================
+    #  FILTRAR HISTÓRICO
+    # ===========================
+
+    df_aluna = df[df["Aluna"] == alu_ia].copy()
+
+    if tipo_periodo == "Diária":
+        df_aluna["Data_dt"] = pd.to_datetime(df_aluna["Data"], format="%d/%m/%Y", errors="coerce").dt.date
+        df_f = df_aluna[df_aluna["Data_dt"] == data_sel_ia]
+
+    elif tipo_periodo == "Mensal":
+        df_aluna["Data_dt"] = pd.to_datetime(df_aluna["Data"], format="%d/%m/%Y", errors="coerce")
+        df_f = df_aluna[
+            (df_aluna["Data_dt"].dt.year == ano_num) &
+            (df_aluna["Data_dt"].dt.month == mes_num)
+        ]
+
     else:
-        # --- FILTROS DE CABEÇALHO ---
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            alu_ia = st.selectbox("🔍 Selecione a Aluna:", ALUNAS_LISTA)
-        with c2:
-            tipo_periodo = st.radio("Período de Análise:", ["Diária", "Mensal", "Bimestral", "Semestral", "Anual"], horizontal=True)
+        # Bimestral / Semestral / Anual não usa df bruto diretamente
+        df_f = pd.DataFrame()
 
-        df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
-        df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=False)
+    st.subheader("📌 Aulas encontradas")
+    if "Dificuldades" in df_f.columns:
+        df_f["Dificuldades"] = df_f["Dificuldades"].astype(str)
+    
+    if tipo_periodo in ["Diária", "Mensal"]:
+        st.dataframe(df_f)
+    else:
+        st.info("Relatórios bimestral/semestral/anual serão gerados com base nos relatórios mensais congelados.")
 
-        # --- LÓGICA DE SELEÇÃO DE DATAS ---
-        df_f = df_aluna.copy()
-        periodo_id = ""
+    st.divider()
 
-        if tipo_periodo == "Diária":
-            datas_disp = sorted(df_aluna['dt_obj'].dropna().unique(), reverse=True)
-            if datas_disp:
-                dia_sel = st.date_input("📅 Aula do dia:", value=datas_disp[0])
-                df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
-                periodo_id = dia_sel.strftime('%d/%m/%Y')
-        elif tipo_periodo == "Mensal":
-            meses = sorted(list(set(d.strftime('%m/%Y') for d in df_aluna['dt_obj'].dropna())), reverse=True)
-            if meses:
-                mes_sel = st.selectbox("📅 Mês referente:", meses)
-                df_f = df_aluna[df_aluna['dt_obj'].apply(lambda x: x.strftime('%m/%Y') == mes_sel)]
-                periodo_id = mes_sel
-        # ... (Mantendo lógicas de Bimestre/Semestre/Ano)
+    # ===========================
+    #  CHECAR MENSAL FECHADO
+    # ===========================
 
-        # --- [NOVO] LÓGICA DE RODÍZIO (PRÓXIMA PROFESSORA) ---
-        proxima_prof_info = "Escala não definida"
-        data_prox = "Próximo Sábado"
-        if calendario_db:
-            try:
-                hoje = datetime.now().date()
-                datas_futuras = sorted([d for d in calendario_db.keys() if datetime.strptime(d, "%d/%m/%Y").date() >= hoje], key=lambda x: datetime.strptime(x, "%d/%m/%Y"))
-                if datas_futuras:
-                    data_prox = datas_futuras[0]
-                    escala = calendario_db[data_prox]
-                    def fit(n): return str(n).split("-")[0].strip().lower()
-                    dados_aluna = next((i for i in escala if fit(i.get('Aluna','')) in fit(alu_ia)), None)
-                    if dados_aluna:
-                        h2, h3, h4 = dados_aluna.get("09h35 (H2)", "-"), dados_aluna.get("10h10 (H3)", "-"), dados_aluna.get("10h45 (H4)", "-")
-                        def clean(t): return str(t).split("|")[-1].strip() if "|" in str(t) else str(t)
-                        proxima_prof_info = f"H2: {clean(h2)} | H3: {clean(h3)} | H4: {clean(h4)}"
-            except: pass
+    pode_salvar_mensal = True
 
-        # --- GRÁFICOS DE DESENVOLVIMENTO ---
-        st.markdown("### 📈 Indicadores de Evolução")
-        g1, g2 = st.columns(2)
+    if tipo_periodo == "Mensal":
+        ultimo_dia_mes = calendar.monthrange(ano_num, mes_num)[1]
+        data_final_mes = date(ano_num, mes_num, ultimo_dia_mes)
 
-        with g1:
-            st.write("**Frequência e Assiduidade**")
-            if "Status" in df_f.columns and df_f["Status"].notna().any():
-                status_counts = df_f["Status"].value_counts()
-                st.bar_chart(status_counts)
+        if hoje < data_final_mes:
+            pode_salvar_mensal = False
+            st.warning(f"⚠️ O relatório mensal {periodo_id} ainda não pode ser congelado. Ele só fecha em {data_final_mes}.")
+
+    # ===========================
+    #  PARA PERÍODOS MAIORES: CHECAR MENSAIS
+    # ===========================
+
+    conteudo_mensais = ""
+
+    if tipo_periodo in ["Bimestral", "Semestral", "Anual"]:
+        for mes_id in meses_necessarios:
+            conteudo_mes = buscar_analise_congelada(alu_ia, "mensal", mes_id)
+    
+            if conteudo_mes:
+                meses_encontrados.append(mes_id)
+                conteudo_mensais += f"\n\n===== RELATÓRIO MENSAL {mes_id} =====\n{conteudo_mes}\n"
             else:
-                st.info("Sem registros de chamada nesse período.")
+                meses_faltando.append(mes_id)
+    
+        if meses_faltando:
+            st.error("❌ Não é possível gerar este relatório porque faltam relatórios mensais congelados.")
+            st.write("📌 Meses faltando:")
+            st.write(meses_faltando)
+            st.stop()
+    
+        st.success("✅ Todos os relatórios mensais necessários foram encontrados!")
+           
+    if tipo_periodo in ["Diária", "Mensal"] and df_f.empty:
+        st.warning("⚠️ Nenhum registro encontrado nesse período para gerar relatório.")
+        st.stop()
+    
+    # ===========================
+    #  BUSCAR RELATÓRIO CONGELADO
+    # ===========================
 
-        with g2:
-            st.write("**Progresso de Lições (Histórico)**")
-            df_evo = df_aluna.copy().sort_values('dt_obj')
-            df_evo['Licao_Num'] = pd.to_numeric(df_evo['Licao_Atual'], errors='coerce')
-            st.line_chart(df_evo.set_index('Data')['Licao_Num'])
+    analise_previa = buscar_analise_congelada(alu_ia, normalizar_periodo(tipo_periodo), periodo_id)
 
-        # --- PARECER PEDAGÓGICO DETALHADO ---
-        st.markdown(f"### 🖋️ Parecer de Desenvolvimento: {tipo_periodo}")
+    if analise_previa:
+        st.success(f"✅ Relatório já salvo ({tipo_periodo} - {periodo_id})")
+        st.markdown(analise_previa)
+
+        pdf_bytes = gerar_pdf(analise_previa)
+
+        nome_limpo = limpar_nome_arquivo(alu_ia)
+
+        st.download_button(
+            label="📄 Baixar Relatório em PDF",
+            data=pdf_bytes,
+            file_name = f"Relatorio_{nome_limpo}_{tipo_periodo}_{periodo_id}.pdf",
+            mime="application/pdf"
+        )
+
+        if st.button("🔄 Refazer Relatório"):
+            supabase.table("analises_congeladas").delete()\
+                .eq("aluna", alu_ia)\
+                .eq("periodo_tipo", normalizar_periodo(tipo_periodo))\
+                .eq("periodo_id", periodo_id)\
+                .execute()
         
-        todas_difs = [str(d) for item in df_f['Dificuldades'].dropna() for d in (item if isinstance(item, list) else [item])]
-        tecnicos = list(set([d for d in todas_difs if any(x in d.lower() for x in ["postura", "dedo", "punho", "mão", "falange", "articulação"])]))
-        ritmicos = list(set([d for d in todas_difs if any(x in d.lower() for x in ["ritmo", "metrônomo", "solfejo", "tempo", "divisão"])]))
+            st.cache_data.clear()
+            st.warning("Relatório apagado. Gere novamente.")
+            st.rerun()
 
-        p1, p2 = st.columns(2)
-        with p1:
-            if tecnicos:
-                st.error(f"**🎹 Postura e Técnica**\n\nNeste período, a aluna enfrentou desafios em: **{', '.join(tecnicos)}**. Pedagogicamente, observamos que a musculatura ainda busca memória para esses movimentos. É vital trabalhar o relaxamento dos ombros e a curvatura das falanges para evitar tensões desnecessárias.")
-            else:
-                st.success("**🎹 Postura e Técnica**\n\nA aluna apresenta um desenvolvimento técnico primoroso. A postura é equilibrada e a articulação dos dedos ocorre de forma independente e clara. Uma base sólida que permite avanços em repertórios mais complexos.")
+    else:
+        # ===========================
+        #  GERAR NOVO RELATÓRIO
+        # ===========================
 
-        with p2:
-            if ritmicos:
-                st.warning(f"**🎶 Ritmo e Teoria**\n\nIdentificamos oscilações rítmicas em: **{', '.join(ritmicos)}**. A compreensão teórica está em fase de maturação. Sugerimos que o solfejo seja priorizado antes da execução instrumental para que o tempo seja internalizado.")
-            else:
-                st.success("**🎶 Ritmo e Teoria**\n\nExcelente domínio da pulsação! A aluna demonstra segurança na leitura rítmica e no MSA. A execução mantém-se constante, respeitando rigorosamente os valores de tempo e pausas.")
+        if tipo_periodo == "Mensal" and not pode_salvar_mensal:
+            st.info("📌 Você pode gerar uma prévia, mas não será salva ainda.")
+            permitir_salvar = False
+        else:
+            permitir_salvar = True
 
-        # --- PLANEJAMENTO PARA A PRÓXIMA AULA ---
-        st.markdown("---")
-        st.markdown("### 💡 Planejamento Pedagógico (Próxima Aula)")
-        
-        c_plan1, c_plan2 = st.columns([1, 2])
-        with c_plan1:
-            st.info(f"**📅 Data:** {data_prox}\n\n**👩‍🏫 Professora(s):**\n\n{proxima_prof_info}")
-        
-        with c_plan2:
-            if tecnicos or ritmicos:
-                st.warning(f"**Dica Estratégica:** Priorizar o acolhimento. A aluna está em fase de superação de dificuldades em { (tecnicos[0] if tecnicos else ritmicos[0]) }. Iniciar a aula com 10 min de exercícios técnicos lentos (Hanon) antes de abrir o método.")
-            else:
-                st.success("**Dica Estratégica:** Aluna com excelente prontidão! Iniciar o polimento de dinâmica (expressividade) e aumentar gradativamente o andamento das lições. Possibilidade de avançar no cronograma.")
+        if st.button("✨ GERAR RELATÓRIO COMPLETO (Coordenação)"):
+            with st.spinner("IA Processando..."):
+                try:
+                    if model is None:
+                        st.error(f"IA indisponível: {status_ia}")
+                        st.stop()
 
-        # --- IA E CONGELAMENTO (SALVANDO APENAS DIÁRIO) ---
-        st.divider()
-        analise_previa = None
-        if tipo_periodo == "Diária":
-            try:
-                res = supabase.table("analises_congeladas").select("*").eq("aluna", alu_ia).eq("periodo", periodo_id).execute()
-                if res.data: analise_previa = res.data[0]
-            except: pass
-
-        if analise_previa:
-            st.success(f"✅ Relatório Salvo ({periodo_id})")
-            st.markdown(analise_previa['conteudo'])
-            if st.button("🔄 Refazer Relatório"): analise_previa = None
-
-        if not analise_previa:
-            if st.button("✨ GERAR RELATÓRIO COMPLETO (Coordenação)"):
-                with st.spinner("IA Processando..."):
-                    try:
-                        hist_txt = df_f[['Data', 'Licao_Atual', 'Dificuldades', 'Observacao']].to_string()
-                        prompt = f"Gere análise técnica pedagógica exclusiva para coordenação sobre {alu_ia} ({tipo_periodo}). Histórico: {hist_txt}. Foco em Postura, Técnica, Ritmo e Dicas para a professora {proxima_prof_info} na aula de {data_prox}."
-                        if model is None:
-                            st.error(f"IA indisponível: {status_ia}")
-                            st.stop()
-
-                        response = model.generate_content(prompt)
-                        texto = response.text
+                    if tipo_periodo in ["Diária", "Mensal"]:
+                        colunas = ['Data', 'Licao_Atual', 'Dificuldades', 'Observacao']
+                        for col in colunas:
+                            if col not in df_f.columns:
+                                df_f[col] = ""
                         
-                        st.markdown(texto)
-                        if tipo_periodo == "Diária":
-                            supabase.table("analises_congeladas").insert({"aluna": alu_ia, "conteudo": texto, "periodo": periodo_id}).execute()
-                            st.rerun()
-                    except Exception as e:
-                        if "429" in str(e): st.error("⚠️ Limite de IA atingido. Use as informações detalhadas acima para sua aula.")
-                        else: st.error(f"Erro: {e}")
+                        hist_txt = df_f[colunas].fillna("").to_string(index=False)
+                    else:
+                        hist_txt = conteudo_mensais
+
+                    prompt = f"""
+Você é uma coordenadora pedagógica de uma escola de música da Congregação Cristã no Brasil.
+
+Crie um relatório pedagógico completo e técnico sobre a aluna: {alu_ia}.
+
+PERÍODO: {tipo_periodo}
+IDENTIFICADOR: {periodo_id}
+
+DADOS PARA ANÁLISE:
+{hist_txt}
+
+O relatório deve conter:
+1. Resumo geral do período
+2. Evolução técnica e musical
+3. Pontos fortes e progresso
+4. Dificuldades recorrentes e causas prováveis
+5. Avaliação de ritmo, metrônomo e precisão
+6. Avaliação de postura (punho, falanges, articulação, dedos)
+7. Avaliação de leitura musical e segurança na execução
+8. Recomendações objetivas para o próximo período
+9. Plano de estudo semanal sugerido
+10. Linguagem respeitosa, motivadora e profissional
+"""
+
+                    response = model.generate_content(prompt)
+                    texto = response.text
+
+                    st.subheader("📄 Relatório Gerado")
+                    st.markdown(texto)
+
+                    pdf_bytes = gerar_pdf(texto)
+                    
+                    nome_limpo = limpar_nome_arquivo(alu_ia)
+                    file_name = f"Relatorio_{nome_limpo}_{tipo_periodo}_{periodo_id}.pdf"
+                    
+                    st.download_button(
+                        label="📄 Baixar Relatório em PDF",
+                        data=pdf_bytes,
+                        file_name=file_name,
+                        mime="application/pdf"
+                    )
+                    
+                    
+                    
+                    if permitir_salvar:
+                        salvar_analise_congelada(alu_ia, normalizar_periodo(tipo_periodo), periodo_id, texto)
+                        st.success("✅ Relatório salvo no banco com sucesso!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ Prévia gerada, mas ainda não pode ser salva pois o mês não terminou.")
+
+                except Exception as e:
+                    if "429" in str(e):
+                        st.error("⚠️ Limite de IA atingido. Aguarde um pouco e tente novamente.")
+                    else:
+                        st.error(f"Erro ao gerar relatório: {e}")
+
+
 
 # --- FIM DO MÓDULO ---
 
@@ -751,41 +956,6 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
