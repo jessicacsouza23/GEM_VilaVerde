@@ -1,7 +1,8 @@
 streamlit
-pandas
 supabase
+pandas
 python-dotenv
-plotly
-Pillow
+fpdf2
+openai
 google-generativeai==0.8.3
+
