@@ -1,1 +1,7 @@
+streamlit
+pandas
+supabase
+python-dotenv
+plotly
+Pillow
 google-generativeai==0.8.3
