@@ -153,23 +153,25 @@ def carregar_planejamento():
         return []
 
 def salvar_analise_congelada(aluna, periodo_tipo, periodo_id, conteudo, user_id):
-    supabase.table("analises_congeladas").upsert({
-        "aluna": aluna,
-        "periodo_tipo": periodo_tipo,
-        "periodo_id": periodo_id,
-        "conteudo": conteudo,
-        "user_id": user_id
-    }).execute()
-
+    try:
+        supabase.table("analises_congeladas").upsert({
+            "aluna": aluna,
+            "periodo_tipo": periodo_tipo,
+            "periodo_id": periodo_id,
+            "conteudo": conteudo,
+            "user_id": user_id
+        }).execute()
+        st.success("✅ Análise congelada salva com sucesso!")
+    except Exception as e:
+        st.error(f"Erro ao salvar análise congelada: {e}")
 
     supabase.table("analises_congeladas").insert({
-        "aluna": alu_sel,
+        "aluna": alu_sel,  # ❌ aqui causa NameError
         "periodo_tipo": periodo_tipo,
         "periodo_id": periodo_id,
         "conteudo": conteudo,
         "user_id": user_id
     }).execute()
-
 
 def buscar_analise_congelada(aluna, periodo_tipo, periodo_id):
     try:
@@ -767,12 +769,15 @@ elif perfil == "📊 Analítico IA":
                 st.error("⚠️ Selecione uma aluna antes de salvar.")
             else:
                 user_id = st.session_state.get("user_id", None)
-                periodo_tipo = "diaria"
-                periodo_id = datetime.now().strftime("%Y-%m-%d")
-                conteudo = "Análise congelada de teste."
+                if not user_id:
+                    st.error("⚠️ Usuário não autenticado. Não é possível salvar.")
+                else:
+                    periodo_tipo = "diaria"
+                    periodo_id = datetime.now().strftime("%Y-%m-%d")
+                    conteudo = "Análise congelada de teste."
         
-                salvar_analise_congelada(alu_sel, periodo_tipo, periodo_id, conteudo, user_id)
-                st.success("✅ Análise congelada salva com sucesso!")
+                    salvar_analise_congelada(alu_sel, periodo_tipo, periodo_id, conteudo, user_id)
+
 
 
 
@@ -958,14 +963,13 @@ elif perfil == "📊 Analítico IA":
                     else:
                         st.error(f"Erro: {e}")
 
-salvar_analise_congelada(alu_sel, periodo_tipo, periodo_id, conteudo, user_id)
-
 # --- FIM DO MÓDULO ---
 
 with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
