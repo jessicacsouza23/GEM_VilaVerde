@@ -83,7 +83,7 @@ calendario_db = db_get_calendario()
 PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla"]
 SECRETARIAS_LISTA = ["Ester", "Jéssica", "Larissa", "Lourdes", "Natasha", "Roseli"]
 ALUNAS_LISTA = sorted([
-    "Amanda S. - Pq do Carmo II", "Anne da Silva - Vila Verde", "Ana Marcela S. - Vila Verde", 
+    "Mariana - Vila Araguaia", "Annie - Vila Verde", "Ana Marcela S. - Vila Verde", 
     "Caroline C. - Vila Ré", "Elisa F. - Vila Verde", "Emilly O. - Vila Curuçá Velha", 
     "Gabrielly V. - Vila Verde", "Heloísa R. - Vila Verde", "Ingrid M. - Pq do Carmo II", 
     "Júlia Cristina - União de Vila Nova", "Júlia S. - Vila Verde", "Julya O. - Vila Curuçá Velha", 
@@ -97,9 +97,12 @@ CATEGORIAS_LICAO = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila"
 STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refazer", "Não realizada"]
 
 TURMAS = {
-    "Turma 1": ["Rebecca A. - Vila Verde", "Amanda S. - Pq do Carmo II", "Ingrid M. - Pq do Carmo II", "Rebeka S. - Jardim Lígia", "Mellina S. - Jardim Lígia", "Rebeca R. - Vila Ré", "Caroline C. - Vila Ré"],
-    "Turma 2": ["Vitória A. - Vila Verde", "Elisa F. - Vila Verde", "Sarah S. - Vila Verde", "Gabrielly V. - Vila Verde", "Emilly O. - Vila Curuçá Velha", "Julya O. - Vila Curuçá Velha", "Stephany O. - Vila Curuçá Velha"],
-    "Turma 3": ["Heloísa R. - Vila Verde", "Ana Marcela S. - Vila Verde", "Vitória Bella T. - Vila Verde", "Júlia S. - Vila Verde", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", "Júlia Cristina - União de Vila Nova"]
+    "Turma 1": ["Mariana - Vila Araguaia","Rebecca A. - Vila Verde", "Annie - Vila Verde", "Ingrid M. - Pq do Carmo II", "Rebeka S. - Jardim Lígia", 
+                "Mellina S. - Jardim Lígia", "", "Caroline C. - Vila Ré"],
+    "Turma 2": ["Vitória A. - Vila Verde", "Elisa F. - Vila Verde", "Sarah S. - Vila Verde", "Gabrielly V. - Vila Verde", 
+                "Emilly O. - Vila Curuçá Velha", "Julya O. - Vila Curuçá Velha", "Rebeca R. - Vila Ré"],
+    "Turma 3": ["Heloísa R. - Vila Verde", "Ana Marcela S. - Vila Verde", "Vitória Bella T. - Vila Verde", 
+                "Júlia S. - Vila Verde", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", "Júlia Cristina - União de Vila Nova"]
 }
 HORARIOS = ["08h45 (Igreja)", "09h35 (H2)", "10h10 (H3)", "10h45 (H4)"]
 OPCOES_LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
@@ -971,3 +974,4 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
