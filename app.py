@@ -97,9 +97,9 @@ STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refaz
 
 TURMAS = {
     "Turma 1": ["Mariana - Vila Araguaia","Rebecca A. - Vila Verde", "Annie - Vila Verde", "Ingrid M. - Pq do Carmo II", "Rebeka S. - Jardim Lígia", 
-                "Mellina S. - Jardim Lígia", "Caroline C. - Vila Ré"],
+                "Mellina S. - Jardim Lígia", "Caroline C. - Vila Ré", "Rebeca R. - Vila Ré"],
     "Turma 2": ["Vitória A. - Vila Verde", "Elisa F. - Vila Verde", "Sarah S. - Vila Verde", "Gabrielly V. - Vila Verde", 
-                "Emilly O. - Vila Curuçá Velha", "Julya O. - Vila Curuçá Velha", "Rebeca R. - Vila Ré"],
+                "Emilly O. - Vila Curuçá Velha", "Julya O. - Vila Curuçá Velha"],
     "Turma 3": ["Heloísa R. - Vila Verde", "Ana Marcela S. - Vila Verde", "Vitória Bella T. - Vila Verde", 
                 "Júlia S. - Vila Verde", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", "Júlia Cristina - União de Vila Nova"]
 }
@@ -973,6 +973,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
