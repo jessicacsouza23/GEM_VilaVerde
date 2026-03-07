@@ -134,45 +134,28 @@ def db_get_historico():
 
 def db_get_calendario():
     try:
-        # Busca direta sem filtros para testar a conexão
         response = supabase.table("calendario").select("*").execute()
         
-        if not response.data:
-            st.error("🚨 O Supabase retornou uma lista VAZIA para a tabela 'calendario'. Verifique se os dados foram salvos/publicados no banco.")
-            return {}
-
-        # SCANNER: Mostra quais colunas existem de verdade na primeira linha
-        colunas_reais = list(response.data[0].keys())
-        st.info(f"🔍 Colunas detectadas no banco: {colunas_reais}")
-
         cal_dict = {}
-        for item in response.data:
-            # Tenta pegar a data de qualquer coluna que se pareça com 'data'
-            raw_date = None
-            for col in colunas_reais:
-                if "data" in col.lower():
-                    raw_date = item.get(col)
-                    break
-            
-            if raw_date:
-                data_str = str(raw_date).strip()
-                # Limpeza e Formatação
-                if "/" in data_str:
-                    p = data_str.split("/")
-                    data_limpa = f"{int(p[0]):02d}/{int(p[1]):02d}/{p[2]}"
-                elif "-" in data_str:
-                    y, m, d = data_str.split("-")
-                    data_limpa = f"{int(d):02d}/{int(m):02d}/{y}"
-                else:
-                    data_limpa = data_str
-
-                if data_limpa not in cal_dict:
-                    cal_dict[data_limpa] = []
-                cal_dict[data_limpa].append(item)
-        
+        if response.data:
+            for item in response.data:
+                # No seu banco, a data está na coluna 'id'
+                data_id = str(item.get("id", "")).strip()
+                # A escala é a lista de dicionários com as aulas
+                lista_escala = item.get("escala", [])
+                
+                if data_id:
+                    # Garante que datas como 7/3/2026 virem 07/03/2026
+                    try:
+                        partes = data_id.split("/")
+                        data_limpa = f"{int(partes[0]):02d}/{int(partes[1]):02d}/{partes[2]}"
+                    except:
+                        data_limpa = data_id
+                    
+                    cal_dict[data_limpa] = lista_escala
         return cal_dict
     except Exception as e:
-        st.error(f"Erro de conexão com o Supabase: {e}")
+        st.error(f"Erro ao processar rodízio: {e}")
         return {}
         
 def db_save_historico(dados):
@@ -643,21 +626,48 @@ if menu == "🏠 Secretaria":
 # MÓDULO PROFESSORA (VERSÃO INTEGRADA)
 # ==========================================
 if menu == "👩‍🏫 Minhas Aulas":
-    # 1. Identificação via Login (Limpando espaços extras)
     instr_logada = st.session_state.get('nome_logado', '').strip()
     st.header(f"👩‍🏫 Painel da Instrutora: {instr_logada}")
-    
-    # 2. Seletor de Data (Com KEY ÚNICA para não duplicar na tela)
+
+    # Data e Conversão
     hoje_dt = datetime.now()
     sab_p = hoje_dt + timedelta(days=(5 - hoje_dt.weekday()) % 7)
-    data_prof = st.date_input("Data da Aula:", sab_p, key="data_aula_instrutora_final")
-    
-    # Conversão para o formato DD/MM/AAAA (padrão das secretarias)
-    # data_prof_str = data_prof.strftime("%d/%m/%Y")
-    # No seu "elif menu == 'Minhas Aulas'":
+    data_prof = st.date_input("Data da Aula:", sab_p, key="data_aula_final")
     data_prof_str = data_prof.strftime("%d/%m/%Y")
+
     calendario_db = db_get_calendario()
 
+    if data_prof_str in calendario_db:
+        escala_da_data = calendario_db[data_prof_str]
+        
+        minha_aula = None
+        horario_aula = None
+
+        # Procurando a professora na lista de escala
+        for atendimento in escala_da_data:
+            for h in HORARIOS:
+                # Verifica se o horário existe na linha e se o nome da prof está lá
+                detalhe_aula = str(atendimento.get(h, "")).upper()
+                if instr_logada.upper() in detalhe_aula:
+                    minha_aula = atendimento
+                    horario_aula = h
+                    break
+        
+        if minha_aula:
+            st.success(f"✅ Encontrei sua escala para as **{horario_aula}**!")
+            st.info(f"📍 **Local:** {minha_aula[horario_aula]} | **Aluna:** {minha_aula['Aluna']}")
+            
+            # --- SEU FORMULÁRIO DE AULA COMEÇA AQUI ---
+            # Exemplo: st.text_area("Dificuldades da aluna:")
+            
+        else:
+            st.divider()
+            st.balloons()
+            st.markdown(f"### 🌸 Folga confirmada para {data_prof_str}!")
+            st.write(f"Irmã {instr_logada}, você não está escalada para dar aula neste sábado.")
+    else:
+        st.warning(f"⚠️ O rodízio para {data_prof_str} ainda não foi gerado.")
+        
     # --- COPIE ESTAS LINHAS PARA DIAGNÓSTICO ---
     with st.expander("🔍 Verificador de Dados do Banco (Clique aqui)"):
         st.write(f"O App está procurando por: `{data_prof_str}`")
@@ -847,6 +857,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
