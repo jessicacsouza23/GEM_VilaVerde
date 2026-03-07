@@ -791,11 +791,11 @@ if perfil == "📊 Analítico IA":
                 p = p_data.iloc[0]
                 st.markdown(f"""
                 **Data:** {data_sel}  
-                **Instrutora:** {p.get('Professor', 'Não Informado')}  
+                **Instrutora:** {p.get('Instrutora') or p.get('Professor') or '---'}  
                 **Estudo / Lição:** {p.get('Licao_Atual', '---')}  
                 **Dificuldades:** {p.get('Dificuldades', 'Não apresentou dificuldades')}  
                 **Observações:** {p.get('Observacao', '---')}  
-                **Lição de casa – Volume prática:** {p.get('Metas', '---')}
+                **Lição de casa – Volume prática:** {p.get('Licao_Casa', '---')}
                 """)
             else:
                 st.caption("Sem registros de Prática para este dia.")
@@ -807,11 +807,11 @@ if perfil == "📊 Analítico IA":
                 t = t_data.iloc[0]
                 st.markdown(f"""
                 **Data:** {data_sel}  
-                **Instrutora:** {t.get('Professor', 'Não Informado')}  
+                **Instrutora:** {t.get('Instrutora') or t.get('Professor') or '---'}  
                 **Lição/Volume:** {t.get('Licao_Atual', '---')}  
                 **Dificuldades:** {t.get('Dificuldades', 'Não apresentou dificuldades')}  
                 **Observações:** {t.get('Observacao', '---')}  
-                **Lição de casa:** {t.get('Metas', '---')}
+                **Lição de casa:** {t.get('Licao_Casa', '---')}
                 """)
             else:
                 st.caption("Sem registros de Teoria para este dia.")
@@ -823,15 +823,15 @@ if perfil == "📊 Analítico IA":
                 s = s_data.iloc[0]
                 st.markdown(f"""
                 **Data:** {data_sel}  
-                **Instrutora:** {s.get('Professor', 'Não Informado')}  
+                **Instrutora:** {s.get('Instrutora') or s.get('Professor') or '---'}  
                 **Lição/Volume:** {s.get('Licao_Atual', '---')}  
                 **Dificuldades:** {s.get('Dificuldades', 'Não apresentou dificuldades')}  
                 **Observações:** {s.get('Observacao', '---')}  
-                **Lição de casa:** {s.get('Metas', '---')}
+                **Lição de casa:** {s.get('Licao_Casa', '---')}
                 """)
             else:
                 st.caption("Sem registros de Solfejo para este dia.")
-
+                
             # --- SEÇÃO LIÇÕES DE CASA (SECRETARIA) ---
             st.markdown("### 📚 Lições de Casa")
             sec_data = dados_dia[dados_dia['Tipo'].str.contains('Controle_Licao', case=False, na=False)]
@@ -868,6 +868,7 @@ if perfil == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 title="Frequência Total", color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
