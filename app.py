@@ -694,12 +694,33 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     idx = opcoes.index(escolha)
                     aula_sel = minhas_aulas_detalhadas[idx]
                     
+                        # --- EXTRAÇÃO DE DADOS E DEFINIÇÃO DE VARIÁVEIS ---
+                    idx = opcoes.index(escolha)
+                    aula_sel = minhas_aulas_detalhadas[idx]
+                    
                     # Alimenta as variáveis do seu formulário original
                     h_sel = aula_sel['horario']
                     aluna_ref = aula_sel['aluna']
-                    local_info = aula_sel['local']
+                    local_info = str(aula_sel['local']) # Ex: "SALA 8 | Cássia"
                     turma_aluna = aula_sel['turma']
                     atendimento = aula_sel['dados_originais']
+                    
+                    # RECRIA AS VARIÁVEIS QUE ESTÃO DANDO ERRO:
+                    is_coletiva = "SALA 8" in local_info.upper() or "SALA 9" in local_info.upper()
+                    tipo_aula = "Teoria" if "SALA 8" in local_info.upper() else "Solfejo" if "SALA 9" in local_info.upper() else "Prática"
+                    
+                    # Define a lista de dificuldades baseada no tipo de aula
+                    dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
+                    
+                st.success(f"✅ Editando: {aluna_ref} ({h_sel})")
+                
+                # --- CABEÇALHO DE INFORMAÇÃO (MANTENDO SUA INTERFACE) ---
+                info_cabecalho = f"📍 {local_info} | 👤 Referência: {aluna_ref}"
+                if is_coletiva:
+                    info_cabecalho += f" | 👥 Turma: {turma_aluna}"
+                st.info(info_cabecalho)
+                
+                # DAQUI PARA BAIXO SEGUE O RESTO DO SEU CÓDIGO (df_historico, Chamada, Form...)
                     
                     st.success(f"✅ Editando: {aluna_ref} ({h_sel})")
                     # Daqui para baixo segue seu formulário de notas...
@@ -947,6 +968,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
