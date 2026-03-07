@@ -712,7 +712,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     # Define a lista de dificuldades baseada no tipo de aula
                     dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
                     
-                st.success(f"✅ Editando: {aluna_ref} ({h_sel})")
+            st.success(f"✅ Editando: {aluna_ref} ({h_sel})")
                 
                 # --- CABEÇALHO DE INFORMAÇÃO (MANTENDO SUA INTERFACE) ---
                 info_cabecalho = f"📍 {local_info} | 👤 Referência: {aluna_ref}"
@@ -722,7 +722,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 
                 # DAQUI PARA BAIXO SEGUE O RESTO DO SEU CÓDIGO (df_historico, Chamada, Form...)
                     
-                    st.success(f"✅ Editando: {aluna_ref} ({h_sel})")
+              st.success(f"✅ Editando: {aluna_ref} ({h_sel})")
                     # Daqui para baixo segue seu formulário de notas...
                 
                     # --- INTERFACE ORIGINAL MANTIDA ---
@@ -968,6 +968,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
