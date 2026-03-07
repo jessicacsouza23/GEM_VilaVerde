@@ -10,7 +10,15 @@ from datetime import datetime, timedelta, date
 from fpdf import FPDF
 import io
 import streamlit as st
+import unicodedata
 
+def limpar_texto(txt):
+    """Remove acentos, espaços extras e coloca em maiúsculo para comparação"""
+    if not txt: return ""
+    txt = str(txt).strip().upper()
+    # Remove acentos
+    return "".join(c for c in unicodedata.normalize('NFD', txt) 
+                  if unicodedata.category(c) != 'Mn')
 
 # --- 1. CONFIGURAÇÕES INICIAIS ---
 st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
@@ -647,35 +655,41 @@ elif menu == "👩‍🏫 Minhas Aulas":
         if data_prof_str in calendario_db:
             escala_dia = calendario_db[data_prof_str]
             
-            # --- BUSCA TODAS AS AULAS (SEM REPETIÇÃO E SEM ERRO DE SINTAXE) ---
+            # --- SUPER SCANNER DE AULAS (BLINDADO) ---
             minhas_aulas = []
-            chaves_processadas = [] 
+            chaves_processadas = []
+            
+            # Limpamos o nome de quem está logado para a busca
+            nome_busca = limpar_texto(instr_sel)
 
             for registro in escala_dia:
                 for h in HORARIOS:
-                    # 1. Pegamos o que está escrito na célula do horário (Ex: SALA 8 | Cássia)
-                    conteudo_celula = str(registro.get(h, "")).upper()
+                    # Pegamos o conteúdo da célula e limpamos também
+                    conteudo_celula = limpar_texto(registro.get(h, ""))
                     
-                    # 2. Se o seu nome está lá, vamos processar
-                    if instr_sel.upper() in conteudo_celula:
-                        # Criamos uma chave para não repetir o mesmo horário na mesma sala
+                    # Se o nome limpo está dentro do conteúdo limpo da célula
+                    if nome_busca in conteudo_celula and nome_busca != "":
                         chave_unica = f"{h}_{registro.get(h)}"
                         
                         if chave_unica not in chaves_processadas:
-                            # Adicionamos à lista de aulas que aparecerão no rádio
                             minhas_aulas.append({
                                 "horario": h,
                                 "dados": registro
                             })
                             chaves_processadas.append(chave_unica)
-            
-            # --- FIM DA BUSCA ---
-            
+
+            # --- VERIFICAÇÃO FINAL ---
             if not minhas_aulas:
                 st.divider()
+                # Mostra um aviso técnico apenas para conferência se houver erro
+                with st.expander("🔍 Por que apareceu folga? (Diagnóstico)"):
+                    st.write(f"Buscando por: '{nome_busca}'")
+                    st.write("Exemplo de dado no banco:", escala_dia[0] if escala_dia else "Vazio")
+                
                 st.balloons()
-                st.markdown(f'<div style="background-color: #f0f2f6; padding: 30px; border-radius: 15px; text-align: center; border: 2px dashed #ff4b4b;"><h2 style="color: #ff4b4b;">🌸 Hoje não, Irmã {instr_sel}!</h2><p style="font-size: 1.2em;">Você está de folga em {data_prof_str}. Aproveite!</p></div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="background-color: #f0f2f6; padding: 30px; border-radius: 15px; text-align: center; border: 2px dashed #ff4b4b;"><h2 style="color: #ff4b4b;">🌸 Hoje não, Irmã {instr_sel}!</h2><p style="font-size: 1.2em;">Você está de folga. Aproveite!</p></div>', unsafe_allow_html=True)
             else:
+                # Segue o código do rádio e formulário...
                 # Mantendo a interface de rádio, mas apenas com os horários que ela tem aula
                 lista_h_disponiveis = [a["horario"] for a in minhas_aulas]
                 h_sel = st.radio("Selecione o Horário da Aula:", lista_h_disponiveis, horizontal=True)
@@ -935,6 +949,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
