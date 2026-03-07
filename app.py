@@ -116,7 +116,7 @@ TURMAS = {
     "Turma 3": ["Heloísa R. - Vila Verde", "Ana Marcela S. - Vila Verde", "Vitória Bella T. - Vila Verde", 
                 "Júlia S. - Vila Verde", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", "Júlia Cristina - União de Vila Nova"]
 }
-HORARIOS = ["08h45 (Igreja)", "09h35 (H2)", "10h10 (H3)", "10h45 (H4)"]
+HORARIOS = ["08h45 (Igreja)", "09h35 1ªAula", "10h10 2ªAula", "10h45 3ªAula"]
 OPCOES_LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
 
 # ==========================================
@@ -649,12 +649,23 @@ elif menu == "👩‍🏫 Minhas Aulas":
             
             # --- BUSCA TODAS AS AULAS DA PROFESSORA NO DIA ---
             minhas_aulas = []
+            horarios_processados = [] # Lista auxiliar para evitar duplicados
+
             for registro in escala_dia:
                 for h in HORARIOS:
-                    if instr_sel.upper() in str(registro.get(h, "")).upper():
-                        minhas_aulas.append({
-                            "horario": h,
-                            "dados": registro
+                    conteudo_celula = str(registro.get(h, "")).upper()
+                    
+                    # Se o seu nome está na célula e este horário ainda não foi adicionado
+                    if instr_sel.upper() in conteudo_celula:
+                        # Criamos uma chave única combinando Horário + Local para evitar duplicados de turma
+                        chave_aula = f"{h}_{registro.get(h)}"
+                        
+                        if chave_aula not in horarios_processados:
+                            minhas_aulas.append({
+                                "horario": h,
+                                "dados": registro
+                            })
+                            horarios_processados.append(chave_aula)
                         })
             
             if not minhas_aulas:
@@ -910,7 +921,7 @@ elif menu == "📊 Analítico IA":
                 minha_escala = escala[escala['Aluna'] == aluna_sel]
                 if not minha_escala.empty:
                     st.write(f"Sua próxima escala confirmada em **{sab_futuro}**:")
-                    st.dataframe(minha_escala[['Aluna', 'Turma', '08h45 (Igreja)', '09h35 (H2)', '10h10 (H3)', '10h45 (H4)']], hide_index=True)
+                    st.dataframe(minha_escala[['Aluna', 'Turma', '08h45 (Igreja)", "09h35 1ªAula", "10h10 2ªAula", "10h45 3ªAula']], hide_index=True)
                 else:
                     st.caption("Aluna não escalada para o próximo sábado.")
 
@@ -921,6 +932,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
