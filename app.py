@@ -614,44 +614,41 @@ if menu == "🏠 Secretaria":
                         st.rerun()
 
 # ==========================================
-# MÓDULO PROFESSORA (COM LOGIN INTEGRADO)
+# MÓDULO PROFESSORA
 # ==========================================
 if menu == "👩‍🏫 Minhas Aulas":
-    # 1. Identificação automática pelo Login
-    instr_sel = st.session_state.get('nome_logado', 'Convidado')
-    st.header(f"👩‍🏫 Painel da Instrutora: {instr_sel}")
+    st.header(f"👩‍🏫 Painel da Instrutora: {st.session_state.nome_logado}")
     
-    # Garante carga de dados
-    historico_raw = db_get_historico()
-    df_historico = pd.DataFrame(historico_raw)
+    # 1. Definição da Instrutora (via Login)
+    instr_sel = st.session_state.nome_logado
     
-    # 2. Definição da Data (Sempre sugere o próximo sábado)
+    # 2. Seletor de Data com KEY ÚNICA para evitar duplicidade
     hoje_dt = datetime.now()
     sab_p = hoje_dt + timedelta(days=(5 - hoje_dt.weekday()) % 7)
-    # O Streamlit retorna um objeto date (AAAA-MM-DD)
-    data_escolhida = st.date_input("Data da Aula:", sab_p)
-    # CONVERSÃO CRUCIAL: Transforma para o formato do seu banco (DD/MM/AAAA)
-    data_prof = st.date_input("Data da Aula:", sab_p, key="data_aula_professora")
-    data_prof_str = data_prof.strftime("%d/%m/%Y")
     
-    # 3. Busca Automática no Rodízio (Calendário)
+    data_prof = st.date_input("Data da Aula:", sab_p, key="input_data_instrutora_unica")
+    
+    # CONVERSÃO PARA FORMATO BRASILEIRO (Crucial para o rodízio)
+    data_prof_str = data_prof.strftime("%d/%m/%Y")
+
+    # 3. Busca no Rodízio
     calendario_db = db_get_calendario()
     
+    # DEBUG TEMPORÁRIO (Remova após funcionar)
+    # st.write(f"Buscando no banco por: '{data_prof_str}'")
+    # st.write(f"Datas disponíveis no banco: {list(calendario_db.keys())}")
+
     if data_prof_str in calendario_db:
         escala_dia = calendario_db[data_prof_str]
         
-        # Verifica se o nome da professora logada consta em qualquer atendimento do dia
-        esta_na_escala = any(instr_sel in str(atend) for atend in escala_dia for atend in atend.values())
+        # Verifica se o nome da irmã está em qualquer lugar da lista daquele dia
+        # Usamos .strip() para evitar problemas com espaços invisíveis no banco
+        esta_na_escala = any(instr_sel.strip() in str(atend) for atend in escala_dia for atend in atend.values())
 
         if not esta_na_escala:
             st.divider()
             st.balloons()
-            st.markdown(f'''
-                <div style="background-color: #f0f2f6; padding: 30px; border-radius: 15px; text-align: center; border: 2px dashed #ff4b4b;">
-                    <h2 style="color: #ff4b4b;">🌸 Hoje não, Irmã {instr_sel}!</h2>
-                    <p style="font-size: 1.2em;">Você não consta na escala deste dia. Aproveite sua folga!</p>
-                </div>
-            ''', unsafe_allow_html=True)
+            st.markdown(f'<div style="background-color: #f0f2f6; padding: 30px; border-radius: 15px; text-align: center; border: 2px dashed #ff4b4b;"><h2 style="color: #ff4b4b;">🌸 Hoje não, Irmã {instr_sel}!</h2><p style="font-size: 1.2em;">Você está de folga hoje. Aproveite!</p></div>', unsafe_allow_html=True)
         else:
             # 4. Seleção de Horário e Identificação da Aula
             h_sel = st.radio("Selecione o Horário:", HORARIOS, horizontal=True)
@@ -887,6 +884,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
