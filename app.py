@@ -675,37 +675,37 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             "turma": registro.get("Turma", "Geral"),
                             "dados_originais": registro
                         })
-
-            # --- VALIDAÇÃO ---
-            if not minhas_aulas_detalhadas:
-                st.warning(f"Irmã {instr_sel}, não encontrei alunas vinculadas ao seu nome hoje.")
-                
-                # AJUDA PARA DIAGNÓSTICO: Mostra o que o sistema está vendo
-                with st.expander("🔍 Ver nomes cadastrados neste sábado"):
-                    todas_as_profs = set()
-                    for r in escala_dia:
-                        for h in HORARIOS:
-                            txt = str(r.get(h, ""))
-                            if "|" in txt: todas_as_profs.add(txt.split("|")[-1].strip())
-                    st.write("Professoras encontradas no banco:", list(todas_as_profs))
-                    st.write("Seu nome de login:", instr_sel)
-            else:
-                # 4. Criamos o seletor com as alunas encontradas
-                opcoes = [f"{a['horario']} - {a['aluna']} ({a['local']})" for a in minhas_aulas_detalhadas]
-                escolha = st.selectbox("Selecione a Aluna/Horário:", opcoes)
-                
-                # 5. Recuperamos os dados da escolha
-                idx = opcoes.index(escolha)
-                aula_sel = minhas_aulas_detalhadas[idx]
-                
-                # Preenche as variáveis do seu formulário original
-                h_sel = aula_sel['horario']
-                aluna_ref = aula_sel['aluna']
-                local_info = aula_sel['local']
-                turma_aluna = aula_sel['turma']
-                atendimento = aula_sel['dados_originais']
-                
-                st.success(f"✅ Editando aula de: **{aluna_ref}**")
+    
+                # --- VALIDAÇÃO ---
+                if not minhas_aulas_detalhadas:
+                    st.warning(f"Irmã {instr_sel}, não encontrei alunas vinculadas ao seu nome hoje.")
+                    
+                    # AJUDA PARA DIAGNÓSTICO: Mostra o que o sistema está vendo
+                    with st.expander("🔍 Ver nomes cadastrados neste sábado"):
+                        todas_as_profs = set()
+                        for r in escala_dia:
+                            for h in HORARIOS:
+                                txt = str(r.get(h, ""))
+                                if "|" in txt: todas_as_profs.add(txt.split("|")[-1].strip())
+                        st.write("Professoras encontradas no banco:", list(todas_as_profs))
+                        st.write("Seu nome de login:", instr_sel)
+                else:
+                    # 4. Criamos o seletor com as alunas encontradas
+                    opcoes = [f"{a['horario']} - {a['aluna']} ({a['local']})" for a in minhas_aulas_detalhadas]
+                    escolha = st.selectbox("Selecione a Aluna/Horário:", opcoes)
+                    
+                    # 5. Recuperamos os dados da escolha
+                    idx = opcoes.index(escolha)
+                    aula_sel = minhas_aulas_detalhadas[idx]
+                    
+                    # Preenche as variáveis do seu formulário original
+                    h_sel = aula_sel['horario']
+                    aluna_ref = aula_sel['aluna']
+                    local_info = aula_sel['local']
+                    turma_aluna = aula_sel['turma']
+                    atendimento = aula_sel['dados_originais']
+                    
+                    st.success(f"✅ Editando aula de: **{aluna_ref}**")
                 
                     # --- INTERFACE ORIGINAL MANTIDA ---
                     info_cabecalho = f"📍 {local_info} | 👤 Referência: {aluna_ref}"
@@ -950,6 +950,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
