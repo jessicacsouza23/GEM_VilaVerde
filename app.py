@@ -658,73 +658,55 @@ elif menu == "👩‍🏫 Minhas Aulas":
             escala_dia = calendario_db[data_prof_str]
             
             # --- VARREDURA TOTAL DE ESCALA ---
+            # --- 1. COLETA TODAS AS AULAS (FORA DO LOOP DE EXIBIÇÃO) ---
             minhas_aulas_detalhadas = []
-            nome_busca = limpar_texto(instr_sel) # 'CASSIA'
+            nome_busca = limpar_texto(instr_sel)
 
-            # Percorre cada linha da escala (cada aluna)
             for registro in escala_dia:
                 aluna_nome = registro.get("Aluna", "Sem Nome")
-                
-                # Percorre TODAS as chaves da linha (H1, H2, H3, Turma, etc)
+                # Varre as colunas de cada registro
                 for chave, conteudo in registro.items():
-                    # Se o seu nome 'CASSIA' estiver dentro do conteúdo da célula
                     if nome_busca in limpar_texto(conteudo) and nome_busca != "":
-                        # Evita pegar a própria chave 'Aluna' ou 'Turma' se o nome for igual
                         if chave not in ["Aluna", "Turma"]:
                             minhas_aulas_detalhadas.append({
-                                "horario": chave, # Aqui ele pega '09h35 (H2)' automaticamente
+                                "horario": chave,
                                 "local": conteudo,
                                 "aluna": aluna_nome,
                                 "turma": registro.get("Turma", "Geral"),
                                 "dados_originais": registro
                             })
-    
-                # --- INTERFACE DE SELEÇÃO ---
-                if not minhas_aulas_detalhadas:
-                    st.warning(f"Irmã {instr_sel}, não encontrei aulas para você em {data_prof_str}.")
-                    # Debug rápido: mostra o que tem na primeira linha do banco
-                    if escala_dia:
-                        st.json(escala_dia[0]) 
-                else:
-                    # --- SELEÇÃO DE AULA COM CHAVE ÚNICA ---
-                    opcoes = [f"{a['horario']} - {a['aluna']}" for a in minhas_aulas_detalhadas]
-                    
-                    # Criamos uma chave que muda se a lista de opções mudar
-                    # Isso evita o erro de Duplicate Key mesmo que o script rode várias vezes
-                    import hashlib
-                    chave_hash = hashlib.md5(str(opcoes).encode()).hexdigest()
-                    chave_final = f"sel_aula_{chave_hash}"
-            
-                    escolha = st.selectbox(
-                        "Selecione a Aula para lançar:", 
-                        opcoes, 
-                        key=chave_final
-                    )
-                    
-                    # Extrai os dados da escolha
-                    idx = opcoes.index(escolha)
-                    aula_sel = minhas_aulas_detalhadas[idx]
-                    
-                        # --- EXTRAÇÃO DE DADOS E DEFINIÇÃO DE VARIÁVEIS ---
-                    idx = opcoes.index(escolha)
-                    aula_sel = minhas_aulas_detalhadas[idx]
-                    
-                    # Alimenta as variáveis do seu formulário original
-                    h_sel = aula_sel['horario']
-                    aluna_ref = aula_sel['aluna']
-                    local_info = str(aula_sel['local']) # Ex: "SALA 8 | Cássia"
-                    turma_aluna = aula_sel['turma']
-                    atendimento = aula_sel['dados_originais']
-                    
-                    # RECRIA AS VARIÁVEIS QUE ESTÃO DANDO ERRO:
-                    is_coletiva = "SALA 8" in local_info.upper() or "SALA 9" in local_info.upper()
-                    tipo_aula = "Teoria" if "SALA 8" in local_info.upper() else "Solfejo" if "SALA 9" in local_info.upper() else "Prática"
-                    
-                    # Define a lista de dificuldades baseada no tipo de aula
-                    dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
-                    
-            st.success(f"✅ Editando: {aluna_ref} ({h_sel})")
+
+            # --- 2. EXIBIÇÃO ÚNICA (FORA DE QUALQUER LOOP) ---
+            if not minhas_aulas_detalhadas:
+                st.warning(f"Irmã {instr_sel}, não encontrei aulas para você em {data_prof_str}.")
+            else:
+                # Criamos a lista de opções para o seletor
+                opcoes = [f"{a['horario']} - {a['aluna']}" for a in minhas_aulas_detalhadas]
                 
+                # CHAVE ÚNICA FIXA PARA O SELETOR
+                escolha = st.selectbox(
+                    "Selecione a Aula para lançar:", 
+                    opcoes, 
+                    key="seletor_principal_professora"
+                )
+                
+                # --- 3. EXTRAÇÃO DOS DADOS DA ESCOLHA ---
+                idx = opcoes.index(escolha)
+                aula_sel = minhas_aulas_detalhadas[idx]
+                
+                h_sel = aula_sel['horario']
+                aluna_ref = aula_sel['aluna']
+                local_info = str(aula_sel['local'])
+                turma_aluna = aula_sel['turma']
+                atendimento = aula_sel['dados_originais']
+                
+                is_coletiva = "SALA 8" in local_info.upper() or "SALA 9" in local_info.upper()
+                tipo_aula = "Teoria" if "SALA 8" in local_info.upper() else "Solfejo" if "SALA 9" in local_info.upper() else "Prática"
+                dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
+
+                st.success(f"✅ Editando: {aluna_ref} ({h_sel})")
+                
+                # Aqui continua o seu formulário original...                
               
             # --- INTERFACE ORIGINAL MANTIDA ---
             info_cabecalho = f"📍 {local_info} | 👤 Referência: {aluna_ref}"
@@ -969,6 +951,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
