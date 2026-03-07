@@ -120,28 +120,48 @@ TURMAS = {
 HORARIOS = ["08h45 (Igreja)", "09h35 (H2)", "10h10 (H3)", "10h45 (H4)"]
 OPCOES_LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
 
-
-# --- FUNÇÕES DE BANCO ---
-def db_get_calendario():
-    try:
-        res = supabase.table("calendario").select("*").execute()
-        return {item['id']: item['escala'] for item in res.data}
-    except: return {}
+# ==========================================
+# FUNÇÕES DE BANCO DE DADOS (SUPABASE)
+# ==========================================
 
 def db_get_historico():
+    """Busca todo o histórico da tabela historico_geral"""
     try:
-        res = supabase.table("historico_geral").select("*").execute()
-        return res.data
-    except: return []
+        response = supabase.table("historico_geral").select("*").execute()
+        return response.data if response.data else []
+    except Exception as e:
+        st.error(f"Erro ao buscar histórico: {e}")
+        return []
 
+def db_get_calendario():
+    """Busca a escala/calendário do banco"""
+    try:
+        # Ajuste o nome da tabela se for diferente no seu Supabase
+        response = supabase.table("calendario").select("*").execute()
+        # Transforma a lista em dicionário agrupado por data para facilitar o acesso
+        cal_dict = {}
+        for item in response.data:
+            data_str = item.get("Data")
+            if data_str not in cal_dict:
+                cal_dict[data_str] = []
+            cal_dict[data_str].append(item)
+        return cal_dict
+    except Exception as e:
+        st.error(f"Erro ao buscar calendário: {e}")
+        return {}
 
 def db_save_historico(dados):
-    try: 
-        supabase.table("historico_geral").insert(dados).execute()
-        return True
-    except Exception as e: 
-        st.error(f"Erro ao salvar: {e}")
-        return False
+    """Salva um novo registro no histórico"""
+    try:
+        response = supabase.table("historico_geral").insert(dados).execute()
+        return response
+    except Exception as e:
+        st.error(f"Erro ao salvar no banco: {e}")
+        return None
+
+# Agora sim, a linha 19 que estava dando erro funcionará:
+historico_geral = db_get_historico()
+
         
 # --- 3. DEFINIÇÃO DE VARIÁVEIS GLOBAIS (FIX PARA NAMEERROR) ---
 data_hj = datetime.now().strftime("%d/%m/%Y")
@@ -759,3 +779,4 @@ elif menu == "📊 Analítico IA":
             st.divider()
             st.subheader("📈 Histórico Recente")
             st.dataframe(df_aluna[['Data', 'Tipo', 'Licao_Atual', 'Observacao']].head(10), hide_index=True)
+
