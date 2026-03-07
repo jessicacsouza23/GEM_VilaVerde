@@ -796,65 +796,72 @@ if perfil == "📊 Analítico IA":
         m2.metric("Presenças", presencas)
         m3.metric("Justificativas", justificativas)
 
-        # --- 2. RELATÓRIO DETALHADO POR DATA (ESTILO EXEMPLO ENVIADO) ---
+       # --- 2. RELATÓRIO DETALHADO POR DATA ---
         st.subheader(f"📝 Diário Pedagógico Detalhado: {aluna_sel}")
         
         datas_aluna = df_aluna['Data'].unique()
         if len(datas_aluna) > 0:
             data_hist = st.selectbox("Escolha uma data para ver os detalhes das aulas:", datas_aluna)
+            # Filtra os dados do dia selecionado
             dados_dia = df_aluna[df_aluna['Data'] == data_hist]
 
-            # Layout de 3 Colunas: Prática, Teoria e Solfejo
             col1, col2, col3 = st.columns(3)
 
-            # --- PRÁTICA ---
+            # --- SEÇÃO PRÁTICA ---
             with col1:
                 st.markdown("#### 🎹 Prática")
-                p_data = dados_dia[dados_dia['Tipo'] == 'Aula_Pratica']
+                # Busca por 'Prática' ou 'Pratica' (ignora maiúsculas/minúsculas)
+                p_data = dados_dia[dados_dia['Tipo'].str.contains('Prática|Pratica|Aula_Pratica', case=False, na=False)]
                 if not p_data.empty:
                     p = p_data.iloc[0]
-                    st.write(f"**Instrutora:** {p.get('Professor', '---')}")
-                    st.write(f"**Lição:** {p.get('Licao_Atual', '---')}")
-                    st.error(f"**Dificuldades:** {', '.join(p.get('Dificuldades', []))}")
+                    st.success(f"**Instrutora:** {p.get('Professor', '---')}")
+                    st.write(f"**Lição/Estudo:** {p.get('Licao_Atual', '---')}")
+                    st.warning(f"**Dificuldades:** {p.get('Dificuldades', 'Nenhuma')}")
                     st.info(f"**Lição de Casa:** {p.get('Metas', '---')}")
-                    st.caption(f"Obs: {p.get('Observacao', '---')}")
-                else: st.caption("Sem registro de Prática")
+                    if p.get('Observacao'): st.caption(f"Obs: {p['Observacao']}")
+                else: st.info("Sem registro de Prática")
 
-            # --- TEORIA ---
+            # --- SEÇÃO TEORIA ---
             with col2:
                 st.markdown("#### 📝 Teoria")
-                t_data = dados_dia[dados_dia['Tipo'] == 'Aula_Teoria']
+                t_data = dados_dia[dados_dia['Tipo'].str.contains('Teoria|Aula_Teoria', case=False, na=False)]
                 if not t_data.empty:
                     t = t_data.iloc[0]
-                    st.write(f"**Instrutora:** {t.get('Professor', '---')}")
-                    st.write(f"**Volume:** {t.get('Licao_Atual', '---')}")
-                    st.error(f"**Dificuldades:** {', '.join(t.get('Dificuldades', []))}")
+                    st.success(f"**Instrutora:** {t.get('Professor', '---')}")
+                    st.write(f"**Página/Volume:** {t.get('Licao_Atual', '---')}")
+                    st.warning(f"**Dificuldades:** {t.get('Dificuldades', 'Nenhuma')}")
                     st.info(f"**Lição de Casa:** {t.get('Metas', '---')}")
-                else: st.caption("Sem registro de Teoria")
+                else: st.info("Sem registro de Teoria")
 
-            # --- SOLFEJO ---
+            # --- SEÇÃO SOLFEJO ---
             with col3:
                 st.markdown("#### 🗣️ Solfejo")
-                s_data = dados_dia[dados_dia['Tipo'] == 'Aula_Solfejo']
+                s_data = dados_dia[dados_dia['Tipo'].str.contains('Solfejo|Aula_Solfejo', case=False, na=False)]
                 if not s_data.empty:
                     s = s_data.iloc[0]
-                    st.write(f"**Instrutora:** {s.get('Professor', '---')}")
-                    st.write(f"**Volume:** {s.get('Licao_Atual', '---')}")
-                    st.error(f"**Dificuldades:** {', '.join(s.get('Dificuldades', []))}")
+                    st.success(f"**Instrutora:** {s.get('Professor', '---')}")
+                    st.write(f"**Lição/MSA:** {s.get('Licao_Atual', '---')}")
+                    st.warning(f"**Dificuldades:** {s.get('Dificuldades', 'Nenhuma')}")
                     st.info(f"**Lição de Casa:** {s.get('Metas', '---')}")
-                else: st.caption("Sem registro de Solfejo")
+                else: st.info("Sem registro de Solfejo")
             
-            # --- STATUS SECRETARIA ---
-            st.markdown("---")
-            st.markdown("#### ✅ Situação das Lições (Secretaria)")
-            sec_data = dados_dia[dados_dia['Tipo'] == 'Controle_Licao']
+            # --- SEÇÃO SECRETARIA E ATIVIDADES PENDENTES ---
+            st.divider()
+            st.markdown("### 📋 Status da Secretaria & Pendências")
+            
+            # Filtra tanto o controle de lição quanto possíveis alertas de pendência
+            sec_data = dados_dia[dados_dia['Tipo'].str.contains('Controle_Licao|Secretaria|Pendência', case=False, na=False)]
+            
             if not sec_data.empty:
                 for _, row in sec_data.iterrows():
-                    st.write(f"**{row['Categoria']}:** {row['Status']} (Obs: {row['Observacao']})")
-            else: st.caption("Sem registros de secretaria para esta data.")
-
-        st.divider()
-
+                    # Cores diferentes para destacar o que está pendente
+                    cor_status = "🔴" if "pendente" in str(row['Status']).lower() else "🟢"
+                    with st.expander(f"{cor_status} {row.get('Categoria', 'Atividade')}: {row['Status']}", expanded=True):
+                        st.write(f"**Situação:** {row['Status']}")
+                        if row.get('Observacao'): st.write(f"**Nota da Secretaria:** {row['Observacao']}")
+            else:
+                st.write("✅ Nenhuma pendência ou registro de lição da secretaria para esta data.")
+                
         # --- 3. GRÁFICOS DE EVOLUÇÃO ---
         st.subheader("📈 Gráficos de Evolução")
         g1, g2 = st.columns(2)
@@ -900,6 +907,7 @@ elif perfil == "🏠 Secretaria":
     st.write("Módulo de Secretaria - Use as abas acima para Chamada e Lições.")
 elif perfil == "👩‍🏫 Professora":
     st.write("Módulo de Professora - Registre o desempenho das alunas aqui.")
+
 
 
 
