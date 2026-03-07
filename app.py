@@ -686,6 +686,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     if escala_dia:
                         st.json(escala_dia[0]) 
                 else:
+                    chave_unica_seletor = f"sel_aula_{data_prof_str}_{instr_sel.replace(' ', '_')}"
                     # Monta as opções para o seletor
                     opcoes = [f"{a['horario']} - {a['aluna']}" for a in minhas_aulas_detalhadas]
                     escolha = st.selectbox(
@@ -962,6 +963,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
