@@ -133,36 +133,37 @@ def db_get_historico():
         return []
 
 def db_get_calendario():
-    """Busca o rodízio na tabela 'calendario' e limpa os dados"""
     try:
-        # ALTERADO: De 'calendario_db' para 'calendario' conforme a dica do erro
+        # Busca na tabela correta informada pelo erro anterior
         response = supabase.table("calendario").select("*").execute()
         
         cal_dict = {}
-        # Verifica se o Supabase retornou dados
-        if hasattr(response, 'data') and response.data:
+        if response.data:
             for item in response.data:
-                # Limpeza da data (remove espaços e garante formato 00/00/0000)
-                data_raw = str(item.get("Data", "")).strip()
+                # 1. Pega a data e limpa espaços
+                raw_date = str(item.get("Data", "")).strip()
                 
-                if data_raw and "/" in data_raw:
-                    partes = data_raw.split("/")
-                    if len(partes) == 3:
-                        # Garante que 7/3/2026 vire 07/03/2026
-                        data_limpa = f"{int(partes[0]):02d}/{int(partes[1]):02d}/{partes[2]}"
+                # 2. Tenta converter qualquer formato (7/3/26, 07/03/2026, 2026-03-07) para DD/MM/AAAA
+                try:
+                    if "/" in raw_date:
+                        d, m, y = raw_date.split("/")
+                        # Garante 2 dígitos no dia/mês e 4 no ano
+                        ano = y if len(y) == 4 else f"20{y}"
+                        data_limpa = f"{int(d):02d}/{int(m):02d}/{ano}"
+                    elif "-" in raw_date: # Caso o banco esteja em formato ISO (AAAA-MM-DD)
+                        y, m, d = raw_date.split("-")
+                        data_limpa = f"{int(d):02d}/{int(m):02d}/{y}"
                     else:
-                        data_limpa = data_raw
-                else:
-                    data_limpa = data_raw
+                        data_limpa = raw_date
+                except:
+                    data_limpa = raw_date
 
                 if data_limpa not in cal_dict:
                     cal_dict[data_limpa] = []
                 cal_dict[data_limpa].append(item)
-            
         return cal_dict
     except Exception as e:
-        # Mostra o erro de forma amigável no Streamlit
-        st.error(f"⚠️ Erro de conexão: {e}")
+        st.error(f"Erro técnico: {e}")
         return {}
         
 def db_save_historico(dados):
@@ -825,6 +826,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
