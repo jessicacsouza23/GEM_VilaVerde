@@ -655,53 +655,60 @@ elif menu == "👩‍🏫 Minhas Aulas":
         if data_prof_str in calendario_db:
             escala_dia = calendario_db[data_prof_str]
             
-            # --- SUPER SCANNER DE AULAS (BLINDADO) ---
-            minhas_aulas = []
-            chaves_processadas = []
-            
-            # Limpamos o nome de quem está logado para a busca
-            nome_busca = limpar_texto(instr_sel)
+            # --- FILTRO EXCLUSIVO: BUSCA APENAS AS ALUNAS DA INSTRUTORA LOGADA ---
+            minhas_aulas_detalhadas = []
+            horarios_com_aula = set()
+
+            # Nome limpo para comparação (evita erro de acento/espaço)
+            nome_instrutora_limpo = limpar_texto(instr_sel)
 
             for registro in escala_dia:
+                aluna_nome = registro.get("Aluna", "Desconhecida")
+                turma_nome = registro.get("Turma", "Geral")
+                
+                # Varre cada horário do registro da aluna
                 for h in HORARIOS:
-                    # Pegamos o conteúdo da célula e limpamos também
-                    conteudo_celula = limpar_texto(registro.get(h, ""))
+                    conteudo_aula = str(registro.get(h, ""))
                     
-                    # Se o nome limpo está dentro do conteúdo limpo da célula
-                    if nome_busca in conteudo_celula and nome_busca != "":
-                        chave_unica = f"{h}_{registro.get(h)}"
-                        
-                        if chave_unica not in chaves_processadas:
-                            minhas_aulas.append({
-                                "horario": h,
-                                "dados": registro
-                            })
-                            chaves_processadas.append(chave_unica)
+                    # Se o nome da instrutora logada está dentro desta célula de aula
+                    if nome_instrutora_limpo in limpar_texto(conteudo_aula):
+                        # Encontramos uma aula dela!
+                        minhas_aulas_detalhadas.append({
+                            "horario": h,
+                            "local": conteudo_aula,
+                            "aluna": aluna_nome,
+                            "turma": turma_nome,
+                            "dados_completos": registro
+                        })
+                        horarios_com_aula.add(h)
 
-            # --- VERIFICAÇÃO FINAL ---
-            if not minhas_aulas:
+            # --- VERIFICAÇÃO DE RESULTADOS ---
+            if not minhas_aulas_detalhadas:
                 st.divider()
-                # Mostra um aviso técnico apenas para conferência se houver erro
-                with st.expander("🔍 Por que apareceu folga? (Diagnóstico)"):
-                    st.write(f"Buscando por: '{nome_busca}'")
-                    st.write("Exemplo de dado no banco:", escala_dia[0] if escala_dia else "Vazio")
-                
-                st.balloons()
-                st.markdown(f'<div style="background-color: #f0f2f6; padding: 30px; border-radius: 15px; text-align: center; border: 2px dashed #ff4b4b;"><h2 style="color: #ff4b4b;">🌸 Hoje não, Irmã {instr_sel}!</h2><p style="font-size: 1.2em;">Você está de folga. Aproveite!</p></div>', unsafe_allow_html=True)
+                st.warning(f"Irmã {instr_sel}, não encontrei nenhuma aluna vinculada ao seu nome no rodízio de {data_prof_str}.")
+                # Mostra o que tem no banco para ela entender o que houve
+                with st.expander("🔍 Ver escala completa deste dia"):
+                    st.write(escala_dia) 
             else:
-                # Segue o código do rádio e formulário...
-                # Mantendo a interface de rádio, mas apenas com os horários que ela tem aula
-                lista_h_disponiveis = [a["horario"] for a in minhas_aulas]
-                h_sel = st.radio("Selecione o Horário da Aula:", lista_h_disponiveis, horizontal=True)
+                # Ordena os horários para aparecerem na ordem certa (H1, H2, H3...)
+                lista_horarios_ordenada = sorted(list(horarios_com_aula))
                 
-                # Pega os dados da aula selecionada no rádio
-                atendimento = next((a["dados"] for a in minhas_aulas if a["horario"] == h_sel), None)
-                
-                if atendimento:
-                    local_info = atendimento[h_sel]
-                    aluna_ref = atendimento['Aluna']
-                    turma_aluna = atendimento.get('Turma', 'Turma Única')
-    
+                st.markdown(f"### 📋 Suas Aulas em {data_prof_str}")
+                h_sel = st.radio("Selecione o Horário para lançar o desempenho:", lista_horarios_ordenada, horizontal=True)
+
+                # Pega os dados da aula que ela clicou no rádio
+                aula_selecionada = next((a for a in minhas_aulas_detalhadas if a["horario"] == h_sel), None)
+
+                if aula_selecionada:
+                    # Preenche as variáveis para o seu formulário original
+                    local_info = aula_selecionada['local']
+                    aluna_ref = aula_selecionada['aluna']
+                    turma_aluna = aula_selecionada['turma']
+                    atendimento = aula_selecionada['dados_completos']
+                    
+                    # Daqui para baixo segue o seu formulário de Notas, Dificuldades e Chamada...
+                    st.success(f"✅ Selecionado: {h_sel} - {aluna_ref} ({local_info})")
+                    
                     is_coletiva = "SALA 8" in local_info or "SALA 9" in local_info
                     tipo_aula = "Teoria" if "SALA 8" in local_info else "Solfejo" if "SALA 9" in local_info else "Prática"
                     dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
@@ -949,6 +956,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
