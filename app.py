@@ -133,33 +133,36 @@ def db_get_historico():
         return []
 
 def db_get_calendario():
-    """Busca o rodízio e limpa os dados para evitar erro de formato"""
+    """Busca o rodízio na tabela 'calendario' e limpa os dados"""
     try:
-        # Puxa os dados brutos
-        response = supabase.table("calendario_db").select("*").execute()
+        # ALTERADO: De 'calendario_db' para 'calendario' conforme a dica do erro
+        response = supabase.table("calendario").select("*").execute()
         
         cal_dict = {}
-        for item in response.data:
-            # Pega a data e remove espaços invisíveis que a secretaria pode ter digitado
-            data_raw = str(item.get("Data", "")).strip()
-            
-            # Padronização: se a data vier como 7/3/2026, vira 07/03/2026
-            if data_raw and "/" in data_raw:
-                partes = data_raw.split("/")
-                if len(partes) == 3:
-                    data_limpa = f"{int(partes[0]):02d}/{int(partes[1]):02d}/{partes[2]}"
+        # Verifica se o Supabase retornou dados
+        if hasattr(response, 'data') and response.data:
+            for item in response.data:
+                # Limpeza da data (remove espaços e garante formato 00/00/0000)
+                data_raw = str(item.get("Data", "")).strip()
+                
+                if data_raw and "/" in data_raw:
+                    partes = data_raw.split("/")
+                    if len(partes) == 3:
+                        # Garante que 7/3/2026 vire 07/03/2026
+                        data_limpa = f"{int(partes[0]):02d}/{int(partes[1]):02d}/{partes[2]}"
+                    else:
+                        data_limpa = data_raw
                 else:
                     data_limpa = data_raw
-            else:
-                data_limpa = data_raw
 
-            if data_limpa not in cal_dict:
-                cal_dict[data_limpa] = []
-            cal_dict[data_limpa].append(item)
+                if data_limpa not in cal_dict:
+                    cal_dict[data_limpa] = []
+                cal_dict[data_limpa].append(item)
             
         return cal_dict
     except Exception as e:
-        st.error(f"Erro ao conectar com o Rodízio: {e}")
+        # Mostra o erro de forma amigável no Streamlit
+        st.error(f"⚠️ Erro de conexão: {e}")
         return {}
         
 def db_save_historico(dados):
@@ -822,6 +825,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
