@@ -644,7 +644,19 @@ if menu == "👩‍🏫 Minhas Aulas":
     data_prof = st.date_input("Data da Aula:", sab_p, key="data_aula_instrutora_final")
     
     # Conversão para o formato DD/MM/AAAA (padrão das secretarias)
+    # data_prof_str = data_prof.strftime("%d/%m/%Y")
+    # No seu "elif menu == 'Minhas Aulas'":
     data_prof_str = data_prof.strftime("%d/%m/%Y")
+    calendario_db = db_get_calendario()
+
+    # --- COPIE ESTAS LINHAS PARA DIAGNÓSTICO ---
+    with st.expander("🔍 Verificador de Dados do Banco (Clique aqui)"):
+        st.write(f"O App está procurando por: `{data_prof_str}`")
+        if calendario_db:
+            st.write("Datas encontradas no seu Supabase:", list(calendario_db.keys()))
+        else:
+            st.error("O banco de dados não retornou NENHUMA data. Verifique se a tabela 'calendario' tem dados.")
+    # -------------------------------------------
 
     # 3. Busca no Rodízio
     calendario_db = db_get_calendario()
@@ -826,6 +838,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
