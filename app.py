@@ -678,31 +678,31 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 "turma": registro.get("Turma", "Geral"),
                                 "dados_originais": registro
                             })
-
-            # --- INTERFACE DE SELEÇÃO ---
-            if not minhas_aulas_detalhadas:
-                st.warning(f"Irmã {instr_sel}, não encontrei aulas para você em {data_prof_str}.")
-                # Debug rápido: mostra o que tem na primeira linha do banco
-                if escala_dia:
-                    st.json(escala_dia[0]) 
-            else:
-                # Monta as opções para o seletor
-                opcoes = [f"{a['horario']} - {a['aluna']}" for a in minhas_aulas_detalhadas]
-                escolha = st.selectbox("Selecione a Aula para lançar:", opcoes)
-                
-                # Extrai os dados da escolha
-                idx = opcoes.index(escolha)
-                aula_sel = minhas_aulas_detalhadas[idx]
-                
-                # Alimenta as variáveis do seu formulário original
-                h_sel = aula_sel['horario']
-                aluna_ref = aula_sel['aluna']
-                local_info = aula_sel['local']
-                turma_aluna = aula_sel['turma']
-                atendimento = aula_sel['dados_originais']
-                
-                st.success(f"✅ Editando: {aluna_ref} ({h_sel})")
-                # Daqui para baixo segue seu formulário de notas...
+    
+                # --- INTERFACE DE SELEÇÃO ---
+                if not minhas_aulas_detalhadas:
+                    st.warning(f"Irmã {instr_sel}, não encontrei aulas para você em {data_prof_str}.")
+                    # Debug rápido: mostra o que tem na primeira linha do banco
+                    if escala_dia:
+                        st.json(escala_dia[0]) 
+                else:
+                    # Monta as opções para o seletor
+                    opcoes = [f"{a['horario']} - {a['aluna']}" for a in minhas_aulas_detalhadas]
+                    escolha = st.selectbox("Selecione a Aula para lançar:", opcoes)
+                    
+                    # Extrai os dados da escolha
+                    idx = opcoes.index(escolha)
+                    aula_sel = minhas_aulas_detalhadas[idx]
+                    
+                    # Alimenta as variáveis do seu formulário original
+                    h_sel = aula_sel['horario']
+                    aluna_ref = aula_sel['aluna']
+                    local_info = aula_sel['local']
+                    turma_aluna = aula_sel['turma']
+                    atendimento = aula_sel['dados_originais']
+                    
+                    st.success(f"✅ Editando: {aluna_ref} ({h_sel})")
+                    # Daqui para baixo segue seu formulário de notas...
                 
                     # --- INTERFACE ORIGINAL MANTIDA ---
                     info_cabecalho = f"📍 {local_info} | 👤 Referência: {aluna_ref}"
@@ -947,6 +947,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
