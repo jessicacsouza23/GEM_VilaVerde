@@ -57,14 +57,7 @@ USUARIOS = {
     # ... adicione as demais seguindo o padrão: "login": {"senha": "...", "perfil": "Professora", "nome_real": "Nome Exato na Lista"}
 }
 
-perfil = st.sidebar.radio(
-    "Navegação:",
-    ["🏠 Início", "👩‍🏫 Minhas Aulas", "📊 Analítico IA", "⚙️ Configurações"]
-)
 
-# Agora o Python reconhece a variável 'perfil'
-if perfil == "🏠 Início":
-    st.write("Bem-vinda ao sistema!")
     
 def login_sistema():
     if "autenticado" not in st.session_state:
@@ -96,6 +89,15 @@ def carregar_dados_globais():
         return h.data, c.data
     except:
         return [], []
+perfil = st.sidebar.radio(
+    "Navegação:",
+    ["🏠 Início", "👩‍🏫 Minhas Aulas", "📊 Analítico IA", "⚙️ Configurações"]
+)
+
+# Agora o Python reconhece a variável 'perfil'
+if perfil == "🏠 Início":
+    st.write("Bem-vinda ao sistema!")
+
 
 # --- 2. DADOS MESTRE ---
 PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla", "Renata"]
@@ -845,5 +847,6 @@ elif perfil == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
