@@ -15,11 +15,6 @@ import streamlit as st
 # --- 1. CONFIGURAÇÕES INICIAIS ---
 st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
 
-# Inicialização de Variáveis de Segurança
-historico_geral = db_get_historico()
-calendario_db = db_get_calendario()
-df_historico = pd.DataFrame(historico_geral)
-
 # --- 2. CONEXÃO IA COM ECONOMIA DE QUOTA (CACHE) ---
 @st.cache_resource(show_spinner=False)
 def inicializar_ia_economica():
@@ -159,8 +154,11 @@ def db_save_historico(dados):
         st.error(f"Erro ao salvar no banco: {e}")
         return None
 
-# Agora sim, a linha 19 que estava dando erro funcionará:
+# Inicialização de Variáveis de Segurança
 historico_geral = db_get_historico()
+calendario_db = db_get_calendario()
+df_historico = pd.DataFrame(historico_geral)
+
 
         
 # --- 3. DEFINIÇÃO DE VARIÁVEIS GLOBAIS (FIX PARA NAMEERROR) ---
@@ -779,4 +777,5 @@ elif menu == "📊 Analítico IA":
             st.divider()
             st.subheader("📈 Histórico Recente")
             st.dataframe(df_aluna[['Data', 'Tipo', 'Licao_Atual', 'Observacao']].head(10), hide_index=True)
+
 
