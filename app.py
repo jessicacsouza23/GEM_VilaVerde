@@ -747,166 +747,127 @@ elif perfil == "👩‍🏫 Professora":
                     st.info(f"Irmã {instr_sel}, sem agenda para este horário.")
             
 # ==========================================
-# MÓDULO ANALÍTICO (TUDO NA TELA PRINCIPAL)
+# MÓDULO ANÁLISE DE IA (LAYOUT CONSOLIDADO)
 # ==========================================
 if perfil == "📊 Analítico IA":
-    st.header("📊 Painel Pedagógico de Performance")
+    st.title("📊 Painel Pedagógico de Performance")
     
-    # Carregamento de dados
     historico_raw = db_get_historico()
     calendario_db = db_get_calendario()
     df = pd.DataFrame(historico_raw)
 
     if df.empty:
-        st.info("ℹ️ Nenhum dado registrado no histórico.")
+        st.info("ℹ️ O banco de dados está vazio.")
     else:
-        # Tratamento de datas
+        # Tratamento de datas e organização
         df['dt_obj'] = pd.to_datetime(df['Data'], format="%d/%m/%Y", errors='coerce')
         df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
 
-        # --- SELEÇÃO DE ALUNA (NO CORPO DA PÁGINA) ---
-        c_aluna, c_periodo = st.columns([2, 1])
-        with c_aluna:
-            aluna_sel = st.selectbox("🎯 Selecione a Aluna para Análise:", ALUNAS_LISTA)
-        with c_periodo:
-            periodo = st.selectbox("📅 Período:", ["Geral", "Mensal", "Bimestral", "Semestral"])
-
+        # Seleção da Aluna no corpo principal
+        aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_aluna")
         df_aluna = df[df['Aluna'] == aluna_sel]
 
-        # --- 1. RESUMO DE FALTAS E FREQUÊNCIA ---
-        st.subheader("📌 Indicadores de Frequência")
+        # --- RESUMO DE FALTAS ACIMA ---
+        df_chamada = df_aluna[df_aluna['Tipo'] == 'Chamada']
+        faltas = len(df_chamada[df_chamada['Status'] == 'Ausente'])
         
-        # Filtros de segurança para evitar NameError
-        try:
-            # Filtra apenas registros do tipo 'Chamada'
-            df_chamada = df_aluna[df_aluna['Tipo'] == 'Chamada']
+        st.markdown(f"### 🚩 Faltas Acumuladas: `{faltas}`")
+        st.divider()
+
+        if not df_aluna.empty:
+            datas_disponiveis = df_aluna['Data'].unique()
+            data_sel = st.selectbox("📅 Selecione a Data da Aula:", datas_disponiveis)
             
-            faltas = len(df_chamada[df_chamada['Status'] == 'Ausente'])
-            presencas = len(df_chamada[df_chamada['Status'] == 'Presente'])
-            # Se a coluna 'Status' não tiver 'Justificada', ele apenas contará 0
-            justificativas = len(df_chamada[df_chamada['Status'].str.contains('Justificada', na=False)])
-        except Exception:
-            faltas = 0
-            presencas = 0
-            justificativas = 0
+            # Filtro dos dados do dia
+            dados_dia = df_aluna[df_aluna['Data'] == data_sel]
 
-        m1, m2, m3 = st.columns(3)
-        # Corrigindo a exibição das métricas
-        m1.metric("Total de Faltas", f"{faltas}", delta="Crítico" if faltas > 3 else None, delta_color="inverse")
-        m2.metric("Presenças", presencas)
-        m3.metric("Justificativas", justificativas)
-
-       # --- 2. RELATÓRIO DETALHADO POR DATA ---
-        st.subheader(f"📝 Diário Pedagógico Detalhado: {aluna_sel}")
-        
-        datas_aluna = df_aluna['Data'].unique()
-        if len(datas_aluna) > 0:
-            data_hist = st.selectbox("Escolha uma data para ver os detalhes das aulas:", datas_aluna)
-            # Filtra os dados do dia selecionado
-            dados_dia = df_aluna[df_aluna['Data'] == data_hist]
-
-            col1, col2, col3 = st.columns(3)
-
+            # --- CABEÇALHO DO RELATÓRIO ---
+            st.markdown(f"## {aluna_sel.upper()}")
+            
             # --- SEÇÃO PRÁTICA ---
-            with col1:
-                st.markdown("#### 🎹 Prática")
-                # Busca por 'Prática' ou 'Pratica' (ignora maiúsculas/minúsculas)
-                p_data = dados_dia[dados_dia['Tipo'].str.contains('Prática|Pratica|Aula_Pratica', case=False, na=False)]
-                if not p_data.empty:
-                    p = p_data.iloc[0]
-                    st.success(f"**Instrutora:** {p.get('Professor', '---')}")
-                    st.write(f"**Lição/Estudo:** {p.get('Licao_Atual', '---')}")
-                    st.warning(f"**Dificuldades:** {p.get('Dificuldades', 'Nenhuma')}")
-                    st.info(f"**Lição de Casa:** {p.get('Metas', '---')}")
-                    if p.get('Observacao'): st.caption(f"Obs: {p['Observacao']}")
-                else: st.info("Sem registro de Prática")
+            st.markdown("### 🎹 Prática")
+            p_data = dados_dia[dados_dia['Tipo'].str.contains('Prática|Pratica', case=False, na=False)]
+            if not p_data.empty:
+                p = p_data.iloc[0]
+                st.markdown(f"""
+                **Data:** {data_sel}  
+                **Instrutora:** {p.get('Professor', 'Não Informado')}  
+                **Estudo / Lição:** {p.get('Licao_Atual', '---')}  
+                **Dificuldades:** {p.get('Dificuldades', 'Não apresentou dificuldades')}  
+                **Observações:** {p.get('Observacao', '---')}  
+                **Lição de casa – Volume prática:** {p.get('Metas', '---')}
+                """)
+            else:
+                st.caption("Sem registros de Prática para este dia.")
 
             # --- SEÇÃO TEORIA ---
-            with col2:
-                st.markdown("#### 📝 Teoria")
-                t_data = dados_dia[dados_dia['Tipo'].str.contains('Teoria|Aula_Teoria', case=False, na=False)]
-                if not t_data.empty:
-                    t = t_data.iloc[0]
-                    st.success(f"**Instrutora:** {t.get('Professor', '---')}")
-                    st.write(f"**Página/Volume:** {t.get('Licao_Atual', '---')}")
-                    st.warning(f"**Dificuldades:** {t.get('Dificuldades', 'Nenhuma')}")
-                    st.info(f"**Lição de Casa:** {t.get('Metas', '---')}")
-                else: st.info("Sem registro de Teoria")
+            st.markdown("### 📝 Teoria")
+            t_data = dados_dia[dados_dia['Tipo'].str.contains('Teoria', case=False, na=False)]
+            if not t_data.empty:
+                t = t_data.iloc[0]
+                st.markdown(f"""
+                **Data:** {data_sel}  
+                **Instrutora:** {t.get('Professor', 'Não Informado')}  
+                **Lição/Volume:** {t.get('Licao_Atual', '---')}  
+                **Dificuldades:** {t.get('Dificuldades', 'Não apresentou dificuldades')}  
+                **Observações:** {t.get('Observacao', '---')}  
+                **Lição de casa:** {t.get('Metas', '---')}
+                """)
+            else:
+                st.caption("Sem registros de Teoria para este dia.")
 
             # --- SEÇÃO SOLFEJO ---
-            with col3:
-                st.markdown("#### 🗣️ Solfejo")
-                s_data = dados_dia[dados_dia['Tipo'].str.contains('Solfejo|Aula_Solfejo', case=False, na=False)]
-                if not s_data.empty:
-                    s = s_data.iloc[0]
-                    st.success(f"**Instrutora:** {s.get('Professor', '---')}")
-                    st.write(f"**Lição/MSA:** {s.get('Licao_Atual', '---')}")
-                    st.warning(f"**Dificuldades:** {s.get('Dificuldades', 'Nenhuma')}")
-                    st.info(f"**Lição de Casa:** {s.get('Metas', '---')}")
-                else: st.info("Sem registro de Solfejo")
-            
-            # --- SEÇÃO SECRETARIA E ATIVIDADES PENDENTES ---
-            st.divider()
-            st.markdown("### 📋 Status da Secretaria & Pendências")
-            
-            # Filtra tanto o controle de lição quanto possíveis alertas de pendência
-            sec_data = dados_dia[dados_dia['Tipo'].str.contains('Controle_Licao|Secretaria|Pendência', case=False, na=False)]
-            
+            st.markdown("### 🗣️ Solfejo")
+            s_data = dados_dia[dados_dia['Tipo'].str.contains('Solfejo', case=False, na=False)]
+            if not s_data.empty:
+                s = s_data.iloc[0]
+                st.markdown(f"""
+                **Data:** {data_sel}  
+                **Instrutora:** {s.get('Professor', 'Não Informado')}  
+                **Lição/Volume:** {s.get('Licao_Atual', '---')}  
+                **Dificuldades:** {s.get('Dificuldades', 'Não apresentou dificuldades')}  
+                **Observações:** {s.get('Observacao', '---')}  
+                **Lição de casa:** {s.get('Metas', '---')}
+                """)
+            else:
+                st.caption("Sem registros de Solfejo para este dia.")
+
+            # --- SEÇÃO LIÇÕES DE CASA (SECRETARIA) ---
+            st.markdown("### 📚 Lições de Casa")
+            sec_data = dados_dia[dados_dia['Tipo'].str.contains('Controle_Licao', case=False, na=False)]
             if not sec_data.empty:
                 for _, row in sec_data.iterrows():
-                    # Cores diferentes para destacar o que está pendente
-                    cor_status = "🔴" if "pendente" in str(row['Status']).lower() else "🟢"
-                    with st.expander(f"{cor_status} {row.get('Categoria', 'Atividade')}: {row['Status']}", expanded=True):
-                        st.write(f"**Situação:** {row['Status']}")
-                        if row.get('Observacao'): st.write(f"**Nota da Secretaria:** {row['Observacao']}")
+                    st.markdown(f"""
+                    **Categoria:** {row.get('Categoria', 'Geral')}  
+                    **{row.get('Status', 'Status')}:** {row.get('Observacao', 'Sem observações adicionais')}
+                    """)
             else:
-                st.write("✅ Nenhuma pendência ou registro de lição da secretaria para esta data.")
-                
-        # --- 3. GRÁFICOS DE EVOLUÇÃO ---
-        st.subheader("📈 Gráficos de Evolução")
-        g1, g2 = st.columns(2)
-        
-        with g1:
-            # Gráfico de Faltas vs Presenças
-            fig_freq = px.pie(names=['Presenças', 'Faltas', 'Justificativas'], 
-                              values=[presencas, faltas, justificativas], 
-                              title="Engajamento da Aluna", hole=0.5,
-                              color_discrete_sequence=['#2ecc71', '#e74c3c', '#f1c40f'])
-            st.plotly_chart(fig_freq, use_container_width=True)
+                st.caption("Sem registros de lição de casa validados pela secretaria.")
 
-        with g2:
-            # Evolução de lições "Sem Pendência" por mês
-            df_evo = df_aluna[df_aluna['Status'] == 'Realizadas - sem pendência'].copy()
-            if not df_evo.empty:
-                df_evo['Mes'] = df_evo['dt_obj'].dt.strftime('%m/%Y')
-                evo_count = df_evo.groupby('Mes').size().reset_index(name='Qtd')
-                fig_evo = px.line(evo_count, x='Mes', y='Qtd', title="Volume de Lições Concluídas/Mês", markers=True)
-                st.plotly_chart(fig_evo, use_container_width=True)
+            # --- SEÇÃO RODÍZIO ---
+            st.divider()
+            st.markdown("### 📅 Próximo Rodízio")
+            # Busca quem vai dar aula (Próximo Sábado)
+            hoje = datetime.now()
+            sab_futuro = (hoje + timedelta(days=(5 - hoje.weekday()) % 7)).strftime("%d/%m/%Y")
+            
+            if sab_futuro in calendario_db:
+                escala = pd.DataFrame(calendario_db[sab_futuro])
+                minha_escala = escala[escala['Aluna'] == aluna_sel]
+                if not minha_escala.empty:
+                    st.write(f"Escala confirmada para {sab_futuro}:")
+                    st.dataframe(minha_escala[['Aluna', 'Turma', '08h45 (Igreja)', '09h35 (H2)', '10h10 (H3)', '10h45 (H4)']], hide_index=True)
+                else:
+                    st.info("Aluna não escalada para o próximo rodízio.")
             else:
-                st.write("Ainda não há lições concluídas para gerar o gráfico de evolução.")
+                st.warning("⚠️ Rodízio não gerado ou sem informações.")
 
-        # --- 4. RODÍZIO E ESCALA FUTURA ---
-        st.divider()
-        st.subheader("📅 Próximas Aulas (Rodízio)")
-        hoje = datetime.now()
-        sab_futuro = (hoje + timedelta(days=(5 - hoje.weekday()) % 7)).strftime("%d/%m/%Y")
-        
-        if sab_futuro in calendario_db:
-            escala = pd.DataFrame(calendario_db[sab_futuro])
-            minha_escala = escala[escala['Aluna'] == aluna_sel]
-            if not minha_escala.empty:
-                st.info(f"Para o próximo sábado ({sab_futuro}), o rodízio da aluna é:")
-                st.table(minha_escala[['Aluna', 'Turma', '08h45 (Igreja)', '09h35 (H2)', '10h10 (H3)', '10h45 (H4)']])
-            else:
-                st.warning("Aluna não encontrada na escala deste sábado.")
-        else:
-            st.error("🚨 Rodízio não gerado para o próximo sábado.")
-
-# (Manter os módulos de Secretaria e Professora como estão, apenas movendo a lógica de análise)
-elif perfil == "🏠 Secretaria":
-    st.write("Módulo de Secretaria - Use as abas acima para Chamada e Lições.")
-elif perfil == "👩‍🏫 Professora":
-    st.write("Módulo de Professora - Registre o desempenho das alunas aqui.")
+        # --- GRÁFICOS DE EVOLUÇÃO (OPCIONAL NO FINAL) ---
+        if st.checkbox("Ver Gráficos de Evolução"):
+            # Gráfico de Faltas
+            fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
+                                title="Frequência Total", color_discrete_sequence=['#2ecc71', '#e74c3c'])
+            st.plotly_chart(fig_faltas, use_container_width=True)
 
 
 
