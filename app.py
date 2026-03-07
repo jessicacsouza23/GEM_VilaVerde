@@ -647,26 +647,29 @@ elif menu == "👩‍🏫 Minhas Aulas":
         if data_prof_str in calendario_db:
             escala_dia = calendario_db[data_prof_str]
             
-            # --- BUSCA TODAS AS AULAS DA PROFESSORA NO DIA ---
+            # --- BUSCA TODAS AS AULAS (SEM REPETIÇÃO E SEM ERRO DE SINTAXE) ---
             minhas_aulas = []
-            horarios_processados = [] # Lista auxiliar para evitar duplicados
+            chaves_processadas = [] 
 
             for registro in escala_dia:
                 for h in HORARIOS:
+                    # 1. Pegamos o que está escrito na célula do horário (Ex: SALA 8 | Cássia)
                     conteudo_celula = str(registro.get(h, "")).upper()
                     
-                    # Se o seu nome está na célula e este horário ainda não foi adicionado
+                    # 2. Se o seu nome está lá, vamos processar
                     if instr_sel.upper() in conteudo_celula:
-                        # Criamos uma chave única combinando Horário + Local para evitar duplicados de turma
-                        chave_aula = f"{h}_{registro.get(h)}"
+                        # Criamos uma chave para não repetir o mesmo horário na mesma sala
+                        chave_unica = f"{h}_{registro.get(h)}"
                         
-                        if chave_aula not in horarios_processados:
+                        if chave_unica not in chaves_processadas:
+                            # Adicionamos à lista de aulas que aparecerão no rádio
                             minhas_aulas.append({
                                 "horario": h,
                                 "dados": registro
                             })
-                            horarios_processados.append(chave_aula)
-                        })
+                            chaves_processadas.append(chave_unica)
+            
+            # --- FIM DA BUSCA ---
             
             if not minhas_aulas:
                 st.divider()
@@ -932,6 +935,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
