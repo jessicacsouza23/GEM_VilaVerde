@@ -631,7 +631,7 @@ if menu == "👩‍🏫 Minhas Aulas":
     # O Streamlit retorna um objeto date (AAAA-MM-DD)
     data_escolhida = st.date_input("Data da Aula:", sab_p)
     # CONVERSÃO CRUCIAL: Transforma para o formato do seu banco (DD/MM/AAAA)
-    data_prof = st.date_input("Data da Aula:", sab_p)
+    data_prof = st.date_input("Data da Aula:", sab_p, key="data_aula_professora")
     data_prof_str = data_prof.strftime("%d/%m/%Y")
     
     # 3. Busca Automática no Rodízio (Calendário)
@@ -887,6 +887,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
