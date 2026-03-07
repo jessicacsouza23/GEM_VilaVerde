@@ -655,64 +655,58 @@ elif menu == "👩‍🏫 Minhas Aulas":
         if data_prof_str in calendario_db:
             escala_dia = calendario_db[data_prof_str]
             
-            # --- FILTRO EXCLUSIVO: BUSCA APENAS AS ALUNAS DA INSTRUTORA LOGADA ---
+            # --- FILTRO DE ALUNAS DA INSTRUTORA ---
             minhas_aulas_detalhadas = []
-            horarios_com_aula = set()
-
-            # Nome limpo para comparação (evita erro de acento/espaço)
-            nome_instrutora_limpo = limpar_texto(instr_sel)
+            
+            # 1. Pegamos o nome do login e limpamos (CÁSSIA)
+            nome_busca = limpar_texto(instr_sel)
 
             for registro in escala_dia:
-                aluna_nome = registro.get("Aluna", "Desconhecida")
-                turma_nome = registro.get("Turma", "Geral")
-                
-                # Varre cada horário do registro da aluna
+                # 2. Varremos cada horário (H1, H2, H3, H4) no registro da aluna
                 for h in HORARIOS:
-                    conteudo_aula = str(registro.get(h, ""))
+                    conteudo_celula = str(registro.get(h, ""))
                     
-                    # Se o nome da instrutora logada está dentro desta célula de aula
-                    if nome_instrutora_limpo in limpar_texto(conteudo_aula):
-                        # Encontramos uma aula dela!
+                    # 3. Se o nome da instrutora (ou parte dele) estiver na célula
+                    if nome_busca in limpar_texto(conteudo_celula) and nome_busca != "":
                         minhas_aulas_detalhadas.append({
                             "horario": h,
-                            "local": conteudo_aula,
-                            "aluna": aluna_nome,
-                            "turma": turma_nome,
-                            "dados_completos": registro
+                            "local": conteudo_celula,
+                            "aluna": registro.get("Aluna", "Sem Nome"),
+                            "turma": registro.get("Turma", "Geral"),
+                            "dados_originais": registro
                         })
-                        horarios_com_aula.add(h)
 
-            # --- VERIFICAÇÃO DE RESULTADOS ---
+            # --- VALIDAÇÃO ---
             if not minhas_aulas_detalhadas:
-                st.divider()
-                st.warning(f"Irmã {instr_sel}, não encontrei nenhuma aluna vinculada ao seu nome no rodízio de {data_prof_str}.")
-                # Mostra o que tem no banco para ela entender o que houve
-                with st.expander("🔍 Ver escala completa deste dia"):
-                    st.write(escala_dia) 
-            else:
-                # Ordena os horários para aparecerem na ordem certa (H1, H2, H3...)
-                lista_horarios_ordenada = sorted(list(horarios_com_aula))
+                st.warning(f"Irmã {instr_sel}, não encontrei alunas vinculadas ao seu nome hoje.")
                 
-                st.markdown(f"### 📋 Suas Aulas em {data_prof_str}")
-                h_sel = st.radio("Selecione o Horário para lançar o desempenho:", lista_horarios_ordenada, horizontal=True)
-
-                # Pega os dados da aula que ela clicou no rádio
-                aula_selecionada = next((a for a in minhas_aulas_detalhadas if a["horario"] == h_sel), None)
-
-                if aula_selecionada:
-                    # Preenche as variáveis para o seu formulário original
-                    local_info = aula_selecionada['local']
-                    aluna_ref = aula_selecionada['aluna']
-                    turma_aluna = aula_selecionada['turma']
-                    atendimento = aula_selecionada['dados_completos']
-                    
-                    # Daqui para baixo segue o seu formulário de Notas, Dificuldades e Chamada...
-                    st.success(f"✅ Selecionado: {h_sel} - {aluna_ref} ({local_info})")
-                    
-                    is_coletiva = "SALA 8" in local_info or "SALA 9" in local_info
-                    tipo_aula = "Teoria" if "SALA 8" in local_info else "Solfejo" if "SALA 9" in local_info else "Prática"
-                    dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
-                    
+                # AJUDA PARA DIAGNÓSTICO: Mostra o que o sistema está vendo
+                with st.expander("🔍 Ver nomes cadastrados neste sábado"):
+                    todas_as_profs = set()
+                    for r in escala_dia:
+                        for h in HORARIOS:
+                            txt = str(r.get(h, ""))
+                            if "|" in txt: todas_as_profs.add(txt.split("|")[-1].strip())
+                    st.write("Professoras encontradas no banco:", list(todas_as_profs))
+                    st.write("Seu nome de login:", instr_sel)
+            else:
+                # 4. Criamos o seletor com as alunas encontradas
+                opcoes = [f"{a['horario']} - {a['aluna']} ({a['local']})" for a in minhas_aulas_detalhadas]
+                escolha = st.selectbox("Selecione a Aluna/Horário:", opcoes)
+                
+                # 5. Recuperamos os dados da escolha
+                idx = opcoes.index(escolha)
+                aula_sel = minhas_aulas_detalhadas[idx]
+                
+                # Preenche as variáveis do seu formulário original
+                h_sel = aula_sel['horario']
+                aluna_ref = aula_sel['aluna']
+                local_info = aula_sel['local']
+                turma_aluna = aula_sel['turma']
+                atendimento = aula_sel['dados_originais']
+                
+                st.success(f"✅ Editando aula de: **{aluna_ref}**")
+                
                     # --- INTERFACE ORIGINAL MANTIDA ---
                     info_cabecalho = f"📍 {local_info} | 👤 Referência: {aluna_ref}"
                     if is_coletiva:
@@ -956,6 +950,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
