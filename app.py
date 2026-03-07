@@ -134,39 +134,45 @@ def db_get_historico():
 
 def db_get_calendario():
     try:
+        # Busca direta sem filtros para testar a conexão
         response = supabase.table("calendario").select("*").execute()
         
-        cal_dict = {}
-        if response.data:
-            for item in response.data:
-                # Tenta buscar por 'Data', 'data' ou 'DATA' automaticamente
-                raw_date = item.get("Data") or item.get("data") or item.get("DATA")
-                
-                if raw_date:
-                    raw_date = str(raw_date).strip()
-                    # Padronização para DD/MM/AAAA
-                    try:
-                        if "/" in raw_date:
-                            partes = raw_date.split("/")
-                            data_limpa = f"{int(partes[0]):02d}/{int(partes[1]):02d}/{partes[2]}"
-                        elif "-" in raw_date:
-                            y, m, d = raw_date.split("-")
-                            data_limpa = f"{int(d):02d}/{int(m):02d}/{y}"
-                        else:
-                            data_limpa = raw_date
-                    except:
-                        data_limpa = raw_date
+        if not response.data:
+            st.error("🚨 O Supabase retornou uma lista VAZIA para a tabela 'calendario'. Verifique se os dados foram salvos/publicados no banco.")
+            return {}
 
-                    if data_limpa not in cal_dict:
-                        cal_dict[data_limpa] = []
-                    cal_dict[data_limpa].append(item)
+        # SCANNER: Mostra quais colunas existem de verdade na primeira linha
+        colunas_reais = list(response.data[0].keys())
+        st.info(f"🔍 Colunas detectadas no banco: {colunas_reais}")
+
+        cal_dict = {}
+        for item in response.data:
+            # Tenta pegar a data de qualquer coluna que se pareça com 'data'
+            raw_date = None
+            for col in colunas_reais:
+                if "data" in col.lower():
+                    raw_date = item.get(col)
+                    break
+            
+            if raw_date:
+                data_str = str(raw_date).strip()
+                # Limpeza e Formatação
+                if "/" in data_str:
+                    p = data_str.split("/")
+                    data_limpa = f"{int(p[0]):02d}/{int(p[1]):02d}/{p[2]}"
+                elif "-" in data_str:
+                    y, m, d = data_str.split("-")
+                    data_limpa = f"{int(d):02d}/{int(m):02d}/{y}"
                 else:
-                    # Se caiu aqui, a coluna tem outro nome no banco
-                    st.warning("⚠️ Coluna de data não encontrada. Verifique o nome no Supabase.")
+                    data_limpa = data_str
+
+                if data_limpa not in cal_dict:
+                    cal_dict[data_limpa] = []
+                cal_dict[data_limpa].append(item)
         
         return cal_dict
     except Exception as e:
-        st.error(f"Erro na tabela: {e}")
+        st.error(f"Erro de conexão com o Supabase: {e}")
         return {}
         
 def db_save_historico(dados):
@@ -841,6 +847,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
