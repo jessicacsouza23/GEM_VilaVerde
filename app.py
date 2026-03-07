@@ -44,16 +44,16 @@ except Exception as e:
 # Adicione aqui todas as professoras conforme sua lista
 USUARIOS = {
     "secretaria": {"senha": "123", "perfil": "Secretaria", "nome_real": "Coordenação"},
-    "cassia": {"senha": "456", "perfil": "Professora", "nome_real": "Cassia"},
-    "teta": {"senha": "456", "perfil": "Professora", "nome_real": "Téta"},
-    "roberta": {"senha": "456", "perfil": "Professora", "nome_real": "Roberta"},
-    "ester": {"senha": "456", "perfil": "Professora", "nome_real": "Ester"},
-    "elaine": {"senha": "456", "perfil": "Professora", "nome_real": "Elaine"},
-    "vanessa": {"senha": "456", "perfil": "Professora", "nome_real": "Vanessa"},
-    "luciene": {"senha": "456", "perfil": "Professora", "nome_real": "Luciene"},
-    "patricia": {"senha": "456", "perfil": "Professora", "nome_real": "Patricia"},
-    "flavia": {"senha": "456", "perfil": "Professora", "nome_real": "Flavia"},
-    "kamila": {"senha": "456", "perfil": "Professora", "nome_real": "Kamila"},
+    "cassia": {"senha": "456", "perfil": "Cassia", "nome_real": "Cassia"},
+    "teta": {"senha": "456", "perfil": "Téta", "nome_real": "Téta"},
+    "roberta": {"senha": "456", "perfil": "Roberta", "nome_real": "Roberta"},
+    "ester": {"senha": "456", "perfil": "Ester", "nome_real": "Ester"},
+    "elaine": {"senha": "456", "perfil": "Elaine", "nome_real": "Elaine"},
+    "vanessa": {"senha": "456", "perfil": "Vanessa", "nome_real": "Vanessa"},
+    "luciene": {"senha": "456", "perfil": "Luciene", "nome_real": "Luciene"},
+    "patricia": {"senha": "456", "perfil": "Patricia", "nome_real": "Patricia"},
+    "flavia": {"senha": "456", "perfil": "Flavia", "nome_real": "Flavia"},
+    "kamila": {"senha": "456", "perfil": "Kamila", "nome_real": "Kamila"},
     # ... adicione as demais seguindo o padrão: "login": {"senha": "...", "perfil": "Professora", "nome_real": "Nome Exato na Lista"}
 }
 
@@ -840,6 +840,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
