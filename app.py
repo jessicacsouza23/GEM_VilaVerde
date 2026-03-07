@@ -635,21 +635,20 @@ if menu == "🏠 Secretaria":
 # ==========================================
 # MÓDULO PROFESSORA - VERSÃO TURMAS 2026
 # ==========================================
-elif menu == "👩‍🏫 Minhas Aulas":
+elif perfil == "👩‍🏫 Professora":
     st.header("👩‍🏫 Controle de Desempenho")
     
-    # Puxa o nome do login e garante o histórico
-    instr_sel = st.session_state.get('nome_logado', 'Selecione...')
+    # Garante que o histórico existe para consulta
     df_historico = pd.DataFrame(historico_geral)
     
     c1, c2 = st.columns(2)
     with c1:
-        st.info(f"Instrutora Logada: **{instr_sel}**")
+        instr_sel = st.selectbox("Identifique-se:", ["Selecione..."] + PROFESSORAS_LISTA)
     with c2:
         hoje_dt = datetime.now()
-        # Sugere o próximo sábado
+        # Sugere o próximo sábado por padrão
         sab_p = hoje_dt + timedelta(days=(5 - hoje_dt.weekday()) % 7)
-        data_prof = st.date_input("Data da Aula:", sab_p, key="data_aula_pedagogico")
+        data_prof = st.date_input("Data da Aula:", sab_p, key="dt_pedag")
         data_prof_str = data_prof.strftime("%d/%m/%Y")
     
     if instr_sel != "Selecione...":
@@ -658,14 +657,15 @@ elif menu == "👩‍🏫 Minhas Aulas":
         if data_prof_str in calendario_db:
             escala_dia = calendario_db[data_prof_str]
             
-            # --- 1. AGRUPAMENTO INTELIGENTE DE AULAS ---
+            # --- 1. VARREDURA E AGRUPAMENTO POR TURMA/AULA ---
             aulas_agrupadas = {}
             nome_busca = limpar_texto(instr_sel)
 
             for registro in escala_dia:
                 for chave_h, conteudo in registro.items():
+                    # Se o nome da professora está nesta célula de horário
                     if chave_h not in ["Aluna", "Turma"] and nome_busca in limpar_texto(conteudo):
-                        # Identificador único: Horário + Local (Ex: 09h35 (H2) | SALA 8)
+                        # ID Único da Aula = Horário + Local (Ex: "09h35 (H2) | SALA 8")
                         id_aula = f"{chave_h} | {conteudo}"
                         
                         if id_aula not in aulas_agrupadas:
@@ -676,69 +676,62 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 "alunas": []
                             }
                         
-                        # Adiciona a aluna deste registro à lista desta aula
                         nome_aluna = registro.get("Aluna", "Sem Nome")
                         if nome_aluna not in aulas_agrupadas[id_aula]["alunas"]:
                             aulas_agrupadas[id_aula]["alunas"].append(nome_aluna)
 
-            # --- 2. INTERFACE DE SELEÇÃO (RADIO) ---
+            # --- 2. INTERFACE DE SELEÇÃO ---
             if not aulas_agrupadas:
-                st.warning(f"Irmã {instr_sel}, nenhuma aula encontrada para você em {data_prof_str}.")
+                st.divider()
+                st.balloons()
+                st.markdown(f'<div style="background-color: #f0f2f6; padding: 30px; border-radius: 15px; text-align: center; border: 2px dashed #ff4b4b;"><h2 style="color: #ff4b4b;">🌸 Hoje não, Irmã {instr_sel}!</h2><p style="font-size: 1.2em;">Você não está na escala para {data_prof_str}.</p></div>', unsafe_allow_html=True)
             else:
-                st.markdown("### 🎹 Suas Aulas Disponíveis")
+                st.markdown("### 🎹 Selecione a Aula")
                 lista_opcoes = list(aulas_agrupadas.keys())
-                
-                # Seleção por "Bolinha" (Apenas uma por vez)
-                escolha_id = st.radio(
-                    "Selecione a aula/turma para lançar o desempenho:", 
-                    lista_opcoes, 
-                    key=f"radio_aulas_{data_prof_str}"
-                )
+                escolha_id = st.radio("Horários disponíveis para você hoje:", lista_opcoes, horizontal=True, key="radio_aulas")
 
-                # Extração dos dados da aula escolhida
+                # Dados da aula selecionada
                 dados_aula = aulas_agrupadas[escolha_id]
                 h_sel = dados_aula["horario"]
                 local_info = dados_aula["local"]
-                lista_alunas_aula = dados_aula["alunas"]
-                turma_ref_aula = dados_aula["turma_ref"]
+                alunas_na_aula = dados_aula["alunas"]
+                turma_aluna = dados_aula["turma_ref"]
                 
                 is_coletiva = "SALA 8" in local_info.upper() or "SALA 9" in local_info.upper()
                 tipo_aula = "Teoria" if "SALA 8" in local_info.upper() else "Solfejo" if "SALA 9" in local_info.upper() else "Prática"
                 dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
 
-                st.success(f"📍 {local_info} | ⏰ {h_sel}")
+                st.success(f"📍 {local_info} | 👥 {turma_aluna if is_coletiva else 'Aula Individual'}")
 
-                # --- 3. CHAMADA E COMENTÁRIOS INDIVIDUAIS ---
-                st.markdown("### 👥 Chamada e Observações por Aluna")
-                alunas_selecionadas_dados = {} # Guarda {Nome: Obs_Individual}
+                # --- 3. CHAMADA E OBS INDIVIDUALIZADA ---
+                st.markdown("### 👥 Chamada e Notas Individuais")
+                st.caption("Marque quem está presente e adicione notas específicas se necessário.")
+                
+                detalhes_alunas = {} # Dicionário para guardar {Nome: Obs_Indiv}
 
-                for aluna in lista_alunas_aula:
-                    col_chk, col_obs = st.columns([1, 2])
+                for aluna in alunas_na_aula:
+                    col_pres, col_obs = st.columns([1, 3])
                     
-                    # Verifica se já existe registro para esta aluna hoje
+                    # Se já foi lançado algo hoje, tenta marcar como presente
                     ja_tem = False
                     if not df_historico.empty:
-                        ja_tem = not df_historico[
-                            (df_historico['Aluna'] == aluna) & 
-                            (df_historico['Data'] == data_prof_str) & 
-                            (df_historico['Tipo'] == f"Aula_{tipo_aula}")
-                        ].empty
+                        ja_tem = not df_historico[(df_historico['Aluna'] == aluna) & (df_historico['Data'] == data_prof_str) & (df_historico['Tipo'] == f"Aula_{tipo_aula}")].empty
                     
-                    presenca = col_chk.checkbox(f"✅ {aluna}", value=True, key=f"pres_{aluna}_{h_sel}")
-                    obs_indiv = col_obs.text_input("Nota individual:", key=f"obs_{aluna}_{h_sel}", placeholder="Opcional...")
+                    presenca = col_pres.checkbox(f"✅ {aluna}", value=True if not ja_tem else True, key=f"chk_{aluna}_{h_sel}")
+                    obs_i = col_obs.text_input(f"Nota para {aluna}:", key=f"note_{aluna}_{h_sel}", placeholder="Ex: Teve dificuldade na pág 2...")
                     
                     if presenca:
-                        alunas_selecionadas_dados[aluna] = obs_indiv
+                        detalhes_alunas[aluna] = obs_i
 
-                # --- 4. FORMULÁRIO DE CONTEÚDO PEDAGÓGICO ---
-                with st.form("form_pedagogico_2026", clear_on_submit=False):
+                # --- 4. FORMULÁRIO DE CONTEÚDO ---
+                with st.form("f_aula_prof", clear_on_submit=False):
                     st.subheader(f"📝 Registro de {tipo_aula}")
                     
-                    # Puxa lição anterior se houver
+                    # Tenta pegar lição do último registro da turma para sugerir
                     idx_lic = 0
                     lic_vol = st.selectbox("Lição/Volume Atual:", OPCOES_LICOES_NUM, index=idx_lic)
                     
-                    st.markdown("**Dificuldades da Turma:**")
+                    st.markdown("**Dificuldades Detectadas na Turma:**")
                     cols_dif = st.columns(2)
                     difs_selecionadas = []
                     for i, d in enumerate(dif_lista):
@@ -746,7 +739,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         if target_col.checkbox(d, key=f"diff_{d}_{h_sel}"):
                             difs_selecionadas.append(d)
                     
-                    obs_geral = st.text_area("Observações Técnicas Gerais:", placeholder="Descreva o rendimento da aula...")
+                    obs_geral = st.text_area("Observações Técnicas Gerais (para todas):")
 
                     st.markdown("---")
                     st.subheader("🏠 Tarefa para Casa")
@@ -754,39 +747,37 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     casa_f = ""
                     if tipo_aula == "Prática":
                         c1, c2 = st.columns(2)
-                        p1 = c1.text_input("Lição Método:")
-                        p2 = c2.text_input("Apostila:")
-                        casa_f = f"Método: {p1} | Apostila: {p2}"
+                        p_prat = c1.text_input("Lição Método:")
+                        p_apos = c2.text_input("Lição Apostila:")
+                        casa_f = f"Método: {p_prat} | Apostila: {p_apos}"
                     elif tipo_aula == "Teoria":
                         c1, c2, c3 = st.columns(3)
-                        t1 = c1.text_input("MSA:")
-                        t2 = c2.text_input("Apostila:")
-                        t3 = c3.text_input("Extra:")
-                        casa_f = f"MSA: {t1} | Apostila: {t2} | Extra: {t3}"
-                    else: # Solfejo
+                        t_msa = c1.text_input("MSA:")
+                        t_apos = c2.text_input("Apostila:")
+                        t_extra = c3.text_input("Extra:")
+                        casa_f = f"MSA: {t_msa} | Apostila: {t_apos} | Extra: {t_extra}"
+                    else:
                         c1, c2 = st.columns(2)
-                        s1 = c1.text_input("MSA Solfejo:")
-                        s2 = c2.text_input("Extra:")
-                        casa_f = f"MSA: {s1} | Extra: {s2}"
+                        s_msa = c1.text_input("MSA Solfejo:")
+                        s_extra = c2.text_input("Extra:")
+                        casa_f = f"MSA: {s_msa} | Extra: {s_extra}"
 
                     if st.form_submit_button("❄️ CONGELAR E SALVAR AULA"):
-                        if not alunas_selecionadas_dados:
-                            st.error("⚠️ Marque as alunas que estão presentes!")
+                        if not detalhes_alunas:
+                            st.error("⚠️ Nenhuma aluna marcada como presente!")
                         else:
-                            with st.spinner("Sincronizando registros..."):
-                                for aluna, coment_indiv in alunas_selecionadas_dados.items():
-                                    # Limpa duplicados antes de salvar
+                            with st.spinner("Salvando registros individualizados..."):
+                                for aluna, nota_pessoal in detalhes_alunas.items():
+                                    # Limpa anterior
                                     supabase.table("historico_geral").delete()\
-                                        .eq("Data", data_prof_str)\
-                                        .eq("Tipo", f"Aula_{tipo_aula}")\
-                                        .eq("Aluna", aluna).execute()
+                                        .eq("Data", data_prof_str).eq("Tipo", f"Aula_{tipo_aula}").eq("Aluna", aluna).execute()
                                     
-                                    # Monta observação final (Geral + Individual)
+                                    # Mescla Obs Geral com Nota Pessoal
                                     obs_final = obs_geral
-                                    if coment_indiv:
-                                        obs_final += f" | Obs. Indiv: {coment_indiv}"
+                                    if nota_pessoal:
+                                        obs_final += f" | NOTA INDIVIDUAL: {nota_pessoal}"
                                     
-                                    # Salva no banco
+                                    # Salva individualmente
                                     db_save_historico({
                                         "Aluna": aluna,
                                         "Tipo": f"Aula_{tipo_aula}",
@@ -798,13 +789,10 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                         "Licao_Casa": casa_f
                                     })
                                 
-                                st.success(f"✅ Aula salva para {len(alunas_selecionadas_dados)} aluna(s)!")
+                                st.success(f"✅ Sucesso! {len(detalhes_alunas)} registros salvos.")
                                 st.cache_data.clear()
                                 st.rerun()
-
-        else:
-            st.warning(f"⚠️ O rodízio para {data_prof_str} ainda não foi lançado pela secretaria.")
-            
+                                
 # ==========================================
 # MÓDULO ANÁLISE DE IA (LAYOUT CONSOLIDADO)
 # ==========================================
@@ -942,6 +930,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
