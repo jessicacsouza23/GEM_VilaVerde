@@ -143,38 +143,29 @@ def db_get_historico():
 
 def db_get_calendario():
     try:
-        # Busca tudo da tabela calendario
         response = supabase.table("calendario").select("*").execute()
-        
         cal_dict = {}
+        
         if response.data:
             for item in response.data:
-                # 1. Pega a data (ID)
-                data_id = str(item.get("id", "")).strip()
+                # 1. Pega o ID bruto (Data)
+                data_bruta = str(item.get("id", "")).strip()
+                escala = item.get("escala", [])
                 
-                # 2. Pega a escala e garante que o Python entenda como LISTA
-                escala_raw = item.get("escala", [])
-                
-                # Se a escala veio como texto (string), a gente converte para lista
-                if isinstance(escala_raw, str):
-                    try:
-                        escala_dados = json.loads(escala_raw)
-                    except:
-                        escala_dados = []
-                else:
-                    escala_dados = escala_raw
-                
-                if data_id:
-                    # Padroniza a data para 07/03/2026
-                    try:
-                        p = data_id.split("/")
-                        data_limpa = f"{int(p[0]):02d}/{int(p[1]):02d}/{p[2]}"
-                        cal_dict[data_limpa] = escala_dados
-                    except:
-                        cal_dict[data_id] = escala_dados
+                # 2. Tenta padronizar para DD/MM/AAAA (Ex: 7/3/2026 -> 07/03/2026)
+                try:
+                    if "/" in data_bruta:
+                        d, m, y = data_bruta.split("/")
+                        data_padrao = f"{int(d):02d}/{int(m):02d}/{y}"
+                        cal_dict[data_padrao] = escala
+                    else:
+                        cal_dict[data_bruta] = escala
+                except:
+                    cal_dict[data_bruta] = escala
+                    
         return cal_dict
     except Exception as e:
-        st.error(f"Erro ao carregar banco: {e}")
+        st.error(f"Erro no banco: {e}")
         return {}
         
 def db_save_historico(dados):
@@ -961,6 +952,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
