@@ -683,7 +683,7 @@ if menu == "👩‍🏫 Minhas Aulas":
             st.divider()
             st.balloons()
             st.info(f"🌸 Folga confirmada para {data_prof_str}!")
-      else:
+    else:
         st.warning(f"⚠️ O rodízio para {data_prof_str} ainda não foi gerado.")
         
     # --- COPIE ESTAS LINHAS PARA DIAGNÓSTICO ---
@@ -875,6 +875,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
