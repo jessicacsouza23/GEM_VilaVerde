@@ -638,33 +638,51 @@ if menu == "👩‍🏫 Minhas Aulas":
     calendario_db = db_get_calendario()
 
     if data_prof_str in calendario_db:
-        escala_da_data = calendario_db[data_prof_str]
-        
-        minha_aula = None
-        horario_aula = None
+    escala_da_data = calendario_db[data_prof_str]
+    
+    # 1. Criamos uma lista para guardar TODAS as aulas encontradas
+    minhas_aulas_do_dia = []
 
-        # Procurando a professora na lista de escala
-        for atendimento in escala_da_data:
-            for h in HORARIOS:
-                # Verifica se o horário existe na linha e se o nome da prof está lá
-                detalhe_aula = str(atendimento.get(h, "")).upper()
-                if instr_logada.upper() in detalhe_aula:
-                    minha_aula = atendimento
-                    horario_aula = h
-                    break
+    for atendimento in escala_da_data:
+        for h in HORARIOS:
+            detalhe_aula = str(atendimento.get(h, "")).upper()
+            if instr_logada.upper() in detalhe_aula:
+                # Guardamos um dicionário com os dados daquela aula específica
+                minhas_aulas_do_dia.append({
+                    "horario": h,
+                    "local": atendimento.get(h),
+                    "aluna": atendimento.get("Aluna"),
+                    "turma": atendimento.get("Turma")
+                })
+    
+    # 2. Verificamos se encontrou alguma aula
+    if minhas_aulas_do_dia:
+        st.success(f"✅ Irmã {instr_logada}, encontrei **{len(minhas_aulas_do_dia)}** aulas para você hoje!")
         
-        if minha_aula:
-            st.success(f"✅ Encontrei sua escala para as **{horario_aula}**!")
-            st.info(f"📍 **Local:** {minha_aula[horario_aula]} | **Aluna:** {minha_aula['Aluna']}")
-            
-            # --- SEU FORMULÁRIO DE AULA COMEÇA AQUI ---
-            # Exemplo: st.text_area("Dificuldades da aluna:")
-            
-        else:
-            st.divider()
-            st.balloons()
-            st.markdown(f"### 🌸 Folga confirmada para {data_prof_str}!")
-            st.write(f"Irmã {instr_logada}, você não está escalada para dar aula neste sábado.")
+        # 3. Criamos o Seletor de Aula
+        opcoes_aula = [f"{a['horario']} - {a['aluna']} ({a['local']})" for a in minhas_aulas_do_dia]
+        escolha = st.selectbox("Selecione qual aula deseja lançar agora:", opcoes_aula)
+        
+        # 4. Pegamos os dados da aula selecionada
+        indice_sel = opcoes_aula.index(escolha)
+        aula_atual = minhas_aulas_do_dia[indice_sel]
+        
+        # --- EXIBIÇÃO DOS DADOS DA AULA SELECIONADA ---
+        st.divider()
+        col1, col2 = st.columns(2)
+        col1.metric("Horário", aula_atual['horario'])
+        col1.metric("Aluna", aula_atual['aluna'])
+        col2.metric("Local/Atividade", aula_atual['local'])
+        col2.caption(f"Turma: {aula_atual['turma']}")
+
+        # --- AQUI COMEÇA O SEU FORMULÁRIO PEDAGÓGICO ---
+        # Agora você pode seguir com st.text_area, st.slider, etc.
+        # usando os dados de 'aula_atual'
+        
+    else:
+        st.divider()
+        st.balloons()
+        st.info(f"🌸 Folga confirmada para {data_prof_str}!")
     else:
         st.warning(f"⚠️ O rodízio para {data_prof_str} ainda não foi gerado.")
         
@@ -857,6 +875,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
