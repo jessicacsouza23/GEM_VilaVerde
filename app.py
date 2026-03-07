@@ -9,6 +9,8 @@ import google.generativeai as genai
 from datetime import datetime, timedelta, date
 from fpdf import FPDF
 import io
+import streamlit as st
+
 
 # --- 1. CONFIGURAÇÕES INICIAIS ---
 st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
@@ -39,9 +41,9 @@ supabase = None
 try:
     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
-    st.error(f"Erro Supabase: {e}")
+    st.error(f"Erro de Conexão: {e}")
     st.stop()
-
+    
 # --- 3. FUNÇÕES DE DADOS ---
 @st.cache_data(ttl=60)
 def carregar_dados_globais():
@@ -745,234 +747,163 @@ elif perfil == "👩‍🏫 Professora":
                     st.info(f"Irmã {instr_sel}, sem agenda para este horário.")
             
 # ==========================================
-# MÓDULO ANÁLISE DE IA (ADAPTADO)
+# MÓDULO ANÁLISE (O NOVO CORAÇÃO DO SISTEMA)
 # ==========================================
-elif perfil == "📊 Analítico IA":
-    st.title("📊 Painel Pedagógico de Performance")
-    st.caption("Uso exclusivo pedagógico / Coordenação")
+st.title("📊 Painel Pedagógico de Performance")
 
-    historico_geral = db_get_historico()
-    calendario_db = db_get_calendario()
-    df = pd.DataFrame(historico_geral)
+historico_raw = db_get_historico()
+calendario_db = db_get_calendario()
+df = pd.DataFrame(historico_raw)
 
-    if df.empty:
-        st.info("ℹ️ O banco de dados está vazio.")
-        st.stop()
+if df.empty:
+    st.info("ℹ️ Nenhum dado registrado no histórico.")
+    st.stop()
 
-        # Seleção da aluna
-        aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
+# Tratamento de datas
+df['dt_obj'] = pd.to_datetime(df['Data'], format="%d/%m/%Y", errors='coerce')
+df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
 
-        if st.button("❄️ Congelar análise"):
-            if not aluna:
-                st.error("⚠️ Selecione uma aluna antes de salvar.")
-            else:
-                user_id = st.session_state.get("user_id", None)
-                if not user_id:
-                    st.error("⚠️ Usuário não autenticado. Não é possível salvar.")
-                else:
-                    periodo_tipo = "diaria"
-                    periodo_id = datetime.now().strftime("%Y-%m-%d")
-                    conteudo = "Análise congelada de teste."  # Substitua pelo conteúdo real
-        
-                    # AQUI PASSAMOS alu_sel COMO ARGUMENTO
-                    salvar_analise_congelada(
-                        aluna=alu_sel, 
-                        periodo_tipo=periodo_tipo, 
-                        periodo_id=periodo_id, 
-                        conteudo=conteudo, 
-                        user_id=user_id
-                    )
+# Filtros Laterais
+st.sidebar.header("Filtros de Análise")
+aluna_sel = st.sidebar.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
+periodo = st.sidebar.selectbox("Período da Análise:", ["Geral", "Mensal", "Bimestral", "Semestral", "Anual"])
 
+# Filtragem de dados da aluna
+df_aluna = df[df['Aluna'] == aluna_sel]
 
+# --- 1. RESUMO DE FREQUÊNCIA ---
+faltas = len(df_aluna[(df_aluna['Tipo'] == 'Chamada') & (df_aluna['Status'] == 'Ausente')])
+presencas = len(df_aluna[(df_aluna['Tipo'] == 'Chamada') & (df_aluna['Status'] == 'Presente')])
+justificativas = len(df_aluna[(df_aluna['Tipo'] == 'Chamada') & (df_aluna['Status'] == 'Justificada')])
 
-    # --- FILTROS DE CABEÇALHO ---
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        alu_ia = st.selectbox("🔍 Selecione a Aluna:", ALUNAS_LISTA)
-    with c2:
-        tipo_periodo = st.radio(
-            "Período de Análise:",
-            ["Diária", "Mensal", "Bimestral", "Semestral", "Anual"],
-            horizontal=True
-        )
+m1, m2, m3 = st.columns(3)
+m1.metric("Total de Faltas", f"{faltas} dias", delta="Atenção" if faltas > 2 else None, delta_color="inverse")
+m2.metric("Presenças Confirmadas", presencas)
+m3.metric("Justificativas", justificativas)
 
-    df['dt_obj'] = pd.to_datetime(df['Data'], format='%d/%m/%Y', errors='coerce').dt.date
-    df_aluna = df[df["Aluna"] == alu_ia].sort_values('dt_obj', ascending=False)
+st.divider()
 
-    # --- SELEÇÃO DE PERÍODO ---
-    periodo_id = ""
-    df_f = df_aluna.copy()
-    meses_necessarios = []
+# --- 2. RELATÓRIO TÉCNICO DETALHADO (POR DATA) ---
+st.subheader(f"📖 Relatório de Evolução: {aluna_sel}")
 
-    hoje = datetime.now().date()
-
-    if tipo_periodo == "Diária":
-        datas_disp = sorted(df_aluna['dt_obj'].dropna().unique(), reverse=True)
-        if datas_disp:
-            dia_sel = st.date_input("📅 Aula do dia:", value=datas_disp[0])
-            df_f = df_aluna[df_aluna['dt_obj'] == dia_sel]
-            periodo_id = dia_sel.strftime('%d/%m/%Y')
-
-    elif tipo_periodo == "Mensal":
-        meses = sorted(list(set(d.strftime('%m/%Y') for d in df_aluna['dt_obj'].dropna())), reverse=True)
-        if meses:
-            mes_sel = st.selectbox("📅 Mês referente:", meses)
-            df_f = df_aluna[df_aluna['dt_obj'].apply(lambda x: x.strftime('%m/%Y') == mes_sel)]
-            periodo_id = mes_sel
-            ultimo_dia_mes = calendar.monthrange(int(mes_sel.split('/')[1]), int(mes_sel.split('/')[0]))[1]
-            data_final_mes = date(int(mes_sel.split('/')[1]), int(mes_sel.split('/')[0]), ultimo_dia_mes)
-            if hoje < data_final_mes:
-                st.warning(f"⚠️ Relatório mensal só pode ser congelado em {data_final_mes}.")
-
-    else:
-        # Bimestral / Semestral / Anual
-        ano_num = st.selectbox("Ano:", [hoje.year - 1, hoje.year, hoje.year + 1])
-        if tipo_periodo == "Bimestral":
-            bimestre = st.selectbox("Bimestre:", [1, 2, 3, 4, 5, 6])
-            meses = meses_do_bimestre(bimestre)
-            meses_necessarios = [f"{ano_num}-{m:02d}" for m in meses]
-            periodo_id = f"{ano_num}-B{bimestre}"
-        elif tipo_periodo == "Semestral":
-            semestre = st.selectbox("Semestre:", [1, 2])
-            meses = meses_do_semestre(semestre)
-            meses_necessarios = [f"{ano_num}-{m:02d}" for m in meses]
-            periodo_id = f"{ano_num}-S{semestre}"
-        elif tipo_periodo == "Anual":
-            meses_necessarios = [f"{ano_num}-{m:02d}" for m in range(1, 13)]
-            periodo_id = str(ano_num)
-
-        # Verifica se todos os meses já estão congelados
-        meses_faltando = []
-        conteudo_mensais = ""
-        for mes_id in meses_necessarios:
-            conteudo = buscar_analise_congelada(alu_ia, "mensal", mes_id)
-            if conteudo:
-                conteudo_mensais += f"\n\n===== RELATÓRIO MENSAL {mes_id} =====\n{conteudo}\n"
-            else:
-                meses_faltando.append(mes_id)
-
-        if meses_faltando:
-            st.error("❌ Não é possível gerar este relatório porque faltam relatórios mensais congelados.")
-            st.write("📌 Meses faltando:", meses_faltando)
-            st.stop()
-        else:
-            st.success("✅ Todos os relatórios mensais necessários foram encontrados!")
-
-    # --- RODÍZIO / PRÓXIMA PROFESSORA ---
-    proxima_prof_info = "Escala não definida"
-    data_prox = "Próximo Sábado"
-    if calendario_db:
-        try:
-            datas_futuras = sorted(
-                [d for d in calendario_db.keys() if datetime.strptime(d, "%d/%m/%Y").date() >= hoje],
-                key=lambda x: datetime.strptime(x, "%d/%m/%Y")
-            )
-            if datas_futuras:
-                data_prox = datas_futuras[0]
-                escala = calendario_db[data_prox]
-                def fit(n): return str(n).split("-")[0].strip().lower()
-                dados_aluna = next((i for i in escala if fit(i.get('Aluna','')) in fit(alu_ia)), None)
-                if dados_aluna:
-                    h2, h3, h4 = dados_aluna.get("09h35 (H2)", "-"), dados_aluna.get("10h10 (H3)", "-"), dados_aluna.get("10h45 (H4)", "-")
-                    def clean(t): return str(t).split("|")[-1].strip() if "|" in str(t) else str(t)
-                    proxima_prof_info = f"H2: {clean(h2)} | H3: {clean(h3)} | H4: {clean(h4)}"
-        except: pass
-
-    # --- GRÁFICOS ---
-    st.markdown("### 📈 Indicadores de Evolução")
-    g1, g2 = st.columns(2)
-    with g1:
-        st.write("**Frequência e Assiduidade**")
-        status_counts = df_f['Status'].value_counts()
-        st.bar_chart(status_counts, color="#2ecc71")
-    with g2:
-        st.write("**Progresso de Lições (Histórico)**")
-        df_evo = df_aluna.copy().sort_values('dt_obj')
-        df_evo['Licao_Num'] = pd.to_numeric(df_evo['Licao_Atual'], errors='coerce')
-        st.line_chart(df_evo.set_index('Data')['Licao_Num'], color="#3498db")
-
-    # --- PARECER DETALHADO ---
-    st.markdown(f"### 🖋️ Parecer de Desenvolvimento: {tipo_periodo}")
-    todas_difs = [str(d) for item in df_f['Dificuldades'].dropna() for d in (item if isinstance(item, list) else [item])]
-    tecnicos = list(set([d for d in todas_difs if any(x in d.lower() for x in ["postura","dedo","punho","mão","falange","articulação"])]))
-    ritmicos = list(set([d for d in todas_difs if any(x in d.lower() for x in ["ritmo","metrônomo","solfejo","tempo","divisão"])]))
+datas_disponiveis = df_aluna['Data'].unique()
+if len(datas_disponiveis) > 0:
+    data_escolhida = st.selectbox("Consultar histórico do dia:", datas_disponiveis)
     
-    p1, p2 = st.columns(2)
-    with p1:
-        if tecnicos:
-            st.error(f"**🎹 Postura e Técnica**\n\nNeste período, a aluna enfrentou desafios em: **{', '.join(tecnicos)}**. É vital trabalhar relaxamento e articulação para avanços consistentes.")
+    # Filtra tudo dessa aluna nessa data
+    dados_dia = df_aluna[df_aluna['Data'] == data_escolhida]
+    
+    # Organização das seções conforme sua solicitação
+    col_a, col_b = st.columns(2)
+    
+    with col_a:
+        # --- SEÇÃO PRÁTICA ---
+        pratica = dados_dia[dados_dia['Tipo'] == 'Aula_Pratica']
+        with st.container(border=True):
+            st.markdown("### 🎹 Prática")
+            if not pratica.empty:
+                p = pratica.iloc[0]
+                st.write(f"**Instrutora:** {p.get('Professor', '---')}")
+                st.write(f"**Estudo:** {p.get('Licao_Atual', '---')}")
+                st.warning(f"**Dificuldades:** {', '.join(p.get('Dificuldades', []))}")
+                st.info(f"**Lição de Casa:** {p.get('Metas', '---')}")
+                st.write(f"**Observações:** {p.get('Observacao', '---')}")
+            else:
+                st.caption("Nenhum registro de aula prática neste dia.")
+
+        # --- SEÇÃO SOLFEJO ---
+        solfejo = dados_dia[dados_dia['Tipo'] == 'Aula_Solfejo']
+        with st.container(border=True):
+            st.markdown("### 🗣️ Solfejo")
+            if not solfejo.empty:
+                s = solfejo.iloc[0]
+                st.write(f"**Instrutora:** {s.get('Professor', '---')}")
+                st.write(f"**Estudo:** {s.get('Licao_Atual', '---')}")
+                st.warning(f"**Dificuldades:** {', '.join(s.get('Dificuldades', []))}")
+                st.info(f"**Lição de Casa:** {s.get('Metas', '---')}")
+            else:
+                st.caption("Nenhum registro de solfejo neste dia.")
+
+    with col_b:
+        # --- SEÇÃO TEORIA ---
+        teoria = dados_dia[dados_dia['Tipo'] == 'Aula_Teoria']
+        with st.container(border=True):
+            st.markdown("### 📝 Teoria")
+            if not teoria.empty:
+                t = teoria.iloc[0]
+                st.write(f"**Instrutora:** {t.get('Professor', '---')}")
+                st.write(f"**Estudo:** {t.get('Licao_Atual', '---')}")
+                st.warning(f"**Dificuldades:** {', '.join(t.get('Dificuldades', []))}")
+                st.info(f"**Lição de Casa:** {t.get('Metas', '---')}")
+            else:
+                st.caption("Nenhum registro de teoria neste dia.")
+
+        # --- SEÇÃO SECRETARIA (LIÇÕES DE CASA) ---
+        secretaria = dados_dia[dados_dia['Tipo'] == 'Controle_Licao']
+        with st.container(border=True):
+            st.markdown("### 📋 Status da Secretaria")
+            if not secretaria.empty:
+                for _, sec in secretaria.iterrows():
+                    st.write(f"**{sec['Categoria']}:** {sec['Status']}")
+                    st.caption(f"Obs: {sec['Observacao']}")
+            else:
+                st.caption("Sem validação da secretaria nesta data.")
+
+st.divider()
+
+# --- 3. GRÁFICOS DE DESEMPENHO E EVOLUÇÃO ---
+st.subheader("📈 Análise de Desempenho (Gráficos)")
+
+c1, c2 = st.columns(2)
+
+with c1:
+    st.markdown("#### Distribuição de Dificuldades")
+    # Explode a lista de dificuldades para contar individualmente
+    all_difs = df_aluna['Dificuldades'].explode().value_counts().reset_index()
+    if not all_difs.empty:
+        fig_dif = px.pie(all_difs, values='count', names='Dificuldades', hole=.4, 
+                         color_discrete_sequence=px.colors.qualitative.Pastel)
+        st.plotly_chart(fig_dif, use_container_width=True)
+    else:
+        st.write("Dados insuficientes para gerar gráfico de dificuldades.")
+
+with c2:
+    st.markdown("#### Evolução de Conteúdo (Lições Concluídas)")
+    # Gráfico de barras por mês mostrando volume de lições dadas como "Sem pendência"
+    lic_ok = df_aluna[df_aluna['Status'] == 'Realizadas - sem pendência'].copy()
+    if not lic_ok.empty:
+        lic_ok['Mes'] = lic_ok['dt_obj'].dt.strftime('%m/%Y')
+        evolucao = lic_ok.groupby('Mes').size().reset_index(name='Qtd')
+        fig_evol = px.bar(evolucao, x='Mes', y='Qtd', text_auto=True, color_discrete_sequence=['#4CAF50'])
+        st.plotly_chart(fig_evol, use_container_width=True)
+    else:
+        st.write("Nenhuma lição concluída registrada ainda.")
+
+# --- 4. RODÍZIO E ESCALA ---
+st.divider()
+st.subheader("📅 Informações de Escala")
+
+# Verifica quem deu aula na última data registrada
+ultima_data = df_aluna['Data'].iloc[0] if not df_aluna.empty else None
+if ultima_data:
+    st.write(f"**Última aula registrada em:** {ultima_data}")
+    
+# Verifica escala futura (Próximo Sábado)
+hoje = datetime.now()
+proximo_sabado = (hoje + timedelta(days=(5 - hoje.weekday()) % 7)).strftime("%d/%m/%Y")
+
+with st.expander(f"Verificar Escala para {proximo_sabado}"):
+    if proximo_sabado in calendario_db:
+        escala_dia = pd.DataFrame(calendario_db[proximo_sabado])
+        minha_escala = escala_dia[escala_dia['Aluna'] == aluna_sel]
+        if not minha_escala.empty:
+            st.dataframe(minha_escala, hide_index=True)
         else:
-            st.success("**🎹 Postura e Técnica**\n\nA aluna apresenta um desenvolvimento técnico primoroso.")
-    with p2:
-        if ritmicos:
-            st.warning(f"**🎶 Ritmo e Teoria**\n\nOscilações rítmicas em: **{', '.join(ritmicos)}**. Priorizar solfejo antes da execução instrumental.")
-        else:
-            st.success("**🎶 Ritmo e Teoria**\n\nExcelente domínio da pulsação!")
+            st.info("Aluna não escalada para este sábado.")
+    else:
+        st.warning("⚠️ Rodízio para o próximo sábado ainda não foi gerado pela secretaria.")
 
-    # --- PLANEJAMENTO PRÓXIMA AULA ---
-    st.markdown("---")
-    st.markdown("### 💡 Planejamento Pedagógico (Próxima Aula)")
-    c_plan1, c_plan2 = st.columns([1,2])
-    with c_plan1:
-        st.info(f"**📅 Data:** {data_prox}\n**👩‍🏫 Professora(s):**\n{proxima_prof_info}")
-    with c_plan2:
-        if tecnicos or ritmicos:
-            dica = tecnicos[0] if tecnicos else ritmicos[0]
-            st.warning(f"**Dica Estratégica:** Priorizar o acolhimento. Trabalhar exercícios técnicos de {dica} antes da execução do método.")
-        else:
-            st.success("**Dica Estratégica:** Aluna com excelente prontidão! Polir dinâmica e aumentar andamento das lições.")
 
-    # --- IA / CONGELAMENTO ---
-    st.divider()
-    analise_previa = None
-    if tipo_periodo == "Diária":
-        try:
-            res = supabase.table("analises_congeladas").select("*")\
-                .eq("aluna", alu_ia)\
-                .eq("periodo_tipo", tipo_periodo)\
-                .eq("periodo_id", periodo_id)\
-                .execute()
-            if res.data:
-                analise_previa = res.data[0]
-        except: pass
-
-    if analise_previa:
-        st.success(f"✅ Relatório Salvo ({periodo_id})")
-        st.markdown(analise_previa['conteudo'])
-        if st.button("🔄 Refazer Relatório"):
-            analise_previa = None
-
-    if not analise_previa:
-        if st.button("✨ GERAR RELATÓRIO COMPLETO (Coordenação)"):
-            with st.spinner("IA Processando..."):
-                try:
-                    hist_txt = df_f[['Data','Licao_Atual','Dificuldades','Observacao']].to_string()
-                    prompt = f"Gere análise técnica pedagógica exclusiva para coordenação sobre {alu_ia} ({tipo_periodo}). Histórico: {hist_txt}. Foco em Postura, Técnica, Ritmo e Dicas para a professora {proxima_prof_info} na aula de {data_prox}."
-                    response = model.generate_content(prompt)
-                    texto = response.text
-                    st.markdown(texto)
-                    if tipo_periodo == "Diária":
-                        supabase.table("analises_congeladas").insert({
-                            "aluna": aluna,
-                            "periodo_tipo": periodo_tipo,
-                            "periodo_id": periodo_id,
-                            "conteudo": conteudo,
-                            "user_id": user_id
-                        }).execute()
-                        
-                        st.rerun()
-                except Exception as e:
-                    if "429" in str(e):
-                        st.error("⚠️ Limite de IA atingido. Use as informações detalhadas acima para sua aula.")
-                    else:
-                        st.error(f"Erro: {e}")
-
-# --- FIM DO MÓDULO ---
-
-with st.sidebar.expander("ℹ️ Limites da IA"):
-    st.write("• **Limite:** 15 análises por minuto.")
-    st.write("• **Custo:** R$ 0,00 (Plano Free).")
-    st.caption("Se aparecer erro 429, aguarde 60 segundos.")
 
 
 
