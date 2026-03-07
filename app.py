@@ -657,57 +657,52 @@ elif menu == "👩‍🏫 Minhas Aulas":
         if data_prof_str in calendario_db:
             escala_dia = calendario_db[data_prof_str]
             
-            # --- FILTRO DE ALUNAS DA INSTRUTORA ---
+            # --- VARREDURA TOTAL DE ESCALA ---
             minhas_aulas_detalhadas = []
-            
-            # 1. Pegamos o nome do login e limpamos (CÁSSIA)
-            nome_busca = limpar_texto(instr_sel)
+            nome_busca = limpar_texto(instr_sel) # 'CASSIA'
 
+            # Percorre cada linha da escala (cada aluna)
             for registro in escala_dia:
-                # 2. Varremos cada horário (H1, H2, H3, H4) no registro da aluna
-                for h in HORARIOS:
-                    conteudo_celula = str(registro.get(h, ""))
-                    
-                    # 3. Se o nome da instrutora (ou parte dele) estiver na célula
-                    if nome_busca in limpar_texto(conteudo_celula) and nome_busca != "":
-                        minhas_aulas_detalhadas.append({
-                            "horario": h,
-                            "local": conteudo_celula,
-                            "aluna": registro.get("Aluna", "Sem Nome"),
-                            "turma": registro.get("Turma", "Geral"),
-                            "dados_originais": registro
-                        })
-    
-                # --- VALIDAÇÃO ---
-                if not minhas_aulas_detalhadas:
-                    st.warning(f"Irmã {instr_sel}, não encontrei alunas vinculadas ao seu nome hoje.")
-                    
-                    # AJUDA PARA DIAGNÓSTICO: Mostra o que o sistema está vendo
-                    with st.expander("🔍 Ver nomes cadastrados neste sábado"):
-                        todas_as_profs = set()
-                        for r in escala_dia:
-                            for h in HORARIOS:
-                                txt = str(r.get(h, ""))
-                                if "|" in txt: todas_as_profs.add(txt.split("|")[-1].strip())
-                        st.write("Professoras encontradas no banco:", list(todas_as_profs))
-                        st.write("Seu nome de login:", instr_sel)
-                else:
-                    # 4. Criamos o seletor com as alunas encontradas
-                    opcoes = [f"{a['horario']} - {a['aluna']} ({a['local']})" for a in minhas_aulas_detalhadas]
-                    escolha = st.selectbox("Selecione a Aluna/Horário:", opcoes)
-                    
-                    # 5. Recuperamos os dados da escolha
-                    idx = opcoes.index(escolha)
-                    aula_sel = minhas_aulas_detalhadas[idx]
-                    
-                    # Preenche as variáveis do seu formulário original
-                    h_sel = aula_sel['horario']
-                    aluna_ref = aula_sel['aluna']
-                    local_info = aula_sel['local']
-                    turma_aluna = aula_sel['turma']
-                    atendimento = aula_sel['dados_originais']
-                    
-                    st.success(f"✅ Editando aula de: **{aluna_ref}**")
+                aluna_nome = registro.get("Aluna", "Sem Nome")
+                
+                # Percorre TODAS as chaves da linha (H1, H2, H3, Turma, etc)
+                for chave, conteudo in registro.items():
+                    # Se o seu nome 'CASSIA' estiver dentro do conteúdo da célula
+                    if nome_busca in limpar_texto(conteudo) and nome_busca != "":
+                        # Evita pegar a própria chave 'Aluna' ou 'Turma' se o nome for igual
+                        if chave not in ["Aluna", "Turma"]:
+                            minhas_aulas_detalhadas.append({
+                                "horario": chave, # Aqui ele pega '09h35 (H2)' automaticamente
+                                "local": conteudo,
+                                "aluna": aluna_nome,
+                                "turma": registro.get("Turma", "Geral"),
+                                "dados_originais": registro
+                            })
+
+            # --- INTERFACE DE SELEÇÃO ---
+            if not minhas_aulas_detalhadas:
+                st.warning(f"Irmã {instr_sel}, não encontrei aulas para você em {data_prof_str}.")
+                # Debug rápido: mostra o que tem na primeira linha do banco
+                if escala_dia:
+                    st.json(escala_dia[0]) 
+            else:
+                # Monta as opções para o seletor
+                opcoes = [f"{a['horario']} - {a['aluna']}" for a in minhas_aulas_detalhadas]
+                escolha = st.selectbox("Selecione a Aula para lançar:", opcoes)
+                
+                # Extrai os dados da escolha
+                idx = opcoes.index(escolha)
+                aula_sel = minhas_aulas_detalhadas[idx]
+                
+                # Alimenta as variáveis do seu formulário original
+                h_sel = aula_sel['horario']
+                aluna_ref = aula_sel['aluna']
+                local_info = aula_sel['local']
+                turma_aluna = aula_sel['turma']
+                atendimento = aula_sel['dados_originais']
+                
+                st.success(f"✅ Editando: {aluna_ref} ({h_sel})")
+                # Daqui para baixo segue seu formulário de notas...
                 
                     # --- INTERFACE ORIGINAL MANTIDA ---
                     info_cabecalho = f"📍 {local_info} | 👤 Referência: {aluna_ref}"
@@ -952,6 +947,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
