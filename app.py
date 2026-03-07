@@ -648,7 +648,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
     with c2:
         hoje_dt = datetime.now()
         sab_p = hoje_dt + timedelta(days=(5 - hoje_dt.weekday()) % 7)
-        data_prof = st.date_input("Data da Aula:", sab_p, key="dt_pedag_v4")
+        data_prof = st.date_input("Data da Aula:", sab_p, key="dt_pedag_final")
         data_prof_str = data_prof.strftime("%d/%m/%Y")
     
     if instr_sel != "Selecione...":
@@ -657,7 +657,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
         if data_prof_str in calendario_db:
             escala_dia = calendario_db[data_prof_str]
             
-            # --- 1. AGRUPAMENTO POR HORÁRIO + LOCAL + ALUNA/TURMA ---
+            # --- 1. AGRUPAMENTO INTELIGENTE ---
             aulas_agrupadas = {}
             nome_busca = limpar_texto(instr_sel)
 
@@ -667,42 +667,46 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         
                         aluna_nome = registro.get("Aluna", "Sem Nome")
                         turma_nome = registro.get("Turma", "Individual")
-                        local_sala = str(conteudo).split("-")[-1].strip()
+                        local_sala = str(conteudo).split("-")[-1].strip().upper()
                         
-                        # Identificador para o Radio Button
-                        label = f"{chave_h} - {local_sala} ({turma_nome if 'SALA' in local_sala.upper() else aluna_nome})"
+                        # Lógica de Nomenclatura Solicitada:
+                        # Se for sala de teoria/solfejo, mostra a Turma. Se for Prática, mostra a Aluna.
+                        if "SALA 8" in local_sala or "SALA 9" in local_sala:
+                            identificador = f"{chave_h} - {local_sala} ({turma_nome})"
+                        else:
+                            identificador = f"{chave_h} - {local_sala} ({aluna_nome})"
                         
-                        if label not in aulas_agrupadas:
-                            aulas_agrupadas[label] = {
+                        if identificador not in aulas_agrupadas:
+                            aulas_agrupadas[identificador] = {
                                 "horario": chave_h,
-                                "local": conteudo,
+                                "local": local_sala,
                                 "alunas": []
                             }
                         
-                        if aluna_nome not in aulas_agrupadas[label]["alunas"]:
-                            aulas_agrupadas[label]["alunas"].append(aluna_nome)
+                        if aluna_nome not in aulas_agrupadas[identificador]["alunas"]:
+                            aulas_agrupadas[identificador]["alunas"].append(aluna_nome)
 
             # --- 2. INTERFACE DE SELEÇÃO ---
             if not aulas_agrupadas:
                 st.divider()
-                st.markdown(f'<div style="border: 2px dashed #ff4b4b; padding: 20px; text-align: center;"><h4>🌸 Irmã {instr_sel}, você não tem aulas na escala de {data_prof_str}.</h4></div>', unsafe_allow_html=True)
+                st.warning(f"Irmã {instr_sel}, não encontrei aulas para você em {data_prof_str}.")
             else:
                 st.markdown("### 🎹 Selecione a Aula")
-                escolha_id = st.radio("Selecione para qual aula/turma deseja lançar:", list(aulas_agrupadas.keys()), horizontal=True)
+                escolha_id = st.radio("Escolha a aula para lançamento:", list(aulas_agrupadas.keys()), horizontal=True)
 
                 dados_aula = aulas_agrupadas[escolha_id]
                 h_sel = dados_aula["horario"]
                 local_info = dados_aula["local"]
                 alunas_para_salvar = dados_aula["alunas"]
                 
-                tipo_aula = "Teoria" if "SALA 8" in local_info.upper() else "Solfejo" if "SALA 9" in local_info.upper() else "Prática"
+                tipo_aula = "Teoria" if "SALA 8" in local_info else "Solfejo" if "SALA 9" in local_info else "Prática"
                 dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
 
-                st.success(f"📝 Lançando para: **{', '.join(alunas_para_salvar)}**")
+                st.success(f"✅ Lançando registro para: **{', '.join(alunas_para_salvar)}**")
 
                 # --- 3. FORMULÁRIO DE REGISTRO ---
-                with st.form("f_aula_v4", clear_on_submit=False):
-                    st.subheader(f"Registro: {tipo_aula}")
+                with st.form("f_aula_final", clear_on_submit=False):
+                    st.subheader(f"📝 Registro de {tipo_aula}")
                     
                     lic_vol = st.selectbox("Lição/Volume Atual:", OPCOES_LICOES_NUM)
                     
@@ -720,30 +724,37 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     
                     casa_f = ""
                     if tipo_aula == "Prática":
-                        c1, c2 = st.columns(2)
-                        casa_f = f"Método: {c1.text_input('Lição Método:')} | Apostila: {c2.text_input('Apostila:')}"
+                        col1, col2 = st.columns(2)
+                        l1 = col1.text_input('Lição Método:')
+                        l2 = col2.text_input('Lição Apostila:')
+                        casa_f = f"Método: {l1} | Apostila: {l2}"
                     elif tipo_aula == "Teoria":
-                        c1, c2, c3 = st.columns(3)
-                        casa_f = f"MSA: {c1.text_input('MSA:')} | Apostila: {c2.text_input('Apostila:')} | Extra: {c3.text_input('Extra:')}"
-                    else:
-                        c1, c2 = st.columns(2)
-                        casa_f = f"MSA Solfejo: {c1.text_input('MSA:')} | Extra: {c2.text_input('Extra:')}"
+                        col1, col2, col3 = st.columns(3)
+                        t1 = col1.text_input('MSA:')
+                        t2 = col2.text_input('Apostila:')
+                        t3 = col3.text_input('Extra:')
+                        casa_f = f"MSA: {t1} | Apostila: {t2} | Extra: {t3}"
+                    else: # Solfejo
+                        col1, col2 = st.columns(2)
+                        s1 = col1.text_input('MSA Solfejo:')
+                        s2 = col2.text_input('Extra:')
+                        casa_f = f"MSA: {s1} | Extra: {s2}"
 
                     if st.form_submit_button("❄️ CONGELAR E SALVAR AULA"):
                         with st.spinner("Salvando no histórico..."):
                             for aluna in alunas_para_salvar:
-                                # Remove anterior para evitar duplicação no mesmo dia/aula
+                                # Deleta registros prévios do mesmo dia/tipo para evitar duplicados
                                 supabase.table("historico_geral").delete()\
                                     .eq("Data", data_prof_str).eq("Tipo", f"Aula_{tipo_aula}").eq("Aluna", aluna).execute()
                                 
-                                # Salva o novo registro para cada integrante da aula
+                                # Grava o registro (seja individual ou para cada uma da turma)
                                 db_save_historico({
                                     "Aluna": aluna, "Tipo": f"Aula_{tipo_aula}", "Data": data_prof_str,
                                     "Instrutora": instr_sel, "Licao_Atual": lic_vol,
                                     "Dificuldades": difs_selecionadas, "Observacao": obs_aula, "Licao_Casa": casa_f
                                 })
                             
-                            st.success(f"✅ Sucesso! Registro salvo para {len(alunas_para_salvar)} aluna(s).")
+                            st.success(f"✅ Concluído! Dados salvos para {len(alunas_para_salvar)} aluna(s).")
                             st.cache_data.clear()
                             st.rerun()
                             
@@ -884,6 +895,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
