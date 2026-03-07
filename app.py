@@ -89,14 +89,7 @@ def carregar_dados_globais():
         return h.data, c.data
     except:
         return [], []
-perfil = st.sidebar.radio(
-    "Navegação:",
-    ["🏠 Início", "👩‍🏫 Minhas Aulas", "📊 Analítico IA", "⚙️ Configurações"]
-)
-
-# Agora o Python reconhece a variável 'perfil'
-if perfil == "🏠 Início":
-    st.write("Bem-vinda ao sistema!")
+        
 
 
 # --- 2. DADOS MESTRE ---
@@ -170,8 +163,7 @@ historico_geral = db_get_historico()
 calendario_db = db_get_calendario()
 df_historico = pd.DataFrame(historico_geral)
 
-
-        
+    
 # --- 3. DEFINIÇÃO DE VARIÁVEIS GLOBAIS (FIX PARA NAMEERROR) ---
 data_hj = datetime.now().strftime("%d/%m/%Y")
 calendario_db = db_get_calendario()
@@ -310,7 +302,8 @@ if st.session_state.perfil == "Secretaria":
     menu = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "📊 Analítico IA"])
 else:
     menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📊 Analítico IA"])
-
+    
+    
 if st.sidebar.button("Sair"):
     st.session_state.autenticado = False
     st.rerun()
@@ -713,7 +706,7 @@ if menu == "👩‍🏫 Minhas Aulas":
 # ==========================================
 # MÓDULO ANÁLISE DE IA (LAYOUT CONSOLIDADO)
 # ==========================================
-elif perfil == "📊 Analítico IA":
+elif menu == "📊 Analítico IA":
     st.title("📊 Painel Pedagógico de Performance")
     
     historico_raw = db_get_historico()
@@ -847,6 +840,7 @@ elif perfil == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
