@@ -745,44 +745,92 @@ elif perfil == "👩‍🏫 Professora":
                     st.info(f"Irmã {instr_sel}, sem agenda para este horário.")
             
 # ==========================================
-# MÓDULO ANÁLISE DE IA (ADAPTADO)
+# MÓDULO ANÁLISE DE DADOS (PEDAGÓGICO)
 # ==========================================
 elif perfil == "📊 Analítico IA":
-    st.title("📊 Painel Pedagógico de Performance")
-    st.caption("Uso exclusivo pedagógico / Coordenação")
-
+    st.title("📊 Painel de Performance Pedagógica")
+    
+    # --- DADOS ---
     historico_geral = db_get_historico()
-    calendario_db = db_get_calendario()
-    df = pd.DataFrame(historico_geral)
-
-    if df.empty:
-        st.info("ℹ️ O banco de dados está vazio.")
+    df_geral = pd.DataFrame(historico_geral)
+    
+    if df_geral.empty:
+        st.info("ℹ️ Banco de dados vazio. Realize registros no módulo Professora.")
         st.stop()
 
-        # Seleção da aluna
-        aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
+    # --- FILTROS DE CONSULTA ---
+    c1, c2 = st.columns(2)
+    aluna_sel = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA)
+    periodo_sel = c2.selectbox("Período:", ["Diário", "Mensal", "Bimestral", "Semestral", "Anual"])
 
-        if st.button("❄️ Congelar análise"):
-            if not aluna:
-                st.error("⚠️ Selecione uma aluna antes de salvar.")
-            else:
-                user_id = st.session_state.get("user_id", None)
-                if not user_id:
-                    st.error("⚠️ Usuário não autenticado. Não é possível salvar.")
-                else:
-                    periodo_tipo = "diaria"
-                    periodo_id = datetime.now().strftime("%Y-%m-%d")
-                    conteudo = "Análise congelada de teste."  # Substitua pelo conteúdo real
+    # Conversão de datas para filtro
+    df_geral['dt_obj'] = pd.to_datetime(df_geral['Data'], format='%d/%m/%Y', errors='coerce')
+    
+    # Filtragem dos dados da aluna
+    df_aluna = df_geral[df_geral['Aluna'] == aluna_sel]
+    
+    # Cálculo de faltas
+    faltas = len(df_aluna[df_aluna['Status'] == 'Ausente'])
+    st.metric("Total de Faltas (Período)", faltas)
+
+    # --- CONSULTA DE QUEM DEU AULA ---
+    st.subheader("📅 Informações da Escala")
+    data_consulta = st.date_input("Consultar escala em:")
+    data_str = data_consulta.strftime("%d/%m/%Y")
+    
+    if data_str in calendario_db:
+        # Busca no calendário
+        escala_dia = calendario_db[data_str]
+        info_escala = next((item for item in escala_dia if item.get('Aluna') == aluna_sel), None)
         
-                    # AQUI PASSAMOS alu_sel COMO ARGUMENTO
-                    salvar_analise_congelada(
-                        aluna=alu_sel, 
-                        periodo_tipo=periodo_tipo, 
-                        periodo_id=periodo_id, 
-                        conteudo=conteudo, 
-                        user_id=user_id
-                    )
+        if info_escala:
+            st.success(f"✅ Escala encontrada para {data_str}")
+            for h in HORARIOS:
+                if h in info_escala:
+                    st.write(f"**{h}:** {info_escala[h]}")
+        else:
+            st.warning("⚠️ Sem aulas marcadas para esta aluna nesta data.")
+    else:
+        st.info("ℹ️ Rodízio não gerado ou sem informações para esta data.")
 
+    st.divider()
+
+    # --- RELATÓRIO TÉCNICO (O formato que você pediu) ---
+    st.subheader("📋 Relatório Pedagógico Detalhado")
+    
+    # Filtra por data (apenas a última ou do período selecionado)
+    # Aqui agrupamos por Categoria/Tipo de aula
+    tipos_aula = ["Prática", "Teoria", "Solfejo"]
+    
+    for t in tipos_aula:
+        # Busca o último registro dessa categoria para esta aluna
+        registro = df_aluna[df_aluna['Tipo'] == f"Aula_{t}"].sort_values('dt_obj', ascending=False)
+        
+        if not registro.empty:
+            r = registro.iloc[0]
+            with st.expander(f"📖 {t} - Última Aula: {r['Data']}", expanded=True):
+                st.write(f"**Instrutora:** {r.get('Professor', 'Não informado')}")
+                st.write(f"**Lição/Volume:** {r.get('Licao_Detalhe', '---')}")
+                st.write(f"**Dificuldades:** {', '.join(r.get('Dificuldades', []))}")
+                st.write(f"**Observações:** {r.get('Observacao', '---')}")
+                st.write(f"**Lição de casa:** {r.get('Metas', '---')}")
+        else:
+            st.write(f"🚫 Sem registros de {t} encontrados.")
+
+    # --- GRÁFICOS DE EVOLUÇÃO ---
+    st.divider()
+    st.subheader("📈 Gráficos de Evolução")
+    
+    if len(df_aluna) > 1:
+        # Gráfico de Frequência de Dificuldades (Simples)
+        # Explodir a lista de dificuldades se houver múltiplas
+        df_explodido = df_aluna.explode('Dificuldades')
+        contagem = df_explodido['Dificuldades'].value_counts().reset_index()
+        
+        fig = px.bar(contagem, x='count', y='Dificuldades', orientation='h', title="Dificuldades mais frequentes")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.write("Dados insuficientes para gerar gráficos de evolução.")
 
 
     # --- FILTROS DE CABEÇALHO ---
@@ -973,6 +1021,7 @@ with st.sidebar.expander("ℹ️ Limites da IA"):
     st.write("• **Limite:** 15 análises por minuto.")
     st.write("• **Custo:** R$ 0,00 (Plano Free).")
     st.caption("Se aparecer erro 429, aguarde 60 segundos.")
+
 
 
 
