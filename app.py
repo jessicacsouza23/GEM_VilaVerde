@@ -775,16 +775,26 @@ if perfil == "📊 Analítico IA":
 
         # --- 1. RESUMO DE FALTAS E FREQUÊNCIA ---
         st.subheader("📌 Indicadores de Frequência")
-        faltas = len(df_aluna[(df_aluna['Tipo'] == 'Chamada') & (df_aluna['Status'] == 'Ausente')])
-        presencas = len(df_aluna[(df_aluna['Tipo'] == 'Chamada') & (df_aluna['Status'] == 'Presente')])
-        justificadas = len(df_aluna[(df_aluna['Tipo'] == 'Chamada') & (df_aluna['Status'] == 'Justificada')])
+        
+        # Filtros de segurança para evitar NameError
+        try:
+            # Filtra apenas registros do tipo 'Chamada'
+            df_chamada = df_aluna[df_aluna['Tipo'] == 'Chamada']
+            
+            faltas = len(df_chamada[df_chamada['Status'] == 'Ausente'])
+            presencas = len(df_chamada[df_chamada['Status'] == 'Presente'])
+            # Se a coluna 'Status' não tiver 'Justificada', ele apenas contará 0
+            justificativas = len(df_chamada[df_chamada['Status'].str.contains('Justificada', na=False)])
+        except Exception:
+            faltas = 0
+            presencas = 0
+            justificativas = 0
 
         m1, m2, m3 = st.columns(3)
+        # Corrigindo a exibição das métricas
         m1.metric("Total de Faltas", f"{faltas}", delta="Crítico" if faltas > 3 else None, delta_color="inverse")
         m2.metric("Presenças", presencas)
         m3.metric("Justificativas", justificativas)
-
-        st.divider()
 
         # --- 2. RELATÓRIO DETALHADO POR DATA (ESTILO EXEMPLO ENVIADO) ---
         st.subheader(f"📝 Diário Pedagógico Detalhado: {aluna_sel}")
@@ -890,6 +900,7 @@ elif perfil == "🏠 Secretaria":
     st.write("Módulo de Secretaria - Use as abas acima para Chamada e Lições.")
 elif perfil == "👩‍🏫 Professora":
     st.write("Módulo de Professora - Registre o desempenho das alunas aqui.")
+
 
 
 
