@@ -11,6 +11,7 @@ from fpdf import FPDF
 import io
 import streamlit as st
 import unicodedata
+import json
 
 def limpar_texto(txt):
     """Remove acentos, espaços extras e coloca em maiúsculo para comparação"""
@@ -142,28 +143,38 @@ def db_get_historico():
 
 def db_get_calendario():
     try:
+        # Busca tudo da tabela calendario
         response = supabase.table("calendario").select("*").execute()
         
         cal_dict = {}
         if response.data:
             for item in response.data:
-                # No seu banco, a data está na coluna 'id'
+                # 1. Pega a data (ID)
                 data_id = str(item.get("id", "")).strip()
-                # A escala é a lista de dicionários com as aulas
-                lista_escala = item.get("escala", [])
+                
+                # 2. Pega a escala e garante que o Python entenda como LISTA
+                escala_raw = item.get("escala", [])
+                
+                # Se a escala veio como texto (string), a gente converte para lista
+                if isinstance(escala_raw, str):
+                    try:
+                        escala_dados = json.loads(escala_raw)
+                    except:
+                        escala_dados = []
+                else:
+                    escala_dados = escala_raw
                 
                 if data_id:
-                    # Garante que datas como 7/3/2026 virem 07/03/2026
+                    # Padroniza a data para 07/03/2026
                     try:
-                        partes = data_id.split("/")
-                        data_limpa = f"{int(partes[0]):02d}/{int(partes[1]):02d}/{partes[2]}"
+                        p = data_id.split("/")
+                        data_limpa = f"{int(p[0]):02d}/{int(p[1]):02d}/{p[2]}"
+                        cal_dict[data_limpa] = escala_dados
                     except:
-                        data_limpa = data_id
-                    
-                    cal_dict[data_limpa] = lista_escala
+                        cal_dict[data_id] = escala_dados
         return cal_dict
     except Exception as e:
-        st.error(f"Erro ao processar rodízio: {e}")
+        st.error(f"Erro ao carregar banco: {e}")
         return {}
         
 def db_save_historico(dados):
@@ -950,6 +961,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
