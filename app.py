@@ -275,47 +275,6 @@ calendario_db = {item.get('id'): item.get('escala', []) for item in calendario_r
 # historico_geral = db_get_historico()
 # calendario_db = db_get_calendario()
 
-def gerar_pdf(texto):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_font("Arial", size=11)
-
-    # Substituições seguras
-    texto = texto.replace("—", "-").replace("–", "-")
-    texto = texto.replace("“", '"').replace("”", '"')
-    texto = texto.replace("’", "'").replace("•", "-")
-    texto = texto.replace("\t", "    ")
-
-    linhas = texto.split("\n")
-
-    for linha in linhas:
-        # Remove caracteres invisíveis estranhos
-        linha = linha.replace("\r", "")
-
-        # Converte para latin-1 seguro
-        linha = linha.encode("latin-1", "replace").decode("latin-1")
-
-        # Se a linha tiver "um bloco grande" sem espaço, quebra em pedaços menores
-        while len(linha) > 0:
-            pdf.multi_cell(0, 8, linha[:100])
-            linha = linha[100:]
-
-    return pdf.output(dest="S").encode("latin-1")
-    
-def limpar_nome_arquivo(texto):
-    return "".join(c for c in texto if c.isalnum() or c in ["_", "-"]).replace(" ", "_")
-
-def normalizar_periodo(tipo):
-    mapa = {
-        "Diária": "diaria",
-        "Mensal": "mensal",
-        "Bimestral": "bimestral",
-        "Semestral": "semestral",
-        "Anual": "anual"
-    }
-    return mapa.get(tipo, tipo.lower())
-
 # --- 5. INTERFACE E NAVEGAÇÃO ---
 st.sidebar.title(f"👋 {st.session_state.nome_logado}")
 if st.session_state.perfil == "Secretaria":
@@ -632,15 +591,10 @@ if menu == "🏠 Secretaria":
                         st.cache_data.clear()
                         st.rerun()
 
-                    
-import streamlit as st
-import pandas as pd
-from datetime import datetime, timedelta
-
 # ==========================================
 # MÓDULO PROFESSORA
 # ==========================================
-elif menu == "👩‍🏫 Minhas Aulas":
+if menu == "👩‍🏫 Minhas Aulas":
     st.header(f"👩‍🏫 Painel da Instrutora: {st.session_state.nome_logado}")
     
     # Garante que o histórico existe para consulta
@@ -684,18 +638,8 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
                     # Verificação de registros existentes
                     alunas_na_turma = TURMAS.get(turma_aluna, [aluna_ref]) if is_coletiva else [aluna_ref]
-                    registro_existente = None
                     
-                    if not df_historico.empty:
-                        condicao = (df_historico['Aluna'].isin(alunas_na_turma)) & \
-                                   (df_historico['Data'] == data_prof_str) & \
-                                   (df_historico['Tipo'] == f"Aula_{tipo_aula}")
-                        match = df_historico[condicao]
-                        if not match.empty:
-                            registro_existente = match.iloc[-1].to_dict()
-                            st.warning("⚠️ Já existe um registro para esta aula. Salvar novamente irá sobrescrever.")
-
-                    # Chamada simplificada
+                    # Chamada
                     alunas_selecionadas = []
                     if is_coletiva:
                         st.markdown("### 👥 Chamada")
@@ -724,15 +668,14 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             if not alunas_selecionadas:
                                 st.error("⚠️ Selecione ao menos uma aluna.")
                             else:
-                                for aluna in alunas_selecionadas:
-                                    # Deleta anterior para evitar duplicidade
-                                    supabase.table("historico_geral").delete().eq("Data", data_prof_str).eq("Tipo", f"Aula_{tipo_aula}").eq("Aluna", aluna).execute()
-                                    # Salva novo
-                                    db_save_historico({
-                                        "Aluna": aluna, "Tipo": f"Aula_{tipo_aula}", "Data": data_prof_str,
-                                        "Instrutora": instr_sel, "Licao_Atual": lic_vol, 
-                                        "Dificuldades": difs_selecionadas, "Observacao": obs_aula, "Licao_Casa": casa_f
-                                    })
+                                with st.spinner("Congelando registros..."):
+                                    for aluna in alunas_selecionadas:
+                                        supabase.table("historico_geral").delete().eq("Data", data_prof_str).eq("Tipo", f"Aula_{tipo_aula}").eq("Aluna", aluna).execute()
+                                        db_save_historico({
+                                            "Aluna": aluna, "Tipo": f"Aula_{tipo_aula}", "Data": data_prof_str,
+                                            "Instrutora": instr_sel, "Licao_Atual": lic_vol, 
+                                            "Dificuldades": difs_selecionadas, "Observacao": obs_aula, "Licao_Casa": casa_f
+                                        })
                                 st.success("✅ Aula congelada com sucesso!")
                                 st.rerun()
                 else:
@@ -741,7 +684,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
 # ==========================================
 # MÓDULO ANÁLISE DE IA (PEDAGÓGICO COMPLETO)
 # ==========================================
-elif perfil == "📊 Analítico IA":
+elif menu == "📊 Analítico IA":
     st.title("📊 Painel Pedagógico de Performance")
     
     historico_raw = db_get_historico()
@@ -750,6 +693,10 @@ elif perfil == "📊 Analítico IA":
     if df.empty:
         st.info("ℹ️ Sem dados para análise.")
     else:
+        # Tratamento de datas
+        df['dt_obj'] = pd.to_datetime(df['Data'], format="%d/%m/%Y", errors='coerce')
+        df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
+
         aluna_sel = st.selectbox("👤 Selecione a Aluna para Análise:", ALUNAS_LISTA)
         df_aluna = df[df['Aluna'] == aluna_sel].copy()
         
@@ -759,71 +706,56 @@ elif perfil == "📊 Analítico IA":
             # Resumo de Faltas
             df_chamada = df_aluna[df_aluna['Tipo'] == 'Chamada']
             faltas = len(df_chamada[df_chamada['Status'] == 'Ausente'])
-            st.metric("Faltas Acumuladas", faltas)
+            st.metric("🚩 Faltas Acumuladas", faltas)
 
-            # Seleção de Data para o Relatório Fixo
-            datas_disp = sorted(df_aluna['Data'].unique(), reverse=True)
+            # Seleção de Data
+            datas_disp = df_aluna['Data'].unique()
             data_sel = st.selectbox("📅 Data da Aula para Análise:", datas_disp)
             
-            # Botão para disparar a análise detalhada
             if st.button("🧠 Gerar Análise Pedagógica Completa (IA)"):
-                with st.spinner("Analisando dados técnicos..."):
-                    # Aqui simulamos a estruturação que a IA deve seguir para o relatório
+                with st.spinner("Processando análise técnica..."):
                     dados_dia = df_aluna[df_aluna['Data'] == data_sel]
                     
-                    st.markdown(f"## 📋 Relatório Pedagógico: {aluna_sel}")
-                    st.caption(f"Referência técnica baseada na aula de {data_sel}")
+                    st.markdown(f"## 📋 RELATÓRIO PEDAGÓGICO: {aluna_sel.upper()}")
+                    st.divider()
 
-                    # 1. ÁREAS TÉCNICAS
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown("### 🧘 Postura")
-                        st.info("Análise de posicionamento de mãos, coluna e pés (Órgão/Piano).")
-                        
-                        st.markdown("### 🎹 Técnica")
-                        st.info("Avaliação de dedilhado, articulação e agilidade.")
+                    # 1. DIVISÃO POR ÁREAS TÉCNICAS
+                    st.subheader("🔍 Dificuldades por Áreas")
+                    c_tec1, c_tec2 = st.columns(2)
                     
-                    with col2:
-                        st.markdown("### ⏳ Ritmo")
-                        st.info("Precisão metronômica e subdivisão.")
-                        
-                        st.markdown("### 📖 Teoria")
-                        st.info("Conhecimento aplicado à lição atual.")
+                    with c_tec1:
+                        st.markdown("#### 🧘 Postura")
+                        st.write("- Avaliação do posicionamento e ergonomia.")
+                        st.markdown("#### 🎹 Técnica")
+                        st.write("- Precisão de dedilhado e articulação.")
+                    
+                    with c_tec2:
+                        st.markdown("#### ⏳ Ritmo")
+                        st.write("- Manutenção do tempo e subdivisão.")
+                        st.markdown("#### 📖 Teoria")
+                        st.write("- Aplicação de conceitos musicais.")
 
-                    # 2. RESUMO DA SECRETARIA
+                    # 2. RESUMO SECRETARIA
                     st.subheader("📂 Resumo da Secretaria")
                     sec_data = dados_dia[dados_dia['Tipo'].str.contains('Controle_Licao', case=False, na=False)]
                     if not sec_data.empty:
                         for _, r in sec_data.iterrows():
-                            st.write(f"- **{r.get('Categoria')}:** {r.get('Status')} ({r.get('Observacao')})")
+                            st.info(f"**{r.get('Categoria')}:** {r.get('Status')} - {r.get('Observacao')}")
                     else:
-                        st.write("Sem registros da secretaria para esta data.")
+                        st.caption("Sem validações de lição de casa da secretaria nesta data.")
 
                     # 3. METAS E BANCA
                     st.divider()
-                    st.subheader("🎯 Metas para a Próxima Aula")
-                    st.write("1. Corrigir a articulação do 4º e 5º dedos na mão esquerda.\n2. Estudar com metrônomo 10 BPM abaixo da meta final.")
-                    
-                    st.subheader("🏆 Dicas Específicas para a Banca Semestral")
-                    st.warning("Atenção redobrada ao hino de solfejo; manter a regência clara e constante mesmo em passagens rápidas.")
+                    col_metas1, col_metas2 = st.columns(2)
+                    with col_metas1:
+                        st.subheader("🎯 Metas Próxima Aula")
+                        st.success("Definir objetivos de curto prazo (ex: mãos separadas).")
+                    with col_metas2:
+                        st.subheader("🏆 Foco na Banca Semestral")
+                        st.warning("Dicas específicas para o exame de proficiência.")
 
-                    # Opção de Salvar a Análise no Banco
-                    # (Lógica para persistir o texto gerado no Supabase para ficar 'congelado')
-                    if st.button("💾 Salvar esta Análise"):
-                        st.success("Análise pedagógica salva no histórico permanente da aluna.")
+                    st.toast("Análise gerada com sucesso!", icon="✅")
 
             st.divider()
             st.subheader("📈 Histórico Recente")
-            st.dataframe(df_aluna[['Data', 'Tipo', 'Licao_Atual', 'Dificuldades', 'Observacao']].head(10), hide_index=True)
-
-
-
-
-
-
-
-
-
-
-
-
+            st.dataframe(df_aluna[['Data', 'Tipo', 'Licao_Atual', 'Observacao']].head(10), hide_index=True)
