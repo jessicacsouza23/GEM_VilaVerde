@@ -134,36 +134,39 @@ def db_get_historico():
 
 def db_get_calendario():
     try:
-        # Busca na tabela correta informada pelo erro anterior
         response = supabase.table("calendario").select("*").execute()
         
         cal_dict = {}
         if response.data:
             for item in response.data:
-                # 1. Pega a data e limpa espaços
-                raw_date = str(item.get("Data", "")).strip()
+                # Tenta buscar por 'Data', 'data' ou 'DATA' automaticamente
+                raw_date = item.get("Data") or item.get("data") or item.get("DATA")
                 
-                # 2. Tenta converter qualquer formato (7/3/26, 07/03/2026, 2026-03-07) para DD/MM/AAAA
-                try:
-                    if "/" in raw_date:
-                        d, m, y = raw_date.split("/")
-                        # Garante 2 dígitos no dia/mês e 4 no ano
-                        ano = y if len(y) == 4 else f"20{y}"
-                        data_limpa = f"{int(d):02d}/{int(m):02d}/{ano}"
-                    elif "-" in raw_date: # Caso o banco esteja em formato ISO (AAAA-MM-DD)
-                        y, m, d = raw_date.split("-")
-                        data_limpa = f"{int(d):02d}/{int(m):02d}/{y}"
-                    else:
+                if raw_date:
+                    raw_date = str(raw_date).strip()
+                    # Padronização para DD/MM/AAAA
+                    try:
+                        if "/" in raw_date:
+                            partes = raw_date.split("/")
+                            data_limpa = f"{int(partes[0]):02d}/{int(partes[1]):02d}/{partes[2]}"
+                        elif "-" in raw_date:
+                            y, m, d = raw_date.split("-")
+                            data_limpa = f"{int(d):02d}/{int(m):02d}/{y}"
+                        else:
+                            data_limpa = raw_date
+                    except:
                         data_limpa = raw_date
-                except:
-                    data_limpa = raw_date
 
-                if data_limpa not in cal_dict:
-                    cal_dict[data_limpa] = []
-                cal_dict[data_limpa].append(item)
+                    if data_limpa not in cal_dict:
+                        cal_dict[data_limpa] = []
+                    cal_dict[data_limpa].append(item)
+                else:
+                    # Se caiu aqui, a coluna tem outro nome no banco
+                    st.warning("⚠️ Coluna de data não encontrada. Verifique o nome no Supabase.")
+        
         return cal_dict
     except Exception as e:
-        st.error(f"Erro técnico: {e}")
+        st.error(f"Erro na tabela: {e}")
         return {}
         
 def db_save_historico(dados):
@@ -838,6 +841,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
