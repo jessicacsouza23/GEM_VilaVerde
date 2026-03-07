@@ -628,6 +628,9 @@ if menu == "👩‍🏫 Minhas Aulas":
     # 2. Definição da Data (Sempre sugere o próximo sábado)
     hoje_dt = datetime.now()
     sab_p = hoje_dt + timedelta(days=(5 - hoje_dt.weekday()) % 7)
+    # O Streamlit retorna um objeto date (AAAA-MM-DD)
+    data_escolhida = st.date_input("Data da Aula:", sab_p)
+    # CONVERSÃO CRUCIAL: Transforma para o formato do seu banco (DD/MM/AAAA)
     data_prof = st.date_input("Data da Aula:", sab_p)
     data_prof_str = data_prof.strftime("%d/%m/%Y")
     
@@ -884,6 +887,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
