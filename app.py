@@ -746,52 +746,6 @@ elif perfil == "👩‍🏫 Professora":
                 else:
                     st.info(f"Irmã {instr_sel}, sem agenda para este horário.")
             
-Entendido! Vamos fazer uma faxina na interface. Removi os filtros da barra lateral e consolidei tudo no corpo principal da página do Analítico IA.
-
-Agora, assim que você clica em "Analítico IA", a primeira coisa que aparece é a seleção da Aluna e o período, seguidos imediatamente pelos indicadores de faltas e o relatório detalhado que você exemplificou.
-
-Aqui está o código completo e organizado:
-
-Python
-import streamlit as st
-import pandas as pd
-from supabase import create_client, Client
-import plotly.express as px
-from datetime import datetime, timedelta
-
-# --- 1. CONFIGURAÇÕES INICIAIS ---
-st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
-
-# --- 2. CONEXÃO BANCO ---
-try:
-    supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-except Exception as e:
-    st.error(f"Erro de Conexão: {e}")
-    st.stop()
-
-# --- 3. DADOS MESTRE ---
-ALUNAS_LISTA = sorted([
-    "Mariana - Vila Araguaia", "Annie - Vila Verde", "Ana Marcela S. - Vila Verde", 
-    "Caroline C. - Vila Ré", "Elisa F. - Vila Verde", "Emilly O. - Vila Curuçá Velha", 
-    "Gabrielly V. - Vila Verde", "Heloísa R. - Vila Verde", "Ingrid M. - Pq do Carmo II", 
-    "Júlia Cristina - União de Vila Nova", "Júlia S. - Vila Verde", "Julya O. - Vila Curuçá Velha", 
-    "Mellina S. - Jardim Lígia", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", 
-    "Rebeca R. - Vila Ré", "Rebecca A. - Vila Verde", "Rebeka S. - Jardim Lígia", 
-    "Sarah S. - Vila Verde", "Vitória A. - Vila Verde", "Vitória Bella T. - Vila Verde"
-])
-
-def db_get_historico():
-    res = supabase.table("historico_geral").select("*").execute()
-    return res.data
-
-def db_get_calendario():
-    res = supabase.table("calendario").select("*").execute()
-    return {item['id']: item['escala'] for item in res.data}
-
-# --- INTERFACE PRINCIPAL ---
-st.title("🎼 GEM Vila Verde - Gestão 2026")
-perfil = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "👩‍🏫 Professora", "📊 Analítico IA"])
-
 # ==========================================
 # MÓDULO ANALÍTICO (TUDO NA TELA PRINCIPAL)
 # ==========================================
@@ -936,6 +890,7 @@ elif perfil == "🏠 Secretaria":
     st.write("Módulo de Secretaria - Use as abas acima para Chamada e Lições.")
 elif perfil == "👩‍🏫 Professora":
     st.write("Módulo de Professora - Registre o desempenho das alunas aqui.")
+
 
 
 
