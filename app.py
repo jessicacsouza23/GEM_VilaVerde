@@ -896,29 +896,50 @@ elif menu == "📊 Analítico IA":
                 st.markdown("**Dicas para a Banca Semestral:**")
                 st.warning("Atenção especial à articulação técnica e ao uso do pedal de expressão.")
 
-            # --- RODÍZIO ---
+            # --- RODÍZIO (AULAS AGENDADAS) ---
             st.divider()
-            st.markdown("### 📅 Próximo Rodízio")
-            hoje = datetime.now()
-            sab_futuro = (hoje + timedelta(days=(5 - hoje.weekday()) % 7)).strftime("%d/%m/%Y")
+            st.markdown("### 📅 Próximas Aulas Agendadas")
             
-            if sab_futuro in calendario_db:
-                escala = pd.DataFrame(calendario_db[sab_futuro])
-                minha_escala = escala[escala['Aluna'] == aluna_sel]
-                if not minha_escala.empty:
-                    st.write(f"Sua próxima escala confirmada em **{sab_futuro}**:")
-                    # 1. Definimos a lista de colunas exatamente como queremos (separadas por vírgulas)
-                    colunas_alvo = ['Aluna', 'Turma', '08h45 (Igreja)', '09h35 (H2)', '10h10 (H3)', '10h45 (H4)']
+            # 1. Pegamos a data de hoje para filtrar apenas o que é futuro
+            hoje_dt = datetime.now().date()
+            
+            # 2. Criamos uma lista para consolidar as próximas aulas
+            proximas_aulas = []
+            
+            # 3. Varremos o dicionário do calendário
+            # Ordenamos as datas para aparecerem na sequência correta
+            for data_str in sorted(calendario_db.keys()):
+                try:
+                    # Converte a chave (string) em data para comparar
+                    data_escala_dt = datetime.strptime(data_str, "%d/%m/%Y").date()
                     
-                    # 2. Filtramos apenas as colunas que REALMENTE existem no arquivo carregado
-                    # Isso evita o erro caso falte um espaço ou mude o nome da coluna no Excel/Banco
-                    colunas_validas = [c for c in colunas_alvo if c in minha_escala.columns]
-                    
-                    # 3. Exibimos o dataframe com segurança
-                    st.dataframe(minha_escala[colunas_validas], hide_index=True, use_container_width=True)
-                else:
-                    st.caption("Aluna não escalada para o próximo sábado.")
+                    if data_escala_dt >= hoje_dt:
+                        escala_dia = pd.DataFrame(calendario_db[data_str])
+                        # Filtra a aluna específica neste dia
+                        minha_linha = escala_dia[escala_dia['Aluna'] == aluna_sel].copy()
+                        
+                        if not minha_linha.empty:
+                            # Adicionamos uma coluna de data para o relatório
+                            minha_linha.insert(0, "Data da Aula", data_str)
+                            proximas_aulas.append(minha_linha)
+                except:
+                    continue
 
+            if proximas_aulas:
+                # Une todas as linhas encontradas em um único DataFrame
+                df_proximas = pd.concat(proximas_aulas)
+                
+                # Definimos as colunas alvo (ajustadas para bater com seus nomes exatos)
+                colunas_alvo = ['Data da Aula', 'Turma', '08h45 (Igreja)', '09h35(H2)', '10h10(H3)', '10h45(H4)']
+                
+                # Filtra apenas as colunas que existem no banco (evita erro de digitação/espaços)
+                colunas_validas = [c for c in colunas_alvo if c in df_proximas.columns]
+                
+                st.write(f"Confira abaixo o cronograma de aulas para **{aluna_sel}**:")
+                st.dataframe(df_proximas[colunas_validas], hide_index=True, use_container_width=True)
+            else:
+                st.info("Nenhum rodízio futuro encontrado para esta aluna no sistema.")
+                
         st.divider()
         if st.checkbox("Ver Gráficos de Evolução"):
             # Exemplo de gráfico de presença
@@ -926,66 +947,4 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
