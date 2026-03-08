@@ -419,14 +419,49 @@ if menu == "🏠 Secretaria":
 
                 else:
                     st.success(f"🗓️ Rodízio Ativo: {data_sel_str}")
-                    df_raw = pd.DataFrame(calendario_db[data_sel_str])
-                    colunas_finais = ["Aluna", "Turma"] + [h for h in HORARIOS if h in df_raw.columns]
-                    st.dataframe(df_raw[colunas_finais], use_container_width=True, hide_index=True)
-                
-                if st.button("🗑️ Deletar Rodízio"):
-                    supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-                    st.cache_data.clear()
-                    st.rerun()      
+                    
+                    # 1. Carrega os dados atuais
+                    df_atual = pd.DataFrame(calendario_db[data_sel_str])
+                    
+                    # Ordena as colunas para garantir a visualização correta
+                    colunas_finais = ["Aluna", "Turma"] + [h for h in HORARIOS if h in df_atual.columns]
+                    df_atual = df_atual[colunas_finais]
+
+                    st.markdown("💡 **Dica:** Clique duas vezes em qualquer célula para trocar a Professora ou Sala.")
+                    
+                    # 2. Abre o Editor de Dados (planilha interativa)
+                    # O 'key' ajuda o Streamlit a manter o estado da edição
+                    df_editado = st.data_editor(
+                        df_atual, 
+                        use_container_width=True, 
+                        hide_index=True,
+                        key=f"editor_{data_sel_str}" 
+                    )
+
+                    col_edit1, col_edit2 = st.columns(2)
+                    
+                    # 3. Botão para Salvar o que foi editado
+                    with col_edit1:
+                        if st.button("💾 SALVAR ALTERAÇÕES"):
+                            # Transformamos o dataframe editado de volta em lista de dicionários
+                            lista_editada = df_editado.to_dict(orient="records")
+                            
+                            # Faz o Upsert no Supabase
+                            supabase.table("calendario").upsert({
+                                "id": data_sel_str, 
+                                "escala": lista_editada
+                            }).execute()
+                            
+                            st.toast("Alterações salvas com sucesso!", icon="✅")
+                            st.cache_data.clear()
+                            st.rerun()
+
+                    # 4. Botão para deletar
+                    with col_edit2:
+                        if st.button("🗑️ DELETAR RODÍZIO", use_container_width=True):
+                            supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                            st.cache_data.clear()
+                            st.rerun()      
                     
   # --- ABA 2: CHAMADA GERAL ---
     with tab_cham:
@@ -947,4 +982,5 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
