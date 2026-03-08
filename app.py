@@ -707,57 +707,61 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 st.cache_data.clear()
                 st.rerun()
 
-    # --- 4. BUSCA NA ESCALA (VERSÃO CORRIGIDA) ---
+    # --- 4. BUSCA NA ESCALA (COMPATÍVEL COM RODÍZIO) ---
     if instr_sel != "Selecione...":
-        calendario_db = db_get_calendario()
+        calendario_db = db_get_calendario() # Puxa os dados do Supabase
         aulas_agrupadas = {}
-        # Normalizamos o nome da instrutora para a busca
-        nome_busca = limpar_texto(instr_sel).strip().lower()
+        # Normalização rigorosa do nome para evitar erros de digitação na escala
+        nome_instrutora_busca = limpar_texto(instr_sel).lower().strip()
         esta_na_escala = False
 
         if data_prof_str in calendario_db:
             escala_dia = calendario_db[data_prof_str]
             
-            # st.write(escala_dia) # <-- DESCOMENTE ESTA LINHA PARA VER SE AS 3 AULAS APARECEM NO BANCO
-
             for registro in escala_dia:
-                # Cada registro é uma linha da planilha (uma aluna/turma)
-                for chave_h, conteudo in registro.items():
-                    # Ignora colunas que não são horários
-                    if chave_h in ["Aluna", "Turma", "Data"]:
+                # 'registro' é uma linha da aluna/turma
+                aluna_nome = registro.get("Aluna", "Sem Nome")
+                turma_nome = registro.get("Turma", "Individual")
+                
+                # Percorremos TODAS as colunas (Horários) daquela linha
+                for coluna_horario, conteudo_celula in registro.items():
+                    # Pulamos colunas que sabemos que não são de aula
+                    if coluna_horario in ["Aluna", "Turma", "Data", "id", "created_at"]:
                         continue
                     
-                    conteudo_str = str(conteudo).lower()
-                    
-                    # Busca o nome da instrutora dentro da célula (ex: "SALA 8 - ANA")
-                    if nome_busca in limpar_texto(conteudo_str):
-                        esta_na_escala = True
-                        aluna_nome = registro.get("Aluna", "Sem Nome")
-                        turma_nome = registro.get("Turma", "Individual")
+                    if conteudo_celula:
+                        conteudo_limpo = limpar_texto(str(conteudo_celula)).lower()
                         
-                        # Extrai o local (ex: SALA 8)
-                        local_sala = "GERAL"
-                        if "-" in str(conteudo):
-                            local_sala = str(conteudo).split("-")[-1].strip().upper()
-                        elif "SALA" in str(conteudo).upper():
-                            local_sala = str(conteudo).upper().strip()
-
-                        # Identifica se é Turma ou Individual para o Rótulo
-                        eh_sala_coletiva = any(s in local_sala for s in ["SALA 8", "SALA 9", "TEORIA", "SOLFEJO"])
-                        label_exibicao = f"{chave_h} - {local_sala} ({turma_nome if eh_sala_coletiva else aluna_nome})"
-                        
-                        # Agrupa alunas que estão no mesmo horário e mesma sala (Turmas)
-                        if label_exibicao not in aulas_agrupadas:
-                            aulas_agrupadas[label_exibicao] = {
-                                "horario": chave_h, 
-                                "local": local_sala, 
-                                "alunas": [],
-                                "tipo_id": local_sala # Usado para definir DIF_LISTA
-                            }
-                        
-                        if aluna_nome not in aulas_agrupadas[label_exibicao]["alunas"]:
-                            aulas_agrupadas[label_exibicao]["alunas"].append(aluna_nome)
+                        # Verifica se o seu nome está dentro desta célula de rodízio
+                        if nome_instrutora_busca in conteudo_limpo:
+                            esta_na_escala = True
                             
+                            # Extração inteligente do Local/Sala
+                            conteudo_raw = str(conteudo_celula).upper()
+                            if "-" in conteudo_raw:
+                                local_sala = conteudo_raw.split("-")[-1].strip()
+                            else:
+                                # Caso não tenha hífen, tenta pegar a primeira palavra (Ex: SALA 8)
+                                local_sala = " ".join(conteudo_raw.split()[:2]) if "SALA" in conteudo_raw else "GERAL"
+
+                            # Define se é Coletivo (Sala 8/9) ou Individual
+                            eh_coletivo = any(s in local_sala for s in ["SALA 8", "SALA 9", "TEORIA", "SOLFEJO"])
+                            
+                            # O 'ID' da aula agora é a combinação de Horário + Sala
+                            # Isso agrupa as meninas que estão na mesma sala no mesmo rodízio
+                            label_aula = f"{coluna_horario} - {local_sala} ({turma_nome if eh_coletivo else aluna_nome})"
+                            
+                            if label_aula not in aulas_agrupadas:
+                                aulas_agrupadas[label_aula] = {
+                                    "horario": coluna_horario,
+                                    "local": local_sala,
+                                    "alunas": [],
+                                    "tipo_aula": "Teoria" if "SALA 8" in local_sala else "Solfejo" if "SALA 9" in local_sala else "Prática"
+                                }
+                            
+                            if aluna_nome not in aulas_agrupadas[label_aula]["alunas"]:
+                                aulas_agrupadas[label_aula]["alunas"].append(aluna_nome)
+                                
         if not esta_na_escala:
             st.warning(f"Irmã {instr_sel}, você não está na escala para o dia {data_prof_str}.")
         else:
@@ -1029,6 +1033,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
