@@ -670,12 +670,12 @@ if menu == "🏠 Secretaria":
                         st.rerun()
 
 # ==========================================
-# MÓDULO PROFESSORA - V15 (SINCRONIZADO COM RODÍZIO)
+# MÓDULO PROFESSORA - V16 (CORREÇÃO H4 + VISUAL TURMA)
 # ==========================================
 elif menu == "👩‍🏫 Minhas Aulas":
     st.header("👩‍🏫 Controle de Desempenho")
     
-    # 1. Funções de Apoio e Métodos
+    # 1. Carregamento de Dados
     def db_get_metodos():
         try:
             res = supabase.table("config_metodos").select("*").execute()
@@ -692,129 +692,117 @@ elif menu == "👩‍🏫 Minhas Aulas":
     with c2:
         hoje_dt = datetime.now()
         sab_p = hoje_dt + timedelta(days=(5 - hoje_dt.weekday()) % 7)
-        data_prof = st.date_input("Data da Aula:", sab_p, key="dt_v15")
+        data_prof = st.date_input("Data da Aula:", sab_p, key="dt_v16")
         data_prof_str = data_prof.strftime("%d/%m/%Y")
 
-    # 3. Gestão de Novos Métodos (Prática)
-    with st.expander("📚 Cadastrar Novo Método de Prática"):
-        n_met = st.text_input("Nome do Método:")
-        if st.button("➕ Adicionar"):
-            if n_met:
-                supabase.table("config_metodos").insert({"nome": n_met, "categoria": "Prática"}).execute()
-                st.success("Método adicionado!")
-                st.rerun()
-
-    # 4. Busca na Escala (Lógica corrigida para encontrar HORARIOS[3] / h4)
+    # 3. Busca na Escala (Sincronizada com os 3 horários de rodízio)
     if instr_sel != "Selecione...":
         calendario_db = db_get_calendario()
         nome_busca = limpar_texto(instr_sel).lower().strip()
-        aulas_encontradas = []
+        aulas_disponiveis = {}
 
         if data_prof_str in calendario_db:
             escala_dia = calendario_db[data_prof_str]
             for registro in escala_dia:
-                # Varre exatamente os horários definidos na sua lista HORARIOS
                 for h_nome in HORARIOS:
-                    conteudo = registro.get(h_nome)
-                    if conteudo and nome_busca in limpar_texto(str(conteudo)).lower():
-                        aulas_encontradas.append({
-                            "horario": h_nome, 
-                            "dados": registro, 
-                            "texto_celula": str(conteudo)
-                        })
-
-        if not aulas_encontradas:
-            st.warning(f"Irmã {instr_sel}, nenhuma aula encontrada para {data_prof_str}.")
-        else:
-            # PASSO 1: SELEÇÃO DE HORÁRIO (Rádio Horizontal)
-            st.markdown("### 🕒 1. Selecione o Horário")
-            # Garante que os horários apareçam na ordem da lista HORARIOS
-            opcoes_h = [h for h in HORARIOS if h in [a['horario'] for a in aulas_encontradas]]
-            h_escolhido = st.radio("Seus horários:", opcoes_h, horizontal=True)
-
-            # Pega os dados da aula selecionada
-            atendimento = next((a for a in aulas_encontradas if a['horario'] == h_escolhido), None)
-
-            if atendimento:
-                info_celula = atendimento['texto_celula'].upper()
-                reg = atendimento['dados']
-                aluna_ref = reg.get('Aluna', 'Individual')
-                turma_ref = reg.get('Turma', 'Individual')
-
-                # Define Tipo de Aula (Sincronizado com Sala 8 e 9 do seu Rodízio)
-                tipo_aula = "Teoria" if "SALA 8" in info_celula else "Solfejo" if "SALA 9" in info_celula else "Prática"
-                dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
-
-                st.success(f"📍 {info_celula} | 👤 Ref: {aluna_ref} | 👥 Turma: {turma_ref}")
-
-                # PASSO 2: SELEÇÃO DE ALUNAS
-                # Se for sala 8 ou 9, busca a lista da turma, senão é individual
-                alunas_da_aula = TURMAS.get(turma_ref, [aluna_ref]) if ("SALA 8" in info_celula or "SALA 9" in info_celula) else [aluna_ref]
-                
-                st.markdown("### 👥 2. Selecione as Alunas")
-                alunas_finais = []
-                cols_al = st.columns(4)
-                for i, al in enumerate(alunas_da_aula):
-                    if cols_al[i % 4].checkbox(al, value=True, key=f"v15_{al}_{h_escolhido}"):
-                        alunas_finais.append(al)
-
-                # PASSO 3: FORMULÁRIO
-                if alunas_finais:
-                    with st.form("form_v15"):
-                        st.subheader(f"📝 Registro de {tipo_aula}")
+                    conteudo = str(registro.get(h_nome, ""))
+                    if conteudo and nome_busca in limpar_texto(conteudo).lower():
+                        # Identifica se é Turma ou Individual
+                        is_sala_coletiva = "SALA 8" in conteudo.upper() or "SALA 9" in conteudo.upper()
+                        turma_nome = registro.get("Turma", "Individual")
                         
-                        c_met1, c_met2 = st.columns(2)
-                        if tipo_aula == "Prática":
-                            met_opts = ["Selecione..."] + (df_met_db[df_met_db['categoria'] == "Prática"]['nome'].tolist() if not df_met_db.empty else [])
-                            metodo_atual = c_met1.selectbox("Método Prático:", met_opts)
-                            licao_atual = c_met2.text_input("Lição/Página:")
+                        # Criar o Label do Botão (Sem nome da menina se for turma)
+                        if is_sala_coletiva:
+                            label_botao = f"{h_nome} | {conteudo.split('|')[0].strip()} | {turma_nome}"
                         else:
-                            metodo_atual = c_met1.selectbox("Volume/Fase:", OPCOES_LICOES_NUM)
-                            licao_atual = ""
-
-                        st.markdown("**Dificuldades:**")
-                        cols_d = st.columns(2)
-                        difs_selecionadas = []
-                        for idx, d in enumerate(dif_lista):
-                            if cols_d[idx % 2].checkbox(d, key=f"dif15_{d}"):
-                                difs_selecionadas.append(d)
-
-                        obs_aula = st.text_area("Observações Técnicas:")
-
-                        st.divider()
-                        st.subheader("🏠 Lição para Casa")
+                            label_botao = f"{h_nome} | {conteudo.split('|')[0].strip()} | {registro.get('Aluna', 'Individual')}"
                         
-                        # --- CAMPOS EXATOS SOLICITADOS ---
-                        txt_casa = ""
-                        if tipo_aula == "Prática":
-                            cp1, cp2 = st.columns(2)
-                            t_apo = cp1.text_input("Apostila:")
-                            t_met = cp2.text_input("Métodos:")
-                            txt_casa = f"Apostila: {t_apo} | Métodos: {t_met}"
-                            
-                        elif tipo_aula == "Teoria":
-                            ct1, ct2 = st.columns(2)
-                            t_msa_p = ct1.text_input("MSA (Preto):")
-                            t_ext = ct2.text_input("Extra:")
-                            txt_casa = f"MSA Preto: {t_msa_p} | Extra: {t_ext}"
-                            
-                        elif tipo_aula == "Solfejo":
-                            cs1, cs2 = st.columns(2)
-                            t_msa_v = cs1.text_input("MSA (Verde):")
-                            t_ext_s = cs2.text_input("Extra:")
-                            txt_casa = f"MSA Verde: {t_msa_v} | Extra: {t_ext_s}"
+                        aulas_disponiveis[label_botao] = {
+                            "horario": h_nome,
+                            "registro": registro,
+                            "texto_celula": conteudo,
+                            "tipo": "Teoria" if "SALA 8" in conteudo.upper() else "Solfejo" if "SALA 9" in conteudo.upper() else "Prática"
+                        }
 
-                        if st.form_submit_button("💾 CONGELAR E SALVAR"):
-                            for aluna_f in alunas_finais:
-                                supabase.table("historico_geral").delete().eq("Data", data_prof_str).eq("Tipo", f"Aula_{tipo_aula}").eq("Aluna", aluna_f).execute()
-                                db_save_historico({
-                                    "Aluna": aluna_f, "Tipo": f"Aula_{tipo_aula}", "Data": data_prof_str,
-                                    "Instrutora": instr_sel, "Licao_Atual": f"{metodo_atual} {licao_atual}".strip(),
-                                    "Dificuldades": difs_selecionadas, "Observacao": obs_aula, "Licao_Casa": txt_casa
-                                })
-                            st.success("Salvo com sucesso!")
-                            st.rerun()
-                            
+        if not aulas_disponiveis:
+            st.warning(f"Irmã {instr_sel}, não encontrei suas aulas (verifique se o rodízio foi gerado).")
+        else:
+            # PASSO 1: SELEÇÃO DE AULA (Rádio Horizontal)
+            st.markdown("### 🕒 1. Selecione a Aula / Horário")
+            escolha = st.radio("Suas aulas hoje:", list(aulas_disponiveis.keys()), horizontal=True)
+
+            dados_aula = aulas_disponiveis[escolha]
+            tipo_aula = dados_aula["tipo"]
+            reg = dados_aula["registro"]
+            turma_ref = reg.get("Turma", "Individual")
+            aluna_ref = reg.get("Aluna", "Sem Nome")
+
+            # PASSO 2: CHAMADA (Checkboxes)
+            st.divider()
+            st.markdown(f"### 👥 2. Chamada ({tipo_aula})")
+            alunas_na_aula = TURMAS.get(turma_ref, [aluna_ref]) if tipo_aula != "Prática" else [aluna_ref]
+            
+            alunas_selecionadas = []
+            cols_al = st.columns(4)
+            for i, al in enumerate(alunas_na_aula):
+                if cols_al[i % 4].checkbox(al, value=True, key=f"v16_{al}_{escolha}"):
+                    alunas_selecionadas.append(al)
+
+            # PASSO 3: FORMULÁRIO TÉCNICO
+            if alunas_selecionadas:
+                with st.form("form_v16"):
+                    st.subheader(f"📝 Registro: {', '.join(alunas_selecionadas)}")
+                    
+                    c_m1, c_m2 = st.columns(2)
+                    if tipo_aula == "Prática":
+                        met_opts = ["Selecione..."] + (df_met_db[df_met_db['categoria'] == "Prática"]['nome'].tolist() if not df_met_db.empty else [])
+                        metodo_v = c_m1.selectbox("Método Prático:", met_opts)
+                        licao_v = c_m2.text_input("Lição/Página:")
+                    else:
+                        metodo_v = c_m1.selectbox("Volume/Fase:", OPCOES_LICOES_NUM)
+                        licao_v = ""
+
+                    st.markdown("**Dificuldades:**")
+                    dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
+                    cols_d = st.columns(2)
+                    difs_finais = []
+                    for idx, d in enumerate(dif_lista):
+                        if cols_d[idx % 2].checkbox(d, key=f"dif16_{d}"):
+                            difs_finais.append(d)
+
+                    obs_txt = st.text_area("Observações Técnicas:")
+
+                    st.divider()
+                    st.subheader("🏠 Lição para Casa")
+                    # --- CAMPOS EXATOS SOLICITADOS ---
+                    txt_casa = ""
+                    if tipo_aula == "Prática":
+                        cp1, cp2 = st.columns(2)
+                        t_apo = cp1.text_input("Apostila:")
+                        t_met = cp2.text_input("Métodos:")
+                        txt_casa = f"Apostila: {t_apo} | Métodos: {t_met}"
+                    elif tipo_aula == "Teoria":
+                        ct1, ct2 = st.columns(2)
+                        t_msa_p = ct1.text_input("MSA (Preto):")
+                        t_ext = ct2.text_input("Extra:")
+                        txt_casa = f"MSA Preto: {t_msa_p} | Extra: {t_ext}"
+                    elif tipo_aula == "Solfejo":
+                        cs1, cs2 = st.columns(2)
+                        t_msa_v = cs1.text_input("MSA (Verde):")
+                        t_ext_s = cs2.text_input("Extra:")
+                        txt_casa = f"MSA Verde: {t_msa_v} | Extra: {t_ext_s}"
+
+                    if st.form_submit_button("💾 SALVAR REGISTRO"):
+                        for al_f in alunas_selecionadas:
+                            supabase.table("historico_geral").delete().eq("Data", data_prof_str).eq("Tipo", f"Aula_{tipo_aula}").eq("Aluna", al_f).execute()
+                            db_save_historico({
+                                "Aluna": al_f, "Tipo": f"Aula_{tipo_aula}", "Data": data_prof_str,
+                                "Instrutora": instr_sel, "Licao_Atual": f"{metodo_v} {licao_v}".strip(),
+                                "Dificuldades": difs_finais, "Observacao": obs_txt, "Licao_Casa": txt_casa
+                            })
+                        st.success("✅ Registro concluído!")
+                        st.rerun()
+                        
 # ==========================================
 # MÓDULO ANÁLISE DE IA (LAYOUT CONSOLIDADO)
 # ==========================================
@@ -981,6 +969,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
