@@ -710,18 +710,18 @@ elif menu == "👩‍🏫 Minhas Aulas":
         c_metodo = cx2.selectbox("Área:", ["Prática", "Teoria", "Solfejo"], key="new_met_cat")
         if cx3.button("➕ Add"):
             if n_metodo:
-                supabase.table("config_metodos").insert({"nome": n_metodo, "categoria": c_metodo}).execute()
-                st.success("Adicionado!")
-                st.rerun()
-        
-        if not df_met_db.empty:
-            st.divider()
-            for i, row in df_met_db.iterrows():
-                mc1, mc2 = st.columns([4, 1])
-                mc1.caption(f"**{row['categoria']}**: {row['nome']}")
-                if mc2.button("🗑️", key=f"del_{row['id']}"):
-                    supabase.table("config_metodos").delete().eq("id", row['id']).execute()
+                try:
+                    # Garantimos que os nomes das colunas batem com o SQL acima
+                    dados = {"nome": n_metodo, "categoria": c_metodo}
+                    supabase.table("config_metodos").insert(dados).execute()
+                    
+                    st.success(f"✅ {n_metodo} adicionado!")
+                    st.cache_data.clear() # Limpa o cache para atualizar a lista
                     st.rerun()
+                except Exception as e:
+                    st.error(f"Erro técnico: Verifique se a tabela 'config_metodos' foi criada no Supabase. Detalhe: {e}")
+            else:
+                st.warning("Digite o nome do método.")
 
     # --- 4. LÓGICA DE ESCALA ---
     if instr_sel != "Selecione...":
@@ -989,6 +989,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
