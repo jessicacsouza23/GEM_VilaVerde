@@ -569,43 +569,50 @@ if menu == "🏠 Secretaria":
                     (df_alu['Status'] != "Realizado")
                 ].copy()
 
-                if not pendencias.empty:
-                    st.error(f"🚨 {len(pendencias)} Lições Pendentes para {aluna}")
+                # --- EXIBIÇÃO DAS PENDÊNCIAS (COM CHAVES ÚNICAS) ---
+        if not pendencias.empty:
+            st.error(f"🚨 {len(pendencias)} Lições Pendentes para {aluna}")
+            
+            # Usamos enumerate para garantir um contador sequencial (i)
+            for i, (row_idx, p) in enumerate(pendencias.iterrows()):
+                # Criamos um ID único baseado nos dados da linha + contador
+                # Isso evita duplicidade mesmo que a aluna tenha 2 lições na mesma data
+                safe_key = f"{p['Data']}_{p['Categoria']}_{i}".replace("/", "")
+                
+                with st.container(border=True):
+                    col_info, col_acao = st.columns([3, 2])
+                    with col_info:
+                        st.markdown(f"**📅 {p['Data']}** — {p['Categoria']}")
+                        st.markdown(f"📖 {p['Licao_Detalhe']}")
+                        if p.get('Observacao'):
+                            st.caption(f"💬 Nota da Prof: {p['Observacao']}")
                     
-                    for _, p in pendencias.iterrows():
-                        with st.container(border=True):
-                            col_info, col_acao = st.columns([3, 2])
-                            with col_info:
-                                st.markdown(f"**Área:** {p['Categoria']}")
-                                st.markdown(f"**Tarefa:** {p['Licao_Detalhe']}")
-                                st.caption(f"📅 Passada em: {p['Data']}")
-                            
-                            # ... (dentro do loop de pendências na secretaria)
-                            with col_acao:
-                                novo_status = st.radio(
-                                    "Resultado:", 
-                                    ["Realizado", "Não realizado", "Devolvido para correção"],
-                                    key=f"status_{idx}", horizontal=True # Usei idx para garantir chave única
-                                )
-                                nova_obs = st.text_input("Obs da Secretaria:", key=f"obs_sec_{idx}")
+                    with col_acao:
+                        # Adicionamos a safe_key em cada widget
+                        novo_status = st.radio(
+                            "Resultado:", 
+                            ["Realizado", "Não realizado", "Devolvido para correção"],
+                            key=f"status_{safe_key}", 
+                            horizontal=True
+                        )
+                        nova_obs = st.text_input("Obs da Secretaria:", key=f"obs_sec_{safe_key}")
+                        
+                        if st.button("Confirmar Correção", key=f"btn_corr_{safe_key}"):
+                            try:
+                                supabase.table("historico_geral").update({
+                                    "Status": novo_status,
+                                    "Observacao": nova_obs,
+                                    "Secretaria": sec_resp
+                                }).eq("Aluna", p['Aluna'])\
+                                  .eq("Data", p['Data'])\
+                                  .eq("Tipo", "Controle_Licao")\
+                                  .eq("Categoria", p['Categoria']).execute()
                                 
-                                if st.button("Confirmar Correção", key=f"btn_corr_{idx}"):
-                                    try:
-                                        # Em vez de p['id'], usamos os filtros que identificam a lição única
-                                        supabase.table("historico_geral").update({
-                                            "Status": novo_status,
-                                            "Observacao": nova_obs,
-                                            "Secretaria": sec_resp
-                                        }).eq("Aluna", p['Aluna'])\
-                                          .eq("Data", p['Data'])\
-                                          .eq("Tipo", "Controle_Licao")\
-                                          .eq("Categoria", p['Categoria']).execute()
-                                        
-                                        st.success("✅ Atualizado com sucesso!")
-                                        st.cache_data.clear()
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Erro ao salvar: {e}")
+                                st.success("✅ Atualizado!")
+                                st.cache_data.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro: {e}")
                 else:
                     st.success("✅ Nenhuma lição pendente para esta aluna.")
         st.divider()
@@ -980,6 +987,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
