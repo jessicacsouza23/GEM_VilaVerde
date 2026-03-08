@@ -408,13 +408,43 @@ if menu == "🏠 Secretaria":
                 supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                 st.rerun()
         else:
-            st.success(f"🗓️ Rodízio Ativo: {data_sel_str}")
-            df_raw = pd.DataFrame(calendario_db[data_sel_str])
-            cols = [c for c in ["Aluna", "Turma"] + HORARIOS if c in df_raw.columns]
-            st.dataframe(df_raw[cols], use_container_width=True, hide_index=True)
-            if st.button("🗑️ Deletar Rodízio"):
-                supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-                st.rerun()
+                # --- EXIBIÇÃO ROBUSTA (PARA RODÍZIOS ANTIGOS E NOVOS) ---
+                st.success(f"🗓️ Rodízio Ativo: {data_sel_str}")
+                
+                # 1. Busca os dados e transforma em DataFrame
+                dados_escala = calendario_db[data_sel_str]
+                df_raw = pd.DataFrame(dados_escala)
+
+                # 2. Define as colunas que PRECISAM aparecer (se existirem nos dados)
+                # Começamos com Aluna e Turma
+                colunas_finais = [c for c in ["Aluna", "Turma"] if c in df_raw.columns]
+                
+                # 3. Adicionamos todos os horários da sua lista 'HORARIOS' que o DataFrame possuir
+                # Isso garante que Igreja, H2, H3, H4 apareçam na ordem certa
+                for h in HORARIOS:
+                    if h in df_raw.columns:
+                        colunas_finais.append(h)
+                
+                # 4. Caso existam colunas extras que não estão na lista HORARIOS, adicionamos no fim
+                for c in df_raw.columns:
+                    if c not in colunas_finais and c not in ['id', 'escala']:
+                        colunas_finais.append(c)
+
+                # 5. Exibição com tratamento de valores vazios (NaN)
+                # Se um rodízio antigo não tiver um horário, ele aparecerá como "---"
+                df_final = df_raw[colunas_finais].fillna("---")
+
+                st.dataframe(
+                    df_final, 
+                    use_container_width=True, 
+                    hide_index=True
+                )
+                
+                # Botão de exclusão para poder gerar novamente se estiver muito bagunçado
+                if st.button("🗑️ Deletar este Rodízio"):
+                    supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                    st.cache_data.clear()
+                    st.rerun()
                 
                     
   # --- ABA 2: CHAMADA GERAL ---
@@ -915,6 +945,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
