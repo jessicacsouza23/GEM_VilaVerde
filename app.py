@@ -547,84 +547,62 @@ if menu == "🏠 Secretaria":
     with tab_licao:
         st.subheader("Registro de Correção de Lições")
         
-        # Garante o histórico para consulta
-        df_historico = pd.DataFrame(historico_geral)
+        df_historico = pd.DataFrame(db_get_historico())
         data_hj = datetime.now()
         
         c1, c2, c3 = st.columns([2, 1, 1])
         with c1:
             aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
-            if st.button("❄️ Congelar análise"):
-                if not aluna:
-                    st.error("⚠️ Selecione uma aluna antes de salvar.")
-                else:
-                    # Pegando UID do usuário logado para RLS
-                    user_id = st.session_state.get("user_id", None)
-                    if not user_id:
-                        st.error("⚠️ Usuário não autenticado. Não é possível salvar.")
-                    else:
-                        # Dados mínimos de exemplo; ajuste conforme sua lógica
-                        periodo_tipo = "diaria"
-                        periodo_id = datetime.now().strftime("%Y-%m-%d")
-                        conteudo = "Análise congelada de teste."  # Substitua pelo conteúdo real
-        
-                        try:
-                            supabase.table("analises_congeladas").insert({
-                                "aluna": aluna,
-                                "periodo_tipo": periodo_tipo,
-                                "periodo_id": periodo_id,
-                                "conteudo": conteudo,
-                                "user_id": user_id
-                            }).execute()
-                            st.success("✅ Análise congelada salva com sucesso!")
-                        except Exception as e:
-                            st.error(f"Erro ao salvar análise congelada: {e}")
-    with c2:
-        sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp")
-    with c3:
-        data_corr = st.date_input("Data:", data_hj, key="sec_data")
-        data_corr_str = data_corr.strftime("%d/%m/%Y")
+        with c2:
+            sec_resp = st.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="sec_resp")
+        with c3:
+            data_corr = st.date_input("Data da Correção:", data_hj, key="sec_data")
+            data_corr_str = data_corr.strftime("%d/%m/%Y")
 
-        # --- LÓGICA DE PENDÊNCIAS ---
-        pendencias_reais = []
+        # --- LÓGICA DE PENDÊNCIAS (Vem das Professoras) ---
         if not df_historico.empty:
             df_alu = df_historico[df_historico['Aluna'] == aluna]
             if not df_alu.empty:
-                # Pega o último status de cada lição/categoria
-                df_alu["dt_obj"] = pd.to_datetime(df_alu["Data"], format="%d/%m/%Y", errors="coerce")
-                ultimos_status = (
-                    df_alu.sort_values("dt_obj")
-                    .groupby(["Categoria", "Licao_Detalhe"])
-                    .last()
-                    .reset_index()
-                )
-                
-                pendencias_reais = ultimos_status[ultimos_status['Status'] != "Realizadas - sem pendência"].to_dict('records')
+                # Filtramos tudo que é Controle_Licao e que NÃO está como "Realizado"
+                pendencias = df_alu[
+                    (df_alu['Tipo'] == 'Controle_Licao') & 
+                    (df_alu['Status'] != "Realizado")
+                ].copy()
 
-        # --- EXIBIÇÃO DAS PENDÊNCIAS ---
-        if pendencias_reais:
-            st.error(f"🚨 LIÇÕES PENDENTES PARA {aluna.upper()}")
-            for p in pendencias_reais:
-                with st.container(border=True):
-                    col_info, col_acao = st.columns([2, 1])
-                    with col_info:
-                        st.markdown(f"📖 **{p['Categoria']}** | {p.get('Licao_Detalhe', '---')}")
-                        st.caption(f"📅 Desde: {p['Data']} | Status: {p['Status']}")
-                    with col_acao:
-                        with st.expander("✅ Resolver"):
-                            key_id = f"{p['Categoria']}_{p['Licao_Detalhe']}".replace(" ", "_")
-                            st_res = st.selectbox("Nova Situação:", STATUS_LICAO, key=f"st_{key_id}")
-                            obs_res = st.text_area("Obs entrega:", key=f"obs_{key_id}")
-                            if st.button("Salvar Atualização", key=f"btn_{key_id}"):
-                                db_save_historico({
-                                    "Aluna": aluna, "Tipo": "Controle_Licao", "Data": data_corr_str,
-                                    "Secretaria": sec_resp, "Categoria": p["Categoria"],
-                                    "Licao_Detalhe": p["Licao_Detalhe"], "Status": st_res, "Observacao": obs_res
-                                })
-                                st.rerun()
-        else:
-            st.success("✅ Nenhuma pendência encontrada.")
-
+                if not pendencias.empty:
+                    st.error(f"🚨 {len(pendencias)} Lições Pendentes para {aluna}")
+                    
+                    for _, p in pendencias.iterrows():
+                        with st.container(border=True):
+                            col_info, col_acao = st.columns([3, 2])
+                            with col_info:
+                                st.markdown(f"**Área:** {p['Categoria']}")
+                                st.markdown(f"**Tarefa:** {p['Licao_Detalhe']}")
+                                st.caption(f"📅 Passada em: {p['Data']}")
+                            
+                            with col_acao:
+                                # Seletor de Status conforme solicitado
+                                novo_status = st.radio(
+                                    "Resultado:", 
+                                    ["Realizado", "Não realizado", "Devolvido para correção"],
+                                    key=f"status_{p['id']}", horizontal=True
+                                )
+                                nova_obs = st.text_input("Obs da Secretaria:", key=f"obs_sec_{p['id']}")
+                                
+                                if st.button("Confirmar Correção", key=f"btn_corr_{p['id']}"):
+                                    # Atualiza o registro existente no banco
+                                    supabase.table("historico_geral").update({
+                                        "Status": novo_status,
+                                        "Observacao": nova_obs,
+                                        "Secretaria": sec_resp,
+                                        "Data_Correcao": data_corr_str # Opcional: guardar quando foi corrigido
+                                    }).eq("id", p['id']).execute()
+                                    
+                                    st.success("Status atualizado!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                else:
+                    st.success("✅ Nenhuma lição pendente para esta aluna.")
         st.divider()
 
         # --- VERIFICAÇÃO DE REGISTRO EXISTENTE ---
@@ -798,23 +776,38 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 btn_txt = "🔄 ATUALIZAR REGISTRO" if registro_existente else "❄️ CONGELAR E SALVAR AULA"
                 if st.form_submit_button(btn_txt):
                     with st.spinner("Salvando..."):
-                        for aluna in alunas_para_salvar:
-                            # 1. Deleta o antigo para garantir que não duplique
-                            supabase.table("historico_geral").delete()\
-                                .eq("Data", data_prof_str).eq("Tipo", f"Aula_{tipo_aula}").eq("Aluna", aluna).execute()
+                        for aluna_f in alunas_para_salvar:
+                            # 1. Limpa registros anteriores do mesmo dia/tipo para evitar duplicados
+                            supabase.table("historico_geral").delete().eq("Data", data_prof_str).eq("Tipo", f"Aula_{tipo_aula}").eq("Aluna", aluna_f).execute()
                             
-                            # 2. Salva o novo
+                            # 2. Salva o Relatório da Professora
                             db_save_historico({
-                                "Aluna": aluna, "Tipo": f"Aula_{tipo_aula}", "Data": data_prof_str,
+                                "Aluna": aluna_f, "Tipo": f"Aula_{tipo_aula}", "Data": data_prof_str,
                                 "Instrutora": instr_sel, "Licao_Atual": lic_vol,
                                 "Dificuldades": difs_selecionadas, "Observacao": obs_aula, "Licao_Casa": casa_f
                             })
+
+                            # 3. NOVIDADE: Envia para a Aba de Lições da Secretaria como "Pendente"
+                            # Se houver algo escrito na lição de casa, cria a pendência automática
+                            if casa_f and len(casa_f) > 5:
+                                # Remove pendência antiga do mesmo dia/categoria se houver
+                                supabase.table("historico_geral").delete().eq("Aluna", aluna_f).eq("Data", data_prof_str).eq("Tipo", "Controle_Licao").eq("Categoria", tipo_aula).execute()
+                                
+                                db_save_historico({
+                                    "Aluna": aluna_f, 
+                                    "Tipo": "Controle_Licao", 
+                                    "Data": data_prof_str,
+                                    "Secretaria": "Aguardando", 
+                                    "Categoria": tipo_aula, 
+                                    "Licao_Detalhe": casa_f,
+                                    "Status": "Não realizado", # Inicia como não realizado para a secretaria cobrar
+                                    "Observacao": f"Passado por {instr_sel}: {obs_aula[:50]}..."
+                                })
                         
                         st.balloons()
-                        st.toast("Dados Salvos com Sucesso!", icon="✅")
+                        st.toast("Aula e Lição de Casa registradas!", icon="✅")
                         st.cache_data.clear()
-                        # O rerun garante que ao recarregar, o 'registro_existente' seja preenchido
-                        st.rerun()
+                        st.rerun()          
                         
 # ==========================================
 # MÓDULO ANÁLISE DE IA (LAYOUT CONSOLIDADO)
@@ -982,5 +975,6 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
