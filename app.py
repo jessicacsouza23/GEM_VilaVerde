@@ -544,11 +544,11 @@ if menu == "🏠 Secretaria":
                             st.success("✅ Análise congelada salva com sucesso!")
                         except Exception as e:
                             st.error(f"Erro ao salvar análise congelada: {e}")
-        with c2:
-            sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp")
-        with c3:
-            data_corr = st.date_input("Data:", data_hj, key="sec_data")
-            data_corr_str = data_corr.strftime("%d/%m/%Y")
+    with c2:
+        sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp")
+    with c3:
+        data_corr = st.date_input("Data:", data_hj, key="sec_data")
+        data_corr_str = data_corr.strftime("%d/%m/%Y")
 
         # --- LÓGICA DE PENDÊNCIAS ---
         pendencias_reais = []
@@ -926,6 +926,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
