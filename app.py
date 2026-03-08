@@ -771,7 +771,38 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 for i, aluna in enumerate(alunas_para_registro):
                     if cols[i % 4].checkbox(aluna, value=True, key=f"v20_ch_{aluna}_{dados_sel['label']}"):
                         alunas_confirmadas.append(aluna)
-
+                # Adicione este bloco logo após a seleção das alunas no PASSO 2 (dentro do tab_aula)
+                
+                if alunas_confirmadas:
+                    # Busca se já existe registro para a primeira aluna selecionada hoje
+                    res_existente = supabase.table("historico_geral").select("*")\
+                        .eq("Data", data_prof_str)\
+                        .eq("Aluna", alunas_confirmadas[0])\
+                        .eq("Tipo", f"Aula_{tipo_aula}").execute()
+                    
+                    dados_salvos = res_existente.data[0] if res_existente.data else {}
+                
+                    with st.form("form_v21_final"):
+                        st.subheader("📝 Análise Pedagógica")
+                        c1, c2 = st.columns(2)
+                        
+                        # Recupera o método/lição se já existir, senão fica vazio
+                        pre_metodo = dados_salvos.get("Licao_Atual", "Selecione...")
+                        pre_obs = dados_salvos.get("Observacao", "")
+                        
+                        if tipo_aula == "Prática":
+                            df_m = db_get_metodos()
+                            met_opts = ["Selecione..."] + (df_m['nome'].tolist() if not df_m.empty else [])
+                            met_v = c1.selectbox("Método Prático:", met_opts, index=met_opts.index(pre_metodo) if pre_metodo in met_opts else 0)
+                            # Tenta separar lição do método se estiver salvo junto
+                            lic_v = c2.text_input("Lição/Página:", value=pre_metodo.split(' ')[-1] if pre_metodo != "Selecione..." else "")
+                        else:
+                            met_v = c1.selectbox("Volume/Fase:", OPCOES_LICOES_NUM, index=OPCOES_LICOES_NUM.index(pre_metodo) if pre_metodo in OPCOES_LICOES_NUM else 0)
+                            lic_v = ""
+                
+                        # ... (Restante do formulário como as dificuldades e lição de casa)
+                        obs_txt = st.text_area("Dicas / Observações:", value=pre_obs)
+                
                 if alunas_confirmadas:
                     with st.form("form_v20_final"):
                         st.subheader("📝 Análise Pedagógica")
@@ -983,6 +1014,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
