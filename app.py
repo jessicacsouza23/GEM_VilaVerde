@@ -417,11 +417,11 @@ if menu == "🏠 Secretaria":
                         st.cache_data.clear()
                         st.rerun()
 
-            else:
-                st.success(f"🗓️ Rodízio Ativo: {data_sel_str}")
-                df_raw = pd.DataFrame(calendario_db[data_sel_str])
-                colunas_finais = ["Aluna", "Turma"] + [h for h in HORARIOS if h in df_raw.columns]
-                st.dataframe(df_raw[colunas_finais], use_container_width=True, hide_index=True)
+                else:
+                    st.success(f"🗓️ Rodízio Ativo: {data_sel_str}")
+                    df_raw = pd.DataFrame(calendario_db[data_sel_str])
+                    colunas_finais = ["Aluna", "Turma"] + [h for h in HORARIOS if h in df_raw.columns]
+                    st.dataframe(df_raw[colunas_finais], use_container_width=True, hide_index=True)
                 
                 if st.button("🗑️ Deletar Rodízio"):
                     supabase.table("calendario").delete().eq("id", data_sel_str).execute()
@@ -926,6 +926,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
