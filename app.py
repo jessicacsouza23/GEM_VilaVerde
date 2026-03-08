@@ -342,18 +342,16 @@ if menu == "🏠 Secretaria":
         mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
         ano = c2.selectbox("Ano:", [2026, 2027])
         
-        # Gerador de sábados do mês selecionado
         sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
                    for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
         
         if not sabados:
-            st.error("Nenhum sábado encontrado para este mês.")
+            st.error("Nenhum sábado encontrado.")
         else:
             data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
 
             if data_sel_str not in calendario_db:
-                st.warning("⚠️ Rodízio não gerado para esta data.")
-                
+                st.warning("⚠️ Rodízio não gerado.")
                 col_t, col_s = st.columns(2)
                 with col_t:
                     st.subheader("📚 Teoria (SALA 8)")
@@ -366,48 +364,57 @@ if menu == "🏠 Secretaria":
                     ps3 = st.selectbox("Prof. Solfejo H3", PROFESSORAS_LISTA, index=4, key="s3")
                     ps4 = st.selectbox("Prof. Solfejo H4", PROFESSORAS_LISTA, index=5, key="s4")
                 
-                folgas = st.multiselect("Selecione quem está de Folga:", PROFESSORAS_LISTA)
+                folgas = st.multiselect("Folgas:", PROFESSORAS_LISTA)
 
                 if st.button("🚀 GERAR RODÍZIO CARROSSEL TOTAL"):
                     dt_obj = datetime.strptime(data_sel_str, "%d/%m/%Y")
-                    offset = dt_obj.isocalendar()[1] # Semana do ano para rotatividade
+                    offset = dt_obj.isocalendar()[1] # Semana do ano para rotação
                     
-                    mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
+                    # 1. Mapeia TODAS as alunas de TODAS as turmas
+                    mapa = {}
+                    for t_nome, alunas in TURMAS.items():
+                        for aluna in alunas:
+                            mapa[aluna] = {"Aluna": aluna, "Turma": t_nome}
                     
-                    # Inicializa os horários para evitar KeyError na exibição
-                    for a in mapa: 
-                        for h in HORARIOS: mapa[a][h] = "---"
-                        mapa[a][HORARIOS[0]] = "⛪ Igreja"
-
+                    # 2. Configuração da rotação por Horário
                     config_h = {
                         HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "P_Teo": pt2, "P_Sol": ps2},
                         HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "P_Teo": pt3, "P_Sol": ps3},
                         HORARIOS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "P_Teo": pt4, "P_Sol": ps4}
                     }
 
-                    for h_idx in [1, 2, 3]:
-                        h_chave = HORARIOS[h_idx]
-                        conf = config_h[h_chave]
-                        ocupadas_h = [conf["P_Teo"], conf["P_Sol"]] + folgas
-                        profs_livres = [p for p in PROFESSORAS_LISTA if p not in ocupadas_h]
+                    # 3. Processa cada horário
+                    for h_idx, h_nome in enumerate(HORARIOS):
+                        if h_idx == 0: # Primeiro horário sempre Igreja
+                            for a in mapa: mapa[a][h_nome] = "⛪ Igreja"
+                            continue
                         
-                        num_profs = len(profs_livres)
-                        alunas_pratica = []
-                        
-                        for t_nome, alunas in TURMAS.items():
-                            if conf["Teo"] == t_nome:
-                                for a in alunas: mapa[a][h_chave] = f"📚 SALA 8 | {conf['P_Teo']}"
-                            elif conf["Sol"] == t_nome:
-                                for a in alunas: mapa[a][h_chave] = f"🔊 SALA 9 | {conf['P_Sol']}"
+                        if h_nome in config_h:
+                            conf = config_h[h_nome]
+                            ocupadas = [conf["P_Teo"], conf["P_Sol"]] + folgas
+                            profs_livres = [p for p in PROFESSORAS_LISTA if p not in ocupadas]
+                            
+                            alunas_pratica = []
+                            for aluna, dados in mapa.items():
+                                t_aluna = dados["Turma"]
+                                if conf["Teo"] == t_aluna:
+                                    mapa[aluna][h_nome] = f"📚 SALA 8 | {conf['P_Teo']}"
+                                elif conf["Sol"] == t_aluna:
+                                    mapa[aluna][h_nome] = f"🔊 SALA 9 | {conf['P_Sol']}"
+                                else:
+                                    alunas_pratica.append(aluna)
+                            
+                            # Distribui Prática para quem sobrou
+                            num_profs = len(profs_livres)
+                            if num_profs > 0:
+                                for i, aluna_p in enumerate(alunas_pratica):
+                                    pos = (i + offset) % num_profs
+                                    prof_vez = profs_livres[pos]
+                                    sala_n = ((pos + offset) % 7) + 1
+                                    mapa[aluna_p][h_nome] = f"🎹 SALA {sala_n} | {prof_vez}"
                             else:
-                                alunas_pratica.extend(alunas)
-                        
-                        if num_profs > 0:
-                            for i, aluna_p in enumerate(alunas_pratica):
-                                posicao_rotativa = (i + offset) % num_profs
-                                prof_da_vez = profs_livres[posicao_rotativa]
-                                sala_num = ((posicao_rotativa + offset) % 7) + 1
-                                mapa[aluna_p][h_chave] = f"🎹 SALA {sala_num} | {prof_da_vez}"
+                                for aluna_p in alunas_pratica:
+                                    mapa[aluna_p][h_nome] = "---"
 
                     # Salva no Supabase
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
@@ -416,17 +423,15 @@ if menu == "🏠 Secretaria":
                     st.rerun()
             
             else:
-                # --- EXIBIÇÃO SEGURA DO RODÍZIO ATIVO ---
+                # --- EXIBIÇÃO ---
                 st.success(f"🗓️ Rodízio Ativo: {data_sel_str}")
                 df_raw = pd.DataFrame(calendario_db[data_sel_str])
                 
-                # Garante que as colunas Aluna e Turma apareçam primeiro, seguidas pelos horários que existirem
-                colunas_ordenadas = ["Aluna", "Turma"] + [h for h in HORARIOS if h in df_raw.columns]
+                # Garante que as colunas apareçam na ordem correta
+                cols_disponiveis = df_raw.columns.tolist()
+                ordem_desejada = ["Aluna", "Turma"] + [h for h in HORARIOS if h in cols_disponiveis]
                 
-                # Filtra apenas colunas que realmente existem para evitar o erro de KeyError
-                cols_finais = [c for c in colunas_ordenadas if c in df_raw.columns]
-                
-                st.dataframe(df_raw[cols_finais], use_container_width=True, hide_index=True)
+                st.dataframe(df_raw[ordem_desejada], use_container_width=True, hide_index=True)
                 
                 if st.button("🗑️ Deletar Rodízio"):
                     supabase.table("calendario").delete().eq("id", data_sel_str).execute()
@@ -931,6 +936,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
