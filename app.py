@@ -912,7 +912,15 @@ elif menu == "📊 Analítico IA":
                 minha_escala = escala[escala['Aluna'] == aluna_sel]
                 if not minha_escala.empty:
                     st.write(f"Sua próxima escala confirmada em **{sab_futuro}**:")
-                    st.dataframe(minha_escala[['Aluna', 'Turma', '"08h45 (Igreja)", "09h35(H2)", "10h10(H3)", "10h45(H4)"']], hide_index=True)
+                    # 1. Definimos a lista de colunas exatamente como queremos (separadas por vírgulas)
+                    colunas_alvo = ['Aluna', 'Turma', '08h45 (Igreja)', '09h35 (H2)', '10h10 (H3)', '10h45 (H4)']
+                    
+                    # 2. Filtramos apenas as colunas que REALMENTE existem no arquivo carregado
+                    # Isso evita o erro caso falte um espaço ou mude o nome da coluna no Excel/Banco
+                    colunas_validas = [c for c in colunas_alvo if c in minha_escala.columns]
+                    
+                    # 3. Exibimos o dataframe com segurança
+                    st.dataframe(minha_escala[colunas_validas], hide_index=True, use_container_width=True)
                 else:
                     st.caption("Aluna não escalada para o próximo sábado.")
 
@@ -923,6 +931,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
