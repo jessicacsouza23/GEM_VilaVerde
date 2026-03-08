@@ -580,27 +580,32 @@ if menu == "🏠 Secretaria":
                                 st.markdown(f"**Tarefa:** {p['Licao_Detalhe']}")
                                 st.caption(f"📅 Passada em: {p['Data']}")
                             
+                            # ... (dentro do loop de pendências na secretaria)
                             with col_acao:
-                                # Seletor de Status conforme solicitado
                                 novo_status = st.radio(
                                     "Resultado:", 
                                     ["Realizado", "Não realizado", "Devolvido para correção"],
-                                    key=f"status_{p['id']}", horizontal=True
+                                    key=f"status_{idx}", horizontal=True # Usei idx para garantir chave única
                                 )
-                                nova_obs = st.text_input("Obs da Secretaria:", key=f"obs_sec_{p['id']}")
+                                nova_obs = st.text_input("Obs da Secretaria:", key=f"obs_sec_{idx}")
                                 
-                                if st.button("Confirmar Correção", key=f"btn_corr_{p['id']}"):
-                                    # Atualiza o registro existente no banco
-                                    supabase.table("historico_geral").update({
-                                        "Status": novo_status,
-                                        "Observacao": nova_obs,
-                                        "Secretaria": sec_resp,
-                                        "Data_Correcao": data_corr_str # Opcional: guardar quando foi corrigido
-                                    }).eq("id", p['id']).execute()
-                                    
-                                    st.success("Status atualizado!")
-                                    st.cache_data.clear()
-                                    st.rerun()
+                                if st.button("Confirmar Correção", key=f"btn_corr_{idx}"):
+                                    try:
+                                        # Em vez de p['id'], usamos os filtros que identificam a lição única
+                                        supabase.table("historico_geral").update({
+                                            "Status": novo_status,
+                                            "Observacao": nova_obs,
+                                            "Secretaria": sec_resp
+                                        }).eq("Aluna", p['Aluna'])\
+                                          .eq("Data", p['Data'])\
+                                          .eq("Tipo", "Controle_Licao")\
+                                          .eq("Categoria", p['Categoria']).execute()
+                                        
+                                        st.success("✅ Atualizado com sucesso!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Erro ao salvar: {e}")
                 else:
                     st.success("✅ Nenhuma lição pendente para esta aluna.")
         st.divider()
@@ -975,6 +980,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
