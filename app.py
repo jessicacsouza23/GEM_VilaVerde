@@ -731,33 +731,44 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         if aluna_nome not in aulas_agrupadas[label]["alunas"]:
                             aulas_agrupadas[label]["alunas"].append(aluna_nome)
 
+        # --- 4. BUSCA NA ESCALA (Garantindo que 'alunas_da_turma' exista) ---
+        # ... (Sua lógica de busca permanece igual até aqui) ...
+
         if not esta_na_escala:
-            st.divider()
             st.warning(f"Irmã {instr_sel}, você não está na escala para o dia {data_prof_str}.")
         else:
             st.markdown("### 🎹 1. Selecione o Horário/Sala")
             escolha_id = st.radio("Aulas do dia:", list(aulas_agrupadas.keys()), horizontal=True, key="rad_aula_v8")
 
             dados_aula = aulas_agrupadas[escolha_id]
-            alunas_da_turma = dados_aula["alunas"] # <--- AQUI ELA É DEFINIDA
+            alunas_da_turma = dados_aula["alunas"]
             tipo_aula = "Teoria" if "SALA 8" in dados_aula["local"] else "Solfejo" if "SALA 9" in dados_aula["local"] else "Prática"
-            dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
-
-            st.divider()
-            st.markdown("### 👥 2. Selecione as Alunas (Checkboxes)")
             
-            # Checkboxes Lado a Lado
-            alunas_selecionadas = []
-            cols_alunas = st.columns(len(alunas_da_turma) if len(alunas_da_turma) > 0 else 1)
-            for i, aluna in enumerate(alunas_da_turma):
-                if cols_alunas[i].checkbox(aluna, value=True, key=f"check_{aluna}_{escolha_id}"):
-                    alunas_selecionadas.append(aluna)
+            # DETERMINA SE É TURMA OU INDIVIDUAL
+            eh_turma = "SALA 8" in dados_aula["local"] or "SALA 9" in dados_aula["local"]
 
+            alunas_selecionadas = []
+
+            if eh_turma:
+                st.divider()
+                st.markdown(f"### 👥 2. Selecione as Alunas da Turma ({dados_aula['local']})")
+                # Checkboxes Lado a Lado para Turmas
+                cols_alunas = st.columns(len(alunas_da_turma) if len(alunas_da_turma) > 0 else 1)
+                for i, aluna in enumerate(alunas_da_turma):
+                    if cols_alunas[i].checkbox(aluna, value=True, key=f"check_{aluna}_{escolha_id}"):
+                        alunas_selecionadas.append(aluna)
+            else:
+                # Se for individual, seleciona automaticamente a única aluna da lista
+                alunas_selecionadas = alunas_da_turma
+                st.info(f"🎙️ Aula Individual: **{alunas_selecionadas[0]}**")
+
+            # --- 5. FORMULÁRIO UNIFICADO ---
             if not alunas_selecionadas:
                 st.info("Selecione pelo menos uma aluna para liberar o formulário.")
             else:
-                # 5. FORMULÁRIO UNIFICADO
                 with st.form("form_pedagogico_v8"):
+                    # ... (O restante do formulário permanece igual ao anterior) ...
+                    # [Método, Lições, Dificuldades, Lição de Casa...]
                     st.subheader("📖 Conteúdo e Desempenho")
                     
                     metodos_opcoes = df_met_db[df_met_db['categoria'] == tipo_aula]['nome'].tolist() if not df_met_db.empty else ["Padrão"]
@@ -986,6 +997,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
