@@ -707,30 +707,57 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 st.cache_data.clear()
                 st.rerun()
 
-    # 4. Busca na Escala
+    # --- 4. BUSCA NA ESCALA (VERSÃO CORRIGIDA) ---
     if instr_sel != "Selecione...":
         calendario_db = db_get_calendario()
         aulas_agrupadas = {}
-        nome_busca = limpar_texto(instr_sel)
+        # Normalizamos o nome da instrutora para a busca
+        nome_busca = limpar_texto(instr_sel).strip().lower()
         esta_na_escala = False
 
         if data_prof_str in calendario_db:
             escala_dia = calendario_db[data_prof_str]
+            
+            # st.write(escala_dia) # <-- DESCOMENTE ESTA LINHA PARA VER SE AS 3 AULAS APARECEM NO BANCO
+
             for registro in escala_dia:
+                # Cada registro é uma linha da planilha (uma aluna/turma)
                 for chave_h, conteudo in registro.items():
-                    if chave_h not in ["Aluna", "Turma"] and nome_busca in limpar_texto(conteudo):
+                    # Ignora colunas que não são horários
+                    if chave_h in ["Aluna", "Turma", "Data"]:
+                        continue
+                    
+                    conteudo_str = str(conteudo).lower()
+                    
+                    # Busca o nome da instrutora dentro da célula (ex: "SALA 8 - ANA")
+                    if nome_busca in limpar_texto(conteudo_str):
                         esta_na_escala = True
                         aluna_nome = registro.get("Aluna", "Sem Nome")
                         turma_nome = registro.get("Turma", "Individual")
-                        local_sala = str(conteudo).split("-")[-1].strip().upper()
                         
-                        label = f"{chave_h} - {local_sala} ({turma_nome if 'SALA' in local_sala else aluna_nome})"
-                        
-                        if label not in aulas_agrupadas:
-                            aulas_agrupadas[label] = {"horario": chave_h, "local": local_sala, "alunas": []}
-                        if aluna_nome not in aulas_agrupadas[label]["alunas"]:
-                            aulas_agrupadas[label]["alunas"].append(aluna_nome)
+                        # Extrai o local (ex: SALA 8)
+                        local_sala = "GERAL"
+                        if "-" in str(conteudo):
+                            local_sala = str(conteudo).split("-")[-1].strip().upper()
+                        elif "SALA" in str(conteudo).upper():
+                            local_sala = str(conteudo).upper().strip()
 
+                        # Identifica se é Turma ou Individual para o Rótulo
+                        eh_sala_coletiva = any(s in local_sala for s in ["SALA 8", "SALA 9", "TEORIA", "SOLFEJO"])
+                        label_exibicao = f"{chave_h} - {local_sala} ({turma_nome if eh_sala_coletiva else aluna_nome})"
+                        
+                        # Agrupa alunas que estão no mesmo horário e mesma sala (Turmas)
+                        if label_exibicao not in aulas_agrupadas:
+                            aulas_agrupadas[label_exibicao] = {
+                                "horario": chave_h, 
+                                "local": local_sala, 
+                                "alunas": [],
+                                "tipo_id": local_sala # Usado para definir DIF_LISTA
+                            }
+                        
+                        if aluna_nome not in aulas_agrupadas[label_exibicao]["alunas"]:
+                            aulas_agrupadas[label_exibicao]["alunas"].append(aluna_nome)
+                            
         if not esta_na_escala:
             st.warning(f"Irmã {instr_sel}, você não está na escala para o dia {data_prof_str}.")
         else:
@@ -1002,6 +1029,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
