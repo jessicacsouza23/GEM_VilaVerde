@@ -638,7 +638,6 @@ if menu == "🏠 Secretaria":
 elif menu == "👩‍🏫 Minhas Aulas":
     st.header("👩‍🏫 Controle de Desempenho")
     
-    # Identificação Automática pelo Login
     instr_sel = st.session_state.get('nome_logado', 'Selecione...')
     df_historico = pd.DataFrame(historico_geral)
     
@@ -648,111 +647,119 @@ elif menu == "👩‍🏫 Minhas Aulas":
     with c2:
         hoje_dt = datetime.now()
         sab_p = hoje_dt + timedelta(days=(5 - hoje_dt.weekday()) % 7)
-        data_prof = st.date_input("Data da Aula:", sab_p, key="dt_pedag_folga")
+        data_prof = st.date_input("Data da Aula:", sab_p, key="dt_pedag_v5")
         data_prof_str = data_prof.strftime("%d/%m/%Y")
     
     if instr_sel != "Selecione...":
         calendario_db = db_get_calendario() 
-        
-        # --- 1. VERIFICAÇÃO DE ESCALA E AGRUPAMENTO ---
         aulas_agrupadas = {}
         nome_busca = limpar_texto(instr_sel)
         esta_na_escala = False
 
         if data_prof_str in calendario_db:
             escala_dia = calendario_db[data_prof_str]
-            
             for registro in escala_dia:
                 for chave_h, conteudo in registro.items():
                     if chave_h not in ["Aluna", "Turma"] and nome_busca in limpar_texto(conteudo):
                         esta_na_escala = True
-                        
                         aluna_nome = registro.get("Aluna", "Sem Nome")
                         turma_nome = registro.get("Turma", "Individual")
                         local_sala = str(conteudo).split("-")[-1].strip().upper()
                         
-                        # Nomenclatura: Turma para Salas Coletivas, Aluna para Prática
                         if "SALA 8" in local_sala or "SALA 9" in local_sala:
-                            identificador = f"{chave_h} - {local_sala} ({turma_nome})"
+                            label = f"{chave_h} - {local_sala} ({turma_nome})"
                         else:
-                            identificador = f"{chave_h} - {local_sala} ({aluna_nome})"
+                            label = f"{chave_h} - {local_sala} ({aluna_nome})"
                         
-                        if identificador not in aulas_agrupadas:
-                            aulas_agrupadas[identificador] = {
-                                "horario": chave_h, "local": local_sala, "alunas": []
-                            }
-                        
-                        if aluna_nome not in aulas_agrupadas[identificador]["alunas"]:
-                            aulas_agrupadas[identificador]["alunas"].append(aluna_nome)
+                        if label not in aulas_agrupadas:
+                            aulas_agrupadas[label] = {"horario": chave_h, "local": local_sala, "alunas": []}
+                        if aluna_nome not in aulas_agrupadas[label]["alunas"]:
+                            aulas_agrupadas[label]["alunas"].append(aluna_nome)
 
-        # --- 2. LOGICA DE EXIBIÇÃO: AULA OU FOLGA ---
         if not esta_na_escala:
             st.divider()
-            st.balloons() # Lança os balões na tela
-            st.markdown(f'''
-                <div style="background-color: #f0f2f6; padding: 30px; border-radius: 15px; text-align: center; border: 2px dashed #ff4b4b;">
-                    <h2 style="color: #ff4b4b;">🌸 Hoje não, Irmã {instr_sel}!</h2>
-                    <p style="font-size: 1.2em; color: #333;">Hoje é sua <b>folga</b> ou você não está na escala para esta data. Aproveite o seu dia!</p>
-                </div>
-            ''', unsafe_allow_html=True)
-        
+            st.balloons()
+            st.markdown(f'<div style="background-color: #f0f2f6; padding: 30px; border-radius: 15px; text-align: center; border: 2px dashed #ff4b4b;"><h2 style="color: #ff4b4b;">🌸 Hoje não, Irmã {instr_sel}!</h2><p>Hoje é sua folga. Aproveite o dia!</p></div>', unsafe_allow_html=True)
         else:
             st.markdown("### 🎹 Selecione a Aula")
-            escolha_id = st.radio("Escolha a aula para lançamento:", list(aulas_agrupadas.keys()), horizontal=True)
+            escolha_id = st.radio("Escolha a aula:", list(aulas_agrupadas.keys()), horizontal=True, key="sel_aula_v5")
 
             dados_aula = aulas_agrupadas[escolha_id]
-            h_sel = dados_aula["horario"]
-            local_info = dados_aula["local"]
             alunas_para_salvar = dados_aula["alunas"]
-            
-            tipo_aula = "Teoria" if "SALA 8" in local_info else "Solfejo" if "SALA 9" in local_info else "Prática"
+            tipo_aula = "Teoria" if "SALA 8" in dados_aula["local"] else "Solfejo" if "SALA 9" in dados_aula["local"] else "Prática"
             dif_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
 
-            st.success(f"✅ Lançando registro para: **{', '.join(alunas_para_salvar)}**")
+            # --- BUSCA DADOS EXISTENTES PARA EDIÇÃO ---
+            registro_previo = {}
+            if not df_historico.empty:
+                # Busca se já existe registro para a primeira aluna do grupo neste dia/tipo
+                condicao = (df_historico['Aluna'] == alunas_para_salvar[0]) & \
+                           (df_historico['Data'] == data_prof_str) & \
+                           (df_historico['Tipo'] == f"Aula_{tipo_aula}")
+                match = df_historico[condicao]
+                if not match.empty:
+                    registro_previo = match.iloc[-1].to_dict()
 
-            # --- 3. FORMULÁRIO DE REGISTRO ---
-            with st.form("f_aula_final_folga", clear_on_submit=False):
+            st.success(f"✅ Gerenciando registro de: **{', '.join(alunas_para_salvar)}**")
+
+            # --- FORMULÁRIO COM DADOS PRÉ-CARREGADOS ---
+            with st.form("f_aula_persistente", clear_on_submit=False):
                 st.subheader(f"📝 Registro de {tipo_aula}")
                 
-                lic_vol = st.selectbox("Lição/Volume Atual:", OPCOES_LICOES_NUM)
+                # Lição Atual
+                lic_previa = str(registro_previo.get('Licao_Atual', OPCOES_LICOES_NUM[0]))
+                idx_lic = OPCOES_LICOES_NUM.index(lic_previa) if lic_previa in OPCOES_LICOES_NUM else 0
+                lic_vol = st.selectbox("Lição/Volume Atual:", OPCOES_LICOES_NUM, index=idx_lic)
                 
+                # Dificuldades
                 st.markdown("**Dificuldades Detectadas:**")
+                difs_previa = registro_previo.get('Dificuldades', [])
+                if isinstance(difs_previa, str): difs_previa = [difs_previa]
+                
                 cols_dif = st.columns(2)
                 difs_selecionadas = []
                 for i, d in enumerate(dif_lista):
-                    if cols_dif[i % 2].checkbox(d, key=f"d_{d}_{h_sel}"):
+                    if cols_dif[i % 2].checkbox(d, value=(d in difs_previa), key=f"d_{d}_{escolha_id}"):
                         difs_selecionadas.append(d)
                 
-                obs_aula = st.text_area("Observações Técnicas:")
+                # Observação
+                obs_previa = registro_previo.get('Observacao', "")
+                obs_aula = st.text_area("Observações Técnicas:", value=obs_previa)
 
                 st.markdown("---")
                 st.subheader("🏠 Tarefa para Casa")
+                # Tenta quebrar a string da tarefa salva para preencher os campos
+                casa_salva = registro_previo.get('Licao_Casa', "")
                 
-                casa_f = ""
                 if tipo_aula == "Prática":
-                    col1, col2 = st.columns(2)
-                    casa_f = f"Método: {col1.text_input('Lição Método:')} | Apostila: {col2.text_input('Apostila:')}"
+                    c1, c2 = st.columns(2)
+                    casa_f = f"Método: {c1.text_input('Lição Método:', key='lp')} | Apostila: {c2.text_input('Apostila:', key='la')}"
                 elif tipo_aula == "Teoria":
-                    col1, col2, col3 = st.columns(3)
-                    casa_f = f"MSA: {col1.text_input('MSA:')} | Apostila: {col2.text_input('Apostila:')} | Extra: {col3.text_input('Extra:')}"
+                    c1, c2, c3 = st.columns(3)
+                    casa_f = f"MSA: {c1.text_input('MSA:', key='lt')} | Apostila: {c2.text_input('Apostila:', key='at')} | Extra: {c3.text_input('Extra:', key='et')}"
                 else:
-                    col1, col2 = st.columns(2)
-                    casa_f = f"MSA: {col1.text_input('MSA Solfejo:')} | Extra: {col2.text_input('Extra:')}"
+                    c1, c2 = st.columns(2)
+                    casa_f = f"MSA: {c1.text_input('MSA Solfejo:', key='ls')} | Extra: {c2.text_input('Extra:', key='es')}"
 
-                if st.form_submit_button("❄️ CONGELAR E SALVAR AULA"):
-                    with st.spinner("Salvando no histórico..."):
+                if registro_previo:
+                    st.info(f"📌 **Tarefa salva anteriormente:** {casa_salva}")
+
+                btn_label = "🔄 ATUALIZAR E SALVAR" if registro_previo else "❄️ CONGELAR E SALVAR AULA"
+                if st.form_submit_button(btn_label):
+                    with st.spinner("Sincronizando..."):
                         for aluna in alunas_para_salvar:
-                            supabase.table("historico_geral").delete()\
-                                .eq("Data", data_prof_str).eq("Tipo", f"Aula_{tipo_aula}").eq("Aluna", aluna).execute()
-                            
+                            supabase.table("historico_geral").delete().eq("Data", data_prof_str).eq("Tipo", f"Aula_{tipo_aula}").eq("Aluna", aluna).execute()
                             db_save_historico({
                                 "Aluna": aluna, "Tipo": f"Aula_{tipo_aula}", "Data": data_prof_str,
                                 "Instrutora": instr_sel, "Licao_Atual": lic_vol,
                                 "Dificuldades": difs_selecionadas, "Observacao": obs_aula, "Licao_Casa": casa_f
                             })
                         
-                        st.success(f"✅ Concluído! Dados salvos para {len(alunas_para_salvar)} aluna(s).")
+                        st.balloons()
+                        st.success(f"✅ REGISTRO SALVO COM SUCESSO PARA {len(alunas_para_salvar)} ALUNA(S)!")
                         st.cache_data.clear()
+                        # Pequena pausa antes do rerun para ver a mensagem
+                        time.sleep(1.5)
                         st.rerun()
                         
 # ==========================================
@@ -892,6 +899,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
