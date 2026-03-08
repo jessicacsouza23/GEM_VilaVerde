@@ -351,7 +351,8 @@ if menu == "🏠 Secretaria":
             data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
 
             if data_sel_str not in calendario_db:
-                st.warning("⚠️ Rodízio não gerado.")
+                st.warning("⚠️ Rodízio não gerado para esta data.")
+                
                 col_t, col_s = st.columns(2)
                 with col_t:
                     st.subheader("📚 Teoria (SALA 8)")
@@ -364,34 +365,32 @@ if menu == "🏠 Secretaria":
                     ps3 = st.selectbox("Prof. Solfejo H3", PROFESSORAS_LISTA, index=4, key="s3")
                     ps4 = st.selectbox("Prof. Solfejo H4", PROFESSORAS_LISTA, index=5, key="s4")
                 
-                folgas = st.multiselect("Folgas:", PROFESSORAS_LISTA)
+                folgas = st.multiselect("Folgas (Professoras que não darão aula hoje):", PROFESSORAS_LISTA)
 
                 if st.button("🚀 GERAR RODÍZIO CARROSSEL TOTAL"):
                     dt_obj = datetime.strptime(data_sel_str, "%d/%m/%Y")
-                    offset = dt_obj.isocalendar()[1]
+                    offset = dt_obj.isocalendar()[1] 
                     
-                    # 1. Mapeia TODAS as alunas de TODAS as turmas
+                    # 1. Cria o mapa base com todas as alunas
                     mapa = {}
                     for t_nome, alunas in TURMAS.items():
                         for aluna in alunas:
                             mapa[aluna] = {"Aluna": aluna, "Turma": t_nome}
                     
-                    # 2. Configuração específica do Carrossel (H2, H3, H4)
-                    # Certifique-se que HORARIOS[1], [2] e [3] correspondem a H2, H3 e H4
+                    # 2. Configura os horários do carrossel (H2, H3, H4)
+                    # Certifique-se que HORARIOS[1], [2] e [3] são exatamente os nomes dos horários
                     config_carrossel = {
                         HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "P_Teo": pt2, "P_Sol": ps2},
                         HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "P_Teo": pt3, "P_Sol": ps3},
                         HORARIOS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "P_Teo": pt4, "P_Sol": ps4}
                     }
 
-                    # 3. Processa TODOS os horários da lista global HORARIOS
+                    # 3. Distribuição para todos os horários da lista global
                     for h_idx, h_nome in enumerate(HORARIOS):
-                        # Caso seja o primeiro horário (Igreja)
-                        if h_idx == 0:
+                        if h_idx == 0: # Primeiro horário (geralmente Igreja)
                             for a in mapa: mapa[a][h_nome] = "⛪ Igreja"
                             continue
                         
-                        # Caso seja um horário de RODÍZIO (H2, H3, H4)
                         if h_nome in config_carrossel:
                             conf = config_carrossel[h_nome]
                             ocupadas = [conf["P_Teo"], conf["P_Sol"]] + folgas
@@ -407,42 +406,46 @@ if menu == "🏠 Secretaria":
                                 else:
                                     alunas_pratica.append(aluna)
                             
-                            # Distribui Prática
+                            # Distribui as professoras de Prática rotativamente
                             num_p = len(profs_livres)
                             if num_p > 0:
                                 for i, aluna_p in enumerate(alunas_pratica):
                                     pos = (i + offset) % num_p
-                                    mapa[aluna_p][h_nome] = f"🎹 SALA {((pos+offset)%7)+1} | {profs_livres[pos]}"
+                                    prof_vez = profs_livres[pos]
+                                    # Sala rotativa (1 a 7)
+                                    sala_n = ((pos + offset) % 7) + 1
+                                    mapa[aluna_p][h_nome] = f"🎹 SALA {sala_n} | {prof_vez}"
                             else:
-                                for aluna_p in alunas_pratica: mapa[aluna_p][h_nome] = "---"
-                        
-                        # Caso seja um horário EXTRA (H5, H6...) que não está no rodízio
+                                for aluna_p in alunas_pratica: mapa[aluna_p][h_nome] = "Livre / Sem Prof."
                         else:
-                            for a in mapa:
-                                # Se o horário não foi processado, preenche com vazio ou "Livre"
-                                if h_nome not in mapa[a]:
-                                    mapa[a][h_nome] = "---"
+                            # Preenche horários extras (H5, H6...) para não dar erro de coluna
+                            for a in mapa: mapa[a][h_nome] = "---"
 
-                    # Salva no Supabase
+                    # Salva no Banco de Dados
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
-                    st.success("Rodízio completo gerado!")
+                    st.success("✅ Rodízio gerado com sucesso!")
                     st.cache_data.clear()
                     st.rerun()
             
             else:
-                # --- EXIBIÇÃO ---
+                # --- EXIBIÇÃO DO RODÍZIO ATIVO ---
                 st.success(f"🗓️ Rodízio Ativo: {data_sel_str}")
                 df_raw = pd.DataFrame(calendario_db[data_sel_str])
                 
-                # Força a exibição de TODAS as colunas que estão na lista HORARIOS
-                cols_finais = ["Aluna", "Turma"] + [h for h in HORARIOS if h in df_raw.columns]
+                # Reconstrói a ordem das colunas para garantir que Aluna/Turma venham primeiro
+                # e todos os HORARIOS venham em sequência, sem sumir nenhum.
+                colunas_para_mostrar = ["Aluna", "Turma"]
+                for h in HORARIOS:
+                    if h in df_raw.columns:
+                        colunas_para_mostrar.append(h)
                 
-                st.dataframe(df_raw[cols_finais], use_container_width=True, hide_index=True)
+                st.dataframe(df_raw[colunas_para_mostrar], use_container_width=True, hide_index=True)
                 
                 if st.button("🗑️ Deletar Rodízio"):
                     supabase.table("calendario").delete().eq("id", data_sel_str).execute()
                     st.cache_data.clear()
                     st.rerun()
+                    
                     
   # --- ABA 2: CHAMADA GERAL ---
     with tab_cham:
@@ -942,6 +945,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
