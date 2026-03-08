@@ -670,7 +670,7 @@ if menu == "🏠 Secretaria":
                         st.rerun()
 
 # ==========================================
-# MÓDULO PROFESSORA - V21 (AUTO-PREENCHIMENTO + SUBMIT FIX)
+# MÓDULO PROFESSORA - V21 (CORREÇÃO DE SINTAXE + SUBMIT)
 # ==========================================
 elif menu == "👩‍🏫 Minhas Aulas":
     st.header("👩‍🏫 Controle de Desempenho")
@@ -733,7 +733,9 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 d_sel = next(x for x in aulas if x["label"] == sel_lbl)
                 
                 st.divider()
-                st.markdown(### 👥 Chamada: {d_sel['loc']})
+                # --- CORREÇÃO DA LINHA 736 ---
+                st.markdown(f"### 👥 Chamada: {d_sel['loc']}")
+                
                 als_ref = TURMAS.get(d_sel["tr"], [d_sel["al"]]) if d_sel["tipo"] != "Prática" else [d_sel["al"]]
                 
                 als_conf = []
@@ -742,7 +744,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     if cols[i%4].checkbox(al, value=True, key=f"ch_{al}_{sel_lbl}"):
                         als_conf.append(al)
 
-                # RECUPERAÇÃO DE DADOS (Para aparecer o que já foi salvo)
+                # RECUPERAÇÃO DE DADOS (Persistência)
                 pre_met, pre_obs, pre_difs = "Selecione...", "", []
                 if als_conf:
                     res_h = supabase.table("historico_geral").select("*").eq("Data", dt_str).eq("Aluna", als_conf[0]).eq("Tipo", f"Aula_{d_sel['tipo']}").execute()
@@ -751,19 +753,21 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         pre_obs = res_h.data[0].get("Observacao", "")
                         pre_difs = res_h.data[0].get("Dificuldades", [])
 
-                # FORMULÁRIO COM O BOTÃO OBRIGATÓRIO
                 if als_conf:
-                    with st.form("form_pedagogico"):
+                    with st.form("form_pedagogico_v21"):
                         st.subheader("📝 Análise Pedagógica")
                         c1, c2 = st.columns(2)
                         
                         if d_sel["tipo"] == "Prática":
                             df_m = db_get_metodos()
                             m_opts = ["Selecione..."] + (df_m['nome'].tolist() if not df_m.empty else [])
-                            met_v = c1.selectbox("Método:", m_opts, index=m_opts.index(pre_met) if pre_met in m_opts else 0)
+                            # Tenta achar o índice do método salvo
+                            idx_m = m_opts.index(pre_met) if pre_met in m_opts else 0
+                            met_v = c1.selectbox("Método:", m_opts, index=idx_m)
                             lic_v = c2.text_input("Lição:", value="") 
                         else:
-                            met_v = c1.selectbox("Volume/Fase:", OPCOES_LICOES_NUM, index=OPCOES_LICOES_NUM.index(pre_met) if pre_met in OPCOES_LICOES_NUM else 0)
+                            idx_v = OPCOES_LICOES_NUM.index(pre_met) if pre_met in OPCOES_LICOES_NUM else 0
+                            met_v = c1.selectbox("Volume/Fase:", OPCOES_LICOES_NUM, index=idx_v)
                             lic_v = ""
 
                         st.markdown("**Dificuldades:**")
@@ -771,7 +775,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         c_dif = st.columns(2)
                         difs_finais = []
                         for idx, dfc in enumerate(d_lista):
-                            if c_dif[idx%2].checkbox(dfc, value=(dfc in pre_difs), key=f"d_{dfc}"):
+                            if c_dif[idx%2].checkbox(dfc, value=(dfc in pre_difs), key=f"d21_{dfc}"):
                                 difs_finais.append(dfc)
 
                         obs_v = st.text_area("Observações Técnicas:", value=pre_obs)
@@ -779,18 +783,21 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         st.divider()
                         st.subheader("🏠 Lição para Casa")
                         cp1, cp2 = st.columns(2)
-                        t_casa = ""
                         if d_sel["tipo"] == "Prática":
-                            t_casa = f"Apostila: {cp1.text_input('Apostila:')} | Métodos: {cp2.text_input('Métodos:')}"
+                            l1 = cp1.text_input("Apostila:")
+                            l2 = cp2.text_input("Métodos:")
+                            t_casa = f"Apostila: {l1} | Métodos: {l2}"
                         elif d_sel["tipo"] == "Teoria":
-                            t_casa = f"MSA Preto: {cp1.text_input('MSA (Preto):')} | Extra: {cp2.text_input('Extra:')}"
+                            l1 = cp1.text_input("MSA (Preto):")
+                            l2 = cp2.text_input("Extra:")
+                            t_casa = f"MSA Preto: {l1} | Extra: {l2}"
                         else:
-                            t_casa = f"MSA Verde: {cp1.text_input('MSA (Verde):')} | Extra: {cp2.text_input('Extra:')}"
+                            l1 = cp1.text_input("MSA (Verde):")
+                            l2 = cp2.text_input("Extra:")
+                            t_casa = f"MSA Verde: {l1} | Extra: {l2}"
 
-                        # O BOTÃO QUE ESTAVA FALTANDO:
-                        enviar = st.form_submit_button("💾 CONGELAR ANÁLISE")
-                        
-                        if enviar:
+                        # Botão de Envio obrigatório dentro do formulário
+                        if st.form_submit_button("💾 CONGELAR ANÁLISE"):
                             for al_f in als_conf:
                                 supabase.table("historico_geral").delete().eq("Data", dt_str).eq("Tipo", f"Aula_{d_sel['tipo']}").eq("Aluna", al_f).execute()
                                 db_save_historico({
@@ -799,7 +806,8 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     "Dificuldades": difs_finais, "Observacao": obs_v, "Licao_Casa": t_casa
                                 })
                             st.success("Salvo com sucesso!")
-                            st.rerun()                            
+                            st.rerun()
+                            
 # ==========================================
 # MÓDULO ANÁLISE DE IA (LAYOUT CONSOLIDADO)
 # ==========================================
@@ -966,6 +974,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
