@@ -670,7 +670,7 @@ if menu == "🏠 Secretaria":
                         st.rerun()
 
 # ==========================================
-# MÓDULO PROFESSORA - V22 (REATIVIDADE POR SELEÇÃO)
+# MÓDULO PROFESSORA - V23 (FIX PERSISTÊNCIA & CACHE)
 # ==========================================
 elif menu == "👩‍🏫 Minhas Aulas":
     st.header("👩‍🏫 Controle de Desempenho")
@@ -683,23 +683,23 @@ elif menu == "👩‍🏫 Minhas Aulas":
             return pd.DataFrame(res.data)
         except: return pd.DataFrame()
 
-    # --- ABA 2: CONFIGURAÇÃO ---
+    # --- ABA CONFIGURAÇÃO ---
     with tab_config:
         st.subheader("📚 Métodos de Prática")
         df_metodos = db_get_metodos()
         if not df_metodos.empty:
             st.dataframe(df_metodos[['nome']], use_container_width=True, hide_index=True)
-            met_del = st.selectbox("Remover:", ["Selecione..."] + df_metodos['nome'].tolist())
-            if st.button("🗑️ Remover"):
+            met_del = st.selectbox("Remover:", ["Selecione..."] + df_metodos['nome'].tolist(), key="del_met_v23")
+            if st.button("🗑️ Remover", key="btn_del_v23"):
                 supabase.table("config_metodos").delete().eq("nome", met_del).execute()
                 st.rerun()
-        n_met = st.text_input("Novo Método:")
-        if st.button("➕ Cadastrar"):
+        n_met = st.text_input("Novo Método:", key="new_met_v23")
+        if st.button("➕ Cadastrar", key="btn_add_v23"):
             if n_met:
                 supabase.table("config_metodos").insert({"nome": n_met, "categoria": "Prática"}).execute()
                 st.rerun()
 
-    # --- ABA 1: REGISTRO ---
+    # --- ABA REGISTRO ---
     with tab_aula:
         instr_sel = st.session_state.get('nome_logado', 'Selecione...')
         c1, c2 = st.columns(2)
@@ -707,7 +707,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
         with c2:
             hoje = datetime.now()
             sab_p = hoje if hoje.weekday() == 5 else hoje + timedelta(days=(5 - hoje.weekday()) % 7)
-            data_prof = st.date_input("Data:", sab_p)
+            data_prof = st.date_input("Data:", sab_p, key="data_aula_v23")
             dt_str = data_prof.strftime("%d/%m/%Y")
 
         if instr_sel != "Selecione...":
@@ -728,7 +728,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
             if not aulas:
                 st.warning("Nenhuma aula encontrada.")
             else:
-                sel_lbl = st.radio("Horários:", [x["label"] for x in sorted(aulas, key=lambda x: x['h'])])
+                sel_lbl = st.radio("Horários:", [x["label"] for x in sorted(aulas, key=lambda x: x['h'])], key="radio_aulas_v23")
                 d_sel = next(x for x in aulas if x["label"] == sel_lbl)
                 
                 st.divider()
@@ -736,74 +736,81 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 
                 als_ref = TURMAS.get(d_sel["tr"], [d_sel["al"]]) if d_sel["tipo"] != "Prática" else [d_sel["al"]]
                 
-                # Para garantir que o formulário mude conforme a aluna, usamos a primeira selecionada como chave
                 als_conf = []
                 cols = st.columns(4)
                 for i, al in enumerate(als_ref):
-                    if cols[i%4].checkbox(al, value=True, key=f"ch_v22_{al}_{sel_lbl}"):
+                    # Key única por aluna e por aula selecionada
+                    if cols[i%4].checkbox(al, value=True, key=f"ch_v23_{al}_{sel_lbl}"):
                         als_conf.append(al)
 
-                # --- LÓGICA DE PUXAR INFORMAÇÃO OU ZERAR ---
+                # --- BUSCA DE DADOS SALVOS (INDIVIDUALIZADA) ---
                 pre_met, pre_obs, pre_difs = "Selecione...", "", []
-                
                 if als_conf:
-                    # Buscamos no banco pela aluna atual selecionada
-                    # Se for mais de uma, baseamos na primeira da lista de selecionadas
+                    # Carrega dados específicos da primeira aluna selecionada
                     res_h = supabase.table("historico_geral").select("*").eq("Data", dt_str).eq("Aluna", als_conf[0]).eq("Tipo", f"Aula_{d_sel['tipo']}").execute()
-                    
                     if res_h.data:
                         dados = res_h.data[0]
                         pre_met = dados.get("Licao_Atual", "Selecione...")
                         pre_obs = dados.get("Observacao", "")
                         pre_difs = dados.get("Dificuldades", [])
-                    # Se res_h.data for vazio, as variáveis acima permanecem "limpas"
 
-                    # O 'key' no form garante que ele resete visualmente quando mudar a aluna
-                    with st.form(key=f"form_v22_{als_conf[0]}_{sel_lbl}"):
-                        st.subheader(f"📝 Análise: {', '.join(als_conf)}")
+                    # O KEY DO FORMULÁRIO MUDA SEMPRE QUE MUDAR A ALUNA OU O HORÁRIO
+                    form_key = f"form_final_{als_conf[0]}_{sel_lbl}_{dt_str}"
+                    with st.form(key=form_key):
+                        st.subheader(f"📝 Análise Pedagógica: {als_conf[0]}")
                         c1, c2 = st.columns(2)
                         
                         if d_sel["tipo"] == "Prática":
                             df_m = db_get_metodos()
                             m_opts = ["Selecione..."] + (df_m['nome'].tolist() if not df_m.empty else [])
-                            idx_m = m_opts.index(pre_met) if pre_met in m_opts else 0
-                            met_v = c1.selectbox("Método:", m_opts, index=idx_m)
-                            lic_v = c2.text_input("Lição:", value="") 
+                            # Ajuste fino: separa nome do método da lição se estiverem juntos
+                            metodo_limpo = pre_met.split(' ')[0] if ' ' in pre_met else pre_met
+                            idx_m = m_opts.index(metodo_limpo) if metodo_limpo in m_opts else 0
+                            met_v = c1.selectbox("Método:", m_opts, index=idx_m, key=f"sel_met_{form_key}")
+                            lic_v = c2.text_input("Lição:", value=pre_met.split(' ')[-1] if ' ' in pre_met else "", key=f"inp_lic_{form_key}") 
                         else:
                             idx_v = OPCOES_LICOES_NUM.index(pre_met) if pre_met in OPCOES_LICOES_NUM else 0
-                            met_v = c1.selectbox("Volume/Fase:", OPCOES_LICOES_NUM, index=idx_v)
+                            met_v = c1.selectbox("Volume/Fase:", OPCOES_LICOES_NUM, index=idx_v, key=f"sel_vol_{form_key}")
                             lic_v = ""
 
-                        st.markdown("**Dificuldades:**")
+                        st.markdown("**Dificuldades Detectadas:**")
                         d_lista = DIF_TEORIA if d_sel["tipo"] == "Teoria" else DIF_SOLFEJO if d_sel["tipo"] == "Solfejo" else DIF_PRATICA
                         c_dif = st.columns(2)
                         difs_finais = []
                         for idx, dfc in enumerate(d_lista):
-                            if c_dif[idx%2].checkbox(dfc, value=(dfc in pre_difs), key=f"d22_{dfc}_{als_conf[0]}"):
+                            # Valor inicial baseado no que veio do banco
+                            if c_dif[idx%2].checkbox(dfc, value=(dfc in pre_difs), key=f"chk_dif_{dfc}_{form_key}"):
                                 difs_finais.append(dfc)
 
-                        obs_v = st.text_area("Observações Técnicas / Próxima Aula:", value=pre_obs)
+                        obs_v = st.text_area("Dicas / Observações:", value=pre_obs, key=f"txt_obs_{form_key}")
 
                         st.divider()
                         st.subheader("🏠 Lição para Casa")
                         cp1, cp2 = st.columns(2)
                         
                         if d_sel["tipo"] == "Prática":
-                            t_casa = f"Apostila: {cp1.text_input('Apostila:')} | Métodos: {cp2.text_input('Métodos:')}"
+                            l1 = cp1.text_input("Apostila:", key=f"casa_ap_{form_key}")
+                            l2 = cp2.text_input("Métodos:", key=f"casa_met_{form_key}")
+                            t_casa = f"Apostila: {l1} | Métodos: {l2}"
                         elif d_sel["tipo"] == "Teoria":
-                            t_casa = f"MSA Preto: {cp1.text_input('MSA (Preto):')} | Extra: {cp2.text_input('Extra:')}"
+                            l1 = cp1.text_input("MSA (Preto):", key=f"casa_msap_{form_key}")
+                            l2 = cp2.text_input("Extra:", key=f"casa_extp_{form_key}")
+                            t_casa = f"MSA Preto: {l1} | Extra: {l2}"
                         else:
-                            t_casa = f"MSA Verde: {cp1.text_input('MSA (Verde):')} | Extra: {cp2.text_input('Extra:')}"
+                            l1 = cp1.text_input("MSA (Verde):", key=f"casa_msav_{form_key}")
+                            l2 = cp2.text_input("Extra:", key=f"casa_extv_{form_key}")
+                            t_casa = f"MSA Verde: {l1} | Extra: {l2}"
 
                         if st.form_submit_button("💾 CONGELAR ANÁLISE"):
                             for al_f in als_conf:
+                                # Deleta anterior e salva novo
                                 supabase.table("historico_geral").delete().eq("Data", dt_str).eq("Tipo", f"Aula_{d_sel['tipo']}").eq("Aluna", al_f).execute()
                                 db_save_historico({
                                     "Aluna": al_f, "Tipo": f"Aula_{d_sel['tipo']}", "Data": dt_str,
                                     "Instrutora": instr_sel, "Licao_Atual": f"{met_v} {lic_v}".strip(),
                                     "Dificuldades": difs_finais, "Observacao": obs_v, "Licao_Casa": t_casa
                                 })
-                            st.success("Salvo com sucesso!")
+                            st.success(f"✅ Análise de {als_conf[0]} salva!")
                             st.rerun()
                             
 # ==========================================
@@ -972,6 +979,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
