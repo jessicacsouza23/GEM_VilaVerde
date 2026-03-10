@@ -882,24 +882,35 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             l2 = cp2.text_input("Extra:", key=f"casa_extv_{form_key}")
                             t_casa = f"MSA Verde: {l1} | Extra: {l2}"
     
+                        # --- BOTÃO DE SALVAMENTO ---
                         if st.form_submit_button("💾 CONGELAR ANÁLISE"):
-                            for al_f in als_conf:
-                                # Lógica de união (Individual + Turma)
-                                res_atual = supabase.table("historico_geral").select("Observacao").eq("Data", dt_str).eq("Aluna", al_f).eq("Tipo", f"Aula_{d_sel['tipo']}").execute()
-                                obs_final = obs_v
-                                if res_atual.data:
-                                    obs_ant = res_atual.data[0].get("Observacao", "")
-                                    if obs_ant and obs_ant != obs_v:
-                                        obs_final = f"📝 INDIVIDUAL: {obs_ant} | 👥 TURMA: {obs_v}"
-    
-                                supabase.table("historico_geral").delete().eq("Data", dt_str).eq("Tipo", f"Aula_{d_sel['tipo']}").eq("Aluna", al_f).execute()
-                                db_save_historico({
-                                    "Aluna": al_f, "Tipo": f"Aula_{d_sel['tipo']}", "Data": dt_str,
-                                    "Instrutora": instr_sel, "Licao_Atual": f"{met_v} {lic_v}".strip(),
-                                    "Dificuldades": difs_finais, "Observacao": obs_final, "Licao_Casa": t_casa
-                                })
-                            st.success("✅ Registros Salvos!")
-                            st.rerun()                            
+                            with st.spinner("Salvando informações..."): # Mostra um carregamento rápido
+                                for al_f in als_conf:
+                                    # Lógica de união (Individual + Turma)
+                                    res_at = supabase.table("historico_geral").select("Observacao").eq("Data", dt_str).eq("Aluna", al_f).eq("Tipo", f"Aula_{d_sel['tipo']}").execute()
+                                    obs_f = obs_v
+                                    if res_at.data:
+                                        obs_a = res_at.data[0].get("Observacao", "")
+                                        if obs_a and obs_a != obs_v: 
+                                            obs_f = f"📝 IND: {obs_a} | 👥 TURMA: {obs_v}"
+                                    
+                                    # Deleta e Salva
+                                    supabase.table("historico_geral").delete().eq("Data", dt_str).eq("Tipo", f"Aula_{d_sel['tipo']}").eq("Aluna", al_f).execute()
+                                    db_save_historico({
+                                        "Aluna": al_f, "Tipo": f"Aula_{d_sel['tipo']}", "Data": dt_str,
+                                        "Instrutora": instr_sel, "Licao_Atual": f"{met_v} {lic_v}".strip(),
+                                        "Dificuldades": difs_finais, "Observacao": obs_f, "Licao_Casa": t_casa
+                                    })
+                                
+                            # --- MENSAGENS DE CONFIRMAÇÃO NA TELA ---
+                            st.balloons() # Efeito visual de celebração
+                            st.success("✅ DADOS SALVOS COM SUCESSO!") # Mensagem verde fixa
+                            st.toast("Informações registradas no prontuário.", icon="💾") # Mensagem flutuante no canto
+                            
+                            # Pequena pausa para a professora ver a mensagem antes de limpar a tela
+                            import time
+                            time.sleep(2) 
+                            st.rerun() # Limpa o formulário para a próxima aula
                             
 # ==========================================
 # MÓDULO ANÁLISE DE IA (LAYOUT CONSOLIDADO)
@@ -1067,6 +1078,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
