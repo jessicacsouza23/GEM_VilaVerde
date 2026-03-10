@@ -318,9 +318,9 @@ calendario_db = {item.get('id'): item.get('escala', []) for item in calendario_r
 # --- 5. INTERFACE E NAVEGAÇÃO ---
 st.sidebar.title(f"👋 {st.session_state.nome_logado}")
 if st.session_state.perfil == "Secretaria":
-    menu = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "📊 Analítico IA"])
+    menu = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "📊 Analítico IA", "🚨 ÁREA DE PERIGO"])
 else:
-    menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📊 Analítico IA", "🚨 ÁREA DE PERIGO"])
+    menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📊 Analítico IA"])
     
     
 if st.sidebar.button("Sair"):
@@ -1019,6 +1019,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
