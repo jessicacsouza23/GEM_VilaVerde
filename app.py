@@ -339,34 +339,34 @@ if menu == "🏠 Secretaria":
             "📝 Controle de Lições"
         ])
 
-       # 1. Garante que a variável existe (Alinhado com o if acima)
-    pendencias = pd.DataFrame() 
-
-    # 2. Área de Limpeza (Dentro do bloco da Secretaria)
-    with st.expander("🚨 ÁREA DE PERIGO - Limpeza do Sistema"):
-        st.warning("Atenção: Esta ação apagará registros do sistema.")
-        confirma_limpeza = st.checkbox("Estou ciente que esta ação é irreversível.", key="conf_limp")
-        
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("🗑️ LIMPAR HISTÓRICO DE AULAS"):
-                if confirma_limpeza:
-                    supabase.table("historico_geral").delete().neq("Data", "").execute()
-                    st.success("✅ Histórico de aulas limpo!")
-                    st.rerun()
-                else:
-                    st.error("Marque a confirmação primeiro.")
-
-        with col_btn2:
-            if st.button("📅 LIMPAR ESCALAS / RODÍZIO"):
-                if confirma_limpeza:
-                    supabase.table("config_calendario").delete().neq("id", -1).execute()
-                    st.success("✅ Escalas removidas!")
-                    st.rerun()
-                else:
-                    st.error("Marque a confirmação primeiro.")
-
-    st.divider()
+           # 1. Garante que a variável existe (Alinhado com o if acima)
+        pendencias = pd.DataFrame() 
+    
+        # 2. Área de Limpeza (Dentro do bloco da Secretaria)
+        with st.expander("🚨 ÁREA DE PERIGO - Limpeza do Sistema"):
+            st.warning("Atenção: Esta ação apagará registros do sistema.")
+            confirma_limpeza = st.checkbox("Estou ciente que esta ação é irreversível.", key="conf_limp")
+            
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("🗑️ LIMPAR HISTÓRICO DE AULAS"):
+                    if confirma_limpeza:
+                        supabase.table("historico_geral").delete().neq("Data", "").execute()
+                        st.success("✅ Histórico de aulas limpo!")
+                        st.rerun()
+                    else:
+                        st.error("Marque a confirmação primeiro.")
+    
+            with col_btn2:
+                if st.button("📅 LIMPAR ESCALAS / RODÍZIO"):
+                    if confirma_limpeza:
+                        supabase.table("config_calendario").delete().neq("id", -1).execute()
+                        st.success("✅ Escalas removidas!")
+                        st.rerun()
+                    else:
+                        st.error("Marque a confirmação primeiro.")
+    
+        st.divider()
         
         with tab_plan:
             c1, c2 = st.columns(2)
@@ -1009,6 +1009,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
