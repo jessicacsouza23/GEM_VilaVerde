@@ -783,7 +783,68 @@ elif menu == "👩‍🏫 Minhas Aulas":
             if n_met:
                 supabase.table("config_metodos").insert({"nome": n_met, "categoria": "Prática"}).execute()
                 st.rerun()
+# ============================================================
+# LÓGICA DE SALVAMENTO: PREFERÊNCIA INDIVIDUAL + COLETIVO
+# ============================================================
 
+if enviar_analise:
+    if not licao_estudada:
+        st.error("⚠️ O campo 'Lição / Volume / Página' é obrigatório!")
+    else:
+        try:
+            # 1. Captura as informações (Individuais vs Turma)
+            # Supondo que você tenha campos de 'obs_turma' e 'obs_individual'
+            # Se a informação individual existir, ela vem primeiro ou ganha destaque
+            
+            def formatar_observacao(individual, turma, titulo):
+                if individual.strip() and turma.strip():
+                    return f"📝 INDIVIDUAL: {individual} | 👥 TURMA: {turma}"
+                elif individual.strip():
+                    return f"📝 INDIVIDUAL: {individual}"
+                elif turma.strip():
+                    return f"👥 TURMA: {turma}"
+                return "Sem observações registradas."
+
+            # 2. Consolida os campos seguindo sua regra de preferência
+            postura_final = formatar_observacao(postura, postura_turma, "Postura")
+            tecnica_final = formatar_observacao(tecnica, tecnica_turma, "Técnica")
+            ritmo_final = formatar_observacao(ritmo, ritmo_turma, "Ritmo")
+            teoria_final = formatar_observacao(teoria_obs, teoria_turma, "Teoria")
+
+            # 3. Estrutura o JSON final para "congelar" a análise
+            analise_pedagogica = {
+                "area": area_estudo,
+                "licao": licao_estudada,
+                "detalhes": {
+                    "postura": postura_final,
+                    "tecnica": tecnica_final,
+                    "ritmo": ritmo_final,
+                    "teoria": teoria_final
+                },
+                "meta": meta_prox,
+                "banca": dica_banca,
+                "professora_resp": nome_logado,
+                "data_congelamento": data_hj_str
+            }
+
+            # 4. Envio único para o Supabase
+            res = supabase.table("historico_geral").insert({
+                "Aluna": aluna_sel,
+                "Tipo": "Analise_Pedagogica",
+                "Data": data_hj_str,
+                "Categoria": area_estudo,
+                "Status": "Congelado",
+                "Observacao": json.dumps(analise_pedagogica, ensure_ascii=False)
+            }).execute()
+
+            st.success(f"✅ Registro de {aluna_sel} salvo com sucesso (Individual + Turma)!")
+            st.balloons()
+            st.cache_data.clear()
+            
+        except Exception as e:
+            st.error(f"Erro ao processar salvamento: {e}")
+            
+    
     # --- ABA REGISTRO ---
     with tab_aula:
         instr_sel = st.session_state.get('nome_logado', 'Selecione...')
@@ -1064,6 +1125,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
