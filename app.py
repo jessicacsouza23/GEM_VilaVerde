@@ -587,48 +587,53 @@ if menu == "🏠 Secretaria":
     with tab_licao:
         st.subheader("Registro de Correção de Lições")
         
-        df_historico = pd.DataFrame(db_get_historico())
-        data_hj = datetime.now()
+        # --- 1. INICIALIZAÇÃO DE SEGURANÇA (Evita NameError) ---
+        pendencias = pd.DataFrame() 
+        historico_raw = db_get_historico()
+        df_historico = pd.DataFrame(historico_raw)
         
         c1, c2, c3 = st.columns([2, 1, 1])
         with c1:
-            aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
+            aluna_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_sel")
         with c2:
-            sec_resp = st.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="sec_resp")
+            sec_resp = st.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="sec_resp_sel")
         with c3:
-            data_corr = st.date_input("Data da Correção:", data_hj, key="sec_data")
+            data_corr = st.date_input("Data da Correção:", datetime.now(), key="sec_data_sel")
             data_corr_str = data_corr.strftime("%d/%m/%Y")
 
-        # --- LÓGICA DE PENDÊNCIAS (Vem das Professoras) ---
+        # --- 2. FILTRAGEM DE PENDÊNCIAS ---
         if not df_historico.empty:
-            df_alu = df_historico[df_historico['Aluna'] == aluna]
-            if not df_alu.empty:
-                # Filtramos tudo que é Controle_Licao e que NÃO está como "Realizado"
-                pendencias = df_alu[
-                    (df_alu['Tipo'] == 'Controle_Licao') & 
-                    (df_alu['Status'] != "Realizado")
-                ].copy()
+            # Filtramos lições da aluna selecionada que não foram finalizadas pela secretaria
+            pendencias = df_historico[
+                (df_historico['Aluna'] == aluna_sel) & 
+                (df_historico['Tipo'] == 'Controle_Licao') & 
+                (df_historico['Status'] != "Realizado")
+            ].copy()
 
-                # --- EXIBIÇÃO DAS PENDÊNCIAS (COM CHAVES ÚNICAS) ---
+        # --- 3. EXIBIÇÃO E VALIDAÇÃO ---
         if not pendencias.empty:
-            st.error(f"🚨 {len(pendencias)} Lições Pendentes para {aluna}")
+            st.error(f"🚨 {len(pendencias)} Lições Pendentes para {aluna_sel}")
             
-            # Usamos enumerate para garantir um contador sequencial (i)
             for i, (row_idx, p) in enumerate(pendencias.iterrows()):
-                # Criamos um ID único baseado nos dados da linha + contador
-                # Isso evita duplicidade mesmo que a aluna tenha 2 lições na mesma data
-                safe_key = f"{p['Data']}_{p['Categoria']}_{i}".replace("/", "")
+                # Chave única para evitar conflitos de widgets
+                safe_key = f"{p['Data']}_{i}".replace("/", "")
                 
                 with st.container(border=True):
                     col_info, col_acao = st.columns([3, 2])
+                    
                     with col_info:
                         st.markdown(f"**📅 {p['Data']}** — {p['Categoria']}")
                         st.markdown(f"📖 {p['Licao_Detalhe']}")
                         if p.get('Observacao'):
-                            st.caption(f"💬 Nota da Prof: {p['Observacao']}")
+                            # Se a observação for um JSON (da professora), tentamos limpar para exibir
+                            try:
+                                obs_json = json.loads(p['Observacao'])
+                                texto_obs = f"Postura: {obs_json.get('Postura', '')} | Técnica: {obs_json.get('Técnica', '')}"
+                                st.caption(f"💬 Análise Técnica: {texto_obs}")
+                            except:
+                                st.caption(f"💬 Nota: {p['Observacao']}")
                     
                     with col_acao:
-                        # Adicionamos a safe_key em cada widget
                         novo_status = st.radio(
                             "Resultado:", 
                             ["Realizado", "Não realizado", "Devolvido para correção"],
@@ -639,25 +644,23 @@ if menu == "🏠 Secretaria":
                         
                         if st.button("Confirmar Correção", key=f"btn_corr_{safe_key}"):
                             try:
+                                # O 'id' deve ser a coluna primária da sua tabela no Supabase
                                 supabase.table("historico_geral").update({
                                     "Status": novo_status,
-                                    "Observacao": nova_obs,
+                                    "Observacao_Sec": nova_obs, # Usando coluna diferente para não apagar a da prof
                                     "Secretaria": sec_resp
-                                }).eq("Aluna", p['Aluna'])\
-                                  .eq("Data", p['Data'])\
-                                  .eq("Tipo", "Controle_Licao")\
-                                  .eq("Categoria", p['Categoria']).execute()
+                                }).eq("id", p['id']).execute()
                                 
                                 st.success("✅ Atualizado!")
-                                st.cache_data.clear()
+                                st.cache_data.clear() # Limpa o cache para recarregar a lista sem essa pendência
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"Erro: {e}")
+                                st.error(f"Erro ao atualizar: {e}")
         else:
-            st.success("✅ Nenhuma lição pendente para esta aluna.")
+            st.success(f"✅ Nenhuma lição pendente para {aluna_sel}.")
         
         st.divider()
-
+        
         # --- VERIFICAÇÃO DE REGISTRO EXISTENTE ---
         registro_previo = None
         if not df_historico.empty:
@@ -1019,6 +1022,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
