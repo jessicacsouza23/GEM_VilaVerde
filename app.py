@@ -884,34 +884,42 @@ elif menu == "👩‍🏫 Minhas Aulas":
     
                         # --- BOTÃO DE SALVAMENTO ---
                         if st.form_submit_button("💾 CONGELAR ANÁLISE"):
-                            with st.spinner("Salvando informações..."): # Mostra um carregamento rápido
+                            with st.spinner(f"Salvando progresso no método {met_v}..."):
                                 for al_f in als_conf:
-                                    # Lógica de união (Individual + Turma)
-                                    res_at = supabase.table("historico_geral").select("Observacao").eq("Data", dt_str).eq("Aluna", al_f).eq("Tipo", f"Aula_{d_sel['tipo']}").execute()
+                                    # 1. Criamos um Identificador Único para o Método
+                                    # Em vez de apenas "Aula_Prática", salvamos como "Aula_Prática_Bona"
+                                    tipo_com_metodo = f"Aula_{d_sel['tipo']}_{met_v}".replace(" ", "_")
+                                    
+                                    # 2. Busca se já existe algo desse método hoje para unir (Individual + Turma)
+                                    res_at = supabase.table("historico_geral").select("Observacao").eq("Data", dt_str).eq("Aluna", al_f).eq("Tipo", tipo_com_metodo).execute()
+                                    
                                     obs_f = obs_v
                                     if res_at.data:
                                         obs_a = res_at.data[0].get("Observacao", "")
                                         if obs_a and obs_a != obs_v: 
                                             obs_f = f"📝 IND: {obs_a} | 👥 TURMA: {obs_v}"
                                     
-                                    # Deleta e Salva
-                                    supabase.table("historico_geral").delete().eq("Data", dt_str).eq("Tipo", f"Aula_{d_sel['tipo']}").eq("Aluna", al_f).execute()
+                                    # 3. Deleta o registro antigo DESSE MÉTODO e salva o novo
+                                    supabase.table("historico_geral").delete().eq("Data", dt_str).eq("Tipo", tipo_com_metodo).eq("Aluna", al_f).execute()
+                                    
                                     db_save_historico({
-                                        "Aluna": al_f, "Tipo": f"Aula_{d_sel['tipo']}", "Data": dt_str,
-                                        "Instrutora": instr_sel, "Licao_Atual": f"{met_v} {lic_v}".strip(),
-                                        "Dificuldades": difs_finais, "Observacao": obs_f, "Licao_Casa": t_casa
+                                        "Aluna": al_f, 
+                                        "Tipo": tipo_com_metodo, # Agora o histórico separa por livro/método
+                                        "Data": dt_str,
+                                        "Instrutora": instr_sel, 
+                                        "Licao_Atual": f"{met_v} {lic_v}".strip(),
+                                        "Dificuldades": difs_finais, 
+                                        "Observacao": obs_f, 
+                                        "Licao_Casa": t_casa
                                     })
                                 
-                            # --- MENSAGENS DE CONFIRMAÇÃO NA TELA ---
-                            st.balloons() # Efeito visual de celebração
-                            st.success("✅ DADOS SALVOS COM SUCESSO!") # Mensagem verde fixa
-                            st.toast("Informações registradas no prontuário.", icon="💾") # Mensagem flutuante no canto
+                            # Feedback visual para a professora
+                            st.balloons()
+                            st.success(f"✅ DADOS SALVOS: {met_v} registrado para {len(als_conf)} aluna(s)!")
                             
-                            # Pequena pausa para a professora ver a mensagem antes de limpar a tela
                             import time
-                            time.sleep(2) 
-                            st.rerun() # Limpa o formulário para a próxima aula
-                            
+                            time.sleep(2)
+                            st.rerun()                            
 # ==========================================
 # MÓDULO ANÁLISE DE IA (LAYOUT CONSOLIDADO)
 # ==========================================
@@ -1078,6 +1086,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
