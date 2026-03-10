@@ -338,35 +338,6 @@ if menu == "🏠 Secretaria":
             "📍 Chamada", 
             "📝 Controle de Lições"
         ])
-
-           # 1. Garante que a variável existe (Alinhado com o if acima)
-        pendencias = pd.DataFrame() 
-    
-        # 2. Área de Limpeza (Dentro do bloco da Secretaria)
-        with st.expander("🚨 ÁREA DE PERIGO - Limpeza do Sistema"):
-            st.warning("Atenção: Esta ação apagará registros do sistema.")
-            confirma_limpeza = st.checkbox("Estou ciente que esta ação é irreversível.", key="conf_limp")
-            
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("🗑️ LIMPAR HISTÓRICO DE AULAS"):
-                    if confirma_limpeza:
-                        supabase.table("historico_geral").delete().neq("Data", "").execute()
-                        st.success("✅ Histórico de aulas limpo!")
-                        st.rerun()
-                    else:
-                        st.error("Marque a confirmação primeiro.")
-    
-            with col_btn2:
-                if st.button("📅 LIMPAR ESCALAS / RODÍZIO"):
-                    if confirma_limpeza:
-                        supabase.table("config_calendario").delete().neq("id", -1).execute()
-                        st.success("✅ Escalas removidas!")
-                        st.rerun()
-                    else:
-                        st.error("Marque a confirmação primeiro.")
-    
-        st.divider()
         
         with tab_plan:
             c1, c2 = st.columns(2)
@@ -599,54 +570,53 @@ if menu == "🏠 Secretaria":
                 ].copy()
 
                 # --- EXIBIÇÃO DAS PENDÊNCIAS (COM CHAVES ÚNICAS) ---
-                            # 1. Primeiro, garantimos que a variável existe como um DataFrame vazio
-                pendencias = pd.DataFrame() 
-                    
-                    # 2. Tentamos buscar as pendências do banco (ajuste a tabela se necessário)
-                        try:
-                            res_p = supabase.table("historico_geral").select("*").eq("Tipo", "Pendência").execute()
-                            if res_p.data:
-                                pendencias = pd.DataFrame(res_p.data)
-                        except Exception as e:
-                            st.error(f"Erro ao buscar pendências: {e}")
-                        
-                        # 3. Agora a verificação nunca dará NameError
-                        if not pendencias.empty:
-                            st.warning(f"Existem {len(pendencias)} registros pendentes de análise.")
-                            st.dataframe(pendencias)
-                        else:
-                            st.success("✅ Nenhuma pendência encontrada.")
-                        
-                        with col_acao:
-                            # Adicionamos a safe_key em cada widget
-                            novo_status = st.radio(
-                                "Resultado:", 
-                                ["Realizado", "Não realizado", "Devolvido para correção"],
-                                key=f"status_{safe_key}", 
-                                horizontal=True
-                            )
-                            nova_obs = st.text_input("Obs da Secretaria:", key=f"obs_sec_{safe_key}")
-                            
-                            if st.button("Confirmar Correção", key=f"btn_corr_{safe_key}"):
-                                try:
-                                    supabase.table("historico_geral").update({
-                                        "Status": novo_status,
-                                        "Observacao": nova_obs,
-                                        "Secretaria": sec_resp
-                                    }).eq("Aluna", p['Aluna'])\
-                                      .eq("Data", p['Data'])\
-                                      .eq("Tipo", "Controle_Licao")\
-                                      .eq("Categoria", p['Categoria']).execute()
-                                    
-                                    st.success("✅ Atualizado!")
-                                    st.cache_data.clear()
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro: {e}")
-            else:
-                st.success("✅ Nenhuma lição pendente para esta aluna.")
+        if not pendencias.empty:
+            st.error(f"🚨 {len(pendencias)} Lições Pendentes para {aluna}")
             
-            st.divider()
+            # Usamos enumerate para garantir um contador sequencial (i)
+            for i, (row_idx, p) in enumerate(pendencias.iterrows()):
+                # Criamos um ID único baseado nos dados da linha + contador
+                # Isso evita duplicidade mesmo que a aluna tenha 2 lições na mesma data
+                safe_key = f"{p['Data']}_{p['Categoria']}_{i}".replace("/", "")
+                
+                with st.container(border=True):
+                    col_info, col_acao = st.columns([3, 2])
+                    with col_info:
+                        st.markdown(f"**📅 {p['Data']}** — {p['Categoria']}")
+                        st.markdown(f"📖 {p['Licao_Detalhe']}")
+                        if p.get('Observacao'):
+                            st.caption(f"💬 Nota da Prof: {p['Observacao']}")
+                    
+                    with col_acao:
+                        # Adicionamos a safe_key em cada widget
+                        novo_status = st.radio(
+                            "Resultado:", 
+                            ["Realizado", "Não realizado", "Devolvido para correção"],
+                            key=f"status_{safe_key}", 
+                            horizontal=True
+                        )
+                        nova_obs = st.text_input("Obs da Secretaria:", key=f"obs_sec_{safe_key}")
+                        
+                        if st.button("Confirmar Correção", key=f"btn_corr_{safe_key}"):
+                            try:
+                                supabase.table("historico_geral").update({
+                                    "Status": novo_status,
+                                    "Observacao": nova_obs,
+                                    "Secretaria": sec_resp
+                                }).eq("Aluna", p['Aluna'])\
+                                  .eq("Data", p['Data'])\
+                                  .eq("Tipo", "Controle_Licao")\
+                                  .eq("Categoria", p['Categoria']).execute()
+                                
+                                st.success("✅ Atualizado!")
+                                st.cache_data.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro: {e}")
+        else:
+            st.success("✅ Nenhuma lição pendente para esta aluna.")
+        
+        st.divider()
 
         # --- VERIFICAÇÃO DE REGISTRO EXISTENTE ---
         registro_previo = None
@@ -1009,16 +979,6 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
-
-
-
-
-
-
-
-
-
-
 
 
 
