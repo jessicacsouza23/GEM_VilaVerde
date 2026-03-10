@@ -856,7 +856,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             lic_v = c2.text_input("Lição:", value=pre_met.split(' ')[-1] if ' ' in pre_met else "", key=f"inp_lic_{form_key}") 
                         else:
                             idx_v = OPCOES_LICOES_NUM.index(pre_met) if pre_met in OPCOES_LICOES_NUM else 0
-                            met_v = c1.selectbox("Volume/Fase:", OPCOES_LICOES_NUM, index=idx_v, key=f"sel_vol_{form_key}")
+                            met_v = c1.ext_input("Lição:", value=pre_met.split(' ')[-1] if ' ' in pre_met else "", key=f"inp_lic_{form_key}")
                             lic_v = ""
 
                         st.markdown("**Dificuldades Detectadas:**")
@@ -1065,6 +1065,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
