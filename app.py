@@ -750,7 +750,7 @@ if perfil_usuario == "Professora":
         
 
 # ==========================================
-# MÓDULO PROFESSORA - V23 (FIX PERSISTÊNCIA & CACHE)
+# MÓDULO PROFESSORA - V31 (ESTÁVEL & UNIFICADO)
 # ==========================================
 elif menu == "👩‍🏫 Minhas Aulas":
     st.header(f"👩‍🏫 Painel da Professora: {st.session_state.nome_logado}")
@@ -758,9 +758,6 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
     if folga_ativa:
         st.warning("📴 Sistema em modo leitura devido à sua folga.")
-        # Opcional: st.stop() se quiser impedir que ela veja qualquer coisa
-    
-    
     
     def db_get_metodos():
         try:
@@ -774,18 +771,19 @@ elif menu == "👩‍🏫 Minhas Aulas":
         df_metodos = db_get_metodos()
         if not df_metodos.empty:
             st.dataframe(df_metodos[['nome']], use_container_width=True, hide_index=True)
-            met_del = st.selectbox("Remover:", ["Selecione..."] + df_metodos['nome'].tolist(), key="del_met_v23")
-            if st.button("🗑️ Remover", key="btn_del_v23"):
+            met_del = st.selectbox("Remover:", ["Selecione..."] + df_metodos['nome'].tolist(), key="del_met_v31")
+            if st.button("🗑️ Remover", key="btn_del_v31"):
                 supabase.table("config_metodos").delete().eq("nome", met_del).execute()
                 st.rerun()
-        n_met = st.text_input("Novo Método:", key="new_met_v23")
-        if st.button("➕ Cadastrar", key="btn_add_v23"):
+        
+        st.divider()
+        n_met = st.text_input("Novo Método:", key="new_met_v31")
+        if st.button("➕ Cadastrar", key="btn_add_v31"):
             if n_met:
                 supabase.table("config_metodos").insert({"nome": n_met, "categoria": "Prática"}).execute()
                 st.rerun()
-                
-        # --- ABA REGISTRO ---
-        # --- ABA REGISTRO (V25 - Lição de Casa Restaurada) ---
+
+    # --- ABA REGISTRO ---
     with tab_aula:
         instr_sel = st.session_state.get('nome_logado', 'Selecione...')
         c1, c2 = st.columns(2)
@@ -793,14 +791,14 @@ elif menu == "👩‍🏫 Minhas Aulas":
         with c2:
             hoje = datetime.now()
             sab_p = hoje if hoje.weekday() == 5 else hoje + timedelta(days=(5 - hoje.weekday()) % 7)
-            data_prof = st.date_input("Data:", sab_p, key="data_aula_v25")
+            data_prof = st.date_input("Data:", sab_p, key="data_aula_v31")
             dt_str = data_prof.strftime("%d/%m/%Y")
-    
+
         if instr_sel != "Selecione...":
             cal_db = db_get_calendario()
             n_bus = limpar_texto(instr_sel).lower().strip()
             aulas = []
-    
+
             if dt_str in cal_db:
                 for reg in cal_db[dt_str]:
                     for h in HORARIOS:
@@ -810,11 +808,11 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             lbl = f"🎹 {h} | {reg.get('Aluna')} ({cont.split('|')[0]})" if tipo=="Prática" else f"📚 {h} | {tipo} - {reg.get('Turma')}"
                             if lbl not in [x["label"] for x in aulas]:
                                 aulas.append({"label": lbl, "h": h, "tipo": tipo, "al": reg.get("Aluna"), "tr": reg.get("Turma"), "loc": cont.split('|')[0]})
-    
+
             if not aulas:
-                st.warning("Nenhuma aula encontrada.")
+                st.warning("Nenhuma aula encontrada para esta data.")
             else:
-                sel_lbl = st.radio("Horários:", [x["label"] for x in sorted(aulas, key=lambda x: x['h'])], key="radio_aulas_v25")
+                sel_lbl = st.radio("Selecione o Horário:", [x["label"] for x in sorted(aulas, key=lambda x: x['h'])], key="radio_aulas_v31")
                 d_sel = next(x for x in aulas if x["label"] == sel_lbl)
                 
                 st.divider()
@@ -825,112 +823,93 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 als_conf = []
                 cols = st.columns(4)
                 for i, al in enumerate(als_ref):
-                    if cols[i%4].checkbox(al, value=True, key=f"ch_v25_{al}_{sel_lbl}"):
+                    if cols[i%4].checkbox(al, value=True, key=f"ch_v31_{al}_{sel_lbl}"):
                         als_conf.append(al)
-    
-                # --- BUSCA DE DADOS SALVOS ---
-                pre_met, pre_obs, pre_difs = "Selecione...", "", []
-                                # ============================================================
-                # MÓDULO PROFESSORA - V28 (CARREGAMENTO DINÂMICO POR MÉTODO)
-                # ============================================================
-                
-                # ... (Mantenha a lógica de busca de 'aulas' e o 'st.radio' igual) ...
-                
+
                 if als_conf:
-                    # Definimos a chave do formulário
-                    form_key = f"form_v28_{als_conf[0]}_{sel_lbl}"
+                    # Chave única para o formulário
+                    form_key = f"form_v31_{als_conf[0]}_{sel_lbl}"
                     
                     with st.form(key=form_key):
                         st.subheader("📝 Análise Pedagógica")
                         t_casa = "Não informada"
                         
-                        c1, c2 = st.columns(2)
+                        col1, col2 = st.columns(2)
                         
-                        # 1. ESCOLHA DO MÉTODO PRIMEIRO
+                        # Definição do Método
                         if d_sel["tipo"] == "Prática":
                             df_m = db_get_metodos()
                             m_opts = ["Selecione..."] + (df_m['nome'].tolist() if not df_m.empty else [])
-                            met_v = c1.selectbox("Selecione o Método para carregar/salvar:", m_opts, key=f"sel_met_{form_key}")
+                            met_v = col1.selectbox("Método:", m_opts, key=f"sel_met_{form_key}")
                         else:
-                            met_v = c1.text_input("Conteúdo/Método:", value=d_sel["tipo"], key=f"inp_met_L_{form_key}")
-                
-                        # 2. BUSCA DINÂMICA (Baseada no método selecionado acima)
-                        # Se um método foi selecionado, tentamos buscar o que já existe para ele hoje
-                        pre_lic, pre_obs, pre_difs = "", "", []
-                        
-                        if met_v != "Selecione...":
-                            tipo_busca = f"Aula_{d_sel['tipo']}_{met_v}".replace(" ", "_")
-                            res_h = supabase.table("historico_geral").select("*").eq("Data", dt_str).eq("Aluna", als_conf[0]).eq("Tipo", tipo_busca).execute()
-                            
-                            if res_h.data:
-                                dados = res_h.data[0]
-                                # Pegamos apenas a parte da lição (o método já temos)
-                                pre_lic = dados.get("Licao_Atual", "").replace(met_v, "").strip()
-                                pre_obs = dados.get("Observacao", "")
-                                pre_difs = dados.get("Dificuldades", [])
-                
-                        # 3. CAMPOS DE ENTRADA (Preenchidos com o que foi buscado)
-                        lic_v = c2.text_input("Lição/Página:", value=pre_lic, key=f"inp_lic_{form_key}")
-                
+                            met_v = col1.text_input("Conteúdo/Método:", value=d_sel["tipo"], key=f"inp_met_L_{form_key}")
+
+                        # Lição Atual
+                        lic_v = col2.text_input("Lição/Página Atual:", key=f"inp_lic_{form_key}")
+
+                        # Dificuldades
                         st.markdown("**Dificuldades Detectadas:**")
                         d_lista = DIF_TEORIA if d_sel["tipo"] == "Teoria" else DIF_SOLFEJO if d_sel["tipo"] == "Solfejo" else DIF_PRATICA
                         c_dif = st.columns(2)
                         difs_finais = []
                         for idx, dfc in enumerate(d_lista):
-                            if c_dif[idx%2].checkbox(dfc, value=(dfc in pre_difs), key=f"chk_dif_{dfc}_{form_key}"):
+                            if c_dif[idx%2].checkbox(dfc, key=f"chk_dif_{dfc}_{form_key}"):
                                 difs_finais.append(dfc)
-                
-                        obs_v = st.text_area("Dicas / Observações:", value=pre_obs, key=f"txt_obs_{form_key}")
-                
-                        # ... (Lógica de Lição de Casa igual ao código anterior) ...
-    
-                        # --- REAPARECEU: LIÇÃO PARA CASA ---
+
+                        obs_v = st.text_area("Dicas e Observações Pedagógicas:", key=f"txt_obs_{form_key}")
+
                         st.divider()
                         st.subheader("🏠 Lição para Casa")
                         cp1, cp2 = st.columns(2)
                         
                         if d_sel["tipo"] == "Prática":
-                            l1 = cp1.text_input("Apostila:", key=f"casa_ap_{form_key}")
-                            l2 = cp2.text_input("Métodos:", key=f"casa_met_{form_key}")
-                            t_casa = f"Apostila: {l1} | Métodos: {l2}"
+                            la = cp1.text_input("Apostila:", key=f"c_ap_{form_key}")
+                            lm = cp2.text_input("Métodos:", key=f"c_met_{form_key}")
+                            t_casa = f"Apostila: {la} | Métodos: {lm}"
                         elif d_sel["tipo"] == "Teoria":
-                            l1 = cp1.text_input("MSA (Preto):", key=f"casa_msap_{form_key}")
-                            l2 = cp2.text_input("Extra:", key=f"casa_extp_{form_key}")
-                            t_casa = f"MSA Preto: {l1} | Extra: {l2}"
+                            lt1 = cp1.text_input("MSA (Preto):", key=f"c_msap_{form_key}")
+                            lt2 = cp2.text_input("Extra:", key=f"c_extp_{form_key}")
+                            t_casa = f"MSA Preto: {lt1} | Extra: {lt2}"
                         else:
-                            l1 = cp1.text_input("MSA (Verde):", key=f"casa_msav_{form_key}")
-                            l2 = cp2.text_input("Extra:", key=f"casa_extv_{form_key}")
-                            t_casa = f"MSA Verde: {l1} | Extra: {l2}"
-    
+                            ls1 = cp1.text_input("MSA (Verde):", key=f"c_msav_{form_key}")
+                            ls2 = cp2.text_input("Extra:", key=f"c_extv_{form_key}")
+                            t_casa = f"MSA Verde: {ls1} | Extra: {ls2}"
+
+                        # Botão de Envio (Obrigatório estar dentro do with st.form)
+                        submit_button = st.form_submit_button("💾 CONGELAR ANÁLISE")
+
+                    # Lógica após o clique (Pode ficar dentro ou fora, aqui dentro do form_conf para segurança)
+                    if submit_button:
+                        if met_v == "Selecione...":
+                            st.error("⚠️ Por favor, selecione um método antes de salvar.")
+                        else:
+                            with st.spinner("Salvando registros..."):
+                                for al_f in als_conf:
+                                    # Cria tipo único por método para não sobrescrever matérias diferentes
+                                    tipo_final = f"Aula_{d_sel['tipo']}_{met_v}".replace(" ", "_")
+                                    
+                                    # Lógica de união Individual + Turma
+                                    res_at = supabase.table("historico_geral").select("Observacao").eq("Data", dt_str).eq("Aluna", al_f).eq("Tipo", tipo_final).execute()
+                                    obs_f = obs_v
+                                    if res_at.data:
+                                        obs_a = res_at.data[0].get("Observacao", "")
+                                        if obs_a and obs_a != obs_v:
+                                            obs_f = f"📝 IND: {obs_a} | 👥 TURMA: {obs_v}"
+                                    
+                                    # Remove anterior e salva novo
+                                    supabase.table("historico_geral").delete().eq("Data", dt_str).eq("Tipo", tipo_final).eq("Aluna", al_f).execute()
+                                    db_save_historico({
+                                        "Aluna": al_f, "Tipo": tipo_final, "Data": dt_str,
+                                        "Instrutora": instr_sel, "Licao_Atual": f"{met_v} {lic_v}".strip(),
+                                        "Dificuldades": difs_finais, "Observacao": obs_f, "Licao_Casa": t_casa
+                                    })
                                 
-                # --- BOTÃO DE SALVAMENTO ---
-                if st.form_submit_button("💾 CONGELAR ANÁLISE"):
-                    if met_v == "Selecione...":
-                        st.error("Por favor, selecione um método antes de salvar.")
-                    else:
-                        for al_f in als_conf:
-                            tipo_final = f"Aula_{d_sel['tipo']}_{met_v}".replace(" ", "_")
-                            
-                            # União Individual + Turma
-                            res_at = supabase.table("historico_geral").select("Observacao").eq("Data", dt_str).eq("Aluna", al_f).eq("Tipo", tipo_final).execute()
-                            obs_f = obs_v
-                            if res_at.data:
-                                obs_a = res_at.data[0].get("Observacao", "")
-                                if obs_a and obs_a != obs_v: obs_f = f"📝 IND: {obs_a} | 👥 TURMA: {obs_v}"
-                            
-                            supabase.table("historico_geral").delete().eq("Data", dt_str).eq("Tipo", tipo_final).eq("Aluna", al_f).execute()
-                            db_save_historico({
-                                "Aluna": al_f, "Tipo": tipo_final, "Data": dt_str,
-                                "Instrutora": instr_sel, "Licao_Atual": f"{met_v} {lic_v}".strip(),
-                                "Dificuldades": difs_finais, "Observacao": obs_f, "Licao_Casa": t_casa
-                            })
-                        
-                        st.success(f"✅ DADOS SALVOS PARA O MÉTODO: {met_v}")
-                        st.balloons()
-                        import time
-                        time.sleep(1.5)
-                        st.rerun()
-                        
+                                st.balloons()
+                                st.success("✅ DADOS SALVOS COM SUCESSO!")
+                                import time
+                                time.sleep(2)
+                                st.rerun()
+                                
 # ==========================================
 # MÓDULO ANÁLISE DE IA (LAYOUT CONSOLIDADO)
 # ==========================================
@@ -1097,6 +1076,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
