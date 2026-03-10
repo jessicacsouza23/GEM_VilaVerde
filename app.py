@@ -713,6 +713,43 @@ if menu == "🏠 Secretaria":
                         st.rerun()
 
 # ==========================================
+# INICIALIZAÇÃO GLOBAL DE SEGURANÇA
+# ==========================================
+folga_ativa = False  # Garante que a variável sempre exista
+nome_logado = st.session_state.get("nome_logado", "")
+perfil_usuario = st.session_state.get("perfil", "")
+data_hj_str = datetime.now().strftime("%d/%m/%Y")
+
+# --- LÓGICA DE VERIFICAÇÃO DE FOLGA ---
+# Só verificamos folga se o usuário logado for uma Professora
+if perfil_usuario == "Professora":
+    try:
+        # Puxamos o calendário do dia
+        calendario_raw = db_get_calendario() 
+        
+        if data_hj_str in calendario_raw:
+            escala_hoje = calendario_raw[data_hj_str]
+            # Extraímos os nomes das professoras que estão escaladas em alguma célula do rodízio
+            # Convertemos para string e limpamos espaços para evitar erros de digitação
+            profs_escaladas = []
+            for linha in escala_hoje:
+                for celula in linha.values():
+                    # Verifica se o nome da professora logada aparece em algum lugar da escala
+                    if nome_logado in str(celula):
+                        profs_escaladas.append(nome_logado)
+            
+            # Se a prof não foi encontrada na escala de hoje, ela está de folga
+            if nome_logado not in profs_escaladas:
+                folga_ativa = True
+        else:
+            # Se não houver rodízio gerado para hoje, tratamos como folga ou aviso
+            folga_ativa = False 
+    except Exception as e:
+        st.error(f"Erro ao verificar escala: {e}")
+        folga_ativa = False
+        
+
+# ==========================================
 # MÓDULO PROFESSORA - V23 (FIX PERSISTÊNCIA & CACHE)
 # ==========================================
 elif menu == "👩‍🏫 Minhas Aulas":
@@ -1028,6 +1065,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
