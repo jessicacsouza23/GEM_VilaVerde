@@ -783,68 +783,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
             if n_met:
                 supabase.table("config_metodos").insert({"nome": n_met, "categoria": "Prática"}).execute()
                 st.rerun()
-# ============================================================
-# LÓGICA DE SALVAMENTO: PREFERÊNCIA INDIVIDUAL + COLETIVO
-# ============================================================
-
-if enviar_analise:
-    if not licao_estudada:
-        st.error("⚠️ O campo 'Lição / Volume / Página' é obrigatório!")
-    else:
-        try:
-            # 1. Captura as informações (Individuais vs Turma)
-            # Supondo que você tenha campos de 'obs_turma' e 'obs_individual'
-            # Se a informação individual existir, ela vem primeiro ou ganha destaque
-            
-            def formatar_observacao(individual, turma, titulo):
-                if individual.strip() and turma.strip():
-                    return f"📝 INDIVIDUAL: {individual} | 👥 TURMA: {turma}"
-                elif individual.strip():
-                    return f"📝 INDIVIDUAL: {individual}"
-                elif turma.strip():
-                    return f"👥 TURMA: {turma}"
-                return "Sem observações registradas."
-
-            # 2. Consolida os campos seguindo sua regra de preferência
-            postura_final = formatar_observacao(postura, postura_turma, "Postura")
-            tecnica_final = formatar_observacao(tecnica, tecnica_turma, "Técnica")
-            ritmo_final = formatar_observacao(ritmo, ritmo_turma, "Ritmo")
-            teoria_final = formatar_observacao(teoria_obs, teoria_turma, "Teoria")
-
-            # 3. Estrutura o JSON final para "congelar" a análise
-            analise_pedagogica = {
-                "area": area_estudo,
-                "licao": licao_estudada,
-                "detalhes": {
-                    "postura": postura_final,
-                    "tecnica": tecnica_final,
-                    "ritmo": ritmo_final,
-                    "teoria": teoria_final
-                },
-                "meta": meta_prox,
-                "banca": dica_banca,
-                "professora_resp": nome_logado,
-                "data_congelamento": data_hj_str
-            }
-
-            # 4. Envio único para o Supabase
-            res = supabase.table("historico_geral").insert({
-                "Aluna": aluna_sel,
-                "Tipo": "Analise_Pedagogica",
-                "Data": data_hj_str,
-                "Categoria": area_estudo,
-                "Status": "Congelado",
-                "Observacao": json.dumps(analise_pedagogica, ensure_ascii=False)
-            }).execute()
-
-            st.success(f"✅ Registro de {aluna_sel} salvo com sucesso (Individual + Turma)!")
-            st.balloons()
-            st.cache_data.clear()
-            
-        except Exception as e:
-            st.error(f"Erro ao processar salvamento: {e}")
-            
-    
+                
     # --- ABA REGISTRO ---
     with tab_aula:
         instr_sel = st.session_state.get('nome_logado', 'Selecione...')
@@ -903,61 +842,73 @@ if enviar_analise:
                     # O KEY DO FORMULÁRIO MUDA SEMPRE QUE MUDAR A ALUNA OU O HORÁRIO
                     form_key = f"form_final_{als_conf[0]}_{sel_lbl}_{dt_str}"
                     with st.form(key=form_key):
-                        st.subheader(f"📝 Análise Pedagógica: {als_conf[0]}")
+                        st.subheader(f"📝 Análise Pedagógica")
+                        if len(als_conf) > 1:
+                            st.caption(f"Aplicando para: {', '.join(als_conf)}")
+                        
                         c1, c2 = st.columns(2)
                         
+                        # Lição/Método
                         if d_sel["tipo"] == "Prática":
                             df_m = db_get_metodos()
                             m_opts = ["Selecione..."] + (df_m['nome'].tolist() if not df_m.empty else [])
-                            # Ajuste fino: separa nome do método da lição se estiverem juntos
                             metodo_limpo = pre_met.split(' ')[0] if ' ' in pre_met else pre_met
                             idx_m = m_opts.index(metodo_limpo) if metodo_limpo in m_opts else 0
                             met_v = c1.selectbox("Método:", m_opts, index=idx_m, key=f"sel_met_{form_key}")
                             lic_v = c2.text_input("Lição:", value=pre_met.split(' ')[-1] if ' ' in pre_met else "", key=f"inp_lic_{form_key}") 
                         else:
-                            idx_v = OPCOES_LICOES_NUM.index(pre_met) if pre_met in OPCOES_LICOES_NUM else 0
-                            met_v = c1.text_input("Lição:", value=pre_met.split(' ')[-1] if ' ' in pre_met else "", key=f"inp_lic_{form_key}")
-                            lic_v = ""
+                            # Teoria e Solfejo agora com campo LIVRE como você pediu
+                            met_v = c1.text_input("Conteúdo/Método:", value=pre_met, placeholder="Ex: MSA Fase 2", key=f"inp_met_L_{form_key}")
+                            lic_v = c2.text_input("Lição/Pág:", value="", placeholder="Ex: Lição 10", key=f"inp_lic_L_{form_key}")
 
                         st.markdown("**Dificuldades Detectadas:**")
                         d_lista = DIF_TEORIA if d_sel["tipo"] == "Teoria" else DIF_SOLFEJO if d_sel["tipo"] == "Solfejo" else DIF_PRATICA
                         c_dif = st.columns(2)
                         difs_finais = []
                         for idx, dfc in enumerate(d_lista):
-                            # Valor inicial baseado no que veio do banco
                             if c_dif[idx%2].checkbox(dfc, value=(dfc in pre_difs), key=f"chk_dif_{dfc}_{form_key}"):
                                 difs_finais.append(dfc)
 
-                        obs_v = st.text_area("Dicas / Observações:", value=pre_obs, key=f"txt_obs_{form_key}")
+                        # CAMPO DE OBSERVAÇÃO (Onde unimos Turma + Individual)
+                        obs_v = st.text_area("Dicas / Observações (Geral ou Coletiva):", value=pre_obs, key=f"txt_obs_{form_key}")
 
                         st.divider()
                         st.subheader("🏠 Lição para Casa")
                         cp1, cp2 = st.columns(2)
-                        
-                        if d_sel["tipo"] == "Prática":
-                            l1 = cp1.text_input("Apostila:", key=f"casa_ap_{form_key}")
-                            l2 = cp2.text_input("Métodos:", key=f"casa_met_{form_key}")
-                            t_casa = f"Apostila: {l1} | Métodos: {l2}"
-                        elif d_sel["tipo"] == "Teoria":
-                            l1 = cp1.text_input("MSA (Preto):", key=f"casa_msap_{form_key}")
-                            l2 = cp2.text_input("Extra:", key=f"casa_extp_{form_key}")
-                            t_casa = f"MSA Preto: {l1} | Extra: {l2}"
-                        else:
-                            l1 = cp1.text_input("MSA (Verde):", key=f"casa_msav_{form_key}")
-                            l2 = cp2.text_input("Extra:", key=f"casa_extv_{form_key}")
-                            t_casa = f"MSA Verde: {l1} | Extra: {l2}"
+                        # ... (lógica de l1 e l2 conforme seu código original) ...
+                        # ... (define t_casa conforme o tipo) ...
 
+                        # --- BOTÃO DE SALVAMENTO COM LÓGICA DE UNIÃO ---
                         if st.form_submit_button("💾 CONGELAR ANÁLISE"):
                             for al_f in als_conf:
-                                # Deleta anterior e salva novo
+                                # 1. Buscamos se essa aluna específica já tem algo salvo hoje (Individual)
+                                res_atual = supabase.table("historico_geral").select("Observacao").eq("Data", dt_str).eq("Aluna", al_f).eq("Tipo", f"Aula_{d_sel['tipo']}").execute()
+                                
+                                obs_final = obs_v # Começa com o que está no formulário (coletivo/novo)
+                                
+                                if res_atual.data:
+                                    obs_anterior = res_atual.data[0].get("Observacao", "")
+                                    # Se o que já estava lá for diferente do que estamos salvando agora, unimos
+                                    if obs_anterior and obs_anterior != obs_v:
+                                        obs_final = f"📝 INDIVIDUAL: {obs_anterior} | 👥 TURMA: {obs_v}"
+                                
+                                # 2. Deleta e salva a versão consolidada
                                 supabase.table("historico_geral").delete().eq("Data", dt_str).eq("Tipo", f"Aula_{d_sel['tipo']}").eq("Aluna", al_f).execute()
+                                
                                 db_save_historico({
-                                    "Aluna": al_f, "Tipo": f"Aula_{d_sel['tipo']}", "Data": dt_str,
-                                    "Instrutora": instr_sel, "Licao_Atual": f"{met_v} {lic_v}".strip(),
-                                    "Dificuldades": difs_finais, "Observacao": obs_v, "Licao_Casa": t_casa
+                                    "Aluna": al_f, 
+                                    "Tipo": f"Aula_{d_sel['tipo']}", 
+                                    "Data": dt_str,
+                                    "Instrutora": instr_sel, 
+                                    "Licao_Atual": f"{met_v} {lic_v}".strip(),
+                                    "Dificuldades": difs_finais, 
+                                    "Observacao": obs_final, # Usando a observação unida
+                                    "Licao_Casa": t_casa
                                 })
-                            st.success(f"✅ Análise de {als_conf[0]} salva!")
+                            
+                            st.success(f"✅ Registros atualizados para {len(als_conf)} aluna(s)!")
                             st.rerun()
+                            
                             
 # ==========================================
 # MÓDULO ANÁLISE DE IA (LAYOUT CONSOLIDADO)
@@ -1125,6 +1076,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
