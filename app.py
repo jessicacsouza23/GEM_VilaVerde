@@ -609,22 +609,23 @@ if menu == "🏠 Secretaria":
                 ].copy()
 
                 # --- EXIBIÇÃO DAS PENDÊNCIAS (COM CHAVES ÚNICAS) ---
-        if not pendencias.empty:
-            st.error(f"🚨 {len(pendencias)} Lições Pendentes para {aluna}")
-            
-            # Usamos enumerate para garantir um contador sequencial (i)
-            for i, (row_idx, p) in enumerate(pendencias.iterrows()):
-                # Criamos um ID único baseado nos dados da linha + contador
-                # Isso evita duplicidade mesmo que a aluna tenha 2 lições na mesma data
-                safe_key = f"{p['Data']}_{p['Categoria']}_{i}".replace("/", "")
-                
-                with st.container(border=True):
-                    col_info, col_acao = st.columns([3, 2])
-                    with col_info:
-                        st.markdown(f"**📅 {p['Data']}** — {p['Categoria']}")
-                        st.markdown(f"📖 {p['Licao_Detalhe']}")
-                        if p.get('Observacao'):
-                            st.caption(f"💬 Nota da Prof: {p['Observacao']}")
+                            # 1. Primeiro, garantimos que a variável existe como um DataFrame vazio
+                    pendencias = pd.DataFrame() 
+                    
+                    # 2. Tentamos buscar as pendências do banco (ajuste a tabela se necessário)
+                    try:
+                        res_p = supabase.table("historico_geral").select("*").eq("Tipo", "Pendência").execute()
+                        if res_p.data:
+                            pendencias = pd.DataFrame(res_p.data)
+                    except Exception as e:
+                        st.error(f"Erro ao buscar pendências: {e}")
+                    
+                    # 3. Agora a verificação nunca dará NameError
+                    if not pendencias.empty:
+                        st.warning(f"Existem {len(pendencias)} registros pendentes de análise.")
+                        st.dataframe(pendencias)
+                    else:
+                        st.success("✅ Nenhuma pendência encontrada.")
                     
                     with col_acao:
                         # Adicionamos a safe_key em cada widget
@@ -1018,6 +1019,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
