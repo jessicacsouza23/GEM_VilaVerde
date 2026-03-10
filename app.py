@@ -830,59 +830,59 @@ elif menu == "👩‍🏫 Minhas Aulas":
     
                 # --- BUSCA DE DADOS SALVOS ---
                 pre_met, pre_obs, pre_difs = "Selecione...", "", []
+                                # ============================================================
+                # MÓDULO PROFESSORA - V28 (CARREGAMENTO DINÂMICO POR MÉTODO)
                 # ============================================================
-# MÓDULO PROFESSORA - V28 (CARREGAMENTO DINÂMICO POR MÉTODO)
-# ============================================================
-
-# ... (Mantenha a lógica de busca de 'aulas' e o 'st.radio' igual) ...
-
-if als_conf:
-    # Definimos a chave do formulário
-    form_key = f"form_v28_{als_conf[0]}_{sel_lbl}"
-    
-    with st.form(key=form_key):
-        st.subheader("📝 Análise Pedagógica")
-        t_casa = "Não informada"
-        
-        c1, c2 = st.columns(2)
-        
-        # 1. ESCOLHA DO MÉTODO PRIMEIRO
-        if d_sel["tipo"] == "Prática":
-            df_m = db_get_metodos()
-            m_opts = ["Selecione..."] + (df_m['nome'].tolist() if not df_m.empty else [])
-            met_v = c1.selectbox("Selecione o Método para carregar/salvar:", m_opts, key=f"sel_met_{form_key}")
-        else:
-            met_v = c1.text_input("Conteúdo/Método:", value=d_sel["tipo"], key=f"inp_met_L_{form_key}")
-
-        # 2. BUSCA DINÂMICA (Baseada no método selecionado acima)
-        # Se um método foi selecionado, tentamos buscar o que já existe para ele hoje
-        pre_lic, pre_obs, pre_difs = "", "", []
-        
-        if met_v != "Selecione...":
-            tipo_busca = f"Aula_{d_sel['tipo']}_{met_v}".replace(" ", "_")
-            res_h = supabase.table("historico_geral").select("*").eq("Data", dt_str).eq("Aluna", als_conf[0]).eq("Tipo", tipo_busca).execute()
-            
-            if res_h.data:
-                dados = res_h.data[0]
-                # Pegamos apenas a parte da lição (o método já temos)
-                pre_lic = dados.get("Licao_Atual", "").replace(met_v, "").strip()
-                pre_obs = dados.get("Observacao", "")
-                pre_difs = dados.get("Dificuldades", [])
-
-        # 3. CAMPOS DE ENTRADA (Preenchidos com o que foi buscado)
-        lic_v = c2.text_input("Lição/Página:", value=pre_lic, key=f"inp_lic_{form_key}")
-
-        st.markdown("**Dificuldades Detectadas:**")
-        d_lista = DIF_TEORIA if d_sel["tipo"] == "Teoria" else DIF_SOLFEJO if d_sel["tipo"] == "Solfejo" else DIF_PRATICA
-        c_dif = st.columns(2)
-        difs_finais = []
-        for idx, dfc in enumerate(d_lista):
-            if c_dif[idx%2].checkbox(dfc, value=(dfc in pre_difs), key=f"chk_dif_{dfc}_{form_key}"):
-                difs_finais.append(dfc)
-
-        obs_v = st.text_area("Dicas / Observações:", value=pre_obs, key=f"txt_obs_{form_key}")
-
-        # ... (Lógica de Lição de Casa igual ao código anterior) ...
+                
+                # ... (Mantenha a lógica de busca de 'aulas' e o 'st.radio' igual) ...
+                
+                if als_conf:
+                    # Definimos a chave do formulário
+                    form_key = f"form_v28_{als_conf[0]}_{sel_lbl}"
+                    
+                    with st.form(key=form_key):
+                        st.subheader("📝 Análise Pedagógica")
+                        t_casa = "Não informada"
+                        
+                        c1, c2 = st.columns(2)
+                        
+                        # 1. ESCOLHA DO MÉTODO PRIMEIRO
+                        if d_sel["tipo"] == "Prática":
+                            df_m = db_get_metodos()
+                            m_opts = ["Selecione..."] + (df_m['nome'].tolist() if not df_m.empty else [])
+                            met_v = c1.selectbox("Selecione o Método para carregar/salvar:", m_opts, key=f"sel_met_{form_key}")
+                        else:
+                            met_v = c1.text_input("Conteúdo/Método:", value=d_sel["tipo"], key=f"inp_met_L_{form_key}")
+                
+                        # 2. BUSCA DINÂMICA (Baseada no método selecionado acima)
+                        # Se um método foi selecionado, tentamos buscar o que já existe para ele hoje
+                        pre_lic, pre_obs, pre_difs = "", "", []
+                        
+                        if met_v != "Selecione...":
+                            tipo_busca = f"Aula_{d_sel['tipo']}_{met_v}".replace(" ", "_")
+                            res_h = supabase.table("historico_geral").select("*").eq("Data", dt_str).eq("Aluna", als_conf[0]).eq("Tipo", tipo_busca).execute()
+                            
+                            if res_h.data:
+                                dados = res_h.data[0]
+                                # Pegamos apenas a parte da lição (o método já temos)
+                                pre_lic = dados.get("Licao_Atual", "").replace(met_v, "").strip()
+                                pre_obs = dados.get("Observacao", "")
+                                pre_difs = dados.get("Dificuldades", [])
+                
+                        # 3. CAMPOS DE ENTRADA (Preenchidos com o que foi buscado)
+                        lic_v = c2.text_input("Lição/Página:", value=pre_lic, key=f"inp_lic_{form_key}")
+                
+                        st.markdown("**Dificuldades Detectadas:**")
+                        d_lista = DIF_TEORIA if d_sel["tipo"] == "Teoria" else DIF_SOLFEJO if d_sel["tipo"] == "Solfejo" else DIF_PRATICA
+                        c_dif = st.columns(2)
+                        difs_finais = []
+                        for idx, dfc in enumerate(d_lista):
+                            if c_dif[idx%2].checkbox(dfc, value=(dfc in pre_difs), key=f"chk_dif_{dfc}_{form_key}"):
+                                difs_finais.append(dfc)
+                
+                        obs_v = st.text_area("Dicas / Observações:", value=pre_obs, key=f"txt_obs_{form_key}")
+                
+                        # ... (Lógica de Lição de Casa igual ao código anterior) ...
     
                         # --- REAPARECEU: LIÇÃO PARA CASA ---
                         st.divider()
@@ -902,35 +902,35 @@ if als_conf:
                             l2 = cp2.text_input("Extra:", key=f"casa_extv_{form_key}")
                             t_casa = f"MSA Verde: {l1} | Extra: {l2}"
     
+                                
+                # --- BOTÃO DE SALVAMENTO ---
+                if st.form_submit_button("💾 CONGELAR ANÁLISE"):
+                    if met_v == "Selecione...":
+                        st.error("Por favor, selecione um método antes de salvar.")
+                    else:
+                        for al_f in als_conf:
+                            tipo_final = f"Aula_{d_sel['tipo']}_{met_v}".replace(" ", "_")
+                            
+                            # União Individual + Turma
+                            res_at = supabase.table("historico_geral").select("Observacao").eq("Data", dt_str).eq("Aluna", al_f).eq("Tipo", tipo_final).execute()
+                            obs_f = obs_v
+                            if res_at.data:
+                                obs_a = res_at.data[0].get("Observacao", "")
+                                if obs_a and obs_a != obs_v: obs_f = f"📝 IND: {obs_a} | 👥 TURMA: {obs_v}"
+                            
+                            supabase.table("historico_geral").delete().eq("Data", dt_str).eq("Tipo", tipo_final).eq("Aluna", al_f).execute()
+                            db_save_historico({
+                                "Aluna": al_f, "Tipo": tipo_final, "Data": dt_str,
+                                "Instrutora": instr_sel, "Licao_Atual": f"{met_v} {lic_v}".strip(),
+                                "Dificuldades": difs_finais, "Observacao": obs_f, "Licao_Casa": t_casa
+                            })
                         
-        # --- BOTÃO DE SALVAMENTO ---
-        if st.form_submit_button("💾 CONGELAR ANÁLISE"):
-            if met_v == "Selecione...":
-                st.error("Por favor, selecione um método antes de salvar.")
-            else:
-                for al_f in als_conf:
-                    tipo_final = f"Aula_{d_sel['tipo']}_{met_v}".replace(" ", "_")
-                    
-                    # União Individual + Turma
-                    res_at = supabase.table("historico_geral").select("Observacao").eq("Data", dt_str).eq("Aluna", al_f).eq("Tipo", tipo_final).execute()
-                    obs_f = obs_v
-                    if res_at.data:
-                        obs_a = res_at.data[0].get("Observacao", "")
-                        if obs_a and obs_a != obs_v: obs_f = f"📝 IND: {obs_a} | 👥 TURMA: {obs_v}"
-                    
-                    supabase.table("historico_geral").delete().eq("Data", dt_str).eq("Tipo", tipo_final).eq("Aluna", al_f).execute()
-                    db_save_historico({
-                        "Aluna": al_f, "Tipo": tipo_final, "Data": dt_str,
-                        "Instrutora": instr_sel, "Licao_Atual": f"{met_v} {lic_v}".strip(),
-                        "Dificuldades": difs_finais, "Observacao": obs_f, "Licao_Casa": t_casa
-                    })
-                
-                st.success(f"✅ DADOS SALVOS PARA O MÉTODO: {met_v}")
-                st.balloons()
-                import time
-                time.sleep(1.5)
-                st.rerun()
-                
+                        st.success(f"✅ DADOS SALVOS PARA O MÉTODO: {met_v}")
+                        st.balloons()
+                        import time
+                        time.sleep(1.5)
+                        st.rerun()
+                        
 # ==========================================
 # MÓDULO ANÁLISE DE IA (LAYOUT CONSOLIDADO)
 # ==========================================
@@ -1097,6 +1097,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
