@@ -337,7 +337,47 @@ if menu == "🏠 Secretaria":
             "🗓️ Planejamento", 
             "📍 Chamada", 
             "📝 Controle de Lições"
+            "🚨 ÁREA DE PERIGO - Limpeza do Sistema"
         ])
+
+            # Criamos uma expansão para não ocupar espaço visual nobre
+        with st.expander("🚨 ÁREA DE PERIGO - Limpeza do Sistema"):
+            st.warning("Atenção: Esta ação apagará TODOS os registros de aulas e escalas do sistema.")
+            
+            # Trava de segurança
+            confirma_limpeza = st.checkbox("Estou ciente que esta ação não pode ser desfeita.")
+            
+            col_btn1, col_btn2 = st.columns(2)
+            
+            with col_btn1:
+                if st.button("🗑️ LIMPAR HISTÓRICO DE AULAS"):
+                    if confirma_limpeza:
+                        try:
+                            # Apaga todos os registros da tabela de histórico
+                            # No Supabase, um delete sem .eq() pode ser bloqueado por segurança, 
+                            # então usamos um filtro que sempre seja verdadeiro (ex: Data != '')
+                            supabase.table("historico_geral").delete().neq("Data", "").execute()
+                            st.success("✅ Histórico de aulas limpo com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao limpar: {e}")
+                    else:
+                        st.error("Marque a confirmação de segurança primeiro.")
+    
+            with col_btn2:
+                if st.button("📅 LIMPAR ESCALAS / RODÍZIO"):
+                    if confirma_limpeza:
+                        try:
+                            # Apaga o rodízio gerado
+                            supabase.table("config_calendario").delete().neq("id", -1).execute()
+                            st.success("✅ Escalas e Rodízios removidos!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao limpar: {e}")
+                    else:
+                        st.error("Marque a confirmação de segurança primeiro.")
+    
+        st.divider()
         
         with tab_plan:
             c1, c2 = st.columns(2)
@@ -979,6 +1019,7 @@ elif menu == "📊 Analítico IA":
             fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
+
 
 
 
