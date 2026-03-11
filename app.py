@@ -344,7 +344,16 @@ if menu == "🏠 Secretaria":
     historico_raw = db_get_historico()
     df_historico = pd.DataFrame(historico_raw)
     if not df_historico.empty:
-        df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format="%d/%m/%Y", errors='coerce')
+        # 1. Filtra primeiro pela aluna para economizar processamento
+        df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
+        
+        if not df_f.empty:
+            # 2. CRIAÇÃO DA COLUNA dt_obj (O que estava faltando)
+            # Converte a coluna 'Data' (que é texto DD/MM/AAAA) para uma data real que o pandas entenda
+            df_f['dt_obj'] = pd.to_datetime(df_f['Data'], format='%d/%m/%Y', errors='coerce')
+            
+            # 3. Agora sim, ordena usando a coluna que acabamos de criar
+            df_f = df_f.sort_values('dt_obj', ascending=False)
 
     # --- ABA 1: VISÃO GERAL DIÁRIA ---
     with tab_consolidado:
@@ -810,6 +819,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
