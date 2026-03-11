@@ -622,7 +622,7 @@ if menu == "🏠 Secretaria":
                         st.success("Salvo com sucesso!"); import time; time.sleep(0.5); st.rerun()
                 else:
                     st.error("Descreva a lição antes de salvar.")
-
+                    
     # --- ABA 5: AJUSTES ---
     with tab_ajustes:
         st.subheader("🛠️ Ajustar Registros")
@@ -892,6 +892,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
