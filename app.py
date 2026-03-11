@@ -575,10 +575,15 @@ if menu == "🏠 Secretaria":
                     st.rerun()
                     
 # ============================================================
-# MÓDULO PROFESSORA - V35 (SALVAMENTO INDIVIDUALIZADO)
+# MÓDULO PROFESSORA - V35 (CORRIGIDO)
 # ============================================================
 elif menu == "👩‍🏫 Minhas Aulas":
     st.header(f"👩‍🏫 Painel da Professora: {st.session_state.nome_logado}")
+    
+    # --- 🛡️ VACINA ANTI-NAMEERROR ---
+    # Inicializamos a variável para que ela sempre exista, evitando o erro de "redacted"
+    folga_ativa = st.session_state.get('folga_ativa', False) 
+
     tab_aula, tab_config = st.tabs(["📝 Registro de Aula", "⚙️ Configurar Métodos"])
 
     if folga_ativa:
@@ -623,12 +628,14 @@ elif menu == "👩‍🏫 Minhas Aulas":
         with c1: st.info(f"Instrutora: **{instr_sel}**")
         with c2:
             hoje = datetime.now()
+            # Sugere o próximo sábado se não for sábado hoje
             sab_p = hoje if hoje.weekday() == 5 else hoje + timedelta(days=(5 - hoje.weekday()) % 7)
             data_prof = st.date_input("Data da Aula:", sab_p, key="data_aula_v35")
             dt_str = data_prof.strftime("%d/%m/%Y")
 
         if instr_sel != "Selecione...":
             cal_db = db_get_calendario()
+            # Função auxiliar de limpeza de texto deve estar no seu código principal
             n_bus = limpar_texto(instr_sel).lower().strip()
             aulas = []
 
@@ -677,8 +684,11 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         lic_v = st.text_input("Lição / Página Atual (Sala):", placeholder="O que ela tocou hoje?")
                         
                         st.markdown("**Dificuldades Detectadas:**")
+                        # Aqui usamos as constantes que você já deve ter no código
                         d_lista = DIF_TEORIA if d_sel["tipo"] == "Teoria" else DIF_SOLFEJO if d_sel["tipo"] == "Solfejo" else DIF_PRATICA
+                        
                         c_dif = st.columns(2)
+                        # Captura as dificuldades marcadas
                         difs_finais = [dfc for idx, dfc in enumerate(d_lista) if c_dif[idx%2].checkbox(dfc, key=f"chk_v35_{dfc}_{form_key}")]
 
                         obs_v = st.text_area("Dicas Pedagógicas:", placeholder="Dica para a aluna melhorar...")
@@ -692,7 +702,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         
                         btn_salvar = st.form_submit_button("💾 CONGELAR REGISTROS")
 
-                    # --- LÓGICA DE SALVAMENTO INDIVIDUALIZADO ---
+                    # --- LÓGICA DE SALVAMENTO ---
                     if btn_salvar:
                         if met_v == "Selecione...":
                             st.error("⚠️ Selecione o método!")
@@ -701,10 +711,10 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 tipo_final = f"Aula_{d_sel['tipo']}_{met_v}".replace(" ", "_")
                                 
                                 for al_f in als_conf:
-                                    # 1. Limpa registros anteriores da mesma aula/método para evitar duplicatas
+                                    # Limpa duplicatas do mesmo método/dia
                                     supabase.table("historico_geral").delete().eq("Data", dt_str).eq("Tipo", tipo_final).eq("Aluna", al_f).execute()
                                     
-                                    # 2. Prepara a base do registro
+                                    # Registro base
                                     base_dados = {
                                         "Aluna": al_f, "Tipo": tipo_final, "Data": dt_str,
                                         "Instrutora": instr_sel, "Licao_Atual": f"{met_v}: {lic_v}",
@@ -712,20 +722,17 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                         "Status": "Pendente"
                                     }
 
-                                    # 3. SALVAMENTO EM LINHAS SEPARADAS (O SEGREDO)
-                                    # Se houver lição principal, salva uma linha
+                                    # Salvamento em linhas separadas (Lição Principal e Extra)
                                     if l_casa_principal:
                                         dados_p = base_dados.copy()
                                         dados_p["Licao_Casa"] = f"{met_v}: {l_casa_principal}"
                                         db_save_historico(dados_p)
                                     
-                                    # Se houver lição extra, salva outra linha independente
                                     if l_casa_extra:
                                         dados_e = base_dados.copy()
                                         dados_e["Licao_Casa"] = f"Extra: {l_casa_extra}"
                                         db_save_historico(dados_e)
                                     
-                                    # Se não houver nada escrito, salva apenas o registro da aula
                                     if not l_casa_principal and not l_casa_extra:
                                         db_save_historico(base_dados)
 
@@ -847,6 +854,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
