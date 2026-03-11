@@ -119,7 +119,7 @@ STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refaz
 
 TURMAS = {
     "Turma 1": ["Annie - Vila Verde", "Caroline C. - Vila Ré", "Ingrid M. - Pq do Carmo II",
-                "Mariana - Vila Araguaia", "Mellina S. - Jardim Lígia", "Rebecca A. - Vila Verde", 
+                "Mariana - Vila Araguaia", "Mellina S. - Jardim Lígia", "Rebecca A. - vVila Verde", 
                 "Rebeca R. - Vila Ré", "Rebeka S. - Jardim Lígia"],
     "Turma 2": ["Vitória A. - Vila Verde", "Elisa F. - Vila Verde", "Sarah S. - Vila Verde", "Gabrielly V. - Vila Verde", 
                 "Emilly O. - Vila Curuçá Velha", "Julya O. - Vila Curuçá Velha"],
@@ -385,7 +385,7 @@ if menu == "🏠 Secretaria":
                     "Turma": st.column_config.TextColumn("Turma", disabled=True),
                     "Aluna": st.column_config.TextColumn("Aluna", disabled=True),
                     "Horário": st.column_config.TextColumn("Horário", help="Ex: 08:00 - 09:30"),
-                    "Instrutora": st.column_config.SelectboxColumn("Instrutora", options=INSTRUTORAS_LISTA)
+                    "Instrutora": st.column_config.SelectboxColumn("Instrutora", options=PROFESSORAS_LISTA)
                 }
             )
 
@@ -746,6 +746,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
