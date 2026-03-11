@@ -527,55 +527,51 @@ if menu == "🏠 Secretaria":
             supabase.table("historico_geral").insert(novos_ch).execute()
             st.success("✅ Chamada Salva!"); st.cache_data.clear()
 
-    # --- ABA 4: CONTROLE DE LIÇÕES (CORRIGIDO) ---
+    # --- ABA 4: CONTROLE DE LIÇÕES (DIAGNÓSTICO) ---
     with tab_licao:
         st.subheader("📝 Controle e Metas")
-        aluna_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_lic_v45")
-        sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp_lic_v45")
-        data_corr_str = st.date_input("Data da Conferência:", datetime.now(), key="sec_data_lic_v45").strftime("%d/%m/%Y")
+        aluna_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_lic_diag")
+        sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp_lic_diag")
+        data_corr_str = st.date_input("Data da Conferência:", datetime.now(), key="sec_data_lic_diag").strftime("%d/%m/%Y")
 
-        # --- PARTE A: BUSCA DINÂMICA DE LIÇÕES ---
-        st.markdown("### 🔔 Lições Pendentes")
+        st.markdown("### 🔔 Lições Encontradas no Banco")
         
         if not df_historico.empty:
-            # Filtro inteligente: Aluna correta E (Tipo começa com Casa_ OU tem algo escrito em Licao_Casa) E Status Pendente
-            mask_pendentes = (
+            # REMOVEMOS o filtro de "Pendente" para testar o que está vindo do banco
+            mask_teste = (
                 (df_historico['Aluna'] == aluna_sel) & 
-                (df_historico['Status'] == "Pendente") &
                 (df_historico['Licao_Casa'].notna()) & 
                 (df_historico['Licao_Casa'] != "")
             )
-            df_pend = df_historico[mask_pendentes].copy()
+            df_pend = df_historico[mask_teste].copy()
 
             if not df_pend.empty:
                 for _, row in df_pend.iterrows():
+                    # Pegamos o status real que está no banco para você ver
+                    status_atual = row.get('Status', 'Sem Status')
+                    
                     with st.container(border=True):
                         c_inf, c_act = st.columns([3, 2])
                         
-                        # Limpa o nome do material para exibição
-                        origem = str(row.get('Tipo', 'Aula')).replace("Aula_", "").replace("Casa_", "").replace("_", " ")
-                        
-                        c_inf.markdown(f"**Material:** {origem}")
+                        c_inf.markdown(f"**Material:** {row.get('Tipo', 'Aula')}")
                         c_inf.write(f"📖 **Meta:** {row['Licao_Casa']}")
-                        c_inf.caption(f"Postado em: {row['Data']} | Por: {row.get('Instrutora', 'Sistema')}")
+                        c_inf.write(f"📊 **Status Atual no Banco:** `{status_atual}`") # Isso vai nos mostrar o erro
+                        c_inf.caption(f"Data: {row['Data']} | Prof: {row.get('Instrutora', '---')}")
                         
                         # Interface de Visto
-                        visto = c_act.radio("Visto:", ["Realizada", "Não Realizada", "Devolvida"], key=f"v_visto_{row['id']}")
-                        obs_s = c_act.text_input("Nota/Obs:", key=f"v_obs_{row['id']}")
+                        visto = c_act.radio("Mudar Status para:", ["Realizada", "Não Realizada", "Devolvida", "Pendente"], key=f"v_visto_{row['id']}")
                         
-                        if c_act.button("Confirmar Visto", key=f"btn_v_{row['id']}", use_container_width=True):
-                            # Atualiza no Supabase usando o ID único do registro
+                        if c_act.button("Confirmar Alteração", key=f"btn_v_{row['id']}", use_container_width=True):
                             supabase.table("historico_geral").update({
                                 "Status": visto,
-                                "Secretaria": sec_resp,
-                                "Observacao": f"Visto em {data_corr_str}: {obs_s}" if obs_s else visto
+                                "Secretaria": sec_resp
                             }).eq("id", row['id']).execute()
-                            
-                            st.success(f"Visto de {visto} registrado!")
-                            time.sleep(1)
+                            st.success("Atualizado!")
+                            import time
+                            time.sleep(0.5)
                             st.rerun()
             else:
-                st.info(f"✨ Nenhuma lição pendente para {aluna_sel}.")
+                st.info(f"O banco de dados não retornou nenhuma 'Licao_Casa' para {aluna_sel}. Verifique se as professoras estão preenchendo esse campo específico.")
 
         st.divider()
 
@@ -872,6 +868,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
