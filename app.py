@@ -575,7 +575,7 @@ if menu == "🏠 Secretaria":
                     st.rerun()
                     
 # ============================================================
-# MÓDULO PROFESSORA - V40 (ESTABILIDADE TOTAL)
+# MÓDULO PROFESSORA - V41 (SEPARAÇÃO: ANÁLISE ATUAL X LIÇÃO CASA)
 # ============================================================
 elif menu == "👩‍🏫 Minhas Aulas":
     st.header(f"👩‍🏫 Painel da Professora: {st.session_state.nome_logado}")
@@ -637,7 +637,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 sel_lbl = st.radio("Selecione a Aula/Turma:", [x["label"] for x in sorted(aulas_agrupadas, key=lambda x: x['h'])])
                 d_sel = next(x for x in aulas_agrupadas if x["label"] == sel_lbl)
                 
-                # CHAMADA
+                # --- CHAMADA ---
                 st.divider()
                 st.markdown(f"### 👥 Chamada: {d_sel['loc']}")
                 als_ref = TURMAS.get(d_sel["tr"], [d_sel["al"]]) if d_sel["tipo"] != "Prática" else [d_sel["al"]]
@@ -648,57 +648,72 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         als_selecionadas.append(al)
 
                 if als_selecionadas:
-                    with st.form(key=f"form_v40_{sel_lbl}"):
-                        st.subheader("🏠 Lições de Casa")
-                        tarefas = {}
+                    with st.form(key=f"form_v41_{sel_lbl}"):
                         
-                        # --- BLOCO FIXO DE LIÇÕES (NÃO MEXER) ---
+                        # --- SEÇÃO 1: O QUE ESTÁ SENDO ANALISADO AGORA ---
+                        st.subheader("🔍 1. Lições em Análise (Hoje)")
+                        st.info("Informe qual lição a aluna tocou/fez e quais dificuldades ela apresentou.")
+                        licao_vista = st.text_input("Qual lição/página foi analisada agora?", placeholder="Ex: MSA Pág 15, Lição 4")
+                        
+                        st.markdown("**Dificuldades Observadas nesta Lição:**")
+                        lista_difs = DIF_TEORIA if d_sel["tipo"] == "Teoria" else DIF_SOLFEJO if d_sel["tipo"] == "Solfejo" else DIF_PRATICA
+                        cols_d = st.columns(3)
+                        difs_atuais = [d for idx, d in enumerate(lista_difs) if cols_d[idx%3].checkbox(d, key=f"dif_atual_{idx}")]
+                        
+                        st.divider()
+
+                        # --- SEÇÃO 2: LIÇÕES PARA CASA (O QUE ESTUDAR) ---
+                        st.subheader("🏠 2. Lições para Casa")
+                        st.caption("Preencha apenas os materiais que terão lição nova.")
+                        tarefas_casa = {}
+                        
                         if d_sel["tipo"] == "Teoria":
                             c1, c2 = st.columns(2)
-                            tarefas["MSA(verde)"] = c1.text_input("📚 MSA (Verde):")
-                            tarefas["MSA(preto)"] = c2.text_input("📖 MSA (Preto):")
-                            tarefas["Extra"] = st.text_input("📑 Extra (Teoria):")
+                            tarefas_casa["MSA(verde)"] = c1.text_input("📚 MSA (Verde):")
+                            tarefas_casa["MSA(preto)"] = c2.text_input("📖 MSA (Preto):")
+                            tarefas_casa["Extra"] = st.text_input("📑 Atividade Extra:")
                         
                         elif d_sel["tipo"] == "Solfejo":
                             c1, c2 = st.columns(2)
-                            tarefas["MSA(verde)"] = c1.text_input("🎵 MSA (Verde):")
-                            tarefas["Extra"] = c2.text_input("📑 Extra (Solfejo):")
+                            tarefas_casa["MSA(verde)"] = c1.text_input("🎵 MSA (Verde):")
+                            tarefas_casa["Extra"] = c2.text_input("📑 Atividade Extra:")
                         
                         else: # Prática
                             m_opts = ["Selecione..."] + (df_metodos['nome'].tolist() if not df_metodos.empty else [])
                             met_escolhido = st.selectbox("Selecione o Método:", m_opts)
                             c1, c2 = st.columns(2)
                             li_m = c1.text_input("🎹 Lição do Método:")
-                            tarefas["Apostila"] = c2.text_input("📒 Apostila:")
+                            tarefas_casa["Apostila"] = c2.text_input("📒 Apostila:")
                             if met_escolhido != "Selecione..." and li_m:
-                                tarefas[met_escolhido] = li_m
+                                tarefas_casa[met_escolhido] = li_m
 
-                        st.divider()
-                        # --- BLOCO DE DIFICULDADES (CHECKBOX) ---
-                        st.subheader("⚠️ Dificuldades Detectadas")
-                        st.caption("Selecione abaixo as dificuldades observadas nesta aula:")
-                        lista_difs = DIF_TEORIA if d_sel["tipo"] == "Teoria" else DIF_SOLFEJO if d_sel["tipo"] == "Solfejo" else DIF_PRATICA
-                        
-                        cols_d = st.columns(3)
-                        difs_selecionadas = [d for idx, d in enumerate(lista_difs) if cols_d[idx%3].checkbox(d, key=f"dif_{idx}")]
+                        obs_v = st.text_area("✍️ Observações Pedagógicas Adicionais:")
 
-                        obs_v = st.text_area("✍️ Observações Gerais:")
-
-                        if st.form_submit_button("💾 CONGELAR E ENVIAR"):
+                        if st.form_submit_button("💾 CONGELAR E ENVIAR PARA SECRETARIA"):
                             for al_f in als_selecionadas:
-                                for label, conteudo in tarefas.items():
-                                    if conteudo:
-                                        dados = {
-                                            "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
-                                            "Tipo": f"Aula_{d_sel['tipo']}_{label}".replace(" ", "_"),
-                                            "Licao_Atual": "Visto em aula",
-                                            "Licao_Casa": f"{label}: {conteudo}",
-                                            "Dificuldades": difs_selecionadas, # Agora as dificuldades vêm do checkbox
-                                            "Observacao": obs_v, "Status": "Pendente"
-                                        }
-                                        db_save_historico(dados)
+                                # Registro base comum para todas as tarefas dessa aula
+                                base_dados = {
+                                    "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
+                                    "Licao_Atual": licao_vista,
+                                    "Dificuldades": difs_atuais,
+                                    "Observacao": obs_v, "Status": "Pendente"
+                                }
+                                
+                                # Salva cada tarefa de casa preenchida como um registro individual
+                                if not tarefas_casa: # Caso ela só preencha a análise
+                                    dados = base_dados.copy()
+                                    dados["Tipo"] = f"Aula_{d_sel['tipo']}_Analise"
+                                    dados["Licao_Casa"] = "Nenhuma lição nova"
+                                    db_save_historico(dados)
+                                else:
+                                    for material, conteudo in tarefas_casa.items():
+                                        if conteudo:
+                                            dados = base_dados.copy()
+                                            dados["Tipo"] = f"Aula_{d_sel['tipo']}_{material}".replace(" ", "_")
+                                            dados["Licao_Casa"] = f"{material}: {conteudo}"
+                                            db_save_historico(dados)
                             
-                            st.success("✅ Registros enviados!"); time.sleep(1); st.rerun()
+                            st.success(f"✅ Análise e Lições de {len(als_selecionadas)} aluna(s) enviadas!"); time.sleep(1); st.rerun()
                             
 # ==========================================
 # MÓDULO ANÁLISE DE IA - V42 (FOCO NO PRONTUÁRIO)
@@ -813,6 +828,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
