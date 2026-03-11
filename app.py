@@ -527,64 +527,72 @@ if menu == "🏠 Secretaria":
             supabase.table("historico_geral").insert(novos_ch).execute()
             st.success("✅ Chamada Salva!"); st.cache_data.clear()
 
-    # --- ABA 4: CONTROLE DE LIÇÕES (DIAGNÓSTICO) ---
+    # --- ABA 4: CONTROLE DE LIÇÕES (FOCO EM OBSERVAÇÕES) ---
     with tab_licao:
         st.subheader("📝 Controle e Metas")
-        aluna_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_lic_diag")
-        sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp_lic_diag")
-        data_corr_str = st.date_input("Data da Conferência:", datetime.now(), key="sec_data_lic_diag").strftime("%d/%m/%Y")
+        aluna_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_lic_obs")
+        sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp_lic_obs")
+        data_corr_str = st.date_input("Data da Conferência:", datetime.now(), key="sec_data_lic_obs").strftime("%d/%m/%Y")
 
-        st.markdown("### 🔔 Lições Encontradas no Banco")
+        st.markdown("### 🔔 Lições e Métodos Lançados")
         
         if not df_historico.empty:
-            # REMOVEMOS o filtro de "Pendente" para testar o que está vindo do banco
-            mask_teste = (
+            # Filtra por aluna e garante que só mostre registros que tenham lição de casa
+            mask_obs = (
                 (df_historico['Aluna'] == aluna_sel) & 
                 (df_historico['Licao_Casa'].notna()) & 
                 (df_historico['Licao_Casa'] != "")
             )
-            df_pend = df_historico[mask_teste].copy()
+            # Ordena pela data mais recente primeiro
+            df_exibir = df_historico[mask_obs].sort_values('Data', ascending=False).copy()
 
-            if not df_pend.empty:
-                for _, row in df_pend.iterrows():
-                    # Pegamos o status real que está no banco para você ver
-                    status_atual = row.get('Status', 'Sem Status')
-                    
+            if not df_exibir.empty:
+                for _, row in df_exibir.iterrows():
                     with st.container(border=True):
                         c_inf, c_act = st.columns([3, 2])
                         
-                        c_inf.markdown(f"**Material:** {row.get('Tipo', 'Aula')}")
-                        c_inf.write(f"📖 **Meta:** {row['Licao_Casa']}")
-                        c_inf.write(f"📊 **Status Atual no Banco:** `{status_atual}`") # Isso vai nos mostrar o erro
+                        # Informações da Lição
+                        material = str(row.get('Tipo', 'Aula')).replace("Aula_", "").replace("Casa_", "").replace("_", " ")
+                        c_inf.markdown(f"**Material:** {material}")
+                        c_inf.write(f"📖 **Lição:** {row['Licao_Casa']}")
+                        
+                        # Mostra observação anterior se existir
+                        obs_anterior = row.get('Observacao', '')
+                        if obs_anterior:
+                            c_inf.info(f"📌 **Obs Atual:** {obs_anterior}")
+                        
                         c_inf.caption(f"Data: {row['Data']} | Prof: {row.get('Instrutora', '---')}")
                         
-                        # Interface de Visto
-                        visto = c_act.radio("Mudar Status para:", ["Realizada", "Não Realizada", "Devolvida", "Pendente"], key=f"v_visto_{row['id']}")
+                        # Campo para a Secretaria escrever a nova Observação/Dica
+                        nova_obs = c_act.text_area("Nova Obs/Dica Pedagógica:", key=f"txt_obs_{row['id']}", height=100)
                         
-                        if c_act.button("Confirmar Alteração", key=f"btn_v_{row['id']}", use_container_width=True):
+                        if c_act.button("Salvar Observação", key=f"btn_save_{row['id']}", use_container_width=True):
+                            # Atualiza o campo Observação e coloca a secretaria como responsável
                             supabase.table("historico_geral").update({
-                                "Status": visto,
-                                "Secretaria": sec_resp
+                                "Observacao": nova_obs,
+                                "Secretaria": sec_resp,
+                                "Status": "Visto pela Secretaria" # Marcamos como visto apenas para controle interno
                             }).eq("id", row['id']).execute()
-                            st.success("Atualizado!")
+                            
+                            st.success("Observação salva!")
                             import time
                             time.sleep(0.5)
                             st.rerun()
             else:
-                st.info(f"O banco de dados não retornou nenhuma 'Licao_Casa' para {aluna_sel}. Verifique se as professoras estão preenchendo esse campo específico.")
+                st.info(f"Nenhum método ou lição de casa encontrado para {aluna_sel}.")
 
         st.divider()
 
-        # --- PARTE B: NOVA ATIVIDADE (CONSERVEI ESTA PARTE) ---
-        st.markdown("### ❄️ Lançar Meta Extra (Secretaria)")
-        with st.form("f_nova_meta_v45"):
-            cat_sel = st.radio("Material:", ["MSA(verde)", "MSA(preto)", "Apostila", "Hino", "Outro"], horizontal=True)
-            det_lic = st.text_input("Qual a lição/página?")
-            obs_tecnica = st.text_area("Instruções Técnicas (opcional):")
+        # --- PARTE B: INCLUIR NOVA ATIVIDADE (PARA METAS DA SECRETARIA) ---
+        st.markdown("### ✍️ Lançar Nova Meta Extra")
+        with st.form("f_nova_meta_obs"):
+            cat_sel = st.radio("Material:", ["MSA(verde)", "MSA(preto)", "Apostila", "Hino", "Extra"], horizontal=True)
+            det_lic = st.text_input("Lição/Página:")
+            obs_sec = st.text_area("Observação/Meta Técnica para a Aluna:")
             
-            if st.form_submit_button("SALVAR E CONGELAR META"):
+            if st.form_submit_button("SALVAR META"):
                 if det_lic:
-                    novo_item = {
+                    db_save_historico({
                         "Aluna": aluna_sel,
                         "Data": data_corr_str,
                         "Tipo": f"Casa_{cat_sel}",
@@ -592,12 +600,11 @@ if menu == "🏠 Secretaria":
                         "Licao_Casa": f"{cat_sel}: {det_lic}",
                         "Status": "Pendente",
                         "Secretaria": sec_resp,
-                        "Observacao": obs_tecnica
-                    }
-                    db_save_historico(novo_item)
-                    st.success("Meta adicionada!"); time.sleep(1); st.rerun()
+                        "Observacao": obs_sec
+                    })
+                    st.success("Meta salva com sucesso!"); import time; time.sleep(0.5); st.rerun()
                 else:
-                    st.error("Descreva a lição!")
+                    st.error("Preencha a lição!")
 
     # --- ABA 5: AJUSTES ---
     with tab_ajustes:
@@ -868,6 +875,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
