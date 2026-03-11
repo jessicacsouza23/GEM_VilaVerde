@@ -355,15 +355,26 @@ if menu == "🏠 Secretaria":
 
     # --- CORREÇÃO DA LINHA 557 (Dentro da aba onde o erro ocorre) ---
     # Ao chegar na linha que dava erro, use esta lógica protegida:
-    if al_aj != "Selecione...":
-        # Filtramos e já garantimos a ordenação
-        df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
-        
-        if not df_f.empty:
-            # Ordenação segura (o dt_obj já foi criado lá no topo!)
-            df_f = df_f.sort_values('dt_obj', ascending=False)
+    # --- SOLUÇÃO DEFINITIVA PARA O ERRO NA LINHA 566 ---
+        if al_aj and al_aj != "Selecione...":
+            # 1. Filtramos os dados da aluna
+            df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
             
-            # ... (Restante do seu código que exibe o histórico)
+            if not df_f.empty:
+                # 2. CRIAMOS A COLUNA AQUI (Segurança Total)
+                # Forçamos a criação da coluna dt_obj dentro do dataframe já filtrado
+                df_f['dt_obj'] = pd.to_datetime(df_f['Data'], format='%d/%m/%Y', errors='coerce')
+                
+                # 3. ORDENAMOS (Agora o Pandas garante que a coluna existe)
+                df_f = df_f.sort_values('dt_obj', ascending=False)
+                
+                # --- EXIBIÇÃO DOS CARDS DE LIÇÃO ---
+                for idx, r in df_f.iterrows():
+                    with st.container(border=True):
+                        st.write(f"**Data:** {r['Data']} | **Tipo:** {r['Tipo']}")
+                        st.write(f"**Lição:** {r.get('Licao_Casa', '---')}")
+                        # Seu código de botões/validação continua aqui...
+    
     
     # --- ABA 1: VISÃO GERAL DIÁRIA ---
     with tab_consolidado:
@@ -844,6 +855,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
