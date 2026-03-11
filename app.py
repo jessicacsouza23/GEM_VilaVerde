@@ -360,15 +360,12 @@ if menu == "🏠 Secretaria":
             df_dia = df_historico[df_historico['Data'] == data_visao]
             
             if not df_dia.empty:
-                # Ordenar por aluna para o relatório ficar organizado
                 for aluna_v in sorted(df_dia['Aluna'].unique()):
                     dados_aluna = df_dia[df_dia['Aluna'] == aluna_v]
                     
-                    # Título da Aluna com Estilo
                     st.markdown(f"<div style='background-color: #2E4053; color: white; padding: 5px 15px; border-radius: 5px; margin-top: 25px;'><b>👤 {aluna_v.upper()}</b></div>", unsafe_allow_html=True)
                     texto_para_copiar += f"👤 *{aluna_v.upper()}*\n"
                     
-                    # Separar os registros por tipo para organizar a análise
                     for _, r in dados_aluna.iterrows():
                         tipo = str(r.get('Tipo', 'Aula')).replace("Aula_", "").replace("_", " ")
                         
@@ -378,7 +375,6 @@ if menu == "🏠 Secretaria":
                             texto_para_copiar += f"📍 Presença: {r.get('Status')}\n"
                         
                         elif tipo == "Controle Licao":
-                            # Esta é a parte analítica que você pediu (Postura, Técnica, etc.)
                             categoria = r.get('Categoria', 'Geral')
                             licao = r.get('Licao_Detalhe', '---')
                             obs = r.get('Observacao', 'Sem observações técnicas.')
@@ -386,14 +382,11 @@ if menu == "🏠 Secretaria":
                             with st.container(border=True):
                                 st.markdown(f"**📕 {categoria}:** {licao}")
                                 st.markdown(f"**📝 Análise Técnica:** {obs}")
-                                
-                                # Divisores musicais sutis no relatório
                                 st.markdown("<div style='color: #BDC3C7; font-size: 10px;'>♩ ♪ ♫ ♬ ♭ ♮ ♯</div>", unsafe_allow_html=True)
                             
                             texto_para_copiar += f"📕 *{categoria}*: {licao}\n   └─ {obs}\n"
                         
                         else:
-                            # Registros vindos da Professora
                             lic_at = r.get('Licao_Atual') or "---"
                             lic_cs = r.get('Licao_Casa') or "---"
                             st.write(f"🎹 **{tipo}**: {lic_at} | **Casa:** {lic_cs}")
@@ -403,7 +396,12 @@ if menu == "🏠 Secretaria":
                 
                 st.markdown("---")
                 st.subheader("📋 Formato para Envio")
-                st.text_area("Copie o texto abaixo para o WhatsApp:", value=texto_para_copiar, height
+                # CORREÇÃO: Parêntese fechado corretamente aqui embaixo
+                st.text_area("Copie o texto abaixo para o WhatsApp:", value=texto_para_copiar, height=250)
+            else:
+                st.info("Nenhum registro pedagógico encontrado para esta data.")
+        else:
+            st.warning("O banco de dados de histórico está vazio.")
                              
     # --- ABA 2: PLANEJAMENTO (RODÍZIO CARROSSEL) ---
     with tab_plan:
@@ -823,6 +821,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
