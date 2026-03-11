@@ -575,7 +575,7 @@ if menu == "🏠 Secretaria":
                     st.rerun()
                     
 # ============================================================
-# MÓDULO PROFESSORA - V36 (HORÁRIO POR TURMA E VÍNCULO DE DIFICULDADES)
+# MÓDULO PROFESSORA - V37 (DIFICULDADES ESPECÍFICAS POR ÁREA)
 # ============================================================
 elif menu == "👩‍🏫 Minhas Aulas":
     st.header(f"👩‍🏫 Painel da Professora: {st.session_state.nome_logado}")
@@ -625,7 +625,6 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         cont = str(reg.get(h, ""))
                         if cont and n_bus in limpar_texto(cont).lower():
                             tipo = "Teoria" if "SALA 8" in cont.upper() else "Solfejo" if "SALA 9" in cont.upper() else "Prática"
-                            # Se for turma, agrupamos pelo nome da Turma (Sala 8/9), não pela aluna
                             identificador = f"{h} | {reg.get('Turma') if tipo != 'Prática' else reg.get('Aluna')}"
                             if identificador not in vistos:
                                 aulas_agrupadas.append({
@@ -650,49 +649,59 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         als_selecionadas.append(al)
 
                 if als_selecionadas:
-                    with st.form(key=f"form_v36_{sel_lbl}"):
-                        st.subheader("📝 Registro Pedagógico Individualizado")
-                        st.caption("Preencha a lição e marque a dificuldade específica daquele material.")
-
-                        registros_para_salvar = []
+                    with st.form(key=f"form_v37_{sel_lbl}"):
+                        st.subheader("📝 Análise Pedagógica por Material")
                         
-                        # Lista de dificuldades por categoria
-                        lista_difs = DIF_TEORIA if d_sel["tipo"] == "Teoria" else DIF_SOLFEJO if d_sel["tipo"] == "Solfejo" else DIF_PRATICA
+                        registros_para_salvar = []
 
-                        # Função auxiliar para criar blocos de lição + dificuldade vinculada
-                        def criar_bloco_licao(titulo, chave):
+                        # FUNÇÃO PARA CRIAR BLOCO COM AS DIFICULDADES ESPECÍFICAS
+                        def criar_bloco(titulo, chave, lista_difs):
                             st.markdown(f"**{titulo}**")
-                            c1, c2 = st.columns([1, 2])
-                            lic = c1.text_input(f"Lição para Casa ({titulo}):", key=f"lic_{chave}")
-                            dif = c2.multiselect(f"Dificuldades no {titulo}:", lista_difs, key=f"dif_{chave}")
+                            col_lic, col_dif = st.columns([1, 2])
+                            lic = col_lic.text_input(f"Lição p/ Casa:", key=f"lic_{chave}")
+                            dif = col_dif.multiselect(f"Dificuldades em {titulo}:", lista_difs, key=f"dif_{chave}")
                             return lic, dif
 
+                        # --- DEFINIÇÃO DOS FORMULÁRIOS POR DISCIPLINA ---
                         if d_sel["tipo"] == "Teoria":
-                            l_v, d_v = criar_bloco_licao("MSA (Verde)", "verde")
-                            l_p, d_p = criar_bloco_licao("MSA (Preto)", "preto")
-                            l_e, d_e = criar_bloco_licao("Extra", "extra_t")
-                            if l_v: registros_para_salvar.append(("MSA(verde)", l_v, d_v))
-                            if l_p: registros_para_salvar.append(("MSA(preto)", l_p, d_p))
-                            if l_e: registros_para_salvar.append(("Extra", l_e, d_e))
+                            # Dificuldades de Teoria: Foco em compreensão, escrita, valores
+                            d_teo = ["Nome das Notas", "Valores/Figuras", "Claves", "Solfejo Rítmico", "Escrita", "Falta de Estudo"]
+                            
+                            l1, d1 = criar_bloco("MSA (Verde)", "teo_v", d_teo)
+                            l2, d2 = criar_bloco("MSA (Preto)", "teo_p", d_teo)
+                            l3, d3 = criar_bloco("Extra", "teo_e", d_teo)
+                            
+                            if l1: registros_para_salvar.append(("MSA(verde)", l1, d1))
+                            if l2: registros_para_salvar.append(("MSA(preto)", l2, d2))
+                            if l3: registros_para_salvar.append(("Extra", l3, d3))
 
                         elif d_sel["tipo"] == "Solfejo":
-                            l_v, d_v = criar_bloco_licao("MSA (Verde)", "solf_v")
-                            l_e, d_e = criar_bloco_licao("Extra", "solf_e")
-                            if l_v: registros_para_salvar.append(("MSA(verde)", l_v, d_v))
-                            if l_e: registros_para_salvar.append(("Extra", l_e, d_e))
+                            # Dificuldades de Solfejo: Foco em altura, ritmo, marcação
+                            d_sol = ["Marcação (Mão)", "Ritmo/Metrônomo", "Altura/Afinação", "Leitura de Notas", "Respiração", "Andamento"]
+                            
+                            l1, d1 = criar_bloco("MSA (Verde)", "sol_v", d_sol)
+                            l2, d2 = criar_bloco("Extra", "sol_e", d_sol)
+                            
+                            if l1: registros_para_salvar.append(("MSA(verde)", l1, d1))
+                            if l2: registros_para_salvar.append(("Extra", l2, d2))
 
-                        else: # Prática
+                        else: # Prática (Organista)
+                            # Dificuldades de Prática: Foco em Postura, Técnica, Pedaleira
+                            d_pra = ["Postura (Mãos/Corpo)", "Dedilhado", "Notas Erradas", "Pedaleira", "Troca de Registros", "Fraseado", "Ritmo", "Uso do Som"]
+                            
                             m_opts = ["Selecione..."] + (df_metodos['nome'].tolist() if not df_metodos.empty else [])
                             met_escolhido = st.selectbox("Método de Prática:", m_opts)
-                            l_m, d_m = criar_bloco_licao(f"Método: {met_escolhido}", "prac_m")
-                            l_a, d_a = criar_bloco_licao("Apostila", "prac_a")
-                            if met_escolhido != "Selecione..." and l_m: registros_para_salvar.append((met_escolhido, l_m, d_m))
-                            if l_a: registros_para_salvar.append(("Apostila", l_a, d_a))
+                            
+                            l1, d1 = criar_bloco(f"Método: {met_escolhido}", "pra_m", d_pra)
+                            l2, d2 = criar_bloco("Apostila", "pra_a", d_pra)
+                            
+                            if met_escolhido != "Selecione..." and l1: registros_para_salvar.append((met_escolhido, l1, d1))
+                            if l2: registros_para_salvar.append(("Apostila", l2, d2))
 
                         st.divider()
-                        obs_geral = st.text_area("✍️ Observações Gerais da Aula:")
+                        obs_geral = st.text_area("✍️ Observações Gerais da Aula (Visto da Secretaria):")
 
-                        if st.form_submit_button("💾 CONGELAR E ENVIAR PARA SECRETARIA"):
+                        if st.form_submit_button("💾 CONGELAR E SALVAR REGISTROS"):
                             for al_f in als_selecionadas:
                                 for label, licao, dificuldades in registros_para_salvar:
                                     dados = {
@@ -700,12 +709,12 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                         "Tipo": f"Aula_{d_sel['tipo']}_{label}".replace(" ", "_"),
                                         "Licao_Atual": "Trabalhado em aula",
                                         "Licao_Casa": f"{label}: {licao}",
-                                        "Dificuldades": dificuldades, # Agora a dificuldade está amarrada à lição!
+                                        "Dificuldades": dificuldades, # Salva a lista de dificuldades marcada para aquele material
                                         "Observacao": obs_geral, "Status": "Pendente"
                                     }
                                     db_save_historico(dados)
                             
-                            st.success(f"✅ Registros de {len(als_selecionadas)} alunas enviados com sucesso!"); time.sleep(1); st.rerun()
+                            st.success(f"✅ Registros de {len(als_selecionadas)} alunas enviados!"); time.sleep(1); st.rerun()
                             
 # ==========================================
 # MÓDULO ANÁLISE DE IA - V42 (FOCO NO PRONTUÁRIO)
@@ -820,6 +829,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
