@@ -328,34 +328,43 @@ if st.sidebar.button("Sair"):
     st.session_state.autenticado = False
     st.rerun()
 
-
 # ==========================================
-# MÓDULO SECRETARIA - VERSÃO CORRIGIDA V57
+# MÓDULO SECRETARIA - VERSÃO ULTRA ESTÁVEL
 # ==========================================
 if menu == "🏠 Secretaria":
-    tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes = st.tabs([
-        "📊 Visão Geral Diária", 
-        "🗓️ Planejamento", 
-        "📍 Chamada", 
-        "📝 Controle de Lições",
-        "🛠️ Ajustar Registros"
-    ])
-
     # 1. Carregamento de Dados
     historico_raw = db_get_historico()
     df_historico = pd.DataFrame(historico_raw)
 
-    # --- NOVO BLOCO DE DEFINIÇÃO (Resolve NameError e KeyError) ---
-    al_aj = None
+    # --- VACINA DE DADOS: Garante que dt_obj e Aluna existam antes de qualquer aba ---
     if not df_historico.empty:
-        # Criamos um seletor global para a secretaria saber de qual aluna estamos falando
-        # Isso garante que a variável 'al_aj' exista para todos os filtros abaixo
-        al_aj = st.sidebar.selectbox("🎯 Aluna em Foco:", ["Selecione..."] + ALUNAS_LISTA, key="global_aluna_sec")
+        # Cria a coluna de ordenação IMEDIATAMENTE após o carregamento
+        df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
+        
+        # Define a aluna padrão para evitar NameError (al_aj)
+        # Se você já tem um selectbox de aluna, certifique-se que o nome da variável é al_aj
+        al_aj = st.sidebar.selectbox("👤 Selecione a Aluna:", ["Selecione..."] + ALUNAS_LISTA, key="sec_global_aluna")
+    else:
+        al_aj = "Selecione..."
+        df_historico = pd.DataFrame(columns=['Aluna', 'Data', 'Tipo', 'dt_obj']) # DF Vazio estruturado
 
-        # Tratamento global das datas para evitar KeyError 'dt_obj' em qualquer lugar
-        if 'Data' in df_historico.columns:
-            df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
+    # Agora sim, as abas
+    tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes = st.tabs([
+        "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros"
+    ])
 
+    # --- CORREÇÃO DA LINHA 557 (Dentro da aba onde o erro ocorre) ---
+    # Ao chegar na linha que dava erro, use esta lógica protegida:
+    if al_aj != "Selecione...":
+        # Filtramos e já garantimos a ordenação
+        df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
+        
+        if not df_f.empty:
+            # Ordenação segura (o dt_obj já foi criado lá no topo!)
+            df_f = df_f.sort_values('dt_obj', ascending=False)
+            
+            # ... (Restante do seu código que exibe o histórico)
+    
     # --- ABA 1: VISÃO GERAL DIÁRIA ---
     with tab_consolidado:
         c_data_v1, _ = st.columns([1, 2])
@@ -835,6 +844,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
