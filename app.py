@@ -933,10 +933,10 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             st.rerun()
                             
 # ==========================================
-# MÓDULO ANÁLISE DE IA - V37 (PRONTUÁRIO CONSOLIDADO)
+# MÓDULO ANÁLISE DE IA - V38 (DESIGN PREMIUM)
 # ==========================================
 elif menu == "📊 Analítico IA":
-    st.title("📊 Painel Pedagógico de Performance")
+    st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico</h1>", unsafe_allow_html=True)
     
     historico_raw = db_get_historico()
     df = pd.DataFrame(historico_raw)
@@ -944,121 +944,110 @@ elif menu == "📊 Analítico IA":
     if df.empty:
         st.info("ℹ️ O banco de dados está vazio.")
     else:
-        # Tratamento de datas
         df['dt_obj'] = pd.to_datetime(df['Data'], format="%d/%m/%Y", errors='coerce')
         df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
 
-        # Seleção da Aluna
-        aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_aluna_v37")
+        aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v38")
         df_aluna = df[df['Aluna'] == aluna_sel]
 
-        # Resumo de Faltas
-        df_chamada = df_aluna[df_aluna['Tipo'] == 'Chamada']
-        faltas = len(df_chamada[df_chamada['Status'] == 'Ausente'])
-        st.markdown(f"### 🚩 Faltas Acumuladas: `{faltas}`")
-        st.divider()
-
+        # --- CABEÇALHO ESTILIZADO ---
         if not df_aluna.empty:
-            datas_disponiveis = df_aluna['Data'].unique()
-            data_sel = st.selectbox("📅 Selecione a Data da Aula:", datas_disponiveis)
+            st.markdown(f"""
+                <div style="background-color: #F8F9F9; padding: 20px; border-radius: 10px; border-left: 5px solid #2E4053; margin-bottom: 20px;">
+                    <h2 style="margin: 0; color: #2E4053;">{aluna_sel.upper()}</h2>
+                    <p style="margin: 0; color: #7F8C8D;">Unidade: Parque do Carmo II | Registro Consolidado</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Seleção de Data
+            data_sel = st.selectbox("📅 Selecione a Data da Aula:", df_aluna['Data'].unique())
             dados_dia = df_aluna[df_aluna['Data'] == data_sel]
 
-            # --- CABEÇALHO DO RELATÓRIO ---
-            # Ex: INGRID M. – PARQUE DO CARMO II
-            st.markdown(f"<h2 style='text-align: center; color: #1E1E1E;'>{aluna_sel.upper()}</h2>", unsafe_allow_html=True)
-            st.divider()
-
-            # --- SEÇÃO 1: PRÁTICA (MÚLTIPLOS MÉTODOS) ---
+            # --- SEÇÃO 1: PRÁTICA (CARDS ESTILIZADOS) ---
             st.markdown("### 🎹 Prática")
             p_data = dados_dia[dados_dia['Tipo'].str.contains('Prática|Pratica', case=False, na=False)]
             
             if not p_data.empty:
                 for _, p in p_data.iterrows():
-                    # Extrai o nome do método do Tipo
-                    metodo = p['Tipo'].replace("Aula_Prática_", "").replace("Aula_Pratica_", "").replace("_", " ")
+                    metodo = p['Tipo'].split('_')[-1].replace("_", " ")
                     difs_p = p.get('Dificuldades', [])
                     difs_txt = ", ".join(difs_p) if isinstance(difs_p, list) else str(difs_p)
                     
-                    st.markdown(f"""
-                    **Método: {metodo}** **Data:** {data_sel}  
-                    **Instrutora:** {p.get('Instrutora') or '---'}  
-                    **Estudo / Lição:** {p.get('Licao_Atual', '---')}  
-                    **Dificuldades:** {difs_txt if difs_txt and difs_txt != '[]' else 'Não apresentou dificuldades'}  
-                    **Observações:** {p.get('Observacao', '---')}  
-                    **Lição de casa – Volume prática:** {p.get('Licao_Casa', '---')}
-                    ---
-                    """)
+                    # CARD DE PRÁTICA
+                    with st.container(border=True):
+                        c1, c2 = st.columns([3, 1])
+                        c1.markdown(f"#### 📖 Método: {metodo}")
+                        c2.markdown(f"**Data:** {data_sel}")
+                        
+                        st.markdown(f"**👩‍🏫 Instrutora:** {p.get('Instrutora') or '---'}")
+                        st.markdown(f"**📍 Estudo / Lição:** {p.get('Licao_Atual', '---')}")
+                        
+                        # Alerta visual para dificuldades
+                        if difs_txt and difs_txt != '[]':
+                            st.markdown(f"⚠️ **Dificuldades:** <span style='color: #C0392B;'>{difs_txt}</span>", unsafe_allow_html=True)
+                        else:
+                            st.markdown("✅ **Dificuldades:** Nenhuma apresentada")
+                        
+                        st.markdown(f"📝 **Observações:** {p.get('Observacao', '---')}")
+                        
+                        # Box de Lição de Casa
+                        st.markdown(f"""
+                            <div style="background-color: #EBF5FB; padding: 10px; border-radius: 5px; margin-top: 10px;">
+                                <b style="color: #2980B9;">🏠 Lição de casa – Volume prática:</b><br>{p.get('Licao_Casa', '---')}
+                            </div>
+                        """, unsafe_allow_html=True)
             else:
-                st.caption("Sem registros de Prática para este dia.")
+                st.caption("Nenhum registro de Prática encontrado.")
 
-            # --- SEÇÃO 2: TEORIA ---
-            st.markdown("### 📝 Teoria")
-            t_data = dados_dia[dados_dia['Tipo'].str.contains('Teoria', case=False, na=False)]
-            if not t_data.empty:
+            # --- SEÇÃO 2 & 3: TEORIA E SOLFEJO (LADO A LADO) ---
+            col_t, col_s = st.columns(2)
+            
+            with col_t:
+                st.markdown("### 📝 Teoria")
+                t_data = dados_dia[dados_dia['Tipo'].str.contains('Teoria', case=False, na=False)]
                 for _, t in t_data.iterrows():
-                    st.markdown(f"""
-                    **Data:** {data_sel}  
-                    **Instrutora:** {t.get('Instrutora') or '---'}  
-                    **Lição/Volume:** {t.get('Licao_Atual', '---')}  
-                    **Dificuldades:** {t.get('Dificuldades', 'Não apresentou dificuldades')}  
-                    **Observações:** {t.get('Observacao', '---')}  
-                    **Lição de casa:** {t.get('Licao_Casa', '---')}
-                    """)
-            else:
-                st.caption("Sem registros de Teoria.")
+                    with st.container(border=True):
+                        st.markdown(f"**Lição:** {t.get('Licao_Atual', '---')}")
+                        st.markdown(f"**Obs:** {t.get('Observacao', '---')}")
+                        st.caption(f"Instrutora: {t.get('Instrutora')}")
 
-            # --- SEÇÃO 3: SOLFEJO ---
-            st.markdown("### 🗣️ Solfejo")
-            s_data = dados_dia[dados_dia['Tipo'].str.contains('Solfejo', case=False, na=False)]
-            if not s_data.empty:
+            with col_s:
+                st.markdown("### 🗣️ Solfejo")
+                s_data = dados_dia[dados_dia['Tipo'].str.contains('Solfejo', case=False, na=False)]
                 for _, s in s_data.iterrows():
-                    st.markdown(f"""
-                    **Data:** {data_sel}  
-                    **Instrutora:** {s.get('Instrutora') or '---'}  
-                    **Lição/Volume:** {s.get('Licao_Atual', '---')}  
-                    **Dificuldades:** {s.get('Dificuldades', 'Não apresentou dificuldades')}  
-                    **Observações:** {s.get('Observacao', '---')}  
-                    **Lição de casa:** {s.get('Lição_Casa', '---')}
-                    """)
-            else:
-                st.caption("Sem registros de Solfejo.")
+                    with st.container(border=True):
+                        st.markdown(f"**Lição:** {s.get('Licao_Atual', '---')}")
+                        st.markdown(f"**Obs:** {s.get('Observacao', '---')}")
+                        st.caption(f"Instrutora: {s.get('Instrutora')}")
 
-            # --- SEÇÃO 4: LIÇÕES DE CASA (SECRETARIA / CONTROLE) ---
-            st.markdown("### 📚 Lições de Casa")
+            # --- SEÇÃO 4: LIÇÕES DE CASA (ESTILO SECRETARIA) ---
+            st.markdown("### 📚 Status de Lições (Secretaria)")
             sec_data = dados_dia[dados_dia['Tipo'].str.contains('Controle_Licao', case=False, na=False)]
             if not sec_data.empty:
                 for _, row in sec_data.iterrows():
+                    status_cor = "#27AE60" if "Realizou" in row.get('Status', '') else "#F39C12"
                     st.markdown(f"""
-                    **Categoria:** {row.get('Categoria', 'Geral')}  
-                    **{row.get('Status', 'Status')}:** {row.get('Observacao', 'Sem pendências')}
-                    """)
-            else:
-                # Caso não tenha registro da secretaria, mostramos um resumo do que as professoras passaram
-                st.info("Resumo de lições passadas pelas instrutoras:")
-                for _, row in dados_dia[dados_dia['Tipo'].str.contains('Aula', na=False)].iterrows():
-                    met_resumo = row['Tipo'].split('_')[-1]
-                    st.write(f"📖 **{met_resumo}:** {row.get('Licao_Casa', '---')}")
+                        <div style="padding: 10px; border: 1px solid #D5DBDB; border-radius: 5px; border-left: 10px solid {status_cor}; margin-bottom: 5px;">
+                            <b>Categoria:</b> {row.get('Categoria', 'Geral')} | 
+                            <b>Status:</b> {row.get('Status', '---')} <br>
+                            <b>Nota:</b> {row.get('Observacao', '---')}
+                        </div>
+                    """, unsafe_allow_html=True)
 
-            # --- SEÇÃO 5: PLANEJAMENTO E METAS ---
+            # --- SEÇÃO 5: METAS (DESIGN DE CARDS LADO A LADO) ---
             st.divider()
-            st.subheader("🎯 Planejamento e Metas")
-            col_metas, col_banca = st.columns(2)
-            with col_metas:
-                st.markdown("**Metas para a Próxima Aula:**")
-                st.success("1. Evoluir lição atual com metrônomo\n2. Corrigir postura de dedos arredondados")
-            with col_banca:
-                st.markdown("**Dicas para a Banca Semestral:**")
-                st.warning("Atenção especial à articulação técnica e ao uso do pedal de expressão.")
-
-            # --- GRÁFICO FUNCIONAL ---
-            st.divider()
-            if st.checkbox("Ver Gráfico de Evolução"):
-                st.subheader("📈 Frequência de Estudos")
-                evol_df = df_aluna[df_aluna['Tipo'].str.contains('Aula', na=False)]
-                if not evol_df.empty:
-                    evol_res = evol_df.groupby('dt_obj').size().reset_index(name='Métodos')
-                    fig = px.area(evol_res, x='dt_obj', y='Métodos', title="Constância de Aprendizado", color_discrete_sequence=['#4A90E2'])
-                    st.plotly_chart(fig, use_container_width=True)
+            m_col1, m_col2 = st.columns(2)
+            with m_col1:
+                st.info("🎯 **Metas Próxima Aula**\n\n1. Evoluir lição atual com metrônomo\n2. Corrigir postura de dedos")
+            with m_col2:
+                st.warning("🏆 **Dicas para a Banca**\n\nAtenção à articulação técnica e uso do pedal de expressão.")
 
         st.divider()
+        if st.checkbox("📈 Ver Gráfico de Evolução de Métodos"):
+            evol_df = df_aluna[df_aluna['Tipo'].str.contains('Aula', na=False)]
+            if not evol_df.empty:
+                evol_res = evol_df.groupby('dt_obj').size().reset_index(name='Quantidade')
+                fig = px.bar(evol_res, x='dt_obj', y='Quantidade', title="Volume de Estudos por Aula", color_discrete_sequence=['#2E4053'])
+                st.plotly_chart(fig, use_container_width=True)
         
+
