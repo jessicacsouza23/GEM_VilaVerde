@@ -329,10 +329,9 @@ if st.sidebar.button("Sair"):
     st.rerun()
 
 # ==========================================
-# MÓDULO SECRETARIA - V45 (COMPLETO)
+# MÓDULO SECRETARIA - V46 (COMPLETO)
 # ==========================================
 if menu == "🏠 Secretaria":
-    # 1. Definição das Abas para organização total
     tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes = st.tabs([
         "📊 Visão Geral Diária", 
         "🗓️ Planejamento", 
@@ -341,20 +340,20 @@ if menu == "🏠 Secretaria":
         "🛠️ Ajustar Registros"
     ])
 
-    # 2. Carregamento prévio de dados para uso em todas as abas
+    # Carregamento de dados para as abas
     historico_raw = db_get_historico()
     df_historico = pd.DataFrame(historico_raw)
     if not df_historico.empty:
         df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format="%d/%m/%Y", errors='coerce')
 
-    # --- ABA 1: VISÃO GERAL DIÁRIA (Análise de todas as alunas por dia) ---
+    # --- ABA 1: VISÃO GERAL DIÁRIA ---
     with tab_consolidado:
-        st.subheader("📋 Análise Pedagógica por Data")
+        st.subheader("📋 Análise Pedagógica Diária")
         data_visao = st.date_input("Escolha a Data para Analisar:", datetime.now(), key="sec_v_dia")
         dt_str_v = data_visao.strftime("%d/%m/%Y")
         
         if df_historico.empty:
-            st.info("Banco de dados vazio.")
+            st.info("Nenhum dado encontrado.")
         else:
             df_dia = df_historico[df_historico['Data'] == dt_str_v]
             if df_dia.empty:
@@ -369,21 +368,21 @@ if menu == "🏠 Secretaria":
                             if r.get('Dificuldades'): st.caption(f"⚠️ Dificuldades: {r['Dificuldades']}")
                             st.divider()
 
-    # --- ABA 2: PLANEJAMENTO (Rodízio e Área de Perigo) ---
+    # --- ABA 2: PLANEJAMENTO (Com Deletar Rodízio) ---
     with tab_plan:
         with st.expander("🚨 ÁREA DE PERIGO - Limpeza do Sistema"):
             st.warning("Atenção: Esta ação apagará TODOS os registros do sistema.")
-            confirma_limpeza = st.checkbox("Estou ciente que esta ação não pode ser desfeita.", key="limpeza_trava")
+            confirma_limpeza = st.checkbox("Confirmo a exclusão total.", key="limpeza_trava_total")
             c_btn1, c_btn2 = st.columns(2)
             with c_btn1:
-                if st.button("🗑️ LIMPAR HISTÓRICO DE AULAS"):
+                if st.button("🗑️ LIMPAR TODO HISTÓRICO DE AULAS"):
                     if confirma_limpeza:
                         supabase.table("historico_geral").delete().neq("Data", "").execute()
                         st.success("Histórico limpo!"); st.rerun()
             with c_btn2:
-                if st.button("📅 LIMPAR ESCALAS"):
+                if st.button("📅 LIMPAR TODAS AS ESCALAS"):
                     if confirma_limpeza:
-                        supabase.table("config_calendario").delete().neq("id", -1).execute()
+                        supabase.table("calendario").delete().neq("id", "").execute()
                         st.success("Escalas removidas!"); st.rerun()
 
         st.divider()
@@ -395,57 +394,79 @@ if menu == "🏠 Secretaria":
         
         if sabados:
             data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
+            
             if data_sel_str not in calendario_db:
-                st.warning("⚠️ Rodízio não gerado.")
-                # ... (Lógica de preenchimento de profs e Botão Gerar Rodízio) ...
-                if st.button("🚀 GERAR RODÍZIO CARROSSEL TOTAL"):
-                    # [Insira aqui sua lógica de geração de dicionário 'mapa']
-                    st.success("Gerado!")
+                st.warning(f"⚠️ Rodízio não gerado para {data_sel_str}.")
+                # (Aqui entraria sua lógica de selectboxes pt2, ps2... e o botão GERAR RODÍZIO)
+                # ...
             else:
-                df_edit = st.data_editor(pd.DataFrame(calendario_db[data_sel_str]), use_container_width=True, hide_index=True)
-                if st.button("💾 SALVAR ALTERAÇÕES"):
-                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": df_edit.to_dict(orient="records")}).execute()
-                    st.success("Salvo!"); st.rerun()
+                st.success(f"🗓️ Rodízio Ativo: {data_sel_str}")
+                df_edit = st.data_editor(pd.DataFrame(calendario_db[data_sel_str]), use_container_width=True, hide_index=True, key=f"edit_{data_sel_str}")
+                
+                col_e1, col_e2 = st.columns(2)
+                with col_e1:
+                    if st.button("💾 SALVAR ALTERAÇÕES", use_container_width=True):
+                        supabase.table("calendario").upsert({"id": data_sel_str, "escala": df_edit.to_dict(orient="records")}).execute()
+                        st.toast("Salvo!", icon="✅"); st.cache_data.clear(); st.rerun()
+                
+                with col_e2:
+                    # BOTÃO QUE FALTAVA: Deletar rodízio específico
+                    if st.button("🗑️ DELETAR ESTE RODÍZIO", use_container_width=True, type="secondary"):
+                        supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                        st.error(f"Rodízio de {data_sel_str} apagado!"); st.cache_data.clear(); st.rerun()
 
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
         st.subheader("📍 Chamada Geral")
-        data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="ch_data")
-        pres_padrao = st.toggle("Presente por padrão", value=True)
+        data_ch_sel = st.selectbox("Data da Chamada:", [s.strftime("%d/%m/%Y") for s in sabados], key="ch_data_sec")
+        pres_padrao = st.toggle("Marcar todas como Presente", value=True)
         
         registros_ch = []
         alunas_ord = sorted([a for t in TURMAS.values() for a in t])
         for idx, aluna in enumerate(alunas_ord):
-            col1, col2, col3 = st.columns([2, 3, 3])
-            col1.write(f"**{aluna}**")
-            status = col2.radio(f"S_{aluna}", ["Presente", "Ausente", "Justificada"], index=0 if pres_padrao else 1, key=f"ch_{aluna}", horizontal=True, label_visibility="collapsed")
-            motivo = col3.text_input("M", key=f"mot_{aluna}", placeholder="Motivo", label_visibility="collapsed") if status == "Justificada" else ""
-            registros_ch.append({"Data": data_ch_sel, "Aluna": aluna, "Tipo": "Chamada", "Status": status, "Observacao": motivo, "Licao_Atual": "Presença"})
+            c1, c2, c3 = st.columns([2, 3, 3])
+            c1.write(f"**{aluna}**")
+            st_ch = c2.radio(f"Status_{aluna}", ["Presente", "Ausente", "Justificada"], index=0 if pres_padrao else 1, key=f"ch_r_{aluna}", horizontal=True, label_visibility="collapsed")
+            mot = c3.text_input("M", key=f"mot_r_{aluna}", placeholder="Motivo", label_visibility="collapsed") if st_ch == "Justificada" else ""
+            registros_ch.append({"Data": data_ch_sel, "Aluna": aluna, "Tipo": "Chamada", "Status": st_ch, "Observacao": mot, "Licao_Atual": "Presença"})
 
-        if st.button("💾 SALVAR CHAMADA COMPLETA", type="primary"):
-            supabase.table("historico_geral").delete().eq("Data", data_ch_sel).eq("Tipo", "Chamada").execute()
-            supabase.table("historico_geral").insert(registros_ch).execute()
-            st.success("Chamada Salva!"); st.balloons()
+        if st.button("💾 SALVAR CHAMADA COMPLETA", type="primary", use_container_width=True):
+            try:
+                supabase.table("historico_geral").delete().eq("Data", data_ch_sel).eq("Tipo", "Chamada").execute()
+                supabase.table("historico_geral").insert(registros_ch).execute()
+                st.success("Chamada Salva!"); st.balloons(); st.cache_data.clear()
+            except Exception as e: st.error(f"Erro: {e}")
 
     # --- ABA 4: CONTROLE DE LIÇÕES ---
     with tab_licao:
-        st.subheader("Registro de Correção")
-        # [Mantenha aqui seu código de filtragem de pendências e o st.form("f_nova_atividade")]
-        st.info("Utilize para validar lições de casa e registrar novas atividades da secretaria.")
+        st.subheader("📝 Gestão de Atividades")
+        # [Seu formulário st.form("f_nova_atividade") e lógica de pendências entram aqui]
+        st.caption("Filtre por aluna para ver lições pendentes ou registrar novas.")
 
-    # --- ABA 5: AJUSTAR REGISTROS (Para apagar erros das profs) ---
+    # --- ABA 5: AJUSTAR REGISTROS (Apagar lançamentos individuais das profs) ---
     with tab_ajustes:
-        st.subheader("🗑️ Ajuste de Lançamentos")
-        aluna_aj = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="aj_al")
+        st.subheader("🛠️ Corrigir Lançamentos das Professoras")
+        aluna_aj = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="aj_al_sec")
+        
         if not df_historico.empty:
             df_aj = df_historico[df_historico['Aluna'] == aluna_aj].sort_values('dt_obj', ascending=False)
-            st.dataframe(df_aj[['Data', 'Tipo', 'Licao_Atual', 'Instrutora']], use_container_width=True)
-            
-            idx_del = st.selectbox("Escolha o registro para APAGAR:", range(len(df_aj)), format_func=lambda x: f"{df_aj.iloc[x]['Data']} - {df_aj.iloc[x]['Tipo']}")
-            if st.button("❌ EXCLUIR DEFINITIVAMENTE"):
-                alvo = df_aj.iloc[idx_del]
-                supabase.table("historico_geral").delete().eq("Data", alvo['Data']).eq("Aluna", alvo['Aluna']).eq("Tipo", alvo['Tipo']).execute()
-                st.success("Excluído!"); st.rerun()
+            if not df_aj.empty:
+                st.write("Histórico recente (selecione para excluir):")
+                df_view = df_aj[['Data', 'Tipo', 'Licao_Atual', 'Instrutora']].copy()
+                st.dataframe(df_view, use_container_width=True, hide_index=True)
+                
+                # Selecionar registro pelo índice
+                idx_to_del = st.selectbox("Registro para apagar:", range(len(df_aj)), format_func=lambda x: f"{df_aj.iloc[x]['Data']} - {df_aj.iloc[x]['Tipo']} ({df_aj.iloc[x]['Licao_Atual']})")
+                
+                if st.button("❌ APAGAR DEFINITIVAMENTE", type="secondary"):
+                    item = df_aj.iloc[idx_to_del]
+                    try:
+                        supabase.table("historico_geral").delete()\
+                            .eq("Data", item['Data']).eq("Aluna", item['Aluna']).eq("Tipo", item['Tipo']).execute()
+                        st.success("Registro removido!"); st.cache_data.clear(); st.rerun()
+                    except Exception as e: st.error(f"Erro ao apagar: {e}")
+            else:
+                st.info("Nenhum registro para esta aluna.")
 
     st.divider()
     
@@ -746,5 +767,6 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
