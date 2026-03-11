@@ -420,89 +420,89 @@ if menu == "🏠 Secretaria":
 
     # --- ABA 4: CONTROLE DE LIÇÕES (CORRIGIDA) ---
     # --- ABA 4: CONTROLE DE LIÇÕES (CORREÇÃO E CONGELAMENTO) ---
-with tab_licao:
-    st.subheader("📝 Validação de Lições e Análise Pedagógica")
-    
-    c1, c2, c3 = st.columns([2, 1, 1])
-    aluna_sel = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="lic_al_v57")
-    sec_resp = c2.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="lic_resp_v57")
-    data_lic_dt = c3.date_input("Data de Referência:", datetime.now(), key="lic_dt_v57")
-    data_lic_str = data_lic_dt.strftime("%d/%m/%Y")
-
-    # 1. ÁREA DE CORREÇÃO (O que a professora passou para casa)
-    st.markdown("### 🏠 Validar Lição de Casa (Passada pela Professora)")
-    
-    if not df_historico.empty:
-        # Filtramos registros de AULA onde a professora escreveu algo no campo 'Licao_Casa'
-        # E que ainda não foram "Validados" por você (coluna Status_Secretaria)
-        # Se a coluna não existir no seu banco, o código cria ela virtualmente para não quebrar
-        df_casa = df_historico[
-            (df_historico['Aluna'] == aluna_sel) & 
-            (df_historico['Tipo'].str.contains('Aula_', na=False)) &
-            (df_historico['Licao_Casa'].notna()) &
-            (df_historico['Licao_Casa'] != "")
-        ].copy()
-
-        if 'Status_Secretaria' not in df_casa.columns:
-            df_casa['Status_Secretaria'] = "Pendente"
-
-        # Mostrar apenas o que ainda não foi validado como "Realizado" ou "Devolvido"
-        pendentes = df_casa[df_casa['Status_Secretaria'] == "Pendente"].sort_values('dt_obj', ascending=False)
-
-        if not pendentes.empty:
-            for i, (idx, r) in enumerate(pendentes.iterrows()):
-                with st.container(border=True):
-                    tipo_aula = r['Tipo'].replace("Aula_", "").replace("_", " ")
-                    col_txt, col_opt = st.columns([3, 2])
+            with tab_licao:
+                st.subheader("📝 Validação de Lições e Análise Pedagógica")
+                
+                c1, c2, c3 = st.columns([2, 1, 1])
+                aluna_sel = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="lic_al_v57")
+                sec_resp = c2.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="lic_resp_v57")
+                data_lic_dt = c3.date_input("Data de Referência:", datetime.now(), key="lic_dt_v57")
+                data_lic_str = data_lic_dt.strftime("%d/%m/%Y")
+            
+                # 1. ÁREA DE CORREÇÃO (O que a professora passou para casa)
+                st.markdown("### 🏠 Validar Lição de Casa (Passada pela Professora)")
+                
+                if not df_historico.empty:
+                    # Filtramos registros de AULA onde a professora escreveu algo no campo 'Licao_Casa'
+                    # E que ainda não foram "Validados" por você (coluna Status_Secretaria)
+                    # Se a coluna não existir no seu banco, o código cria ela virtualmente para não quebrar
+                    df_casa = df_historico[
+                        (df_historico['Aluna'] == aluna_sel) & 
+                        (df_historico['Tipo'].str.contains('Aula_', na=False)) &
+                        (df_historico['Licao_Casa'].notna()) &
+                        (df_historico['Licao_Casa'] != "")
+                    ].copy()
+            
+                    if 'Status_Secretaria' not in df_casa.columns:
+                        df_casa['Status_Secretaria'] = "Pendente"
+            
+                    # Mostrar apenas o que ainda não foi validado como "Realizado" ou "Devolvido"
+                    pendentes = df_casa[df_casa['Status_Secretaria'] == "Pendente"].sort_values('dt_obj', ascending=False)
+            
+                    if not pendentes.empty:
+                        for i, (idx, r) in enumerate(pendentes.iterrows()):
+                            with st.container(border=True):
+                                tipo_aula = r['Tipo'].replace("Aula_", "").replace("_", " ")
+                                col_txt, col_opt = st.columns([3, 2])
+                                
+                                with col_txt:
+                                    st.markdown(f"**{tipo_aula}** (Passada em: {r['Data']})")
+                                    st.warning(f"🏠 **LIÇÃO DE CASA:** {r['Licao_Casa']}")
+                                    st.caption(f"Profª {r.get('Instrutora', '---')}")
+                                
+                                with col_opt:
+                                    v_status = st.radio(
+                                        "Resultado:", 
+                                        ["Realizado", "Não realizado", "Devolvido"], 
+                                        key=f"status_corr_{i}_{r['id']}",
+                                        horizontal=True
+                                    )
+                                    v_obs = st.text_input("Obs / Motivo:", key=f"obs_corr_{i}_{r['id']}")
+                                    
+                                    if st.button("Confirmar Visto", key=f"btn_visto_{i}_{r['id']}", use_container_width=True):
+                                        # Atualiza o registro original da aula com o seu visto
+                                        supabase.table("historico_geral").update({
+                                            "Status_Secretaria": v_status,
+                                            "Secretaria": sec_resp,
+                                            "Observacao_Sec": v_obs
+                                        }).eq("id", r['id']).execute()
+                                        st.success("Visto registrado!"); st.cache_data.clear(); st.rerun()
+                    else:
+                        st.info(f"Nenhuma lição de casa pendente de visto para {aluna_sel}.")
+            
+                st.divider()
+            
+                # 2. ÁREA DE CONGELAMENTO (Sua análise para a próxima aula)
+                st.markdown("### ❄️ Novo Registro de Congelamento (Metas)")
+                with st.form("f_congelar_v57"):
+                    cats = ["MSA (Preto)", "Teoria (Extra)", "Solfejo (Extra)", "Prática (Apostila)", "Outros"]
+                    col_a, col_b = st.columns([1, 2])
+                    cat_sel = col_a.radio("Área Pedagógica:", cats)
+                    lic_det = col_b.text_input("Lição / Página para a próxima aula:")
                     
-                    with col_txt:
-                        st.markdown(f"**{tipo_aula}** (Passada em: {r['Data']})")
-                        st.warning(f"🏠 **LIÇÃO DE CASA:** {r['Licao_Casa']}")
-                        st.caption(f"Profª {r.get('Instrutora', '---')}")
+                    st_sel = st.radio("Status da Meta:", ["Em andamento", "Pendente", "Finalizado"], horizontal=True)
+                    obs_ped = st.text_area("Observações Técnicas (Postura, Técnica, Ritmo, Dicas Banca):")
                     
-                    with col_opt:
-                        v_status = st.radio(
-                            "Resultado:", 
-                            ["Realizado", "Não realizado", "Devolvido"], 
-                            key=f"status_corr_{i}_{r['id']}",
-                            horizontal=True
-                        )
-                        v_obs = st.text_input("Obs / Motivo:", key=f"obs_corr_{i}_{r['id']}")
-                        
-                        if st.button("Confirmar Visto", key=f"btn_visto_{i}_{r['id']}", use_container_width=True):
-                            # Atualiza o registro original da aula com o seu visto
-                            supabase.table("historico_geral").update({
-                                "Status_Secretaria": v_status,
-                                "Secretaria": sec_resp,
-                                "Observacao_Sec": v_obs
-                            }).eq("id", r['id']).execute()
-                            st.success("Visto registrado!"); st.cache_data.clear(); st.rerun()
-        else:
-            st.info(f"Nenhuma lição de casa pendente de visto para {aluna_sel}.")
-
-    st.divider()
-
-    # 2. ÁREA DE CONGELAMENTO (Sua análise para a próxima aula)
-    st.markdown("### ❄️ Novo Registro de Congelamento (Metas)")
-    with st.form("f_congelar_v57"):
-        cats = ["MSA (Preto)", "Teoria (Extra)", "Solfejo (Extra)", "Prática (Apostila)", "Outros"]
-        col_a, col_b = st.columns([1, 2])
-        cat_sel = col_a.radio("Área Pedagógica:", cats)
-        lic_det = col_b.text_input("Lição / Página para a próxima aula:")
-        
-        st_sel = st.radio("Status da Meta:", ["Em andamento", "Pendente", "Finalizado"], horizontal=True)
-        obs_ped = st.text_area("Observações Técnicas (Postura, Técnica, Ritmo, Dicas Banca):")
-        
-        if st.form_submit_button("💾 CONGELAR ANÁLISE"):
-            if lic_det:
-                db_save_historico({
-                    "Aluna": aluna_sel, "Tipo": "Controle_Licao", "Data": data_lic_str,
-                    "Secretaria": sec_resp, "Categoria": cat_sel, "Licao_Detalhe": lic_det,
-                    "Status": st_sel, "Observacao": obs_ped
-                })
-                st.success("Análise congelada!"); st.cache_data.clear(); st.rerun()
-            else:
-                st.error("Informe a lição ou página!")
+                    if st.form_submit_button("💾 CONGELAR ANÁLISE"):
+                        if lic_det:
+                            db_save_historico({
+                                "Aluna": aluna_sel, "Tipo": "Controle_Licao", "Data": data_lic_str,
+                                "Secretaria": sec_resp, "Categoria": cat_sel, "Licao_Detalhe": lic_det,
+                                "Status": st_sel, "Observacao": obs_ped
+                            })
+                            st.success("Análise congelada!"); st.cache_data.clear(); st.rerun()
+                        else:
+                            st.error("Informe a lição ou página!")
                 
     # --- ABA 5: AJUSTES ---
     with tab_ajustes:
@@ -814,6 +814,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
