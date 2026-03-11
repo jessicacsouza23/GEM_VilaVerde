@@ -342,67 +342,58 @@ if menu == "🏠 Secretaria":
         "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros"
     ])
 
-    # --- ABA 1: VISÃO GERAL DIÁRIA (ANALÍTICA E PEDAGÓGICA) ---
+    # --- ABA 1: VISÃO GERAL (DESIGN CLEAN) ---
     with tab_consolidado:
-        c_data_v1, _ = st.columns([1, 2])
-        data_visao = c_data_v1.date_input("📅 Data da Análise:", datetime.now(), key="sec_v_dia_vfinal").strftime("%d/%m/%Y")
+        c1, c2 = st.columns([1, 2])
+        data_visao = c1.date_input("📅 Data da Análise:", datetime.now(), key="sec_v_dia_vfinal").strftime("%d/%m/%Y")
         
         st.markdown(f"""
-            <div style='text-align: center; background-color: #f0f2f6; padding: 20px; border-radius: 10px; border-bottom: 5px solid #2E4053;'>
-                <h2 style='margin: 0; color: #2E4053;'>🎼 Diário Pedagógico Vila Verde</h2>
-                <p style='margin: 5px; color: #566573;'>Relatório Detalhado de Atividades • {data_visao}</p>
+            <div style='text-align: center; background: linear-gradient(90deg, #1B2631, #2E4053); padding: 25px; border-radius: 15px; margin-bottom: 20px;'>
+                <h2 style='margin: 0; color: #D5D8DC; letter-spacing: 2px;'>🎼 DIÁRIO PEDAGÓGICO</h2>
+                <p style='margin: 5px; color: #AEB6BF; font-family: monospace;'>{data_visao}</p>
             </div>
         """, unsafe_allow_html=True)
         
-        texto_para_copiar = f"🎼 *RELATÓRIO PEDAGÓGICO - {data_visao}*\n\n"
+        texto_whatsapp = f"🎼 *RELATÓRIO PEDAGÓGICO - {data_visao}*\n\n"
 
         if not df_historico.empty:
             df_dia = df_historico[df_historico['Data'] == data_visao]
-            
             if not df_dia.empty:
                 for aluna_v in sorted(df_dia['Aluna'].unique()):
-                    dados_aluna = df_dia[df_dia['Aluna'] == aluna_v]
-                    
-                    st.markdown(f"<div style='background-color: #2E4053; color: white; padding: 5px 15px; border-radius: 5px; margin-top: 25px;'><b>👤 {aluna_v.upper()}</b></div>", unsafe_allow_html=True)
-                    texto_para_copiar += f"👤 *{aluna_v.upper()}*\n"
-                    
-                    for _, r in dados_aluna.iterrows():
-                        tipo = str(r.get('Tipo', 'Aula')).replace("Aula_", "").replace("_", " ")
+                    with st.expander(f"👤 {aluna_v.upper()}", expanded=True):
+                        dados_aluna = df_dia[df_dia['Aluna'] == aluna_v]
+                        texto_whatsapp += f"👤 *{aluna_v.upper()}*\n"
                         
-                        if tipo == "Chamada":
-                            status_icon = "✅" if r.get('Status') == "Presente" else "❌"
-                            st.markdown(f"**{status_icon} Status:** {r.get('Status')} {f'({r.get('Observacao')})' if r.get('Observacao') else ''}")
-                            texto_para_copiar += f"📍 Presença: {r.get('Status')}\n"
-                        
-                        elif tipo == "Controle Licao":
-                            categoria = r.get('Categoria', 'Geral')
-                            licao = r.get('Licao_Detalhe', '---')
-                            obs = r.get('Observacao', 'Sem observações técnicas.')
+                        for _, r in dados_aluna.iterrows():
+                            tipo = str(r.get('Tipo', 'Aula')).replace("Aula_", "").replace("_", " ")
                             
-                            with st.container(border=True):
-                                st.markdown(f"**📕 {categoria}:** {licao}")
-                                st.markdown(f"**📝 Análise Técnica:** {obs}")
-                                st.markdown("<div style='color: #BDC3C7; font-size: 10px;'>♩ ♪ ♫ ♬ ♭ ♮ ♯</div>", unsafe_allow_html=True)
+                            if tipo == "Chamada":
+                                status = r.get('Status')
+                                cor = "#28B463" if status == "Presente" else "#CB4335"
+                                st.markdown(f"<span style='color:{cor}; font-weight:bold;'>📍 {status}</span>", unsafe_allow_html=True)
+                                texto_whatsapp += f"📍 Presença: {status}\n"
                             
-                            texto_para_copiar += f"📕 *{categoria}*: {licao}\n   └─ {obs}\n"
-                        
-                        else:
-                            lic_at = r.get('Licao_Atual') or "---"
-                            lic_cs = r.get('Licao_Casa') or "---"
-                            st.write(f"🎹 **{tipo}**: {lic_at} | **Casa:** {lic_cs}")
-                            texto_para_copiar += f"• {tipo}: {lic_at} (Casa: {lic_cs})\n"
-                    
-                    texto_para_copiar += "\n"
+                            elif tipo == "Controle Licao":
+                                cat = r.get('Categoria', 'Geral')
+                                st.markdown(f"""
+                                    <div style='background-color: #F8F9F9; border-left: 5px solid #2E4053; padding: 10px; margin: 5px 0;'>
+                                        <b style='color: #2E4053;'>📘 {cat}:</b> {r.get('Licao_Detalhe', '---')}<br>
+                                        <i style='color: #566573; font-size: 14px;'>└─ {r.get('Observacao', 'Sem obs.')}</i>
+                                    </div>
+                                """, unsafe_allow_html=True)
+                                texto_whatsapp += f"📘 *{cat}*: {r.get('Licao_Detalhe')}\n   └─ {r.get('Observacao')}\n"
+                            
+                            else:
+                                st.markdown(f"🎹 **{tipo}**: {r.get('Licao_Atual')} | Casa: {r.get('Licao_Casa')}")
+                                texto_whatsapp += f"• {tipo}: {r.get('Licao_Atual')} (Casa: {r.get('Licao_Casa')})\n"
+                        texto_whatsapp += "\n"
                 
-                st.markdown("---")
-                st.subheader("📋 Formato para Envio")
-                # CORREÇÃO: Parêntese fechado corretamente aqui embaixo
-                st.text_area("Copie o texto abaixo para o WhatsApp:", value=texto_para_copiar, height=250)
+                st.divider()
+                st.subheader("📋 Enviar Relatório")
+                st.text_area("Texto formatado:", value=texto_whatsapp, height=200)
             else:
-                st.info("Nenhum registro pedagógico encontrado para esta data.")
-        else:
-            st.warning("O banco de dados de histórico está vazio.")
-                             
+                st.info("Nenhum registro para esta data.")
+                
     # --- ABA 2: PLANEJAMENTO (RODÍZIO CARROSSEL) ---
     with tab_plan:
         c1, c2 = st.columns(2)
@@ -821,6 +812,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
