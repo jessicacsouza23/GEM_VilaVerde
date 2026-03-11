@@ -343,17 +343,25 @@ if menu == "🏠 Secretaria":
     # 1. Carregamento de Dados
     historico_raw = db_get_historico()
     df_historico = pd.DataFrame(historico_raw)
-    if not df_historico.empty:
-        # 1. Filtra primeiro pela aluna para economizar processamento
-        df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
+    # --- AJUSTE NA LINHA 348 ---
+
+        # Certifique-se que 'aluna' (ou o nome que você usa) foi definido no selectbox acima
+        if not df_historico.empty:
+            # Use o nome exato da variável que você definiu no st.selectbox
+            # Vou usar 'aluna' como exemplo, ajuste para a sua realidade:
+            al_aj = aluna if 'aluna' in locals() else None 
         
-        if not df_f.empty:
-            # 2. CRIAÇÃO DA COLUNA dt_obj (O que estava faltando)
-            # Converte a coluna 'Data' (que é texto DD/MM/AAAA) para uma data real que o pandas entenda
-            df_f['dt_obj'] = pd.to_datetime(df_f['Data'], format='%d/%m/%Y', errors='coerce')
-            
-            # 3. Agora sim, ordena usando a coluna que acabamos de criar
-            df_f = df_f.sort_values('dt_obj', ascending=False)
+            if al_aj:
+                df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
+                
+                if not df_f.empty:
+                    # Garantindo que a coluna de ordenação exista
+                    df_f['dt_obj'] = pd.to_datetime(df_f['Data'], format='%d/%m/%Y', errors='coerce')
+                    df_f = df_f.sort_values('dt_obj', ascending=False)
+                    
+                    # ... restante do seu código de exibição
+    else:
+        st.warning("Selecione uma aluna para visualizar o histórico.")
 
     # --- ABA 1: VISÃO GERAL DIÁRIA ---
     with tab_consolidado:
@@ -819,6 +827,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
