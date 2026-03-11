@@ -419,116 +419,84 @@ if menu == "🏠 Secretaria":
                 st.success("Chamada Salva!"); st.cache_data.clear(); st.rerun()
             
                # --- ABA 4: CONTROLE DE LIÇÕES (VALIDAÇÃO POR ÁREA ESPECÍFICA) ---
-            with tab_licao:
-                st.subheader("📝 Validação Individual de Lições")
-                
-                # Cabeçalho de Seleção
-                c1, c2, c3 = st.columns([2, 1, 1])
-                aluna_sel = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="lic_al_v61")
-                sec_resp = c2.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="lic_resp_v61")
-                data_lic_dt = c3.date_input("Data de Referência:", datetime.now(), key="lic_dt_v61")
-                data_lic_str = data_lic_dt.strftime("%d/%m/%Y")
-            
-                # Alerta de Presença/Falta
-                if not df_historico.empty:
-                    ch_hoje = df_historico[(df_historico['Aluna'] == aluna_sel) & (df_historico['Data'] == data_lic_str) & (df_historico['Tipo'] == 'Chamada')]
-                    if not ch_hoje.empty and ch_hoje.iloc[-1]['Status'] != "Presente":
-                        st.error(f"⚠️ Aluna faltou em {data_lic_str}. Motivo: {ch_hoje.iloc[-1].get('Observacao', 'Não informado')}")
-            
-                st.divider()
-            
-                # --- 1. ÁREA DE CORREÇÃO DA SECRETARIA ---
-                st.markdown("### 🏠 Lições de Casa para Corrigir")
-                st.caption("As lições só saem desta lista após serem marcadas como 'Realizada'.")
-                
-                if not df_historico.empty:
-                    # --- PROTEÇÃO CONTRA KEYERROR ---
-                    df_proc = df_historico.copy()
-                    if 'Status_Secretaria' not in df_proc.columns:
-                        df_proc['Status_Secretaria'] = "Pendente"
-                    if 'Observacao_Sec' not in df_proc.columns:
-                        df_proc['Observacao_Sec'] = ""
-            
-                    # Filtramos lições das professoras que NÃO estão com status 'Realizada'
-                    df_pendente = df_proc[
-                        (df_proc['Aluna'] == aluna_sel) & 
-                        (df_proc['Tipo'].str.contains('Aula_', na=False)) &
-                        (df_proc['Licao_Casa'].fillna('').str.len() > 1) &
-                        (df_proc['Status_Secretaria'] != "Realizada")
-                    ].copy()
-            
-                    if not df_pendente.empty:
-                        for i, (idx, r) in enumerate(df_pendente.iterrows()):
-                            # Mapeamento para os nomes solicitados
-                            nome_area = r['Tipo'].replace("Aula_", "").replace("_", " ")
-                            if "MSA" in nome_area.upper(): nome_area = "MSA (Preto)"
-                            elif "PRATICA" in nome_area.upper() or "APOSTILA" in nome_area.upper(): nome_area = "Apostila"
-                            elif "SOLFEJO" in nome_area.upper(): nome_area = "Extra de Solfejo"
-                            elif "TEORIA" in nome_area.upper(): nome_area = "Extra de Teoria"
-                            
-                            with st.container(border=True):
-                                col_info, col_visto = st.columns([3, 2])
-                                
-                                with col_info:
-                                    st.markdown(f"#### 🏷️ {nome_area}")
-                                    st.markdown(f"**📖 Lição:** {r['Licao_Casa']}")
-                                    st.caption(f"Postada em: {r['Data']} | Profª {r.get('Instrutora', '---')}")
-                                    
-                                    # Mostra histórico se estiver devolvida ou não realizada
-                                    status_atual = r.get('Status_Secretaria', 'Pendente')
-                                    if status_atual in ["Devolvida", "Não realizada"]:
-                                        st.warning(f"**Status Atual:** {status_atual}\n\n**Motivo:** {r.get('Observacao_Sec', 'Sem observação')}")
-                                
-                                with col_visto:
-                                    v_status = st.radio(
-                                        "Resultado:", 
-                                        ["Realizada", "Não realizada", "Devolvida"], 
-                                        key=f"v61_st_{i}_{r['id']}",
-                                        index=0 if status_atual == "Pendente" else ["Realizada", "Não realizada", "Devolvida"].index(status_atual)
-                                    )
-                                    v_obs = st.text_input("Observação Secretaria:", key=f"v61_obs_{i}_{r['id']}", placeholder="Opcional...")
-                                    
-                                    if st.button(f"Salvar Visto {nome_area}", key=f"btn_v61_{i}_{r['id']}", use_container_width=True, type="primary"):
-                                        supabase.table("historico_geral").update({
-                                            "Status_Secretaria": v_status,
-                                            "Secretaria": sec_resp,
-                                            "Observacao_Sec": v_obs,
-                                            "Data_Validacao": datetime.now().strftime("%d/%m/%Y")
-                                        }).eq("id", r['id']).execute()
-                                        
-                                        st.success(f"{nome_area} Atualizada!")
-                                        st.cache_data.clear()
-                                        st.rerun()
-                    else:
-                        st.info(f"Nenhuma lição pendente de correção para {aluna_sel}.")
-            
-                st.divider()
-            
-                # --- 2. ÁREA DE CONGELAMENTO (ANÁLISE PEDAGÓGICA) ---
-                st.markdown("### ❄️ Congelamento e Análise Técnica")
-                with st.form("f_congelar_v61"):
-                    cats_ped = ["MSA (Preto)", "Apostila", "Extra de Solfejo", "Extra de Teoria", "Dicas para Banca"]
-                    c_a, c_b = st.columns([1, 2])
-                    cat_ped = c_a.radio("Área:", cats_ped)
-                    meta_txt = c_b.text_input("Lição/Meta para próxima aula:")
+           # --- ABA 4: CONTROLE DE LIÇÕES (CORRIGIDA - FORA DO IF DO BOTÃO) ---
+    with tab_licao:
+        st.subheader("📝 Validação Individual de Lições")
+        
+        c1, c2, c3 = st.columns([2, 1, 1])
+        aluna_sel = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="lic_al_v61")
+        sec_resp = c2.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="lic_resp_v61")
+        data_lic_dt = c3.date_input("Data de Referência:", datetime.now(), key="lic_dt_v61")
+        data_lic_str = data_lic_dt.strftime("%d/%m/%Y")
+    
+        if not df_historico.empty:
+            ch_hoje = df_historico[(df_historico['Aluna'] == aluna_sel) & (df_historico['Data'] == data_lic_str) & (df_historico['Tipo'] == 'Chamada')]
+            if not ch_hoje.empty and ch_hoje.iloc[-1]['Status'] != "Presente":
+                st.error(f"⚠️ Aluna faltou em {data_lic_str}. Motivo: {ch_hoje.iloc[-1].get('Observacao', 'Não informado')}")
+    
+        st.divider()
+        st.markdown("### 🏠 Lições de Casa para Corrigir")
+        
+        if not df_historico.empty:
+            df_proc = df_historico.copy()
+            if 'Status_Secretaria' not in df_proc.columns: df_proc['Status_Secretaria'] = "Pendente"
+            if 'Observacao_Sec' not in df_proc.columns: df_proc['Observacao_Sec'] = ""
+    
+            df_pendente = df_proc[
+                (df_proc['Aluna'] == aluna_sel) & 
+                (df_proc['Tipo'].str.contains('Aula_', na=False)) &
+                (df_proc['Licao_Casa'].fillna('').str.len() > 1) &
+                (df_proc['Status_Secretaria'] != "Realizada")
+            ].copy()
+    
+            if not df_pendente.empty:
+                for i, (idx, r) in enumerate(df_pendente.iterrows()):
+                    nome_area = r['Tipo'].replace("Aula_", "").replace("_", " ")
+                    if "MSA" in nome_area.upper(): nome_area = "MSA (Preto)"
+                    elif "PRATICA" in nome_area.upper() or "APOSTILA" in nome_area.upper(): nome_area = "Apostila"
+                    elif "SOLFEJO" in nome_area.upper(): nome_area = "Extra de Solfejo"
+                    elif "TEORIA" in nome_area.upper(): nome_area = "Extra de Teoria"
                     
-                    col_det1, col_det2 = st.columns(2)
-                    postura_tecnica = col_det1.text_area("Postura e Técnica:")
-                    ritmo_teoria = col_det2.text_area("Ritmo e Teoria:")
-                    
-                    if st.form_submit_button("❄️ CONGELAR ANÁLISE", use_container_width=True):
-                        if meta_txt:
-                            analise_completa = f"POSTURA/TÉCNICA: {postura_tecnica} | RITMO/TEORIA: {ritmo_teoria}"
-                            db_save_historico({
-                                "Aluna": aluna_sel, "Tipo": "Controle_Licao", "Data": data_lic_str,
-                                "Secretaria": sec_resp, "Categoria": cat_ped, "Licao_Detalhe": meta_txt,
-                                "Status": "Congelado", "Observacao": analise_completa
-                            })
-                            st.success("Análise congelada!"); st.cache_data.clear(); st.rerun()
-                        else:
-                            st.error("Preencha a meta antes de salvar.")
-                
-    # --- ABA 5: AJUSTES ---
+                    with st.container(border=True):
+                        col_info, col_visto = st.columns([3, 2])
+                        with col_info:
+                            st.markdown(f"#### 🏷️ {nome_area}")
+                            st.markdown(f"**📖 Lição:** {r['Licao_Casa']}")
+                            status_atual = r.get('Status_Secretaria', 'Pendente')
+                            if status_atual in ["Devolvida", "Não realizada"]:
+                                st.warning(f"**Motivo:** {r.get('Observacao_Sec', '')}")
+                        
+                        with col_visto:
+                            v_status = st.radio("Resultado:", ["Realizada", "Não realizada", "Devolvida"], key=f"v61_st_{i}_{r['id']}")
+                            v_obs = st.text_input("Obs:", key=f"v61_obs_{i}_{r['id']}")
+                            if st.button(f"Salvar {nome_area}", key=f"btn_v61_{i}_{r['id']}", use_container_width=True):
+                                supabase.table("historico_geral").update({
+                                    "Status_Secretaria": v_status, "Secretaria": sec_resp,
+                                    "Observacao_Sec": v_obs, "Data_Validacao": datetime.now().strftime("%d/%m/%Y")
+                                }).eq("id", r['id']).execute()
+                                st.success("Salvo!"); st.cache_data.clear(); st.rerun()
+            else:
+                st.info(f"Sem lições pendentes para {aluna_sel}.")
+    
+        st.divider()
+        st.markdown("### ❄️ Congelamento e Análise Técnica")
+        with st.form("f_congelar_v61"):
+            cats_ped = ["MSA (Preto)", "Apostila", "Extra de Solfejo", "Extra de Teoria", "Dicas para Banca"]
+            c_a, c_b = st.columns([1, 2])
+            cat_ped = c_a.radio("Área:", cats_ped)
+            meta_txt = c_b.text_input("Meta próxima aula:")
+            col_det1, col_det2 = st.columns(2)
+            p_t = col_det1.text_area("Postura/Técnica:")
+            r_t = col_det2.text_area("Ritmo/Teoria:")
+            if st.form_submit_button("❄️ CONGELAR"):
+                db_save_historico({
+                    "Aluna": aluna_sel, "Tipo": "Controle_Licao", "Data": data_lic_str,
+                    "Secretaria": sec_resp, "Categoria": cat_ped, "Licao_Detalhe": meta_txt,
+                    "Status": "Congelado", "Observacao": f"P/T: {p_t} | R/T: {r_t}"
+                })
+                st.success("Congelado!"); st.cache_data.clear(); st.rerun()
+
+    # --- ABA 5: AJUSTES (CORRIGIDA - FORA DO IF DO BOTÃO) ---
     with tab_ajustes:
         st.subheader("🛠️ Ajustar Registros")
         al_aj = st.selectbox("Aluna para ajuste:", ALUNAS_LISTA, key="aj_al_v56")
@@ -537,10 +505,10 @@ if menu == "🏠 Secretaria":
             if not df_f.empty:
                 st.dataframe(df_f[['Data', 'Tipo', 'Licao_Atual', 'Instrutora']], use_container_width=True)
                 idx_del = st.selectbox("Escolha o registro para apagar:", range(len(df_f)), format_func=lambda x: f"{df_f.iloc[x]['Data']} - {df_f.iloc[x]['Tipo']}")
-                if st.button("❌ APAGAR REGISTRO SELECIONADO", key="btn_del_reg"):
+                if st.button("❌ APAGAR REGISTRO", key="btn_del_reg"):
                     supabase.table("historico_geral").delete().eq("id", df_f.iloc[idx_del]['id']).execute()
                     st.success("Removido!"); st.cache_data.clear(); st.rerun()
-                
+                    
 # ============================================================
 # MÓDULO PROFESSORA - V34 (CÓDIGO COMPLETO & ESTÁVEL)
 # ============================================================
@@ -838,6 +806,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
