@@ -527,91 +527,6 @@ if menu == "🏠 Secretaria":
             supabase.table("historico_geral").insert(novos_ch).execute()
             st.success("✅ Chamada Salva!"); st.cache_data.clear()
 
-    Entendi o problema. O módulo da Secretaria está usando uma lógica de "Controle de Lição" antiga que não conversa com os novos registros (aqueles que separamos por Casa_MSA(verde), Casa_Apostila, etc.) que as professoras geram agora.
-
-Vou ajustar a Aba 📝 Controle de Lições para que ela busque automaticamente essas lições de casa pendentes, permitindo que a secretaria dê o "visto" (Realizado, Não Realizado, Devolvido) diretamente nelas.
-
-Aqui está o código atualizado da sua Secretaria:
-
-Python
-# ==========================================
-# MÓDULO SECRETARIA - V43 (INTEGRAÇÃO COM LIÇÕES DE CASA)
-# ==========================================
-if menu == "🏠 Secretaria":
-    # 1. Carregamento e Vacina de Dados
-    historico_raw = db_get_historico()
-    df_historico = pd.DataFrame(historico_raw)
-    if not df_historico.empty:
-        df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
-
-    tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes = st.tabs([
-        "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros"
-    ])
-
-    # --- ABA 1: VISÃO GERAL DIÁRIA (TOTALIZADA) ---
-    with tab_consolidado:
-        c1, c2 = st.columns([1, 2])
-        data_visao = c1.date_input("📅 Data da Análise:", datetime.now(), key="sec_v_dia_vfinal").strftime("%d/%m/%Y")
-        
-        st.markdown(f"""
-            <div style='text-align: center; background: linear-gradient(90deg, #1B2631, #2E4053); padding: 20px; border-radius: 12px; margin-bottom: 20px;'>
-                <h2 style='margin: 0; color: #D5D8DC; font-size: 24px;'>🎼 RELATÓRIO COMPLETO VILA VERDE</h2>
-                <p style='margin: 5px; color: #AEB6BF;'>Status e Dificuldades Pedagógicas • {data_visao}</p>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        texto_whatsapp = f"🎼 *RELATÓRIO PEDAGÓGICO - {data_visao}*\n\n"
-
-        if not df_historico.empty:
-            df_dia = df_historico[df_historico['Data'] == data_visao]
-            
-            if not df_dia.empty:
-                for aluna_v in sorted(df_dia['Aluna'].unique()):
-                    with st.expander(f"👤 {aluna_v.upper()}", expanded=True):
-                        dados_aluna = df_dia[df_dia['Aluna'] == aluna_v]
-                        texto_whatsapp += f"👤 *{aluna_v.upper()}*\n"
-                        
-                        for _, r in dados_aluna.iterrows():
-                            # Limpeza do Tipo para exibição
-                            tipo_limpo = str(r.get('Tipo', 'Aula')).replace("Casa_", "🏠 ").replace("Analise_", "🔍 ").replace("_", " ")
-                            
-                            if "Chamada" in tipo_limpo:
-                                st.markdown(f"📍 **Presença:** {r.get('Status', '---')}")
-                                texto_whatsapp += f"📍 Presença: {r.get('Status', '---')}\n"
-                            
-                            else:
-                                with st.container(border=True):
-                                    st.markdown(f"**{tipo_limpo}**")
-                                    lic_at = r.get('Licao_Atual', '---')
-                                    lic_cs = r.get('Licao_Casa', '---')
-                                    difs = r.get('Dificuldades', [])
-                                    
-                                    if "Analise" in tipo_limpo:
-                                        st.write(f"**Trabalhado:** {lic_at}")
-                                        if difs:
-                                            txt_difs = ", ".join(difs) if isinstance(difs, list) else str(difs)
-                                            st.markdown(f"<div style='background-color: #FDEDEC; padding: 8px; border-radius: 5px; border-left: 4px solid #CB4335; color: #943126;'><b>⚠️ Dificuldades:</b> {txt_difs}</div>", unsafe_allow_html=True)
-                                            texto_whatsapp += f"• {tipo_limpo}: {lic_at}\n  ⚠️ *Dificuldades:* {txt_difs}\n"
-                                    else:
-                                        st.write(f"**Tarefa:** {lic_cs}")
-                                        texto_whatsapp += f"• {tipo_limpo}: {lic_cs}\n"
-                        
-                        texto_whatsapp += "\n"
-                
-                st.divider()
-                st.text_area("Texto pronto para WhatsApp:", value=texto_whatsapp, height=200)
-            else:
-                st.info("Nenhum dado para esta data.")
-
-    # --- ABA 2: PLANEJAMENTO (MANTIDA) ---
-    with tab_plan:
-        # (Seu código de rodízio original continua aqui, intocado conforme solicitado)
-        st.info("Configuração de Rodízio e Escala.")
-
-    # --- ABA 3: CHAMADA (MANTIDA) ---
-    with tab_cham:
-        # (Seu código de chamada original continua aqui, intocado)
-        st.info("Controle de Presença Diária.")
 
     # --- ABA 4: CONTROLE DE LIÇÕES (CORRIGIDA) ---
     with tab_licao:
@@ -930,6 +845,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
