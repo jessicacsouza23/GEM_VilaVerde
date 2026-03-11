@@ -464,12 +464,21 @@ if menu == "🏠 Secretaria":
                 st.success("Chamada Salva!"); st.cache_data.clear(); st.rerun()
             
                # --- ABA 4: CONTROLE DE LIÇÕES (INDIVIDUALIZADA E COMPLETA) ---
-    with tab_licao:
+with tab_licao:
         st.subheader("Registro de Correção de Lições")
         
-        df_historico = pd.DataFrame(db_get_historico())
+        # 1. Carregamento e Vacina de Dados (Garante que colunas de ordenação existam)
+        historico_raw = db_get_historico()
+        df_historico = pd.DataFrame(historico_raw)
         data_hj = datetime.now()
         
+        if not df_historico.empty:
+            # CRIAMOS A COLUNA dt_obj AQUI para evitar o KeyError na ordenação
+            df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
+            # Garantir colunas básicas
+            for col in ['Status', 'Licao_Casa', 'Tipo', 'Categoria']:
+                if col not in df_historico.columns: df_historico[col] = None
+
         c1, c2, c3 = st.columns([2, 1, 1])
         with c1:
             aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_v4")
@@ -479,16 +488,12 @@ if menu == "🏠 Secretaria":
             data_corr = st.date_input("Data da Correção:", data_hj, key="sec_data_v4")
             data_corr_str = data_corr.strftime("%d/%m/%Y")
 
-        # --- LÓGICA DE PENDÊNCIAS (Captura lições das Professoras e da Secretaria) ---
+        # --- LÓGICA DE PENDÊNCIAS ---
         if not df_historico.empty:
-            # Garantir que colunas existam para evitar erro
-            for col in ['Status', 'Licao_Casa', 'Tipo', 'Categoria']:
-                if col not in df_historico.columns: df_historico[col] = None
-
             # Filtro inteligente: 
             # 1. Da Aluna selecionada
-            # 2. Que tenha algo escrito em 'Licao_Casa' (vindo da aula) OU seja do tipo 'Controle_Licao'
-            # 3. Que o Status não seja 'Realizado'
+            # 2. Com conteúdo ou tipo Controle_Licao
+            # 3. Status não Realizado
             pendencias = df_historico[
                 (df_historico['Aluna'] == aluna) & 
                 (
@@ -499,15 +504,18 @@ if menu == "🏠 Secretaria":
             ].copy()
 
             if not pendencias.empty:
+                # ORDENAÇÃO SEGURA (Agora a coluna dt_obj existe com certeza no copy)
+                pendencias = pendencias.sort_values('dt_obj', ascending=False)
+                
                 st.error(f"🚨 {len(pendencias)} Itens para Validar - {aluna}")
                 
                 for i, (row_idx, p) in enumerate(pendencias.iterrows()):
-                    # Define o título da caixinha (Prioriza Categoria, se não tiver, tenta mapear o Tipo)
-                    titulo = p.get('Categoria') or p.get('Tipo', 'Lição')
+                    # Identificação clara do item
+                    titulo = p.get('Categoria') or p.get('Tipo', 'Lição').replace("Aula_", "").replace("_", " ")
                     conteudo_licao = p.get('Licao_Casa') or p.get('Licao_Detalhe', 'Sem detalhes')
                     
-                    # Gerar chave única segura
-                    safe_key = f"corr_{p.get('id', i)}_{i}"
+                    # Chave única baseada no ID do banco para não misturar cards
+                    safe_key = f"corr_{p.get('id', i)}"
 
                     with st.container(border=True):
                         col_info, col_acao = st.columns([3, 2])
@@ -526,15 +534,13 @@ if menu == "🏠 Secretaria":
                             nova_obs = st.text_input("Obs Secretaria:", key=f"obs_{safe_key}")
                             
                             if st.button("Confirmar", key=f"btn_{safe_key}", use_container_width=True):
-                                # Atualiza o registro específico pelo ID (ou campos chave)
                                 try:
                                     update_data = {
                                         "Status": novo_status,
                                         "Observacao": f"SEC: {nova_obs} | {p.get('Observacao', '')}",
                                         "Secretaria": sec_resp
                                     }
-                                    
-                                    # Tenta atualizar pelo ID único do banco
+                                    # Atualiza exatamente a linha correta pelo ID
                                     supabase.table("historico_geral").update(update_data).eq("id", p['id']).execute()
                                     
                                     st.success("✅ Atualizado!")
@@ -547,7 +553,7 @@ if menu == "🏠 Secretaria":
         
         st.divider()
 
-        # --- FORMULÁRIO DE CONGELAMENTO (Para metas da próxima aula) ---
+        # --- FORMULÁRIO DE CONGELAMENTO ---
         with st.form("f_nova_atividade_v4"):
             st.markdown("### ❄️ Congelar Metas para Próxima Aula")
             c_cat, c_det = st.columns([1, 2])
@@ -855,6 +861,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
