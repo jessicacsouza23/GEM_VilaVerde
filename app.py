@@ -346,28 +346,62 @@ if menu == "🏠 Secretaria":
     if not df_historico.empty:
         df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format="%d/%m/%Y", errors='coerce')
 
-    # --- ABA 1: VISÃO GERAL DIÁRIA ---
-    with tab_consolidado:
-        st.subheader("📋 Análise Pedagógica Diária")
-        data_visao = st.date_input("Escolha a Data para Analisar:", datetime.now(), key="sec_v_dia")
-        dt_str_v = data_visao.strftime("%d/%m/%Y")
+    # --- ABA 1: VISÃO GERAL DIÁRIA (VERSÃO MUSICAL) ---
+with tab_consolidado:
+    st.markdown(f"<h2 style='text-align: center; color: #2E4053;'>🎼 Diário de Classe: {dt_str_v}</h2>", unsafe_allow_html=True)
+    
+    # Gerador de texto para cópia (Markdown + Texto Simples)
+    texto_para_copiar = f"📝 *RELATÓRIO PEDAGÓGICO - {dt_str_v}*\n\n"
+    
+    if df_historico.empty:
+        st.info("Nenhum dado encontrado.")
+    else:
+        df_dia = df_historico[df_historico['Data'] == dt_str_v]
         
-        if df_historico.empty:
-            st.info("Nenhum dado encontrado.")
+        if df_dia.empty:
+            st.warning(f"Sem registros para o dia {dt_str_v}.")
         else:
-            df_dia = df_historico[df_historico['Data'] == dt_str_v]
-            if df_dia.empty:
-                st.warning(f"Sem registros para o dia {dt_str_v}.")
-            else:
+            # Container visual com bordas que lembram música
+            with st.container():
                 for aluna_v in sorted(df_dia['Aluna'].unique()):
-                    with st.expander(f"👤 {aluna_v.upper()}"):
-                        dados_aluna_v = df_dia[df_dia['Aluna'] == aluna_v]
-                        for _, r in dados_aluna_v.iterrows():
-                            t_limpo = r['Tipo'].replace("Aula_", "").replace("_", " ")
-                            st.write(f"**{t_limpo}:** {r.get('Licao_Atual', '---')}")
-                            if r.get('Dificuldades'): st.caption(f"⚠️ Dificuldades: {r['Dificuldades']}")
-                            st.divider()
+                    dados_aluna_v = df_dia[df_dia['Aluna'] == aluna_v]
+                    
+                    # Estilização de Título por Aluna (Estilo Clave de Sol)
+                    st.markdown(f"""
+                        <div style="background-color: #F8F9F9; padding: 10px; border-left: 5px solid #2E4053; margin-top: 20px;">
+                            <span style="font-size: 20px;">𝄢</span> <b style="font-size: 18px;">{aluna_v.upper()}</b>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    texto_para_copiar += f"👤 *{aluna_v.upper()}*\n"
+                    
+                    # Listagem das matérias daquela aluna
+                    for _, r in dados_aluna_v.iterrows():
+                        t_limpo = r['Tipo'].replace("Aula_", "").replace("_", " ")
+                        licao = r.get('Licao_Atual', '---')
+                        difs = r.get('Dificuldades', [])
+                        
+                        # Interface visual
+                        st.markdown(f"**{t_limpo}:** {licao}")
+                        if difs and str(difs) != '[]':
+                            st.markdown(f"<span style='color: #C0392B; font-size: 0.9em;'>⚠️ Dificuldades: {difs}</span>", unsafe_allow_html=True)
+                        
+                        # Adiciona ao texto de cópia
+                        texto_para_copiar += f"• {t_limpo}: {licao}\n"
+                        if difs and str(difs) != '[]':
+                            texto_para_copiar += f"  └ Dificuldades: {difs}\n"
+                    
+                    texto_para_copiar += "\n"
+                    
+                    # Linha divisória que lembra um Pentagrama
+                    st.markdown("<hr style='border: 0; border-top: 2px double #808B96; margin: 5px 0;'>", unsafe_allow_html=True)
 
+            # --- BOTÃO DE CÓPIA ---
+            st.write("---")
+            st.subheader("📋 Copiar para Secretaria")
+            st.text_area("Texto pronto para WhatsApp:", value=texto_para_copiar, height=200)
+            st.caption("Dica: Selecione o texto acima e use Ctrl+C / Ctrl+V para enviar às professoras.")
+            
     # --- ABA 2: PLANEJAMENTO (Com Deletar Rodízio) ---
     with tab_plan:
         with st.expander("🚨 ÁREA DE PERIGO - Limpeza do Sistema"):
@@ -767,6 +801,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
