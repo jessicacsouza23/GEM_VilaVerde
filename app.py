@@ -328,8 +328,9 @@ if st.sidebar.button("Sair"):
     st.session_state.autenticado = False
     st.rerun()
 
+
 # ==========================================
-# MÓDULO SECRETARIA - VERSÃO ESTÁVEL V56
+# MÓDULO SECRETARIA - VERSÃO CORRIGIDA V57
 # ==========================================
 if menu == "🏠 Secretaria":
     tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes = st.tabs([
@@ -343,25 +344,17 @@ if menu == "🏠 Secretaria":
     # 1. Carregamento de Dados
     historico_raw = db_get_historico()
     df_historico = pd.DataFrame(historico_raw)
-    # --- AJUSTE NA LINHA 348 ---
 
-    # Certifique-se que 'aluna' (ou o nome que você usa) foi definido no selectbox acima
+    # --- NOVO BLOCO DE DEFINIÇÃO (Resolve NameError e KeyError) ---
+    al_aj = None
     if not df_historico.empty:
-        # Use o nome exato da variável que você definiu no st.selectbox
-        # Vou usar 'aluna' como exemplo, ajuste para a sua realidade:
-        al_aj = aluna if 'aluna' in locals() else None 
-    
-        if al_aj:
-            df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
-            
-            if not df_f.empty:
-                # Garantindo que a coluna de ordenação exista
-                df_f['dt_obj'] = pd.to_datetime(df_f['Data'], format='%d/%m/%Y', errors='coerce')
-                df_f = df_f.sort_values('dt_obj', ascending=False)
-                
-                # ... restante do seu código de exibição
-    else:
-        st.warning("Selecione uma aluna para visualizar o histórico.")
+        # Criamos um seletor global para a secretaria saber de qual aluna estamos falando
+        # Isso garante que a variável 'al_aj' exista para todos os filtros abaixo
+        al_aj = st.sidebar.selectbox("🎯 Aluna em Foco:", ["Selecione..."] + ALUNAS_LISTA, key="global_aluna_sec")
+
+        # Tratamento global das datas para evitar KeyError 'dt_obj' em qualquer lugar
+        if 'Data' in df_historico.columns:
+            df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
 
     # --- ABA 1: VISÃO GERAL DIÁRIA ---
     with tab_consolidado:
@@ -381,13 +374,28 @@ if menu == "🏠 Secretaria":
                     texto_para_copiar += f"👤 *{aluna_v.upper()}*\n"
                     
                     for _, r in dados_aluna_v.iterrows():
-                        tipo = r['Tipo'].replace("Aula_", "").replace("_", " ")
+                        # Lógica para limpar o nome do tipo de aula
+                        tipo_raw = str(r.get('Tipo', 'Aula'))
+                        tipo = tipo_raw.replace("Aula_", "").replace("_", " ")
+                        
                         lic_casa = r.get('Licao_Casa', '---')
-                        st.write(f"**{tipo}**: {r.get('Licao_Atual', '---')} | **Casa:** {lic_casa}")
-                        texto_para_copiar += f"• {tipo}: {r.get('Licao_Atual', '---')} (Casa: {lic_casa})\n"
+                        lic_at = r.get('Licao_Atual', '---')
+                        
+                        st.write(f"**{tipo}**: {lic_at} | **Casa:** {lic_casa}")
+                        texto_para_copiar += f"• {tipo}: {lic_at} (Casa: {lic_casa})\n"
                     texto_para_copiar += "\n"
                 st.text_area("📋 Copiar para WhatsApp:", value=texto_para_copiar, height=150)
+            else:
+                st.info("Nenhuma aula registrada para esta data.")
 
+    # --- EXEMPLO DE USO DO FILTRO POR ALUNA (Ajuste para as outras abas) ---
+    if al_aj and al_aj != "Selecione...":
+        df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
+        if not df_f.empty:
+            # Aqui o dt_obj já foi criado lá no topo!
+            df_f = df_f.sort_values('dt_obj', ascending=False)
+            # st.write(f"Exibindo histórico de {al_aj}") # Para teste
+    
     # --- ABA 2: PLANEJAMENTO ---
     with tab_plan:
         c1, c2 = st.columns(2)
@@ -827,6 +835,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
