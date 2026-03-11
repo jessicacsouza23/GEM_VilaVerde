@@ -575,18 +575,50 @@ if menu == "🏠 Secretaria":
                     st.rerun()
                     
 # ============================================================
-# MÓDULO PROFESSORA - V35 (CONTROLE DE LIÇÕES ESPECÍFICAS)
+# MÓDULO PROFESSORA - V35 (VERSÃO FINAL CORRIGIDA)
 # ============================================================
 elif menu == "👩‍🏫 Minhas Aulas":
     st.header(f"👩‍🏫 Painel da Professora: {st.session_state.nome_logado}")
     
-    # 🛡️ Vacina anti-NameError
+    # 🛡️ Inicialização de segurança
     folga_ativa_manual = st.session_state.get('folga_ativa', False)
     tab_aula, tab_config = st.tabs(["📝 Registro de Aula", "⚙️ Configurar Métodos"])
+
+    # --- FUNÇÃO INTERNA PARA BUSCAR MÉTODOS ---
+    def db_get_metodos():
+        try:
+            res = supabase.table("config_metodos").select("*").execute()
+            return pd.DataFrame(res.data)
+        except: 
+            return pd.DataFrame()
+
+    # --- ABA 1: CONFIGURAÇÃO DE MÉTODOS (RECUPERADA) ---
+    with tab_config:
+        st.subheader("📚 Gerenciar Métodos de Prática")
+        df_metodos = db_get_metodos()
+        
+        if not df_metodos.empty:
+            st.dataframe(df_metodos[['nome']], use_container_width=True, hide_index=True)
+            met_del = st.selectbox("Selecione um método para remover:", ["Selecione..."] + df_metodos['nome'].tolist(), key="del_met_v35")
+            if st.button("🗑️ Remover Método", key="btn_del_v35"):
+                if met_del != "Selecione...":
+                    supabase.table("config_metodos").delete().eq("nome", met_del).execute()
+                    st.success(f"Método {met_del} removido!")
+                    st.rerun()
+        
+        st.divider()
+        st.write("✨ **Cadastrar Novo Método**")
+        n_met = st.text_input("Nome do Método (ex: Bona, Czerny, Hanon):", key="new_met_v35")
+        if st.button("➕ Cadastrar", key="btn_add_v35"):
+            if n_met:
+                supabase.table("config_metodos").insert({"nome": n_met, "categoria": "Prática"}).execute()
+                st.success("Método cadastrado!")
+                st.rerun()
 
     # --- ABA 2: REGISTRO DE AULA ---
     with tab_aula:
         instr_sel = st.session_state.get('nome_logado', 'Selecione...')
+        
         c1, c2 = st.columns(2)
         with c1: st.info(f"Instrutora: **{instr_sel}**")
         with c2:
@@ -618,68 +650,84 @@ elif menu == "👩‍🏫 Minhas Aulas":
             if not rod_existe:
                 st.warning(f"⚠️ Rodízio de {dt_str} não publicado.")
             elif not esta_na_escala:
-                st.info("🌴 Você está de folga neste sábado.")
+                st.info("🌴 Você está de folga hoje.")
             elif not aulas:
-                st.error("❌ Erro ao carregar suas aulas.")
+                st.error("❌ Nenhuma aula encontrada.")
             else:
                 sel_lbl = st.radio("Selecione a Aula:", [x["label"] for x in sorted(aulas, key=lambda x: x['h'])], key="radio_v35")
                 d_sel = next(x for x in aulas if x["label"] == sel_lbl)
                 
-                # Chamada
+                # Chamada com CHECKBOX (Para selecionar individual ou grupo)
+                st.divider()
+                st.markdown(f"### 👥 Chamada: {d_sel['loc']}")
                 als_ref = TURMAS.get(d_sel["tr"], [d_sel["al"]]) if d_sel["tipo"] != "Prática" else [d_sel["al"]]
-                als_conf = st.multiselect("Confirmar Presença:", als_ref, default=als_ref)
+                
+                als_selecionadas = []
+                cols_ch = st.columns(4)
+                for i, al in enumerate(als_ref):
+                    if cols_ch[i%4].checkbox(al, value=True, key=f"ch_v35_{al}_{sel_lbl}"):
+                        als_selecionadas.append(al)
 
-                if als_conf:
-                    st.divider()
+                if als_selecionadas:
                     tipo_aula = d_sel["tipo"]
                     
-                    with st.form(key=f"form_final_{sel_lbl}"):
-                        st.subheader(f"📝 Registro: {tipo_aula}")
-                        
-                        # --- DEFINIÇÃO DOS CAMPOS POR TIPO DE AULA ---
-                        col1, col2 = st.columns(2)
+                    with st.form(key=f"form_v35_{sel_lbl}"):
+                        st.subheader(f"📝 Lições de Casa: {tipo_aula}")
                         
                         tarefas = {}
                         if tipo_aula == "Teoria":
-                            tarefas["MSA(verde)"] = col1.text_input("📚 MSA (Verde):")
-                            tarefas["MSA(preto)"] = col2.text_input("📖 MSA (Preto):")
+                            c1, c2 = st.columns(2)
+                            tarefas["MSA(verde)"] = c1.text_input("📚 MSA (Verde):")
+                            tarefas["MSA(preto)"] = c2.text_input("📖 MSA (Preto):")
                             tarefas["Extra"] = st.text_input("📑 Atividade Extra:")
                         
                         elif tipo_aula == "Solfejo":
-                            tarefas["MSA(verde)"] = col1.text_input("🎵 MSA (Verde):")
-                            tarefas["Extra"] = col2.text_input("📑 Atividade Extra:")
+                            c1, c2 = st.columns(2)
+                            tarefas["MSA(verde)"] = c1.text_input("🎵 MSA (Verde):")
+                            tarefas["Extra"] = c2.text_input("📑 Atividade Extra:")
                         
                         else: # Prática
                             df_m = db_get_metodos()
-                            metodo_nome = st.selectbox("Método Selecionado:", ["Selecione..."] + (df_m['nome'].tolist() if not df_m.empty else []))
-                            tarefas[metodo_nome] = col1.text_input(f"🎹 Lição {metodo_nome}:")
-                            tarefas["Apostila"] = col2.text_input("📒 Apostila:")
+                            m_opts = ["Selecione..."] + (df_m['nome'].tolist() if not df_m.empty else [])
+                            metodo_escolhido = st.selectbox("Escolha o Método:", m_opts, key=f"met_sel_{sel_lbl}")
+                            
+                            c1, c2 = st.columns(2)
+                            tarefas["Metodo"] = c1.text_input(f"🎹 Lição do Método ({metodo_escolhido}):")
+                            tarefas["Apostila"] = c2.text_input("📒 Apostila:")
+                            # Guardamos o nome do método para o salvamento
+                            nome_m = metodo_escolhido
 
                         st.markdown("**Dificuldades:**")
                         d_lista = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
                         c_dif = st.columns(3)
                         difs_finais = [dfc for idx, dfc in enumerate(d_lista) if c_dif[idx%3].checkbox(dfc, key=f"chk_{dfc}_{sel_lbl}")]
                         
-                        obs_v = st.text_area("Dicas Pedagógicas / Observações:")
+                        obs_v = st.text_area("Dicas Pedagógicas:")
                         
-                        if st.form_submit_button("💾 ENVIAR PARA SECRETARIA"):
-                            for al_f in als_conf:
-                                # Base do registro
+                        if st.form_submit_button("💾 CONGELAR E ENVIAR"):
+                            for al_f in als_selecionadas:
                                 base = {
                                     "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                     "Dificuldades": difs_finais, "Observacao": obs_v, "Status": "Pendente"
                                 }
                                 
-                                # Salva cada tarefa preenchida como uma linha independente para a secretaria
-                                for nome_tarefa, conteudo in tarefas.items():
-                                    if conteudo and nome_tarefa != "Selecione...":
+                                for rotulo, conteudo in tarefas.items():
+                                    if conteudo:
                                         dados = base.copy()
-                                        dados["Tipo"] = f"Aula_{tipo_aula}_{nome_tarefa}".replace(" ", "_")
-                                        dados["Licao_Atual"] = f"{nome_tarefa}: Registro de Aula"
-                                        dados["Licao_Casa"] = f"{nome_tarefa}: {conteudo}"
+                                        # Ajuste do nome para o tipo no banco
+                                        if rotulo == "Metodo":
+                                            tipo_final = f"Aula_Pratica_{nome_m}"
+                                            dados["Licao_Casa"] = f"{nome_m}: {conteudo}"
+                                        else:
+                                            tipo_final = f"Aula_{tipo_aula}_{rotulo}"
+                                            dados["Licao_Casa"] = f"{rotulo}: {conteudo}"
+                                        
+                                        dados["Tipo"] = tipo_final.replace(" ", "_")
+                                        dados["Licao_Atual"] = "Registrado em aula"
                                         db_save_historico(dados)
                             
-                            st.success("✅ Lições enviadas individualmente!"); time.sleep(1); st.rerun()
+                            st.success("✅ Lições enviadas!")
+                            time.sleep(1); st.rerun()
                             
 # ==========================================
 # MÓDULO ANÁLISE DE IA - V42 (FOCO NO PRONTUÁRIO)
@@ -794,6 +842,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
