@@ -1025,47 +1025,47 @@ elif menu == "📊 Analítico IA":
                             if s.get('Licao_Casa'): st.markdown(f"🏠 **Casa:** {s.get('Licao_Casa')}")
 
             # --- GRÁFICO DE EVOLUÇÃO PEDAGÓGICA (CORRIGIDO) ---
-st.divider()
-st.subheader("📈 Rendimento por Aula")
+            st.divider()
+            st.subheader("📈 Rendimento por Aula")
+            
+            # 1. Filtramos apenas registros que representam conteúdo pedagógico real
+            # Isso remove 'Chamada', 'Faltas' e registros de controle da secretaria do gráfico
+            df_pedagogico = df_aluna[
+                (df_aluna['Tipo'].str.contains('Aula|Prática|Pratica|Teoria|Solfejo', case=False, na=False)) & 
+                (~df_aluna['Tipo'].isin(['Chamada', 'Status', 'Presença', 'Falta']))
+            ].copy()
+            
+            if not df_pedagogico.empty:
+                # 2. Agrupamos por data para ver quantas matérias/métodos foram rendidos naquele dia
+                evol_res = df_pedagogico.groupby('dt_obj').size().reset_index(name='Quantidade de Lições')
+                
+                # 3. Criamos um gráfico de linha limpo e profissional
+                fig = px.line(
+                    evol_res, 
+                    x='dt_obj', 
+                    y='Quantidade de Lições', 
+                    markers=True, 
+                    title="Constância de Aprendizado (Métodos e Matérias por Aula)",
+                    line_shape="spline", # Deixa a linha curvada e elegante
+                    color_discrete_sequence=['#2E4053'] # Cor sóbria profissional
+                )
+                
+                # Ajustes de layout para ficar mais legível
+                fig.update_layout(
+                    xaxis_title="Data da Aula",
+                    yaxis_title="Nº de Atividades Registradas",
+                    hovermode="x unified",
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                
+                # Adiciona uma grade suave
+                fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+                fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+            
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("ℹ️ Sem dados pedagógicos suficientes para gerar o gráfico de evolução.")
+       
 
-# 1. Filtramos apenas registros que representam conteúdo pedagógico real
-# Isso remove 'Chamada', 'Faltas' e registros de controle da secretaria do gráfico
-df_pedagogico = df_aluna[
-    (df_aluna['Tipo'].str.contains('Aula|Prática|Pratica|Teoria|Solfejo', case=False, na=False)) & 
-    (~df_aluna['Tipo'].isin(['Chamada', 'Status', 'Presença', 'Falta']))
-].copy()
-
-if not df_pedagogico.empty:
-    # 2. Agrupamos por data para ver quantas matérias/métodos foram rendidos naquele dia
-    evol_res = df_pedagogico.groupby('dt_obj').size().reset_index(name='Quantidade de Lições')
-    
-    # 3. Criamos um gráfico de linha limpo e profissional
-    fig = px.line(
-        evol_res, 
-        x='dt_obj', 
-        y='Quantidade de Lições', 
-        markers=True, 
-        title="Constância de Aprendizado (Métodos e Matérias por Aula)",
-        line_shape="spline", # Deixa a linha curvada e elegante
-        color_discrete_sequence=['#2E4053'] # Cor sóbria profissional
-    )
-    
-    # Ajustes de layout para ficar mais legível
-    fig.update_layout(
-        xaxis_title="Data da Aula",
-        yaxis_title="Nº de Atividades Registradas",
-        hovermode="x unified",
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)'
-    )
-    
-    # Adiciona uma grade suave
-    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
-    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
-
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("ℹ️ Sem dados pedagógicos suficientes para gerar o gráfico de evolução.")
-    
-        st.divider()
 
