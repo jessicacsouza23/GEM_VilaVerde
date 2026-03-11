@@ -358,16 +358,16 @@ if menu == "🏠 Secretaria":
     # --- SOLUÇÃO DEFINITIVA PARA O ERRO NA LINHA 566 ---
         # --- TRECHO CORRIGIDO (LINHA 359) ---
         
-        # Verifique se este bloco está alinhado com o comando logo acima dele
-        if al_aj and al_aj != "Selecione...":
-            # 1. Filtramos os dados da aluna
-            df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
-            
-            if not df_f.empty:
-                # Criamos a coluna de ordenação com segurança
-                df_f['dt_obj'] = pd.to_datetime(df_f['Data'], format='%d/%m/%Y', errors='coerce')
-                df_f = df_f.sort_values('dt_obj', ascending=False)
+            # Verifique se este bloco está alinhado com o comando logo acima dele
+            if al_aj and al_aj != "Selecione...":
+                # 1. Filtramos os dados da aluna
+                df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
                 
+                if not df_f.empty:
+                    # Criamos a coluna de ordenação com segurança
+                    df_f['dt_obj'] = pd.to_datetime(df_f['Data'], format='%d/%m/%Y', errors='coerce')
+                    df_f = df_f.sort_values('dt_obj', ascending=False)
+                    
                 # O restante do seu código...
                 
                 # --- EXIBIÇÃO DOS CARDS DE LIÇÃO ---
@@ -863,6 +863,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
