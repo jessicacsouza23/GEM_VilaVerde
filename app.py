@@ -933,9 +933,8 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             st.rerun()
                             
 
-
 # ==========================================
-# MÓDULO ANÁLISE DE IA - V41 (DIFICULDADES TOTAIS)
+# MÓDULO ANÁLISE DE IA - V42 (FOCO NO PRONTUÁRIO)
 # ==========================================
 elif menu == "📊 Analítico IA":
     st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico</h1>", unsafe_allow_html=True)
@@ -950,14 +949,15 @@ elif menu == "📊 Analítico IA":
         df['dt_obj'] = pd.to_datetime(df['Data'], format="%d/%m/%Y", errors='coerce')
         df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
 
-        aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v41")
+        aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v42")
         df_aluna = df[df['Aluna'] == aluna_sel]
 
         if not df_aluna.empty:
+            # --- CABEÇALHO ---
             st.markdown(f"""
                 <div style="background-color: #FDFEFE; padding: 15px; border-radius: 10px; border: 1px solid #EAEDED; border-top: 5px solid #2E4053; margin-bottom: 20px;">
                     <h2 style="margin: 0; color: #2E4053;">{aluna_sel.upper()}</h2>
-                    <p style="margin: 0; color: #7F8C8D;">Relatório Pedagógico Detalhado</p>
+                    <p style="margin: 0; color: #7F8C8D;">Ficha de Acompanhamento Técnico</p>
                 </div>
             """, unsafe_allow_html=True)
 
@@ -972,7 +972,6 @@ elif menu == "📊 Analítico IA":
             if not p_data.empty:
                 for _, p in p_data.iterrows():
                     metodo = p['Tipo'].split('_')[-1].replace("_", " ") if "Aula_" in p['Tipo'] else "Prática"
-                    # Formatação de Dificuldades
                     difs_p = p.get('Dificuldades', [])
                     difs_txt = ", ".join(difs_p) if isinstance(difs_p, list) else str(difs_p)
                     
@@ -1008,7 +1007,7 @@ elif menu == "📊 Analítico IA":
                             if difs_t_txt and difs_t_txt not in ['[]', 'None', '', 'nan']:
                                 st.markdown(f"⚠️ <span style='color: #C0392B;'>{difs_t_txt}</span>", unsafe_allow_html=True)
                             st.markdown(f"**Obs:** {t.get('Observacao', '---')}")
-                            if t.get('Licao_Casa'): st.markdown(f"🏠 **Casa:** {t.get('Licao_Casa')}")
+                            st.markdown(f"🏠 **Casa:** {t.get('Licao_Casa', '---')}")
 
             with c_solfejo:
                 st.markdown("### 🗣️ Solfejo")
@@ -1022,50 +1021,28 @@ elif menu == "📊 Analítico IA":
                             if difs_s_txt and difs_s_txt not in ['[]', 'None', '', 'nan']:
                                 st.markdown(f"⚠️ <span style='color: #C0392B;'>{difs_s_txt}</span>", unsafe_allow_html=True)
                             st.markdown(f"**Obs:** {s.get('Observacao', '---')}")
-                            if s.get('Licao_Casa'): st.markdown(f"🏠 **Casa:** {s.get('Licao_Casa')}")
+                            st.markdown(f"🏠 **Casa:** {s.get('Licao_Casa', '---')}")
 
-            # --- GRÁFICO DE EVOLUÇÃO PEDAGÓGICA (CORRIGIDO) ---
+            # --- SEÇÃO 4: LIÇÕES DE CASA (SECRETARIA) ---
+            st.markdown("### 📚 Status de Lições (Secretaria)")
+            sec_data = dados_dia[dados_dia['Tipo'].str.contains('Controle_Licao', case=False, na=False)]
+            if not sec_data.empty:
+                for _, row in sec_data.iterrows():
+                    status_cor = "#27AE60" if "Realizou" in row.get('Status', '') else "#F39C12"
+                    st.markdown(f"""
+                        <div style="padding: 10px; border: 1px solid #D5DBDB; border-radius: 5px; border-left: 10px solid {status_cor}; margin-bottom: 5px;">
+                            <b>Categoria:</b> {row.get('Categoria', 'Geral')} | 
+                            <b>Status:</b> {row.get('Status', '---')} <br>
+                            <b>Nota:</b> {row.get('Observacao', '---')}
+                        </div>
+                    """, unsafe_allow_html=True)
+
+            # --- SEÇÃO 5: METAS ---
             st.divider()
-            st.subheader("📈 Rendimento por Aula")
-            
-            # 1. Filtramos apenas registros que representam conteúdo pedagógico real
-            # Isso remove 'Chamada', 'Faltas' e registros de controle da secretaria do gráfico
-            df_pedagogico = df_aluna[
-                (df_aluna['Tipo'].str.contains('Aula|Prática|Pratica|Teoria|Solfejo', case=False, na=False)) & 
-                (~df_aluna['Tipo'].isin(['Chamada', 'Status', 'Presença', 'Falta']))
-            ].copy()
-            
-            if not df_pedagogico.empty:
-                # 2. Agrupamos por data para ver quantas matérias/métodos foram rendidos naquele dia
-                evol_res = df_pedagogico.groupby('dt_obj').size().reset_index(name='Quantidade de Lições')
-                
-                # 3. Criamos um gráfico de linha limpo e profissional
-                fig = px.line(
-                    evol_res, 
-                    x='dt_obj', 
-                    y='Quantidade de Lições', 
-                    markers=True, 
-                    title="Constância de Aprendizado (Métodos e Matérias por Aula)",
-                    line_shape="spline", # Deixa a linha curvada e elegante
-                    color_discrete_sequence=['#2E4053'] # Cor sóbria profissional
-                )
-                
-                # Ajustes de layout para ficar mais legível
-                fig.update_layout(
-                    xaxis_title="Data da Aula",
-                    yaxis_title="Nº de Atividades Registradas",
-                    hovermode="x unified",
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)'
-                )
-                
-                # Adiciona uma grade suave
-                fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
-                fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
-            
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("ℹ️ Sem dados pedagógicos suficientes para gerar o gráfico de evolução.")
-       
+            m_col1, m_col2 = st.columns(2)
+            with m_col1:
+                st.info("🎯 **Metas Próxima Aula**\n\n- Evoluir lição atual\n- Ajustar postura")
+            with m_col2:
+                st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
-
+        st.divider()
