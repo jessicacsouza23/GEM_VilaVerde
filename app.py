@@ -933,7 +933,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             st.rerun()
                             
 # ==========================================
-# MÓDULO ANÁLISE DE IA - V38 (DESIGN PREMIUM)
+# MÓDULO ANÁLISE DE IA - V39 (CORREÇÕES E AJUSTES)
 # ==========================================
 elif menu == "📊 Analítico IA":
     st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico</h1>", unsafe_allow_html=True)
@@ -944,110 +944,93 @@ elif menu == "📊 Analítico IA":
     if df.empty:
         st.info("ℹ️ O banco de dados está vazio.")
     else:
+        # 1. Tratamento rigoroso de datas e tipos
         df['dt_obj'] = pd.to_datetime(df['Data'], format="%d/%m/%Y", errors='coerce')
         df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
 
-        aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v38")
+        aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v39")
         df_aluna = df[df['Aluna'] == aluna_sel]
 
-        # --- CABEÇALHO ESTILIZADO ---
         if not df_aluna.empty:
+            # --- NOVO CABEÇALHO LIMPO ---
             st.markdown(f"""
-                <div style="background-color: #F8F9F9; padding: 20px; border-radius: 10px; border-left: 5px solid #2E4053; margin-bottom: 20px;">
+                <div style="background-color: #FDFEFE; padding: 15px; border-radius: 10px; border: 1px solid #EAEDED; border-top: 5px solid #2E4053; margin-bottom: 20px;">
                     <h2 style="margin: 0; color: #2E4053;">{aluna_sel.upper()}</h2>
-                    <p style="margin: 0; color: #7F8C8D;">Unidade: Parque do Carmo II | Registro Consolidado</p>
+                    <p style="margin: 0; color: #7F8C8D;">Relatório Pedagógico Detalhado</p>
                 </div>
             """, unsafe_allow_html=True)
 
             # Seleção de Data
             data_sel = st.selectbox("📅 Selecione a Data da Aula:", df_aluna['Data'].unique())
-            dados_dia = df_aluna[df_aluna['Data'] == data_sel]
+            # Filtramos apenas o que é "Aula" para não vir lixo do banco
+            dados_dia = df_aluna[(df_aluna['Data'] == data_sel) & (df_aluna['Tipo'].str.contains('Aula_', na=False))]
 
-            # --- SEÇÃO 1: PRÁTICA (CARDS ESTILIZADOS) ---
+            # --- SEÇÃO 1: PRÁTICA ---
             st.markdown("### 🎹 Prática")
             p_data = dados_dia[dados_dia['Tipo'].str.contains('Prática|Pratica', case=False, na=False)]
             
             if not p_data.empty:
                 for _, p in p_data.iterrows():
+                    # Extrai o nome do método de forma limpa
                     metodo = p['Tipo'].split('_')[-1].replace("_", " ")
                     difs_p = p.get('Dificuldades', [])
                     difs_txt = ", ".join(difs_p) if isinstance(difs_p, list) else str(difs_p)
                     
-                    # CARD DE PRÁTICA
                     with st.container(border=True):
-                        c1, c2 = st.columns([3, 1])
-                        c1.markdown(f"#### 📖 Método: {metodo}")
-                        c2.markdown(f"**Data:** {data_sel}")
+                        st.markdown(f"#### 📖 Método: {metodo}")
+                        col_info1, col_info2 = st.columns(2)
+                        col_info1.markdown(f"**👩‍🏫 Instrutora:** {p.get('Instrutora') or '---'}")
+                        col_info2.markdown(f"**📍 Lição:** {p.get('Licao_Atual', '---')}")
                         
-                        st.markdown(f"**👩‍🏫 Instrutora:** {p.get('Instrutora') or '---'}")
-                        st.markdown(f"**📍 Estudo / Lição:** {p.get('Licao_Atual', '---')}")
-                        
-                        # Alerta visual para dificuldades
-                        if difs_txt and difs_txt != '[]':
+                        if difs_txt and difs_txt not in ['[]', 'None', '']:
                             st.markdown(f"⚠️ **Dificuldades:** <span style='color: #C0392B;'>{difs_txt}</span>", unsafe_allow_html=True)
-                        else:
-                            st.markdown("✅ **Dificuldades:** Nenhuma apresentada")
                         
                         st.markdown(f"📝 **Observações:** {p.get('Observacao', '---')}")
                         
-                        # Box de Lição de Casa
                         st.markdown(f"""
-                            <div style="background-color: #EBF5FB; padding: 10px; border-radius: 5px; margin-top: 10px;">
-                                <b style="color: #2980B9;">🏠 Lição de casa – Volume prática:</b><br>{p.get('Licao_Casa', '---')}
+                            <div style="background-color: #F4F6F7; padding: 10px; border-radius: 5px; border-left: 3px solid #2980B9;">
+                                <b>🏠 Lição de casa:</b> {p.get('Licao_Casa', '---')}
                             </div>
                         """, unsafe_allow_html=True)
             else:
-                st.caption("Nenhum registro de Prática encontrado.")
+                st.caption("Nenhum registro de Prática para este dia.")
 
-            # --- SEÇÃO 2 & 3: TEORIA E SOLFEJO (LADO A LADO) ---
-            col_t, col_s = st.columns(2)
-            
-            with col_t:
+            # --- SEÇÃO 2: TEORIA E SOLFEJO ---
+            c_teoria, c_solfejo = st.columns(2)
+            with c_teoria:
                 st.markdown("### 📝 Teoria")
-                t_data = dados_dia[dados_dia['Tipo'].str.contains('Teoria', case=False, na=False)]
+                t_data = dados_dia[dados_dia['Tipo'].str.contains('Teoria', na=False)]
                 for _, t in t_data.iterrows():
                     with st.container(border=True):
-                        st.markdown(f"**Lição:** {t.get('Licao_Atual', '---')}")
-                        st.markdown(f"**Obs:** {t.get('Observacao', '---')}")
-                        st.caption(f"Instrutora: {t.get('Instrutora')}")
+                        st.write(f"**Lição:** {t.get('Licao_Atual', '---')}")
+                        st.caption(f"Obs: {t.get('Observacao', '---')}")
 
-            with col_s:
+            with c_solfejo:
                 st.markdown("### 🗣️ Solfejo")
-                s_data = dados_dia[dados_dia['Tipo'].str.contains('Solfejo', case=False, na=False)]
+                s_data = dados_dia[dados_dia['Tipo'].str.contains('Solfejo', na=False)]
                 for _, s in s_data.iterrows():
                     with st.container(border=True):
-                        st.markdown(f"**Lição:** {s.get('Licao_Atual', '---')}")
-                        st.markdown(f"**Obs:** {s.get('Observacao', '---')}")
-                        st.caption(f"Instrutora: {s.get('Instrutora')}")
+                        st.write(f"**Lição:** {s.get('Licao_Atual', '---')}")
+                        st.caption(f"Obs: {s.get('Observacao', '---')}")
 
-            # --- SEÇÃO 4: LIÇÕES DE CASA (ESTILO SECRETARIA) ---
-            st.markdown("### 📚 Status de Lições (Secretaria)")
-            sec_data = dados_dia[dados_dia['Tipo'].str.contains('Controle_Licao', case=False, na=False)]
-            if not sec_data.empty:
-                for _, row in sec_data.iterrows():
-                    status_cor = "#27AE60" if "Realizou" in row.get('Status', '') else "#F39C12"
-                    st.markdown(f"""
-                        <div style="padding: 10px; border: 1px solid #D5DBDB; border-radius: 5px; border-left: 10px solid {status_cor}; margin-bottom: 5px;">
-                            <b>Categoria:</b> {row.get('Categoria', 'Geral')} | 
-                            <b>Status:</b> {row.get('Status', '---')} <br>
-                            <b>Nota:</b> {row.get('Observacao', '---')}
-                        </div>
-                    """, unsafe_allow_html=True)
-
-            # --- SEÇÃO 5: METAS (DESIGN DE CARDS LADO A LADO) ---
+            # --- GRÁFICO FUNCIONAL (FILTRADO) ---
             st.divider()
-            m_col1, m_col2 = st.columns(2)
-            with m_col1:
-                st.info("🎯 **Metas Próxima Aula**\n\n1. Evoluir lição atual com metrônomo\n2. Corrigir postura de dedos")
-            with m_col2:
-                st.warning("🏆 **Dicas para a Banca**\n\nAtenção à articulação técnica e uso do pedal de expressão.")
-
-        st.divider()
-        if st.checkbox("📈 Ver Gráfico de Evolução de Métodos"):
-            evol_df = df_aluna[df_aluna['Tipo'].str.contains('Aula', na=False)]
-            if not evol_df.empty:
-                evol_res = evol_df.groupby('dt_obj').size().reset_index(name='Quantidade')
-                fig = px.bar(evol_res, x='dt_obj', y='Quantidade', title="Volume de Estudos por Aula", color_discrete_sequence=['#2E4053'])
+            st.subheader("📈 Evolução Técnica")
+            # Aqui filtramos para contar apenas "Métodos de Aula", ignorando Chamada e Controle
+            df_grafico = df_aluna[df_aluna['Tipo'].str.contains('Aula_', na=False)].copy()
+            
+            if not df_grafico.empty:
+                # Agrupamos por data e contamos quantos registros de "Aula" existem
+                evol_res = df_grafico.groupby('dt_obj').size().reset_index(name='Volume de Estudo')
+                
+                fig = px.line(evol_res, x='dt_obj', y='Volume de Estudo', 
+                              title="Constância Pedagógica (Quantidade de Métodos por Aula)",
+                              markers=True, template="plotly_white")
+                fig.update_traces(line_color='#2E4053', marker_size=10)
                 st.plotly_chart(fig, use_container_width=True)
-        
+            else:
+                st.info("Dados insuficientes para gerar o gráfico de evolução.")
+
+        st.divider()        
+
 
