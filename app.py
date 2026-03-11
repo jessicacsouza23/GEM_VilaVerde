@@ -413,77 +413,94 @@ if menu == "🏠 Secretaria":
             st.warning("O banco de dados está vazio.")
             
     # --- ABA 2: PLANEJAMENTO (RODÍZIO CARROSSEL) ---
+    # --- ABA 2: PLANEJAMENTO (COM CORREÇÃO DE VARIAVEL) ---
     with tab_plan:
+        st.markdown("### 🗓️ Gestão de Escala")
+        
+        # INICIALIZAÇÃO (Evita o NameError)
+        folga_ativa = [] 
+        
         c1, c2 = st.columns(2)
-        mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
-        ano = c2.selectbox("Ano:", [2026, 2027])
+        mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="mes_plan")
+        ano = c2.selectbox("Ano:", [2026, 2027], key="ano_plan")
+        
         sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
                    for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
-        data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
+        
+        if sabados:
+            data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_plan")
 
-        calendario_db = db_get_calendario()
+            calendario_db = db_get_calendario()
 
-        if data_sel_str not in calendario_db:
-            st.warning("Rodízio não gerado.")
-            col_t, col_s = st.columns(2)
-            with col_t:
-                st.subheader("📚 Teoria (SALA 8)")
-                pt2 = st.selectbox("Prof. Teoria H2", PROFESSORAS_LISTA, index=0, key="t2")
-                pt3 = st.selectbox("Prof. Teoria H3", PROFESSORAS_LISTA, index=1, key="t3")
-                pt4 = st.selectbox("Prof. Teoria H4", PROFESSORAS_LISTA, index=2, key="t4")
-            with col_s:
-                st.subheader("🔊 Solfejo (SALA 9)")
-                ps2 = st.selectbox("Prof. Solfejo H2", PROFESSORAS_LISTA, index=3, key="s2")
-                ps3 = st.selectbox("Prof. Solfejo H3", PROFESSORAS_LISTA, index=4, key="s3")
-                ps4 = st.selectbox("Prof. Solfejo H4", PROFESSORAS_LISTA, index=5, key="s4")
-            
-            folgas = st.multiselect("Folgas:", PROFESSORAS_LISTA)
-
-            if st.button("🚀 GERAR RODÍZIO CARROSSEL TOTAL"):
-                dt_obj = datetime.strptime(data_sel_str, "%d/%m/%Y")
-                offset = dt_obj.isocalendar()[1]
-                
-                mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
-                for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
-
-                config_h = {
-                    HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "P_Teo": pt2, "P_Sol": ps2},
-                    HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "P_Teo": pt3, "P_Sol": ps3},
-                    HORARIOS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "P_Teo": pt4, "P_Sol": ps4}
-                }
-
-                for h in [HORARIOS[1], HORARIOS[2], HORARIOS[3]]:
-                    conf = config_h[h]
-                    ocupadas_h = [conf["P_Teo"], conf["P_Sol"]] + folgas
-                    profs_livres = [p for p in PROFESSORAS_LISTA if p not in ocupadas_h]
-                    num_profs = len(profs_livres)
+            if data_sel_str not in calendario_db:
+                with st.container(border=True):
+                    st.warning("⚡ O Rodízio ainda não foi gerado.")
+                    col_t, col_s = st.columns(2)
+                    with col_t:
+                        st.markdown("**📚 Teoria (Sala 8)**")
+                        pt2 = st.selectbox("H2", PROFESSORAS_LISTA, index=0, key="t2")
+                        pt3 = st.selectbox("H3", PROFESSORAS_LISTA, index=1, key="t3")
+                        pt4 = st.selectbox("H4", PROFESSORAS_LISTA, index=2, key="t4")
+                    with col_s:
+                        st.markdown("**🔊 Solfejo (Sala 9)**")
+                        ps2 = st.selectbox("H2", PROFESSORAS_LISTA, index=3, key="s2")
+                        ps3 = st.selectbox("H3", PROFESSORAS_LISTA, index=4, key="s3")
+                        ps4 = st.selectbox("H4", PROFESSORAS_LISTA, index=5, key="s4")
                     
-                    alunas_pratica = []
-                    for t_nome, alunas in TURMAS.items():
-                        if conf["Teo"] == t_nome:
-                            for a in alunas: mapa[a][h] = f"📚 SALA 8 | {conf['P_Teo']}"
-                        elif conf["Sol"] == t_nome:
-                            for a in alunas: mapa[a][h] = f"🔊 SALA 9 | {conf['P_Sol']}"
-                        else:
-                            alunas_pratica.extend(alunas)
+                    # Define folgas aqui
+                    folga_ativa = st.multiselect("Professoras de Folga:", PROFESSORAS_LISTA, key="folgas_dia")
+
+                    if st.button("🚀 GERAR ESCALA AUTOMÁTICA", use_container_width=True, type="primary"):
+                        dt_obj = datetime.strptime(data_sel_str, "%d/%m/%Y")
+                        offset = dt_obj.isocalendar()[1]
+                        
+                        mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
+                        for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
+                        
+                        config_h = {
+                            HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "P_Teo": pt2, "P_Sol": ps2},
+                            HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "P_Teo": pt3, "P_Sol": ps3},
+                            HORARIOS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "P_Teo": pt4, "P_Sol": ps4}
+                        }
+                        
+                        for h in [HORARIOS[1], HORARIOS[2], HORARIOS[3]]:
+                            conf = config_h[h]
+                            # Usa a variável folga_ativa aqui dentro com segurança
+                            profs_ocupadas = [conf["P_Teo"], conf["P_Sol"]] + folga_ativa
+                            profs_livres = [p for p in PROFESSORAS_LISTA if p not in profs_ocupadas]
+                            
+                            alunas_pratica = []
+                            for t_nome, alunas in TURMAS.items():
+                                if conf["Teo"] == t_nome:
+                                    for a in alunas: mapa[a][h] = f"📚 SALA 8 | {conf['P_Teo']}"
+                                elif conf["Sol"] == t_nome:
+                                    for a in alunas: mapa[a][h] = f"🔊 SALA 9 | {conf['P_Sol']}"
+                                else:
+                                    alunas_pratica.extend(alunas)
+                            
+                            num_profs = len(profs_livres)
+                            if num_profs > 0:
+                                for i, aluna_p in enumerate(alunas_pratica):
+                                    pos = (i + offset) % num_profs
+                                    prof = profs_livres[pos]
+                                    sala = ((pos + offset) % 7) + 1
+                                    mapa[aluna_p][h] = f"🎹 SALA {sala} | {prof}"
+                            else:
+                                for a in alunas_pratica: mapa[a][h] = "⚠️ S/ Prof. Disponível"
+
+                        supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
+                        st.success("Rodízio Gerado!")
+                        st.cache_data.clear()
+                        st.rerun()
+            else:
+                # Exibição do Rodízio Ativo
+                st.success(f"🗓️ Escala confirmada para {data_sel_str}")
+                df_raw = pd.DataFrame(calendario_db[data_sel_str])
+                st.dataframe(df_raw, use_container_width=True, hide_index=True)
+                if st.button("🗑️ Resetar Rodízio"):
+                    supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                    st.rerun()
                     
-                    for i, aluna_p in enumerate(alunas_pratica):
-                        posicao_rotativa = (i + offset) % num_profs
-                        prof_da_vez = profs_livres[posicao_rotativa]
-                        sala_num = ((posicao_rotativa + offset) % 7) + 1
-                        mapa[aluna_p][h] = f"🎹 SALA {sala_num} | {prof_da_vez}"
-
-                supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
-                st.rerun()
-        else:
-            st.success(f"🗓️ Rodízio Ativo: {data_sel_str}")
-            df_raw = pd.DataFrame(calendario_db[data_sel_str])
-            cols = [c for c in ["Aluna", "Turma"] + HORARIOS if c in df_raw.columns]
-            st.dataframe(df_raw[cols], use_container_width=True, hide_index=True)
-            if st.button("🗑️ Deletar Rodízio"):
-                supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-                st.rerun()
-
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
         st.subheader("📍 Chamada Geral")
@@ -830,6 +847,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
