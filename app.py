@@ -935,7 +935,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
 
 # ==========================================
-# MÓDULO ANÁLISE DE IA - V40 (RECUPERAÇÃO TOTAL)
+# MÓDULO ANÁLISE DE IA - V41 (DIFICULDADES TOTAIS)
 # ==========================================
 elif menu == "📊 Analítico IA":
     st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico</h1>", unsafe_allow_html=True)
@@ -950,7 +950,7 @@ elif menu == "📊 Analítico IA":
         df['dt_obj'] = pd.to_datetime(df['Data'], format="%d/%m/%Y", errors='coerce')
         df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
 
-        aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v40")
+        aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v41")
         df_aluna = df[df['Aluna'] == aluna_sel]
 
         if not df_aluna.empty:
@@ -962,7 +962,7 @@ elif menu == "📊 Analítico IA":
             """, unsafe_allow_html=True)
 
             data_sel = st.selectbox("📅 Selecione a Data da Aula:", df_aluna['Data'].unique())
-            # Filtro amplo: pega tudo da data selecionada que não seja 'Chamada' ou 'Status'
+            # Filtra registros da data, ignorando chamadas
             dados_dia = df_aluna[(df_aluna['Data'] == data_sel) & (~df_aluna['Tipo'].isin(['Chamada', 'Presença', 'Falta']))]
 
             # --- SEÇÃO 1: PRÁTICA ---
@@ -971,8 +971,8 @@ elif menu == "📊 Analítico IA":
             
             if not p_data.empty:
                 for _, p in p_data.iterrows():
-                    # Tenta limpar o nome do método se ele tiver o prefixo Aula_
                     metodo = p['Tipo'].split('_')[-1].replace("_", " ") if "Aula_" in p['Tipo'] else "Prática"
+                    # Formatação de Dificuldades
                     difs_p = p.get('Dificuldades', [])
                     difs_txt = ", ".join(difs_p) if isinstance(difs_p, list) else str(difs_p)
                     
@@ -982,8 +982,10 @@ elif menu == "📊 Analítico IA":
                         c1.markdown(f"**👩‍🏫 Instrutora:** {p.get('Instrutora') or '---'}")
                         c2.markdown(f"**📍 Lição:** {p.get('Licao_Atual', '---')}")
                         
-                        if difs_txt and difs_txt not in ['[]', 'None', '', 'nan']:
-                            st.markdown(f"⚠️ **Dificuldades:** <span style='color: #C0392B;'>{difs_txt}</span>", unsafe_allow_html=True)
+                        if difs_txt and difs_txt not in ['[]', 'None', '', 'nan', '[]']:
+                            st.markdown(f"⚠️ **Dificuldades Detectadas:** <span style='color: #C0392B; font-weight: bold;'>{difs_txt}</span>", unsafe_allow_html=True)
+                        else:
+                            st.markdown("✅ **Dificuldades:** Nenhuma apresentada")
                         
                         st.markdown(f"📝 **Observações:** {p.get('Observacao', '---')}")
                         st.markdown(f"""<div style="background-color: #F4F6F7; padding: 8px; border-radius: 5px; border-left: 3px solid #2980B9;">
@@ -991,44 +993,45 @@ elif menu == "📊 Analítico IA":
             else:
                 st.caption("Nenhum registro de Prática para este dia.")
 
-            # --- SEÇÃO 2: TEORIA E SOLFEJO (RECUPERAÇÃO AMPLA) ---
+            # --- SEÇÃO 2: TEORIA E SOLFEJO ---
             c_teoria, c_solfejo = st.columns(2)
             
             with c_teoria:
                 st.markdown("### 📝 Teoria")
-                # Busca por 'Teoria' em qualquer parte do nome do Tipo
                 t_data = dados_dia[dados_dia['Tipo'].str.contains('Teoria', case=False, na=False)]
                 if not t_data.empty:
                     for _, t in t_data.iterrows():
+                        difs_t = t.get('Dificuldades', [])
+                        difs_t_txt = ", ".join(difs_t) if isinstance(difs_t, list) else str(difs_t)
                         with st.container(border=True):
                             st.markdown(f"**📖 Conteúdo:** {t.get('Licao_Atual', '---')}")
-                            st.markdown(f"**👩‍🏫 Instrutora:** {t.get('Instrutora') or '---'}")
-                            if t.get('Observacao'): st.caption(f"Obs: {t.get('Observacao')}")
+                            if difs_t_txt and difs_t_txt not in ['[]', 'None', '', 'nan']:
+                                st.markdown(f"⚠️ <span style='color: #C0392B;'>{difs_t_txt}</span>", unsafe_allow_html=True)
+                            st.markdown(f"**Obs:** {t.get('Observacao', '---')}")
                             if t.get('Licao_Casa'): st.markdown(f"🏠 **Casa:** {t.get('Licao_Casa')}")
-                else: st.caption("Sem registros de Teoria.")
 
             with c_solfejo:
                 st.markdown("### 🗣️ Solfejo")
-                # Busca por 'Solfejo' em qualquer parte do nome do Tipo
                 s_data = dados_dia[dados_dia['Tipo'].str.contains('Solfejo', case=False, na=False)]
                 if not s_data.empty:
                     for _, s in s_data.iterrows():
+                        difs_s = s.get('Dificuldades', [])
+                        difs_s_txt = ", ".join(difs_s) if isinstance(difs_s, list) else str(difs_s)
                         with st.container(border=True):
                             st.markdown(f"**📖 Conteúdo:** {s.get('Licao_Atual', '---')}")
-                            st.markdown(f"**👩‍🏫 Instrutora:** {s.get('Instrutora') or '---'}")
-                            if s.get('Observacao'): st.caption(f"Obs: {s.get('Observacao')}")
+                            if difs_s_txt and difs_s_txt not in ['[]', 'None', '', 'nan']:
+                                st.markdown(f"⚠️ <span style='color: #C0392B;'>{difs_s_txt}</span>", unsafe_allow_html=True)
+                            st.markdown(f"**Obs:** {s.get('Observacao', '---')}")
                             if s.get('Licao_Casa'): st.markdown(f"🏠 **Casa:** {s.get('Licao_Casa')}")
-                else: st.caption("Sem registros de Solfejo.")
 
-            # --- GRÁFICO DE EVOLUÇÃO ---
+            # --- GRÁFICO ---
             st.divider()
-            st.subheader("📈 Volume de Atividades")
-            # Gráfico agora conta tudo que não é 'lixo'
-            if not dados_dia.empty:
-                df_grafico = df_aluna[~df_aluna['Tipo'].isin(['Chamada', 'Falta', 'Presente'])].copy()
+            st.subheader("📈 Volume de Atividades Pedagógicas")
+            df_grafico = df_aluna[~df_aluna['Tipo'].isin(['Chamada', 'Falta', 'Presente'])].copy()
+            if not df_grafico.empty:
                 evol_res = df_grafico.groupby('dt_obj').size().reset_index(name='Registros')
                 fig = px.line(evol_res, x='dt_obj', y='Registros', markers=True, 
-                              line_shape="spline", color_discrete_sequence=['#2E4053'])
+                              title="Engajamento por Aula", color_discrete_sequence=['#2E4053'])
                 st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
