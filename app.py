@@ -329,7 +329,7 @@ if st.sidebar.button("Sair"):
     st.rerun()
 
 # ==========================================
-# MÓDULO SECRETARIA - RESTAURAÇÃO DA LÓGICA ORIGINAL
+# MÓDULO SECRETARIA - LÓGICA ORIGINAL CARROSSEL
 # ==========================================
 if menu == "🏠 Secretaria":
     # 1. Carregamento e Vacina de Dados
@@ -342,14 +342,37 @@ if menu == "🏠 Secretaria":
         "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros"
     ])
 
-    # --- ABA 2: PLANEJAMENTO (COM DELETE DE RODÍZIO) ---
-     with tab_plan:
+    # --- ABA 1: VISÃO GERAL ---
+    with tab_consolidado:
+        c_data_v1, _ = st.columns([1, 2])
+        data_visao = c_data_v1.date_input("📅 Data da Análise:", datetime.now(), key="sec_v_dia_vfinal").strftime("%d/%m/%Y")
+        st.markdown(f"<h3 style='text-align: center;'>🎼 Relatório: {data_visao}</h3>", unsafe_allow_html=True)
+        
+        if not df_historico.empty:
+            df_dia = df_historico[df_historico['Data'] == data_visao]
+            if not df_dia.empty:
+                for aluna_v in sorted(df_dia['Aluna'].unique()):
+                    dados_aluna = df_dia[df_dia['Aluna'] == aluna_v]
+                    st.markdown(f"**👤 {aluna_v.upper()}**")
+                    for _, r in dados_aluna.iterrows():
+                        tipo = str(r.get('Tipo', 'Aula')).replace("Aula_", "").replace("_", " ")
+                        if tipo == "Chamada":
+                            st.write(f"📍 Presença: {r.get('Status', '---')}")
+                        else:
+                            st.write(f"• {tipo}: {r.get('Licao_Atual', '---')} | Casa: {r.get('Licao_Casa', '---')}")
+            else:
+                st.info("Nenhum registro para esta data.")
+
+    # --- ABA 2: PLANEJAMENTO (RODÍZIO CARROSSEL) ---
+    with tab_plan:
         c1, c2 = st.columns(2)
         mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
         ano = c2.selectbox("Ano:", [2026, 2027])
         sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
                    for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
         data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
+
+        calendario_db = db_get_calendario()
 
         if data_sel_str not in calendario_db:
             st.warning("Rodízio não gerado.")
@@ -368,9 +391,8 @@ if menu == "🏠 Secretaria":
             folgas = st.multiselect("Folgas:", PROFESSORAS_LISTA)
 
             if st.button("🚀 GERAR RODÍZIO CARROSSEL TOTAL"):
-                # Semente de rotação baseada na data
                 dt_obj = datetime.strptime(data_sel_str, "%d/%m/%Y")
-                offset = dt_obj.isocalendar()[1] # Semana do ano (ex: 6, 7, 8...)
+                offset = dt_obj.isocalendar()[1]
                 
                 mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
                 for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
@@ -385,9 +407,6 @@ if menu == "🏠 Secretaria":
                     conf = config_h[h]
                     ocupadas_h = [conf["P_Teo"], conf["P_Sol"]] + folgas
                     profs_livres = [p for p in PROFESSORAS_LISTA if p not in ocupadas_h]
-                    
-                    # Rodar a lista de professoras livres baseado na semana
-                    # Isso garante que a Professora que estava na Sala 1 semana passada mude
                     num_profs = len(profs_livres)
                     
                     alunas_pratica = []
@@ -399,16 +418,10 @@ if menu == "🏠 Secretaria":
                         else:
                             alunas_pratica.extend(alunas)
                     
-                    # Distribuição com deslocamento duplo (Aluna -> Prof -> Sala)
                     for i, aluna_p in enumerate(alunas_pratica):
-                        # i + offset garante que a cada semana a aluna pegue uma prof diferente
-                        # e que cada prof pegue uma sala diferente
                         posicao_rotativa = (i + offset) % num_profs
                         prof_da_vez = profs_livres[posicao_rotativa]
-                        
-                        # Sala rotativa: a sala também muda para a professora
                         sala_num = ((posicao_rotativa + offset) % 7) + 1
-                        
                         mapa[aluna_p][h] = f"🎹 SALA {sala_num} | {prof_da_vez}"
 
                 supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
@@ -422,234 +435,79 @@ if menu == "🏠 Secretaria":
                 supabase.table("calendario").delete().eq("id", data_sel_str).execute()
                 st.rerun()
 
-  # --- ABA 2: CHAMADA GERAL ---
+    # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
         st.subheader("📍 Chamada Geral")
-        
-        # 1. Seleção da Data
         data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_chamada_unica")
         presenca_padrao = st.toggle("Marcar todas como Presente por padrão", value=True)
-        st.write("---")
         
         registros_chamada = []
         alunas_lista = sorted([a for l in TURMAS.values() for a in l])
         
-        # 2. Loop Único para construir a lista de chamada
         for idx, aluna in enumerate(alunas_lista):
             col1, col2, col3 = st.columns([2, 3, 3])
-            
             col1.write(f"**{aluna}**")
-            
-            # Chave ÚNICA combinando índice, nome e data para evitar DuplicateKey
             chave_status = f"status_{idx}_{aluna}_{data_ch_sel}"
-            
-            status = col2.radio(
-                f"Status {aluna}", 
-                ["Presente", "Ausente", "Justificada"], 
-                index=0 if presenca_padrao else 1, 
-                key=chave_status, 
-                horizontal=True, 
-                label_visibility="collapsed"
-            )
-            
+            status = col2.radio(f"Status {aluna}", ["Presente", "Ausente", "Justificada"], index=0 if presenca_padrao else 1, key=chave_status, horizontal=True, label_visibility="collapsed")
             motivo = ""
             if status == "Justificada":
-                # Chave ÚNICA para o input de motivo
-                chave_motivo = f"motivo_input_{idx}_{aluna}_{data_ch_sel}"
-                motivo = col3.text_input(
-                    "Motivo justificativa", 
-                    key=chave_motivo, 
-                    placeholder="Por que justificou?", 
-                    label_visibility="collapsed"
-                )
-            
-            # Adiciona à lista que será salva
+                chave_motivo = f"motivo_{idx}_{aluna}_{data_ch_sel}"
+                motivo = col3.text_input("Motivo", key=chave_motivo, placeholder="Justificativa", label_visibility="collapsed")
             registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
 
-        st.write("---")
-        
-        # 3. Botão de Salvamento (FORA DO LOOP para processar todas as alunas de uma vez)
         if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
-            novos_registros = []
-            
-            # Como data_ch_sel já vem formatada do selectbox como string, usamos ela direto
-            for reg in registros_chamada:
-                novos_registros.append({
-                    "Data": data_ch_sel,
-                    "Aluna": reg["Aluna"],
-                    "Tipo": "Chamada",
-                    "Status": reg["Status"],
-                    "Observacao": reg["Motivo"],
-                    "Licao_Atual": "Presença em Aula",
-                    "Dificuldades": []
-                })
-        
-            try:
-                # Salva no Supabase
-                supabase.table("historico_geral").delete()\
-                    .eq("Data", data_ch_sel)\
-                    .eq("Tipo", "Chamada")\
-                    .execute()
-                
-                supabase.table("historico_geral").insert(novos_registros).execute()
-                
-                                
-                # Limpa cache para atualizar os gráficos de IA
-                st.cache_data.clear()
-                
-                st.success(f"✅ Chamada de {data_ch_sel} salva com sucesso!")
-                st.balloons()
-            except Exception as e:
-                st.error(f"Erro ao salvar no banco de dados: {e}")
-        aluna = None
-        
+            novos_ch = [{"Data": data_ch_sel, "Aluna": r["Aluna"], "Tipo": "Chamada", "Status": r["Status"], "Observacao": r["Motivo"], "Licao_Atual": "Presença em Aula"} for r in registros_chamada]
+            supabase.table("historico_geral").delete().eq("Data", data_ch_sel).eq("Tipo", "Chamada").execute()
+            supabase.table("historico_geral").insert(novos_ch).execute()
+            st.success("✅ Chamada Salva!"); st.cache_data.clear()
+
+    # --- ABA 4: CONTROLE DE LIÇÕES ---
     with tab_licao:
-        st.subheader("Registro de Correção de Lições")
-        
-        # Garante o histórico para consulta
-        df_historico = pd.DataFrame(historico_geral)
-        data_hj = datetime.now()
-        
-        c1, c2, c3 = st.columns([2, 1, 1])
-        with c1:
-            aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
-            if st.button("❄️ Congelar análise"):
-                if not aluna:
-                    st.error("⚠️ Selecione uma aluna antes de salvar.")
-                else:
-                    # Pegando UID do usuário logado para RLS
-                    user_id = st.session_state.get("user_id", None)
-                    if not user_id:
-                        st.error("⚠️ Usuário não autenticado. Não é possível salvar.")
-                    else:
-                        # Dados mínimos de exemplo; ajuste conforme sua lógica
-                        periodo_tipo = "diaria"
-                        periodo_id = datetime.now().strftime("%Y-%m-%d")
-                        conteudo = "Análise congelada de teste."  # Substitua pelo conteúdo real
-        
-                        try:
-                            supabase.table("analises_congeladas").insert({
-                                "aluna": aluna,
-                                "periodo_tipo": periodo_tipo,
-                                "periodo_id": periodo_id,
-                                "conteudo": conteudo,
-                                "user_id": user_id
-                            }).execute()
-                            st.success("✅ Análise congelada salva com sucesso!")
-                        except Exception as e:
-                            st.error(f"Erro ao salvar análise congelada: {e}")
-        with c2:
-            sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp")
-        with c3:
-            data_corr = st.date_input("Data:", data_hj, key="sec_data")
-            data_corr_str = data_corr.strftime("%d/%m/%Y")
+        st.subheader("📝 Controle e Metas")
+        aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_lic")
+        sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp_lic")
+        data_corr_str = st.date_input("Data:", datetime.now(), key="sec_data_lic").strftime("%d/%m/%Y")
 
-        # --- LÓGICA DE PENDÊNCIAS ---
-        pendencias_reais = []
+        # Lógica de Pendências Reais
         if not df_historico.empty:
-            df_alu = df_historico[df_historico['Aluna'] == aluna]
+            df_alu = df_historico[df_historico['Aluna'] == aluna].copy()
             if not df_alu.empty:
-                # Pega o último status de cada lição/categoria
                 df_alu["dt_obj"] = pd.to_datetime(df_alu["Data"], format="%d/%m/%Y", errors="coerce")
-                ultimos_status = (
-                    df_alu.sort_values("dt_obj")
-                    .groupby(["Categoria", "Licao_Detalhe"])
-                    .last()
-                    .reset_index()
-                )
+                ultimos = df_alu.sort_values("dt_obj").groupby(["Categoria", "Licao_Detalhe"]).last().reset_index()
+                pendencias = ultimos[ultimos['Status'] != "Realizadas - sem pendência"].to_dict('records')
                 
-                pendencias_reais = ultimos_status[ultimos_status['Status'] != "Realizadas - sem pendência"].to_dict('records')
-
-        # --- EXIBIÇÃO DAS PENDÊNCIAS ---
-        if pendencias_reais:
-            st.error(f"🚨 LIÇÕES PENDENTES PARA {aluna.upper()}")
-            for p in pendencias_reais:
-                with st.container(border=True):
-                    col_info, col_acao = st.columns([2, 1])
-                    with col_info:
-                        st.markdown(f"📖 **{p['Categoria']}** | {p.get('Licao_Detalhe', '---')}")
-                        st.caption(f"📅 Desde: {p['Data']} | Status: {p['Status']}")
-                    with col_acao:
-                        with st.expander("✅ Resolver"):
-                            key_id = f"{p['Categoria']}_{p['Licao_Detalhe']}".replace(" ", "_")
-                            st_res = st.selectbox("Nova Situação:", STATUS_LICAO, key=f"st_{key_id}")
-                            obs_res = st.text_area("Obs entrega:", key=f"obs_{key_id}")
-                            if st.button("Salvar Atualização", key=f"btn_{key_id}"):
-                                db_save_historico({
-                                    "Aluna": aluna, "Tipo": "Controle_Licao", "Data": data_corr_str,
-                                    "Secretaria": sec_resp, "Categoria": p["Categoria"],
-                                    "Licao_Detalhe": p["Licao_Detalhe"], "Status": st_res, "Observacao": obs_res
-                                })
+                if pendencias:
+                    st.error(f"🚨 PENDÊNCIAS: {aluna}")
+                    for p in pendencias:
+                        with st.container(border=True):
+                            st.write(f"📖 **{p['Categoria']}** | {p.get('Licao_Detalhe', '---')}")
+                            if st.button(f"Resolver {p['Categoria']}", key=f"res_{p['Categoria']}"):
+                                db_save_historico({"Aluna": aluna, "Tipo": "Controle_Licao", "Data": data_corr_str, "Secretaria": sec_resp, "Categoria": p["Categoria"], "Licao_Detalhe": p["Licao_Detalhe"], "Status": "Realizadas - sem pendência"})
                                 st.rerun()
-        else:
-            st.success("✅ Nenhuma pendência encontrada.")
 
         st.divider()
+        with st.form("f_nova_meta"):
+            cat_sel = st.radio("Categoria:", CATEGORIAS_LICAO, horizontal=True)
+            det_lic = st.text_input("Lição / Página:")
+            status_sel = st.radio("Status:", STATUS_LICAO, horizontal=True)
+            obs_hoje = st.text_area("Observação Técnica:")
+            if st.form_submit_button("❄️ CONGELAR E SALVAR"):
+                db_save_historico({"Aluna": aluna, "Tipo": "Controle_Licao", "Data": data_corr_str, "Secretaria": sec_resp, "Categoria": cat_sel, "Licao_Detalhe": det_lic, "Status": status_sel, "Observacao": obs_hoje})
+                st.success("Salvo!"); st.rerun()
 
-        # --- VERIFICAÇÃO DE REGISTRO EXISTENTE ---
-        registro_previo = None
-        if not df_historico.empty:
-            condicao = (df_historico['Aluna'] == aluna) & \
-                       (df_historico['Data'] == data_corr_str) & \
-                       (df_historico['Tipo'] == "Controle_Licao")
-            match = df_historico[condicao]
-            if not match.empty:
-                registro_previo = match.iloc[-1].to_dict()
-                st.warning(f"⚠️ Já existe um registro para hoje. Editando registro anterior.")
-
-        # --- FORMULÁRIO PARA NOVAS ATIVIDADES ---
-        with st.form("f_nova_atividade", clear_on_submit=False):
-            st.markdown("### ✍️ Registrar Nova Atividade")
-            
-            c_cat, c_det = st.columns([1, 2])
-            idx_cat = 0
-            if registro_previo and registro_previo.get('Categoria') in CATEGORIAS_LICAO:
-                idx_cat = CATEGORIAS_LICAO.index(registro_previo['Categoria'])
-            
-            cat_sel = c_cat.radio("Categoria:", CATEGORIAS_LICAO, index=idx_cat)
-            det_lic = c_det.text_input("Lição / Página:", 
-                                      value=registro_previo.get('Licao_Detalhe', "") if registro_previo else "",
-                                      placeholder="Ex: Lição 02, pág 05")
-            
-            st.divider()
-            
-            idx_stat = 0
-            if registro_previo and registro_previo.get('Status') in STATUS_LICAO:
-                idx_stat = STATUS_LICAO.index(registro_previo['Status'])
-                
-            status_sel = st.radio("Status hoje:", STATUS_LICAO, horizontal=True, index=idx_stat)
-            obs_hoje = st.text_area("Observação Técnica:", 
-                                   value=registro_previo.get('Observacao', "") if registro_previo else "")
-            
-            btn_label = "🔄 ATUALIZAR REGISTRO" if registro_previo else "❄️ CONGELAR E SALVAR"
-            
-            if st.form_submit_button(btn_label):
-                if not det_lic:
-                    st.error("⚠️ Informe a Lição/Página!")
-                else:
-                    sucesso = db_save_historico({
-                        "Aluna": aluna, "Tipo": "Controle_Licao", "Data": data_corr_str,
-                        "Secretaria": sec_resp, "Categoria": cat_sel, "Licao_Detalhe": det_lic,
-                        "Status": status_sel, "Observacao": obs_hoje
-                    })
-                    if sucesso:
-                        st.success("✅ Registro processado!")
-                        st.cache_data.clear()
-                        st.rerun()
-                        
     # --- ABA 5: AJUSTES ---
     with tab_ajustes:
         st.subheader("🛠️ Ajustar Registros")
-        al_aj = st.selectbox("Aluna:", ALUNAS_LISTA, key="a_al")
+        al_aj = st.selectbox("Aluna:", ALUNAS_LISTA, key="aj_al_vfinal")
         if not df_historico.empty:
             df_f = df_historico[df_historico['Aluna'] == al_aj].sort_values('dt_obj', ascending=False)
             if not df_f.empty:
                 st.dataframe(df_f[['Data', 'Tipo', 'Licao_Atual']], use_container_width=True)
-                idx = st.selectbox("Apagar registro:", range(len(df_f)), format_func=lambda x: f"{df_f.iloc[x]['Data']} - {df_f.iloc[x]['Tipo']}")
+                idx = st.selectbox("Escolha para apagar:", range(len(df_f)), format_func=lambda x: f"{df_f.iloc[x]['Data']} - {df_f.iloc[x]['Tipo']}")
                 if st.button("❌ APAGAR"):
                     supabase.table("historico_geral").delete().eq("id", df_f.iloc[idx]['id']).execute()
-                    st.rerun()  
-
+                    st.rerun()
+                    
 # ============================================================
 # MÓDULO PROFESSORA - V35 (SALVAMENTO INDIVIDUALIZADO)
 # ============================================================
@@ -923,6 +781,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
