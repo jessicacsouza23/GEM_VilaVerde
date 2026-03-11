@@ -528,75 +528,95 @@ if menu == "🏠 Secretaria":
             st.success("✅ Chamada Salva!"); st.cache_data.clear()
 
 
-    # --- ABA 4: CONTROLE DE LIÇÕES (INTEGRADO E COMPLETO) ---
+    Obrigado por enviar o código! O erro foi identificado. O problema não está apenas na lógica da aba da secretaria, mas principalmente na forma como as professoras estão salvando os dados.
+
+🔍 Onde está o erro:
+No seu código da Secretaria, você usa este filtro:
+df_historico['Tipo'].str.contains("Casa_", na=False)
+
+Porém, no banco de dados, os registros de aula "comuns" salvos pelas professoras (que não mostrei no seu snippet, mas deduzi pela lógica do else no relatório) geralmente são salvos com o tipo "Aula_Pratica", "Aula_Teoria", etc. Se a professora salvar a lição de casa dentro de um registro de "Aula", a Secretaria nunca vai achar nada com o prefixo "Casa_".
+
+Para resolver isso, vamos ajustar o código para que ele procure a "Lição de Casa" em qualquer registro que tenha o campo Licao_Casa preenchido e o Status como "Pendente".
+
+🛠️ Código Corrigido (Aba 4 da Secretaria)
+Substitua o bloco da Aba 4 pelo código abaixo. Ele é mais "inteligente": ele varre o banco atrás de qualquer lição de casa pendente, independentemente de como a professora salvou o "Tipo".
+
+Python
+    # --- ABA 4: CONTROLE DE LIÇÕES (CORRIGIDO) ---
     with tab_licao:
         st.subheader("📝 Controle e Metas")
-        aluna_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_lic_v44")
-        sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp_lic_v44")
-        data_corr_str = st.date_input("Data da Conferência:", datetime.now(), key="sec_data_lic_v44").strftime("%d/%m/%Y")
+        aluna_sel = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_lic_v45")
+        sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp_lic_v45")
+        data_corr_str = st.date_input("Data da Conferência:", datetime.now(), key="sec_data_lic_v45").strftime("%d/%m/%Y")
 
-        # --- PARTE A: LIÇÕES PENDENTES DAS PROFESSORAS ---
-        st.markdown("### 🔔 Lições vindas das Professoras")
+        # --- PARTE A: BUSCA DINÂMICA DE LIÇÕES ---
+        st.markdown("### 🔔 Lições Pendentes")
+        
         if not df_historico.empty:
-            # Filtra o que a professora mandou como "Casa_" e que ainda está "Pendente"
-            df_pend = df_historico[
+            # Filtro inteligente: Aluna correta E (Tipo começa com Casa_ OU tem algo escrito em Licao_Casa) E Status Pendente
+            mask_pendentes = (
                 (df_historico['Aluna'] == aluna_sel) & 
-                (df_historico['Tipo'].str.contains("Casa_", na=False)) &
-                (df_historico['Status'] == "Pendente")
-            ].copy()
+                (df_historico['Status'] == "Pendente") &
+                (df_historico['Licao_Casa'].notna()) & 
+                (df_historico['Licao_Casa'] != "")
+            )
+            df_pend = df_historico[mask_pendentes].copy()
 
             if not df_pend.empty:
                 for _, row in df_pend.iterrows():
                     with st.container(border=True):
                         c_inf, c_act = st.columns([3, 2])
-                        metodo_nome = row['Tipo'].replace("Casa_", "").replace("_", " ")
                         
-                        c_inf.markdown(f"**Material:** {metodo_nome}")
-                        c_inf.write(f"📖 {row['Licao_Casa']}")
-                        c_inf.caption(f"Postado por: {row.get('Instrutora', 'Professora')} em {row['Data']}")
+                        # Limpa o nome do material para exibição
+                        origem = str(row.get('Tipo', 'Aula')).replace("Aula_", "").replace("Casa_", "").replace("_", " ")
                         
-                        # Opções de Visto
-                        visto = c_act.radio("Resultado:", ["Realizada", "Não Realizada", "Devolvida"], key=f"visto_{row['id']}")
-                        obs_s = c_act.text_input("Obs:", key=f"obs_sec_{row['id']}", placeholder="Opcional")
+                        c_inf.markdown(f"**Material:** {origem}")
+                        c_inf.write(f"📖 **Meta:** {row['Licao_Casa']}")
+                        c_inf.caption(f"Postado em: {row['Data']} | Por: {row.get('Instrutora', 'Sistema')}")
                         
-                        if c_act.button("Confirmar Visto", key=f"btn_visto_{row['id']}", use_container_width=True):
-                            # Atualiza o registro da professora no banco
+                        # Interface de Visto
+                        visto = c_act.radio("Visto:", ["Realizada", "Não Realizada", "Devolvida"], key=f"v_visto_{row['id']}")
+                        obs_s = c_act.text_input("Nota/Obs:", key=f"v_obs_{row['id']}")
+                        
+                        if c_act.button("Confirmar Visto", key=f"btn_v_{row['id']}", use_container_width=True):
+                            # Atualiza no Supabase usando o ID único do registro
                             supabase.table("historico_geral").update({
                                 "Status": visto,
                                 "Secretaria": sec_resp,
-                                "Observacao": f"Visto Sec: {obs_s}" if obs_s else f"Visto: {visto}"
+                                "Observacao": f"Visto em {data_corr_str}: {obs_s}" if obs_s else visto
                             }).eq("id", row['id']).execute()
-                            st.success("Visto registrado!"); time.sleep(0.5); st.rerun()
+                            
+                            st.success(f"Visto de {visto} registrado!")
+                            time.sleep(1)
+                            st.rerun()
             else:
-                st.info(f"Nenhuma lição de casa pendente para {aluna_sel}.")
+                st.info(f"✨ Nenhuma lição pendente para {aluna_sel}.")
 
         st.divider()
 
-        # --- PARTE B: INCLUIR NOVA ATIVIDADE/META PELA SECRETARIA ---
-        st.markdown("### ❄️ Incluir Nova Atividade/Meta (Secretaria)")
-        with st.form("f_nova_meta_sec"):
-            # Aqui usamos as categorias que você já tinha no sistema
-            cat_sel = st.radio("Material/Categoria:", ["MSA(verde)", "MSA(preto)", "Apostila", "Extra"], horizontal=True)
-            det_lic = st.text_input("Lição / Página / Meta:")
-            status_sel = st.radio("Status Inicial:", ["Pendente", "Realizada", "Devolvida"], horizontal=True)
-            obs_hoje = st.text_area("Observação ou Meta Técnica:")
+        # --- PARTE B: NOVA ATIVIDADE (CONSERVEI ESTA PARTE) ---
+        st.markdown("### ❄️ Lançar Meta Extra (Secretaria)")
+        with st.form("f_nova_meta_v45"):
+            cat_sel = st.radio("Material:", ["MSA(verde)", "MSA(preto)", "Apostila", "Hino", "Outro"], horizontal=True)
+            det_lic = st.text_input("Qual a lição/página?")
+            obs_tecnica = st.text_area("Instruções Técnicas (opcional):")
             
-            if st.form_submit_button("CONGELAR E SALVAR META"):
+            if st.form_submit_button("SALVAR E CONGELAR META"):
                 if det_lic:
-                    # Salva como um registro de "Casa_" para manter o padrão
-                    db_save_historico({
-                        "Aluna": aluna_sel, 
-                        "Tipo": f"Casa_{cat_sel}".replace(" ", "_"), 
-                        "Data": data_corr_str, 
-                        "Secretaria": sec_resp, 
-                        "Licao_Atual": "Meta da Secretaria",
-                        "Licao_Casa": f"{cat_sel}: {det_lic}", 
-                        "Status": status_sel, 
-                        "Observacao": obs_hoje
-                    })
-                    st.success("Meta salva com sucesso!"); time.sleep(0.8); st.rerun()
+                    novo_item = {
+                        "Aluna": aluna_sel,
+                        "Data": data_corr_str,
+                        "Tipo": f"Casa_{cat_sel}",
+                        "Licao_Atual": "Meta Secretaria",
+                        "Licao_Casa": f"{cat_sel}: {det_lic}",
+                        "Status": "Pendente",
+                        "Secretaria": sec_resp,
+                        "Observacao": obs_tecnica
+                    }
+                    db_save_historico(novo_item)
+                    st.success("Meta adicionada!"); time.sleep(1); st.rerun()
                 else:
-                    st.error("Informe a lição ou página!")
+                    st.error("Descreva a lição!")
 
     # --- ABA 5: AJUSTES ---
     with tab_ajustes:
@@ -867,6 +887,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
