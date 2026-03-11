@@ -327,20 +327,16 @@ else:
 if st.sidebar.button("Sair"):
     st.session_state.autenticado = False
     st.rerun()
-
 # ==========================================
-# MÓDULO SECRETARIA - VERSÃO FINAL CORRIGIDA
+# MÓDULO SECRETARIA - RESTAURAÇÃO COMPLETA
 # ==========================================
 if menu == "🏠 Secretaria":
-    # 1. Carregamento de Dados
     historico_raw = db_get_historico()
     df_historico = pd.DataFrame(historico_raw)
 
-    # VACINA DE DADOS: Cria a coluna de ordenação silenciosamente para evitar KeyError
     if not df_historico.empty:
         df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
 
-    # Definição das Abas
     tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes = st.tabs([
         "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros"
     ])
@@ -348,142 +344,131 @@ if menu == "🏠 Secretaria":
     # --- ABA 1: VISÃO GERAL DIÁRIA ---
     with tab_consolidado:
         c_data_v1, _ = st.columns([1, 2])
-        data_visao = c_data_v1.date_input("📅 Data da Análise:", datetime.now(), key="sec_v_dia_v56")
-        dt_str_v = data_visao.strftime("%d/%m/%Y")
+        data_visao = c_data_v1.date_input("📅 Data da Análise:", datetime.now(), key="sec_v_dia_vfinal").strftime("%d/%m/%Y")
+        st.markdown(f"<h3 style='text-align: center;'>🎼 Relatório de Atividades: {data_visao}</h3>", unsafe_allow_html=True)
         
-        st.markdown(f"<h2 style='text-align: center; color: #2E4053;'>🎼 Diário Pedagógico: {dt_str_v}</h2>", unsafe_allow_html=True)
-        texto_para_copiar = f"📝 *RELATÓRIO PEDAGÓGICO - {dt_str_v}*\n\n"
-
+        texto_whats = f"📝 *RELATÓRIO PEDAGÓGICO - {data_visao}*\n\n"
         if not df_historico.empty:
-            df_dia = df_historico[df_historico['Data'] == dt_str_v]
+            df_dia = df_historico[df_historico['Data'] == data_visao]
             if not df_dia.empty:
                 for aluna_v in sorted(df_dia['Aluna'].unique()):
-                    dados_aluna_v = df_dia[df_dia['Aluna'] == aluna_v]
-                    st.markdown(f"<div style='background-color: #F2F4F4; padding: 10px; border-left: 6px solid #2E4053; border-radius: 4px; margin-top: 20px;'><b>👤 {aluna_v.upper()}</b></div>", unsafe_allow_html=True)
-                    texto_para_copiar += f"👤 *{aluna_v.upper()}*\n"
-                    
-                    for _, r in dados_aluna_v.iterrows():
+                    dados_aluna = df_dia[df_dia['Aluna'] == aluna_v]
+                    st.markdown(f"**👤 {aluna_v.upper()}**")
+                    texto_whats += f"👤 *{aluna_v.upper()}*\n"
+                    for _, r in dados_aluna.iterrows():
                         tipo = str(r.get('Tipo', 'Aula')).replace("Aula_", "").replace("_", " ")
-                        lic_casa = r.get('Licao_Casa') or "---"
-                        lic_at = r.get('Licao_Atual') or "---"
-                        st.write(f"**{tipo}**: {lic_at} | **Casa:** {lic_casa}")
-                        texto_para_copiar += f"• {tipo}: {lic_at} (Casa: {lic_casa})\n"
-                    texto_para_copiar += "\n"
-                st.text_area("📋 Copiar para WhatsApp:", value=texto_para_copiar, height=150)
-            else:
-                st.info("Nenhuma aula registrada para esta data.")
+                        if tipo == "Chamada":
+                            resumo = f"📍 Presença: {r.get('Status', '---')}"
+                        else:
+                            resumo = f"• {tipo}: {r.get('Licao_Atual', '---')} | Casa: {r.get('Licao_Casa', '---')}"
+                        st.write(resumo)
+                        texto_whats += f"{resumo}\n"
+                    texto_whats += "\n"
+                st.text_area("📋 Copiar para WhatsApp:", value=texto_whats, height=150)
 
-    # --- ABA 2: PLANEJAMENTO (RODÍZIO) ---
+    # --- ABA 2: PLANEJAMENTO (RODÍZIO ORIGINAL) ---
     with tab_plan:
+        st.subheader("🗓️ Gestão de Rodízio")
         c1, c2 = st.columns(2)
-        mes_p = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="plan_mes_v5")
-        ano_p = c2.selectbox("Ano:", [2026, 2027], key="plan_ano_v5")
+        mes_p = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="p_mes")
+        ano_p = c2.selectbox("Ano:", [2026, 2027], key="p_ano")
+        
         sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano_p, mes_p) 
                    for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes_p]
         
         if sabados:
-            data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="plan_sab_v5")
+            data_sel = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="p_data")
             calendario_db = db_get_calendario()
-            if data_sel_str in calendario_db:
-                st.success(f"🗓️ Rodízio Ativo: {data_sel_str}")
-                df_edit = st.data_editor(pd.DataFrame(calendario_db[data_sel_str]), use_container_width=True, hide_index=True)
-                col_p1, col_p2 = st.columns(2)
-                with col_p1:
+
+            # Se já existe rodízio para esse dia
+            if data_sel in calendario_db:
+                st.success(f"✅ Rodízio Ativo para {data_sel}")
+                df_rodizio = pd.DataFrame(calendario_db[data_sel])
+                df_edit = st.data_editor(df_rodizio, use_container_width=True, hide_index=True, key="editor_rod")
+                
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
                     if st.button("💾 SALVAR ALTERAÇÕES", use_container_width=True):
-                        supabase.table("calendario").upsert({"id": data_sel_str, "escala": df_edit.to_dict(orient="records")}).execute()
+                        supabase.table("calendario").upsert({"id": data_sel, "escala": df_edit.to_dict(orient="records")}).execute()
                         st.toast("Salvo!"); st.rerun()
-                with col_p2:
-                    if st.button("🗑️ DELETAR RODÍZIO", use_container_width=True, type="secondary"):
-                        supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                with col_b2:
+                    if st.button("🗑️ APAGAR RODÍZIO", use_container_width=True, type="secondary"):
+                        supabase.table("calendario").delete().eq("id", data_sel).execute()
                         st.cache_data.clear(); st.rerun()
+            else:
+                # Se NÃO existe, oferece para criar como era antes
+                st.warning("⚠️ Não há rodízio criado para esta data.")
+                if st.button("✨ GERAR NOVA ESCALA PARA ESTE DIA"):
+                    # Criando escala padrão vazia baseada nas turmas
+                    nova_escala = []
+                    for t, alunas in TURMAS.items():
+                        for a in alunas:
+                            nova_escala.append({"Turma": t, "Aluna": a, "Horário": "08:00", "Instrutora": "A definir"})
+                    
+                    supabase.table("calendario").insert({"id": data_sel, "escala": nova_escala}).execute()
+                    st.success("Escala gerada! Agora você pode editar os horários."); st.rerun()
 
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
-        st.subheader("📍 Chamada Geral")
-        data_ch_sel = st.date_input("Data da Chamada:", datetime.now(), key="ch_data_v5").strftime("%d/%m/%Y")
-        presenca_padrao = st.toggle("Marcar todas como Presente", value=True)
+        st.subheader("📍 Chamada")
+        data_ch = st.date_input("Data da Chamada:", datetime.now(), key="d_ch").strftime("%d/%m/%Y")
+        p_total = st.toggle("Marcar todas Presentes", value=True)
+        alunas_lista = sorted([a for tur in TURMAS.values() for a in tur])
         
-        registros_ch = []
-        alunas_lista_ch = sorted([a for l in TURMAS.values() for a in l])
-        
-        for idx, aluna_ch in enumerate(alunas_lista_ch):
-            c1, c2, c3 = st.columns([2, 3, 3])
-            c1.write(f"**{aluna_ch}**")
-            status = c2.radio(f"Status {aluna_ch}", ["Presente", "Ausente", "Justificada"], 
-                             index=0 if presenca_padrao else 1, key=f"st_ch_{idx}", horizontal=True, label_visibility="collapsed")
-            motivo = c3.text_input("Motivo", key=f"mot_ch_{idx}", placeholder="Justificativa", label_visibility="collapsed") if status == "Justificada" else ""
-            registros_ch.append({"Aluna": aluna_ch, "Status": status, "Motivo": motivo})
+        registros = []
+        for i, nome in enumerate(alunas_lista):
+            c1, c2, c3 = st.columns([2, 3, 2])
+            c1.write(f"**{nome}**")
+            st_ch = c2.radio(f"st_{i}", ["Presente", "Ausente", "Justificada"], index=0 if p_total else 1, key=f"r_{i}", horizontal=True, label_visibility="collapsed")
+            obs_ch = c3.text_input("Obs", key=f"o_{i}", label_visibility="collapsed") if st_ch == "Justificada" else ""
+            registros.append({"Aluna": nome, "Status": st_ch, "Observacao": obs_ch})
 
-        if st.button("💾 SALVAR CHAMADA", use_container_width=True, type="primary"):
-            novos_ch = [{"Data": data_ch_sel, "Aluna": r["Aluna"], "Tipo": "Chamada", "Status": r["Status"], "Observacao": r["Motivo"], "Licao_Atual": "Presença"} for r in registros_ch]
-            supabase.table("historico_geral").delete().eq("Data", data_ch_sel).eq("Tipo", "Chamada").execute()
-            supabase.table("historico_geral").insert(novos_ch).execute()
-            st.success("Chamada Salva!"); st.cache_data.clear(); st.rerun()
+        if st.button("💾 SALVAR CHAMADA", type="primary", use_container_width=True):
+            payload = [{"Data": data_ch, "Aluna": r["Aluna"], "Tipo": "Chamada", "Status": r["Status"], "Observacao": r["Observacao"]} for r in registros]
+            supabase.table("historico_geral").delete().eq("Data", data_ch).eq("Tipo", "Chamada").execute()
+            supabase.table("historico_geral").insert(payload).execute()
+            st.success("✅ Salvo!"); st.cache_data.clear()
 
     # --- ABA 4: CONTROLE DE LIÇÕES ---
     with tab_licao:
-        st.subheader("Registro de Correção de Lições")
-        c1, c2, c3 = st.columns([2, 1, 1])
-        with c1:
-            aluna_lic = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_lic")
-        with c2:
-            sec_resp = st.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="sec_resp_lic")
-        with c3:
-            data_corr_str = st.date_input("Data da Correção:", datetime.now(), key="sec_data_lic").strftime("%d/%m/%Y")
-
+        st.subheader("📝 Correção e Metas")
+        al_lic = st.selectbox("Aluna:", ALUNAS_LISTA, key="l_al")
+        sec_r = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="l_sec")
+        
         if not df_historico.empty:
-            pendencias = df_historico[
-                (df_historico['Aluna'] == aluna_lic) & 
-                ((df_historico['Licao_Casa'].notna()) & (df_historico['Licao_Casa'] != "") | (df_historico['Tipo'] == 'Controle_Licao')) &
-                (df_historico['Status'] != "Realizado")
-            ].copy()
-
-            if not pendencias.empty:
-                # Ordenação garantida pela vacina de dados lá no topo
-                pendencias = pendencias.sort_values('dt_obj', ascending=False)
-                st.error(f"🚨 {len(pendencias)} Itens para Validar - {aluna_lic}")
-                
-                for i, (row_idx, p) in enumerate(pendencias.iterrows()):
-                    titulo = p.get('Categoria') or p.get('Tipo', 'Lição').replace("Aula_", "").replace("_", " ")
-                    conteudo = p.get('Licao_Casa') or p.get('Licao_Detalhe', '---')
-                    safe_key = f"corr_{p.get('id', i)}"
-
+            pend = df_historico[(df_historico['Aluna'] == al_lic) & (df_historico['Status'] != "Realizado") & ((df_historico['Licao_Casa'].notna()) | (df_historico['Tipo'] == "Controle_Licao"))].copy()
+            if not pend.empty:
+                for _, p in pend.sort_values('dt_obj', ascending=False).iterrows():
                     with st.container(border=True):
-                        ci, ca = st.columns([3, 2])
-                        ci.markdown(f"**📕 {titulo}**\n\n**Lição:** {conteudo}\n\n📅 {p['Data']}")
-                        with ca:
-                            novo_st = st.radio("Resultado:", ["Realizado", "Não realizado", "Devolvido"], key=f"radio_{safe_key}", horizontal=True)
-                            if st.button("Confirmar", key=f"btn_{safe_key}", use_container_width=True):
-                                supabase.table("historico_geral").update({"Status": novo_st, "Secretaria": sec_resp}).eq("id", p['id']).execute()
-                                st.success("Atualizado!"); st.cache_data.clear(); st.rerun()
-            else:
-                st.success("✅ Nenhuma lição pendente.")
+                        st.write(f"**{p.get('Categoria', 'Lição')}** - {p['Data']}")
+                        st.info(p.get('Licao_Casa') or p.get('Licao_Detalhe'))
+                        if st.button("Confirmar Realização", key=f"btn_ok_{p['id']}"):
+                            supabase.table("historico_geral").update({"Status": "Realizado", "Secretaria": sec_r}).eq("id", p['id']).execute()
+                            st.rerun()
 
         st.divider()
-        with st.form("f_congelar"):
-            st.markdown("### ❄️ Congelar Metas para Próxima Aula")
-            cat_sel = st.selectbox("Área Técnica:", ["MSA", "Apostila", "Hino", "Teoria"])
-            det_lic = st.text_input("Meta (Lição/Página):")
-            obs_pedag = st.text_area("Análise Pedagógica:")
-            if st.form_submit_button("❄️ CONGELAR E SALVAR", use_container_width=True):
-                if det_lic:
-                    db_save_historico({"Aluna": aluna_lic, "Tipo": "Controle_Licao", "Data": data_corr_str, "Secretaria": sec_resp, "Categoria": cat_sel, "Licao_Detalhe": det_lic, "Status": "Pendente", "Observacao": obs_pedag})
-                    st.success("Salvo!"); st.cache_data.clear(); st.rerun()
+        with st.form("f_meta"):
+            st.write("❄️ **Congelar Meta para Próxima Aula**")
+            c_a, c_m = st.columns(2)
+            cat = c_a.selectbox("Área:", ["MSA", "Apostila", "Teoria", "Hino"])
+            meta = c_m.text_input("Lição:")
+            obs = st.text_area("Análise Pedagógica:")
+            if st.form_submit_button("Salvar Meta"):
+                db_save_historico({"Aluna": al_lic, "Tipo": "Controle_Licao", "Data": datetime.now().strftime("%d/%m/%Y"), "Categoria": cat, "Licao_Detalhe": meta, "Status": "Pendente", "Observacao": obs, "Secretaria": sec_r})
+                st.rerun()
 
     # --- ABA 5: AJUSTES ---
     with tab_ajustes:
         st.subheader("🛠️ Ajustar Registros")
-        al_aj = st.selectbox("Aluna para ajuste:", ALUNAS_LISTA, key="aj_al_v5")
+        al_aj = st.selectbox("Aluna:", ALUNAS_LISTA, key="a_al")
         if not df_historico.empty:
-            df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
+            df_f = df_historico[df_historico['Aluna'] == al_aj].sort_values('dt_obj', ascending=False)
             if not df_f.empty:
-                df_f = df_f.sort_values('dt_obj', ascending=False)
-                st.dataframe(df_f[['Data', 'Tipo', 'Licao_Atual', 'Instrutora']], use_container_width=True)
-                idx_del = st.selectbox("Escolha o registro para apagar:", range(len(df_f)), format_func=lambda x: f"{df_f.iloc[x]['Data']} - {df_f.iloc[x]['Tipo']}")
-                if st.button("❌ APAGAR REGISTRO"):
-                    supabase.table("historico_geral").delete().eq("id", df_f.iloc[idx_del]['id']).execute()
-                    st.success("Removido!"); st.cache_data.clear(); st.rerun()
-                    
+                st.dataframe(df_f[['Data', 'Tipo', 'Licao_Atual']], use_container_width=True)
+                idx = st.selectbox("Apagar registro:", range(len(df_f)), format_func=lambda x: f"{df_f.iloc[x]['Data']} - {df_f.iloc[x]['Tipo']}")
+                if st.button("❌ APAGAR"):
+                    supabase.table("historico_geral").delete().eq("id", df_f.iloc[idx]['id']).execute()
+                    st.rerun()  
 
 # ============================================================
 # MÓDULO PROFESSORA - V35 (SALVAMENTO INDIVIDUALIZADO)
@@ -758,6 +743,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
