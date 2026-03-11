@@ -464,116 +464,116 @@ if menu == "🏠 Secretaria":
                 st.success("Chamada Salva!"); st.cache_data.clear(); st.rerun()
             
                # --- ABA 4: CONTROLE DE LIÇÕES (INDIVIDUALIZADA E COMPLETA) ---
-with tab_licao:
-        st.subheader("Registro de Correção de Lições")
-        
-        # 1. Carregamento e Vacina de Dados (Garante que colunas de ordenação existam)
-        historico_raw = db_get_historico()
-        df_historico = pd.DataFrame(historico_raw)
-        data_hj = datetime.now()
-        
-        if not df_historico.empty:
-            # CRIAMOS A COLUNA dt_obj AQUI para evitar o KeyError na ordenação
-            df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
-            # Garantir colunas básicas
-            for col in ['Status', 'Licao_Casa', 'Tipo', 'Categoria']:
-                if col not in df_historico.columns: df_historico[col] = None
-
-        c1, c2, c3 = st.columns([2, 1, 1])
-        with c1:
-            aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_v4")
-        with c2:
-            sec_resp = st.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="sec_resp_v4")
-        with c3:
-            data_corr = st.date_input("Data da Correção:", data_hj, key="sec_data_v4")
-            data_corr_str = data_corr.strftime("%d/%m/%Y")
-
-        # --- LÓGICA DE PENDÊNCIAS ---
-        if not df_historico.empty:
-            # Filtro inteligente: 
-            # 1. Da Aluna selecionada
-            # 2. Com conteúdo ou tipo Controle_Licao
-            # 3. Status não Realizado
-            pendencias = df_historico[
-                (df_historico['Aluna'] == aluna) & 
-                (
-                    (df_historico['Licao_Casa'].notna() & (df_historico['Licao_Casa'] != "")) | 
-                    (df_historico['Tipo'] == 'Controle_Licao')
-                ) &
-                (df_historico['Status'] != "Realizado")
-            ].copy()
-
-            if not pendencias.empty:
-                # ORDENAÇÃO SEGURA (Agora a coluna dt_obj existe com certeza no copy)
-                pendencias = pendencias.sort_values('dt_obj', ascending=False)
+        with tab_licao:
+                st.subheader("Registro de Correção de Lições")
                 
-                st.error(f"🚨 {len(pendencias)} Itens para Validar - {aluna}")
+                # 1. Carregamento e Vacina de Dados (Garante que colunas de ordenação existam)
+                historico_raw = db_get_historico()
+                df_historico = pd.DataFrame(historico_raw)
+                data_hj = datetime.now()
                 
-                for i, (row_idx, p) in enumerate(pendencias.iterrows()):
-                    # Identificação clara do item
-                    titulo = p.get('Categoria') or p.get('Tipo', 'Lição').replace("Aula_", "").replace("_", " ")
-                    conteudo_licao = p.get('Licao_Casa') or p.get('Licao_Detalhe', 'Sem detalhes')
-                    
-                    # Chave única baseada no ID do banco para não misturar cards
-                    safe_key = f"corr_{p.get('id', i)}"
-
-                    with st.container(border=True):
-                        col_info, col_acao = st.columns([3, 2])
-                        with col_info:
-                            st.markdown(f"**📕 {titulo}**")
-                            st.info(f"**Lição:** {conteudo_licao}")
-                            st.caption(f"📅 Data: {p['Data']} | Instrutora: {p.get('Instrutora', 'Secretaria')}")
+                if not df_historico.empty:
+                    # CRIAMOS A COLUNA dt_obj AQUI para evitar o KeyError na ordenação
+                    df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
+                    # Garantir colunas básicas
+                    for col in ['Status', 'Licao_Casa', 'Tipo', 'Categoria']:
+                        if col not in df_historico.columns: df_historico[col] = None
+        
+                c1, c2, c3 = st.columns([2, 1, 1])
+                with c1:
+                    aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_v4")
+                with c2:
+                    sec_resp = st.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="sec_resp_v4")
+                with c3:
+                    data_corr = st.date_input("Data da Correção:", data_hj, key="sec_data_v4")
+                    data_corr_str = data_corr.strftime("%d/%m/%Y")
+        
+                # --- LÓGICA DE PENDÊNCIAS ---
+                if not df_historico.empty:
+                    # Filtro inteligente: 
+                    # 1. Da Aluna selecionada
+                    # 2. Com conteúdo ou tipo Controle_Licao
+                    # 3. Status não Realizado
+                    pendencias = df_historico[
+                        (df_historico['Aluna'] == aluna) & 
+                        (
+                            (df_historico['Licao_Casa'].notna() & (df_historico['Licao_Casa'] != "")) | 
+                            (df_historico['Tipo'] == 'Controle_Licao')
+                        ) &
+                        (df_historico['Status'] != "Realizado")
+                    ].copy()
+        
+                    if not pendencias.empty:
+                        # ORDENAÇÃO SEGURA (Agora a coluna dt_obj existe com certeza no copy)
+                        pendencias = pendencias.sort_values('dt_obj', ascending=False)
                         
-                        with col_acao:
-                            novo_status = st.radio(
-                                "Resultado:", 
-                                ["Realizado", "Não realizado", "Devolvido"],
-                                key=f"status_{safe_key}",
-                                horizontal=True
-                            )
-                            nova_obs = st.text_input("Obs Secretaria:", key=f"obs_{safe_key}")
+                        st.error(f"🚨 {len(pendencias)} Itens para Validar - {aluna}")
+                        
+                        for i, (row_idx, p) in enumerate(pendencias.iterrows()):
+                            # Identificação clara do item
+                            titulo = p.get('Categoria') or p.get('Tipo', 'Lição').replace("Aula_", "").replace("_", " ")
+                            conteudo_licao = p.get('Licao_Casa') or p.get('Licao_Detalhe', 'Sem detalhes')
                             
-                            if st.button("Confirmar", key=f"btn_{safe_key}", use_container_width=True):
-                                try:
-                                    update_data = {
-                                        "Status": novo_status,
-                                        "Observacao": f"SEC: {nova_obs} | {p.get('Observacao', '')}",
-                                        "Secretaria": sec_resp
-                                    }
-                                    # Atualiza exatamente a linha correta pelo ID
-                                    supabase.table("historico_geral").update(update_data).eq("id", p['id']).execute()
-                                    
-                                    st.success("✅ Atualizado!")
-                                    st.cache_data.clear()
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao salvar: {e}")
-            else:
-                st.success("✅ Nenhuma lição pendente.")
+                            # Chave única baseada no ID do banco para não misturar cards
+                            safe_key = f"corr_{p.get('id', i)}"
         
-        st.divider()
-
-        # --- FORMULÁRIO DE CONGELAMENTO ---
-        with st.form("f_nova_atividade_v4"):
-            st.markdown("### ❄️ Congelar Metas para Próxima Aula")
-            c_cat, c_det = st.columns([1, 2])
-            cat_sel = c_cat.selectbox("Área Técnica:", ["MSA (Preto)", "Apostila", "Extra de Solfejo", "Extra de Teoria", "Dicas para Banca"])
-            det_lic = c_det.text_input("Meta (Lição/Página):", placeholder="Ex: Lição 02, pág 05")
-            
-            obs_pedag = st.text_area("Análise Pedagógica (Postura, Ritmo, Técnica):")
-            
-            if st.form_submit_button("❄️ CONGELAR E SALVAR METAS", use_container_width=True):
-                if det_lic:
-                    db_save_historico({
-                        "Aluna": aluna, "Tipo": "Controle_Licao", "Data": data_corr_str,
-                        "Secretaria": sec_resp, "Categoria": cat_sel, "Licao_Detalhe": det_lic,
-                        "Status": "Pendente", "Observacao": obs_pedag
-                    })
-                    st.success("✅ Meta congelada com sucesso!")
-                    st.cache_data.clear()
-                    st.rerun()
-                else:
-                    st.warning("Informe a lição da meta!")
+                            with st.container(border=True):
+                                col_info, col_acao = st.columns([3, 2])
+                                with col_info:
+                                    st.markdown(f"**📕 {titulo}**")
+                                    st.info(f"**Lição:** {conteudo_licao}")
+                                    st.caption(f"📅 Data: {p['Data']} | Instrutora: {p.get('Instrutora', 'Secretaria')}")
+                                
+                                with col_acao:
+                                    novo_status = st.radio(
+                                        "Resultado:", 
+                                        ["Realizado", "Não realizado", "Devolvido"],
+                                        key=f"status_{safe_key}",
+                                        horizontal=True
+                                    )
+                                    nova_obs = st.text_input("Obs Secretaria:", key=f"obs_{safe_key}")
+                                    
+                                    if st.button("Confirmar", key=f"btn_{safe_key}", use_container_width=True):
+                                        try:
+                                            update_data = {
+                                                "Status": novo_status,
+                                                "Observacao": f"SEC: {nova_obs} | {p.get('Observacao', '')}",
+                                                "Secretaria": sec_resp
+                                            }
+                                            # Atualiza exatamente a linha correta pelo ID
+                                            supabase.table("historico_geral").update(update_data).eq("id", p['id']).execute()
+                                            
+                                            st.success("✅ Atualizado!")
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erro ao salvar: {e}")
+                    else:
+                        st.success("✅ Nenhuma lição pendente.")
+                
+                st.divider()
+        
+                # --- FORMULÁRIO DE CONGELAMENTO ---
+                with st.form("f_nova_atividade_v4"):
+                    st.markdown("### ❄️ Congelar Metas para Próxima Aula")
+                    c_cat, c_det = st.columns([1, 2])
+                    cat_sel = c_cat.selectbox("Área Técnica:", ["MSA (Preto)", "Apostila", "Extra de Solfejo", "Extra de Teoria", "Dicas para Banca"])
+                    det_lic = c_det.text_input("Meta (Lição/Página):", placeholder="Ex: Lição 02, pág 05")
+                    
+                    obs_pedag = st.text_area("Análise Pedagógica (Postura, Ritmo, Técnica):")
+                    
+                    if st.form_submit_button("❄️ CONGELAR E SALVAR METAS", use_container_width=True):
+                        if det_lic:
+                            db_save_historico({
+                                "Aluna": aluna, "Tipo": "Controle_Licao", "Data": data_corr_str,
+                                "Secretaria": sec_resp, "Categoria": cat_sel, "Licao_Detalhe": det_lic,
+                                "Status": "Pendente", "Observacao": obs_pedag
+                            })
+                            st.success("✅ Meta congelada com sucesso!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.warning("Informe a lição da meta!")
                     
     # --- ABA 5: AJUSTES (CORRIGIDA - FORA DO IF DO BOTÃO) ---
     with tab_ajustes:
@@ -861,6 +861,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
