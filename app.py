@@ -345,21 +345,21 @@ if menu == "🏠 Secretaria":
     df_historico = pd.DataFrame(historico_raw)
     # --- AJUSTE NA LINHA 348 ---
 
-        # Certifique-se que 'aluna' (ou o nome que você usa) foi definido no selectbox acima
-        if not df_historico.empty:
-            # Use o nome exato da variável que você definiu no st.selectbox
-            # Vou usar 'aluna' como exemplo, ajuste para a sua realidade:
-            al_aj = aluna if 'aluna' in locals() else None 
-        
-            if al_aj:
-                df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
+    # Certifique-se que 'aluna' (ou o nome que você usa) foi definido no selectbox acima
+    if not df_historico.empty:
+        # Use o nome exato da variável que você definiu no st.selectbox
+        # Vou usar 'aluna' como exemplo, ajuste para a sua realidade:
+        al_aj = aluna if 'aluna' in locals() else None 
+    
+        if al_aj:
+            df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
+            
+            if not df_f.empty:
+                # Garantindo que a coluna de ordenação exista
+                df_f['dt_obj'] = pd.to_datetime(df_f['Data'], format='%d/%m/%Y', errors='coerce')
+                df_f = df_f.sort_values('dt_obj', ascending=False)
                 
-                if not df_f.empty:
-                    # Garantindo que a coluna de ordenação exista
-                    df_f['dt_obj'] = pd.to_datetime(df_f['Data'], format='%d/%m/%Y', errors='coerce')
-                    df_f = df_f.sort_values('dt_obj', ascending=False)
-                    
-                    # ... restante do seu código de exibição
+                # ... restante do seu código de exibição
     else:
         st.warning("Selecione uma aluna para visualizar o histórico.")
 
@@ -827,6 +827,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
