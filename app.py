@@ -527,39 +527,139 @@ if menu == "🏠 Secretaria":
             supabase.table("historico_geral").insert(novos_ch).execute()
             st.success("✅ Chamada Salva!"); st.cache_data.clear()
 
-    # --- ABA 4: CONTROLE DE LIÇÕES ---
-    with tab_licao:
-        st.subheader("📝 Controle e Metas")
-        aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_lic")
-        sec_resp = st.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp_lic")
-        data_corr_str = st.date_input("Data:", datetime.now(), key="sec_data_lic").strftime("%d/%m/%Y")
+    Entendi o problema. O módulo da Secretaria está usando uma lógica de "Controle de Lição" antiga que não conversa com os novos registros (aqueles que separamos por Casa_MSA(verde), Casa_Apostila, etc.) que as professoras geram agora.
 
-        # Lógica de Pendências Reais
+Vou ajustar a Aba 📝 Controle de Lições para que ela busque automaticamente essas lições de casa pendentes, permitindo que a secretaria dê o "visto" (Realizado, Não Realizado, Devolvido) diretamente nelas.
+
+Aqui está o código atualizado da sua Secretaria:
+
+Python
+# ==========================================
+# MÓDULO SECRETARIA - V43 (INTEGRAÇÃO COM LIÇÕES DE CASA)
+# ==========================================
+if menu == "🏠 Secretaria":
+    # 1. Carregamento e Vacina de Dados
+    historico_raw = db_get_historico()
+    df_historico = pd.DataFrame(historico_raw)
+    if not df_historico.empty:
+        df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
+
+    tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes = st.tabs([
+        "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros"
+    ])
+
+    # --- ABA 1: VISÃO GERAL DIÁRIA (TOTALIZADA) ---
+    with tab_consolidado:
+        c1, c2 = st.columns([1, 2])
+        data_visao = c1.date_input("📅 Data da Análise:", datetime.now(), key="sec_v_dia_vfinal").strftime("%d/%m/%Y")
+        
+        st.markdown(f"""
+            <div style='text-align: center; background: linear-gradient(90deg, #1B2631, #2E4053); padding: 20px; border-radius: 12px; margin-bottom: 20px;'>
+                <h2 style='margin: 0; color: #D5D8DC; font-size: 24px;'>🎼 RELATÓRIO COMPLETO VILA VERDE</h2>
+                <p style='margin: 5px; color: #AEB6BF;'>Status e Dificuldades Pedagógicas • {data_visao}</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        texto_whatsapp = f"🎼 *RELATÓRIO PEDAGÓGICO - {data_visao}*\n\n"
+
         if not df_historico.empty:
-            df_alu = df_historico[df_historico['Aluna'] == aluna].copy()
-            if not df_alu.empty:
-                df_alu["dt_obj"] = pd.to_datetime(df_alu["Data"], format="%d/%m/%Y", errors="coerce")
-                ultimos = df_alu.sort_values("dt_obj").groupby(["Categoria", "Licao_Detalhe"]).last().reset_index()
-                pendencias = ultimos[ultimos['Status'] != "Realizadas - sem pendência"].to_dict('records')
+            df_dia = df_historico[df_historico['Data'] == data_visao]
+            
+            if not df_dia.empty:
+                for aluna_v in sorted(df_dia['Aluna'].unique()):
+                    with st.expander(f"👤 {aluna_v.upper()}", expanded=True):
+                        dados_aluna = df_dia[df_dia['Aluna'] == aluna_v]
+                        texto_whatsapp += f"👤 *{aluna_v.upper()}*\n"
+                        
+                        for _, r in dados_aluna.iterrows():
+                            # Limpeza do Tipo para exibição
+                            tipo_limpo = str(r.get('Tipo', 'Aula')).replace("Casa_", "🏠 ").replace("Analise_", "🔍 ").replace("_", " ")
+                            
+                            if "Chamada" in tipo_limpo:
+                                st.markdown(f"📍 **Presença:** {r.get('Status', '---')}")
+                                texto_whatsapp += f"📍 Presença: {r.get('Status', '---')}\n"
+                            
+                            else:
+                                with st.container(border=True):
+                                    st.markdown(f"**{tipo_limpo}**")
+                                    lic_at = r.get('Licao_Atual', '---')
+                                    lic_cs = r.get('Licao_Casa', '---')
+                                    difs = r.get('Dificuldades', [])
+                                    
+                                    if "Analise" in tipo_limpo:
+                                        st.write(f"**Trabalhado:** {lic_at}")
+                                        if difs:
+                                            txt_difs = ", ".join(difs) if isinstance(difs, list) else str(difs)
+                                            st.markdown(f"<div style='background-color: #FDEDEC; padding: 8px; border-radius: 5px; border-left: 4px solid #CB4335; color: #943126;'><b>⚠️ Dificuldades:</b> {txt_difs}</div>", unsafe_allow_html=True)
+                                            texto_whatsapp += f"• {tipo_limpo}: {lic_at}\n  ⚠️ *Dificuldades:* {txt_difs}\n"
+                                    else:
+                                        st.write(f"**Tarefa:** {lic_cs}")
+                                        texto_whatsapp += f"• {tipo_limpo}: {lic_cs}\n"
+                        
+                        texto_whatsapp += "\n"
                 
-                if pendencias:
-                    st.error(f"🚨 PENDÊNCIAS: {aluna}")
-                    for p in pendencias:
-                        with st.container(border=True):
-                            st.write(f"📖 **{p['Categoria']}** | {p.get('Licao_Detalhe', '---')}")
-                            if st.button(f"Resolver {p['Categoria']}", key=f"res_{p['Categoria']}"):
-                                db_save_historico({"Aluna": aluna, "Tipo": "Controle_Licao", "Data": data_corr_str, "Secretaria": sec_resp, "Categoria": p["Categoria"], "Licao_Detalhe": p["Licao_Detalhe"], "Status": "Realizadas - sem pendência"})
-                                st.rerun()
+                st.divider()
+                st.text_area("Texto pronto para WhatsApp:", value=texto_whatsapp, height=200)
+            else:
+                st.info("Nenhum dado para esta data.")
 
-        st.divider()
-        with st.form("f_nova_meta"):
-            cat_sel = st.radio("Categoria:", CATEGORIAS_LICAO, horizontal=True)
-            det_lic = st.text_input("Lição / Página:")
-            status_sel = st.radio("Status:", STATUS_LICAO, horizontal=True)
-            obs_hoje = st.text_area("Observação Técnica:")
-            if st.form_submit_button("❄️ CONGELAR E SALVAR"):
-                db_save_historico({"Aluna": aluna, "Tipo": "Controle_Licao", "Data": data_corr_str, "Secretaria": sec_resp, "Categoria": cat_sel, "Licao_Detalhe": det_lic, "Status": status_sel, "Observacao": obs_hoje})
-                st.success("Salvo!"); st.rerun()
+    # --- ABA 2: PLANEJAMENTO (MANTIDA) ---
+    with tab_plan:
+        # (Seu código de rodízio original continua aqui, intocado conforme solicitado)
+        st.info("Configuração de Rodízio e Escala.")
+
+    # --- ABA 3: CHAMADA (MANTIDA) ---
+    with tab_cham:
+        # (Seu código de chamada original continua aqui, intocado)
+        st.info("Controle de Presença Diária.")
+
+    # --- ABA 4: CONTROLE DE LIÇÕES (CORRIGIDA) ---
+    with tab_licao:
+        st.subheader("📝 Visto da Secretaria e Correções")
+        aluna_sel = st.selectbox("Selecione a Aluna para ver pendências:", ALUNAS_LISTA, key="sec_aluna_visto")
+        sec_resp = st.selectbox("Responsável pela Conferência:", SECRETARIAS_LISTA, key="sec_resp_visto")
+
+        if not df_historico.empty:
+            # Filtramos apenas o que é Lição de Casa ("Casa_") e que ainda está "Pendente"
+            df_pend = df_historico[
+                (df_historico['Aluna'] == aluna_sel) & 
+                (df_historico['Tipo'].str.contains("Casa_", na=False)) &
+                (df_historico['Status'] == "Pendente")
+            ].sort_values('dt_obj', ascending=False)
+
+            if not df_pend.empty:
+                st.warning(f"🔔 {len(df_pend)} lições aguardando visto de {aluna_sel}")
+                
+                for _, row in df_pend.iterrows():
+                    with st.container(border=True):
+                        col_info, col_acao = st.columns([3, 2])
+                        
+                        # Info da Lição
+                        metodo_label = row['Tipo'].replace("Casa_", "")
+                        col_info.markdown(f"**{metodo_label}** (Postado em: {row['Data']})")
+                        col_info.write(f"📖 {row['Licao_Casa']}")
+                        
+                        # Ações da Secretaria
+                        with col_acao:
+                            novo_status = st.radio(
+                                "Resultado:", 
+                                ["Realizada", "Não Realizada", "Devolvida"], 
+                                key=f"res_{row['id']}", 
+                                horizontal=True
+                            )
+                            obs_sec = st.text_input("Obs. da Secretaria:", key=f"obs_{row['id']}")
+                            
+                            if st.button("Confirmar Visto", key=f"btn_{row['id']}"):
+                                # Atualiza o registro original para deixar de ser pendente
+                                supabase.table("historico_geral").update({
+                                    "Status": novo_status,
+                                    "Secretaria": sec_resp,
+                                    "Observacao": f"Visto Sec: {obs_sec}" if obs_sec else f"Visto Sec: {novo_status}"
+                                }).eq("id", row['id']).execute()
+                                
+                                st.success("Visto registrado!"); time.sleep(0.5); st.rerun()
+            else:
+                st.success("✅ Nenhuma lição de casa pendente para esta aluna.")
 
     # --- ABA 5: AJUSTES ---
     with tab_ajustes:
@@ -830,6 +930,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
