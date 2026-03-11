@@ -420,109 +420,130 @@ if menu == "🏠 Secretaria":
             
                 # --- ABA 4: CONTROLE DE LIÇÕES (CORRIGIDA E INDIVIDUALIZADA) ---
                 with tab_licao:
-                    st.subheader("📝 Validação Individual de Lições")
+                    st.subheader("Registro de Correção de Lições")
                     
-                    # Cabeçalho de Seleção
+                    df_historico = pd.DataFrame(db_get_historico())
+                    data_hj = datetime.now()
+                    
                     c1, c2, c3 = st.columns([2, 1, 1])
-                    aluna_sel = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="lic_al_v62")
-                    sec_resp = c2.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="lic_resp_v62")
-                    data_lic_dt = c3.date_input("Data de Referência:", datetime.now(), key="lic_dt_v62")
-                    data_lic_str = data_lic_dt.strftime("%d/%m/%Y")
+                    with c1:
+                        aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna")
+                    with c2:
+                        sec_resp = st.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="sec_resp")
+                    with c3:
+                        data_corr = st.date_input("Data da Correção:", data_hj, key="sec_data")
+                        data_corr_str = data_corr.strftime("%d/%m/%Y")
             
-                    st.divider()
-            
-                    # --- 1. ÁREA DE CORREÇÃO DA SECRETARIA ---
-                    st.markdown("### 🏠 Lições de Casa para Corrigir")
-                    st.caption("Cada matéria abaixo é um bloco individual. Eles só somem quando marcados como 'Realizada'.")
-                    
+                    # --- LÓGICA DE PENDÊNCIAS (Vem das Professoras) ---
                     if not df_historico.empty:
-                        # Proteção de colunas
-                        df_proc = df_historico.copy()
-                        if 'Status_Secretaria' not in df_proc.columns: df_proc['Status_Secretaria'] = "Pendente"
-                        if 'Observacao_Sec' not in df_proc.columns: df_proc['Observacao_Sec'] = ""
+                        df_alu = df_historico[df_historico['Aluna'] == aluna]
+                        if not df_alu.empty:
+                            # Filtramos tudo que é Controle_Licao e que NÃO está como "Realizado"
+                            pendencias = df_alu[
+                                (df_alu['Tipo'] == 'Controle_Licao') & 
+                                (df_alu['Status'] != "Realizado")
+                            ].copy()
             
-                        # Filtro: Pega tudo que é "Aula_" e tem algo escrito em "Licao_Casa" e NÃO está Realizada
-                        df_pendente = df_proc[
-                            (df_proc['Aluna'] == aluna_sel) & 
-                            (df_proc['Tipo'].str.contains('Aula_', na=False)) &
-                            (df_proc['Licao_Casa'].notna()) & 
-                            (df_proc['Licao_Casa'] != "") &
-                            (df_proc['Status_Secretaria'] != "Realizada")
-                        ].copy()
-            
-                        if not df_pendente.empty:
-                            # Criamos os 4 blocos fixos para garantir a separação
-                            for i, (idx, r) in enumerate(df_pendente.iterrows()):
-                                # Lógica de identificação individual por matéria
-                                tipo_original = r['Tipo'].upper()
-                                nome_exibicao = "Outros"
+                            # --- EXIBIÇÃO DAS PENDÊNCIAS (COM CHAVES ÚNICAS) ---
+                    if not pendencias.empty:
+                        st.error(f"🚨 {len(pendencias)} Lições Pendentes para {aluna}")
+                        
+                        # Usamos enumerate para garantir um contador sequencial (i)
+                        for i, (row_idx, p) in enumerate(pendencias.iterrows()):
+                            # Criamos um ID único baseado nos dados da linha + contador
+                            # Isso evita duplicidade mesmo que a aluna tenha 2 lições na mesma data
+                            safe_key = f"{p['Data']}_{p['Categoria']}_{i}".replace("/", "")
+                            
+                            with st.container(border=True):
+                                col_info, col_acao = st.columns([3, 2])
+                                with col_info:
+                                    st.markdown(f"**📅 {p['Data']}** — {p['Categoria']}")
+                                    st.markdown(f"📖 {p['Licao_Detalhe']}")
+                                    if p.get('Observacao'):
+                                        st.caption(f"💬 Nota da Prof: {p['Observacao']}")
                                 
-                                if "MSA" in tipo_original: nome_exibicao = "MSA (Preto)"
-                                elif "PRATICA" in tipo_original or "APOSTILA" in tipo_original: nome_exibicao = "Apostila"
-                                elif "SOLFEJO" in tipo_original: nome_exibicao = "Extra de Solfejo"
-                                elif "TEORIA" in tipo_original: nome_exibicao = "Extra de Teoria"
-            
-                                with st.container(border=True):
-                                    col_info, col_visto = st.columns([3, 2])
+                                with col_acao:
+                                    # Adicionamos a safe_key em cada widget
+                                    novo_status = st.radio(
+                                        "Resultado:", 
+                                        ["Realizado", "Não realizado", "Devolvido para correção"],
+                                        key=f"status_{safe_key}", 
+                                        horizontal=True
+                                    )
+                                    nova_obs = st.text_input("Obs da Secretaria:", key=f"obs_sec_{safe_key}")
                                     
-                                    with col_info:
-                                        st.markdown(f"#### 📕 {nome_exibicao}")
-                                        st.markdown(f"**Lição para Casa:** \n> {r['Licao_Casa']}")
-                                        st.caption(f"Instrutora: {r.get('Instrutora', '---')} | Data da Aula: {r['Data']}")
-                                        
-                                        status_atual = r.get('Status_Secretaria', 'Pendente')
-                                        if status_atual in ["Devolvida", "Não realizada"]:
-                                            st.error(f"⚠️ **Motivo do Retorno:** {r.get('Observacao_Sec', 'Não informado')}")
-                                    
-                                    with col_visto:
-                                        v_status = st.radio(
-                                            "Status da Lição:", 
-                                            ["Realizada", "Não realizada", "Devolvida"], 
-                                            key=f"v62_st_{r['id']}_{i}",
-                                            index=0 if status_atual == "Pendente" else ["Realizada", "Não realizada", "Devolvida"].index(status_atual)
-                                        )
-                                        v_obs = st.text_input("Observação (Obrigatório se Devolver):", key=f"v62_obs_{r['id']}_{i}")
-                                        
-                                        if st.button(f"Confirmar {nome_exibicao}", key=f"btn_v62_{r['id']}_{i}", use_container_width=True, type="primary"):
+                                    if st.button("Confirmar Correção", key=f"btn_corr_{safe_key}"):
+                                        try:
                                             supabase.table("historico_geral").update({
-                                                "Status_Secretaria": v_status,
-                                                "Secretaria": sec_resp,
-                                                "Observacao_Sec": v_obs,
-                                                "Data_Validacao": datetime.now().strftime("%d/%m/%Y")
-                                            }).eq("id", r['id']).execute()
+                                                "Status": novo_status,
+                                                "Observacao": nova_obs,
+                                                "Secretaria": sec_resp
+                                            }).eq("Aluna", p['Aluna'])\
+                                              .eq("Data", p['Data'])\
+                                              .eq("Tipo", "Controle_Licao")\
+                                              .eq("Categoria", p['Categoria']).execute()
                                             
-                                            st.success(f"{nome_exibicao} atualizado!")
+                                            st.success("✅ Atualizado!")
                                             st.cache_data.clear()
                                             st.rerun()
-                        else:
-                            st.info(f"✨ Nenhuma lição de casa pendente para {aluna_sel}.")
+                                        except Exception as e:
+                                            st.error(f"Erro: {e}")
+                    else:
+                        st.success("✅ Nenhuma lição pendente para esta aluna.")
                     
                     st.divider()
             
-                    # --- 2. ÁREA DE CONGELAMENTO (ANÁLISE PEDAGÓGICA COMPLETA) ---
-                    st.markdown("### ❄️ Análise Pedagógica e Metas Semestrais")
-                    with st.form("f_congelar_v62"):
-                        st.caption("Use esta área para traçar o plano técnico da aluna para a próxima aula.")
-                        c_a, c_b = st.columns([1, 2])
-                        cat_ped = c_a.selectbox("Área Técnica:", ["MSA (Preto)", "Apostila", "Extra de Solfejo", "Extra de Teoria", "Dicas para Banca"])
-                        meta_txt = c_b.text_input("Meta Específica (Lição/Página):")
+                    # --- VERIFICAÇÃO DE REGISTRO EXISTENTE ---
+                    registro_previo = None
+                    if not df_historico.empty:
+                        condicao = (df_historico['Aluna'] == aluna) & \
+                                   (df_historico['Data'] == data_corr_str) & \
+                                   (df_historico['Tipo'] == "Controle_Licao")
+                        match = df_historico[condicao]
+                        if not match.empty:
+                            registro_previo = match.iloc[-1].to_dict()
+                            st.warning(f"⚠️ Já existe um registro para hoje. Editando registro anterior.")
+            
+                    # --- FORMULÁRIO PARA NOVAS ATIVIDADES ---
+                    with st.form("f_nova_atividade", clear_on_submit=False):
+                        st.markdown("### ✍️ Registrar Nova Atividade")
                         
-                        col1, col2 = st.columns(2)
-                        p_t = col1.text_area("Postura e Técnica (Dedos, Punho, Pés):", height=100)
-                        r_t = col2.text_area("Ritmo e Teoria (Metrônomo, Solfejo):", height=100)
+                        c_cat, c_det = st.columns([1, 2])
+                        idx_cat = 0
+                        if registro_previo and registro_previo.get('Categoria') in CATEGORIAS_LICAO:
+                            idx_cat = CATEGORIAS_LICAO.index(registro_previo['Categoria'])
                         
-                        if st.form_submit_button("❄️ CONGELAR ANÁLISE", use_container_width=True):
-                            if meta_txt:
-                                obs_completa = f"POSTURA/TÉCNICA: {p_t} | RITMO/TEORIA: {r_t}"
-                                db_save_historico({
-                                    "Aluna": aluna_sel, "Tipo": "Controle_Licao", "Data": data_lic_str,
-                                    "Secretaria": sec_resp, "Categoria": cat_ped, "Licao_Detalhe": meta_txt,
-                                    "Status": "Congelado", "Observacao": obs_completa
-                                })
-                                st.success("Análise salva e congelada!"); st.cache_data.clear(); st.rerun()
+                        cat_sel = c_cat.radio("Categoria:", CATEGORIAS_LICAO, index=idx_cat)
+                        det_lic = c_det.text_input("Lição / Página:", 
+                                                  value=registro_previo.get('Licao_Detalhe', "") if registro_previo else "",
+                                                  placeholder="Ex: Lição 02, pág 05")
+                        
+                        st.divider()
+                        
+                        idx_stat = 0
+                        if registro_previo and registro_previo.get('Status') in STATUS_LICAO:
+                            idx_stat = STATUS_LICAO.index(registro_previo['Status'])
+                            
+                        status_sel = st.radio("Status hoje:", STATUS_LICAO, horizontal=True, index=idx_stat)
+                        obs_hoje = st.text_area("Observação Técnica:", 
+                                               value=registro_previo.get('Observacao', "") if registro_previo else "")
+                        
+                        btn_label = "🔄 ATUALIZAR REGISTRO" if registro_previo else "❄️ CONGELAR E SALVAR"
+                        
+                        if st.form_submit_button(btn_label):
+                            if not det_lic:
+                                st.error("⚠️ Informe a Lição/Página!")
                             else:
-                                st.warning("Por favor, defina a lição meta antes de congelar.")
-
+                                sucesso = db_save_historico({
+                                    "Aluna": aluna, "Tipo": "Controle_Licao", "Data": data_corr_str,
+                                    "Secretaria": sec_resp, "Categoria": cat_sel, "Licao_Detalhe": det_lic,
+                                    "Status": status_sel, "Observacao": obs_hoje
+                                })
+                                if sucesso:
+                                    st.success("✅ Registro processado!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                    
     # --- ABA 5: AJUSTES (CORRIGIDA - FORA DO IF DO BOTÃO) ---
     with tab_ajustes:
         st.subheader("🛠️ Ajustar Registros")
@@ -833,6 +854,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
