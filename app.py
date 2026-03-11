@@ -933,7 +933,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             st.rerun()
                             
 # ==========================================
-# MÓDULO ANÁLISE DE IA (LAYOUT CONSOLIDADO)
+# MÓDULO ANÁLISE DE IA - V35 (MULTI-MÉTODOS)
 # ==========================================
 elif menu == "📊 Analítico IA":
     st.title("📊 Painel Pedagógico de Performance")
@@ -944,11 +944,9 @@ elif menu == "📊 Analítico IA":
     if df.empty:
         st.info("ℹ️ O banco de dados está vazio.")
     else:
-        # Tratamento de datas e organização
         df['dt_obj'] = pd.to_datetime(df['Data'], format="%d/%m/%Y", errors='coerce')
         df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
 
-        # Seleção da Aluna
         aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_aluna_auto")
         df_aluna = df[df['Aluna'] == aluna_sel]
 
@@ -962,30 +960,32 @@ elif menu == "📊 Analítico IA":
             datas_disponiveis = df_aluna['Data'].unique()
             data_sel = st.selectbox("📅 Selecione a Data da Aula:", datas_disponiveis)
             
-            # Filtro dos dados do dia
             dados_dia = df_aluna[df_aluna['Data'] == data_sel]
 
-            # --- CABEÇALHO DO RELATÓRIO ---
             st.markdown(f"<h1 style='text-align: center; color: #1E1E1E;'>{aluna_sel.upper()}</h1>", unsafe_allow_html=True)
             st.divider()
 
-            # --- SEÇÃO 1: PRÁTICA ---
+            # --- SEÇÃO 1: PRÁTICA (MODIFICADA PARA MULTI-MÉTODOS) ---
             st.markdown("### 🎹 Prática")
             p_data = dados_dia[dados_dia['Tipo'].str.contains('Prática|Pratica', case=False, na=False)]
+            
             if not p_data.empty:
-                p = p_data.iloc[0]
-                difs_p = p.get('Dificuldades', [])
-                # Formata lista de dificuldades se for lista
-                difs_txt = ", ".join(difs_p) if isinstance(difs_p, list) else difs_p
-                
-                st.markdown(f"""
-                **Data:** {data_sel}  
-                **Instrutora:** {p.get('Instrutora') or '---'}  
-                **Estudo / Lição:** {p.get('Licao_Atual', '---')}  
-                **Dificuldades:** {difs_txt if difs_txt else 'Não apresentou dificuldades'}  
-                **Observações:** {p.get('Observacao', '---')}  
-                **Lição de casa – Volume prática:** {p.get('Licao_Casa', '---')}
-                """)
+                # LOOP PARA MOSTRAR TODOS OS MÉTODOS SALVOS
+                for _, p in p_data.iterrows():
+                    # Identifica qual é o método pelo nome do Tipo (ex: Aula_Pratica_Bona)
+                    metodo_nome = p['Tipo'].replace("Aula_Prática_", "").replace("Aula_Pratica_", "").replace("_", " ")
+                    
+                    with st.expander(f"📖 Método: {metodo_nome}", expanded=True):
+                        difs_p = p.get('Dificuldades', [])
+                        difs_txt = ", ".join(difs_p) if isinstance(difs_p, list) else str(difs_p)
+                        
+                        st.markdown(f"""
+                        **Instrutora:** {p.get('Instrutora') or '---'}  
+                        **Estudo / Lição Atual:** {p.get('Licao_Atual', '---')}  
+                        **Dificuldades:** {difs_txt if difs_txt and difs_txt != '[]' else 'Não apresentou dificuldades'}  
+                        **Observações:** {p.get('Observacao', '---')}  
+                        **Lição de casa:** {p.get('Licao_Casa', '---')}
+                        """)
             else:
                 st.caption("Sem registros de Prática para este dia.")
 
@@ -993,15 +993,14 @@ elif menu == "📊 Analítico IA":
             st.markdown("### 📝 Teoria")
             t_data = dados_dia[dados_dia['Tipo'].str.contains('Teoria', case=False, na=False)]
             if not t_data.empty:
-                t = t_data.iloc[0]
-                st.markdown(f"""
-                **Data:** {data_sel}  
-                **Instrutora:** {t.get('Instrutora') or '---'}  
-                **Lição/Volume:** {t.get('Licao_Atual', '---')}  
-                **Dificuldades:** {t.get('Dificuldades', 'Não apresentou dificuldades')}  
-                **Observações:** {t.get('Observacao', '---')}  
-                **Lição de casa:** {t.get('Licao_Casa', '---')}
-                """)
+                for _, t in t_data.iterrows():
+                    with st.expander("📚 Conteúdo de Teoria", expanded=True):
+                        st.markdown(f"""
+                        **Instrutora:** {t.get('Instrutora') or '---'}  
+                        **Lição/Volume:** {t.get('Licao_Atual', '---')}  
+                        **Observações:** {t.get('Observacao', '---')}  
+                        **Lição de casa:** {t.get('Licao_Casa', '---')}
+                        """)
             else:
                 st.caption("Sem registros de Teoria para este dia.")
 
@@ -1009,146 +1008,37 @@ elif menu == "📊 Analítico IA":
             st.markdown("### 🗣️ Solfejo")
             s_data = dados_dia[dados_dia['Tipo'].str.contains('Solfejo', case=False, na=False)]
             if not s_data.empty:
-                s = s_data.iloc[0]
-                st.markdown(f"""
-                **Data:** {data_sel}  
-                **Instrutora:** {s.get('Instrutora') or '---'}  
-                **Lição/Volume:** {s.get('Licao_Atual', '---')}  
-                **Dificuldades:** {s.get('Dificuldades', 'Não apresentou dificuldades')}  
-                **Observações:** {s.get('Observacao', '---')}  
-                **Lição de casa:** {s.get('Licao_Casa', '---')}
-                """)
+                for _, s in s_data.iterrows():
+                    with st.expander("🗣️ Registro de Solfejo", expanded=True):
+                        st.markdown(f"""
+                        **Lição/Volume:** {s.get('Licao_Atual', '---')}  
+                        **Dificuldades:** {s.get('Dificuldades', 'Não apresentou')}  
+                        **Observações:** {s.get('Observacao', '---')}
+                        """)
             else:
                 st.caption("Sem registros de Solfejo para este dia.")
 
-            # --- SEÇÃO 4: LIÇÕES DE CASA (SECRETARIA / CONTROLE) ---
-            st.markdown("### 📚 Lições de Casa")
+            # --- SEÇÃO 4: LIÇÕES DE CASA (SECRETARIA) ---
+            st.markdown("### 📚 Validação da Secretaria")
             sec_data = dados_dia[dados_dia['Tipo'].str.contains('Controle_Licao', case=False, na=False)]
             if not sec_data.empty:
                 for _, row in sec_data.iterrows():
-                    st.info(f"""
-                    **Categoria:** {row.get('Categoria', 'Geral')}  
-                    **{row.get('Status', 'Status')}:** {row.get('Observacao', 'Sem pendências')}
-                    """)
-            else:
-                st.caption("Sem registros de lição de casa validados pela secretaria.")
+                    st.info(f"**{row.get('Categoria', 'Geral')}:** {row.get('Observacao', 'Sem pendências')}")
 
-            # --- SEÇÃO 5: ANÁLISE PEDAGÓGICA POR ÁREAS (AUTOMÁTICA) ---
+            # --- SEÇÃO 5: PLANEJAMENTO ---
             st.divider()
-            st.subheader("🎯 Planejamento e Metas")
-            
-            # Lógica para Dicas da Banca (Exemplo baseado no instrumento)
+            st.subheader("🎯 Metas Pedagógicas")
             col_metas, col_banca = st.columns(2)
+            # Aqui você pode manter sua lógica de metas estáticas ou puxar do banco
             with col_metas:
-                st.markdown("**Metas para a Próxima Aula:**")
-                st.success("1. Evoluir lição atual com metrônomo\n2. Corrigir postura de dedos arredondados")
-            
+                st.success("**Próxima Aula:**\n1. Metrônomo na lição atual\n2. Postura de punho")
             with col_banca:
-                st.markdown("**Dicas para a Banca Semestral:**")
-                st.warning("Atenção especial à articulação técnica e ao uso do pedal de expressão.")
+                st.warning("**Dicas para Banca:**\nFocar na expressividade e dinâmica.")
 
-            # --- RODÍZIO (AULAS AGENDADAS) ---
-            st.divider()
-            st.markdown("### 📅 Próximas Aulas Agendadas")
-            
-            # 1. Pegamos a data de hoje para filtrar apenas o que é futuro
-            hoje_dt = datetime.now().date()
-            
-            # 2. Criamos uma lista para consolidar as próximas aulas
-            proximas_aulas = []
-            
-            # 3. Varremos o dicionário do calendário
-            # Ordenamos as datas para aparecerem na sequência correta
-            for data_str in sorted(calendario_db.keys()):
-                try:
-                    # Converte a chave (string) em data para comparar
-                    data_escala_dt = datetime.strptime(data_str, "%d/%m/%Y").date()
-                    
-                    if data_escala_dt >= hoje_dt:
-                        escala_dia = pd.DataFrame(calendario_db[data_str])
-                        # Filtra a aluna específica neste dia
-                        minha_linha = escala_dia[escala_dia['Aluna'] == aluna_sel].copy()
-                        
-                        if not minha_linha.empty:
-                            # Adicionamos uma coluna de data para o relatório
-                            minha_linha.insert(0, "Data da Aula", data_str)
-                            proximas_aulas.append(minha_linha)
-                except:
-                    continue
-
-            if proximas_aulas:
-                # Une todas as linhas encontradas em um único DataFrame
-                df_proximas = pd.concat(proximas_aulas)
-                
-                # Definimos as colunas alvo (ajustadas para bater com seus nomes exatos)
-                colunas_alvo = ['Data da Aula', 'Turma', '08h45 (Igreja)', '09h35(H2)', '10h10(H3)', '10h45(H4)']
-                
-                # Filtra apenas as colunas que existem no banco (evita erro de digitação/espaços)
-                colunas_validas = [c for c in colunas_alvo if c in df_proximas.columns]
-                
-                st.write(f"Confira abaixo o cronograma de aulas para **{aluna_sel}**:")
-                st.dataframe(df_proximas[colunas_validas], hide_index=True, use_container_width=True)
-            else:
-                st.info("Nenhum rodízio futuro encontrado para esta aluna no sistema.")
-                
         st.divider()
         if st.checkbox("Ver Gráficos de Evolução"):
-            # Exemplo de gráfico de presença
             st.markdown("#### Evolução de Presença")
-            fig_faltas = px.bar(x=['Presenças', 'Faltas'], y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
+            fig_faltas = px.bar(x=['Presenças', 'Faltas'], 
+                                y=[len(df_chamada[df_chamada['Status'] == 'Presente']), faltas], 
                                 color_discrete_sequence=['#2ecc71', '#e74c3c'])
             st.plotly_chart(fig_faltas, use_container_width=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
