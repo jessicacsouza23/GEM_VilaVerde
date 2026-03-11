@@ -527,21 +527,6 @@ if menu == "🏠 Secretaria":
             supabase.table("historico_geral").insert(novos_ch).execute()
             st.success("✅ Chamada Salva!"); st.cache_data.clear()
 
-
-    Obrigado por enviar o código! O erro foi identificado. O problema não está apenas na lógica da aba da secretaria, mas principalmente na forma como as professoras estão salvando os dados.
-
-🔍 Onde está o erro:
-No seu código da Secretaria, você usa este filtro:
-df_historico['Tipo'].str.contains("Casa_", na=False)
-
-Porém, no banco de dados, os registros de aula "comuns" salvos pelas professoras (que não mostrei no seu snippet, mas deduzi pela lógica do else no relatório) geralmente são salvos com o tipo "Aula_Pratica", "Aula_Teoria", etc. Se a professora salvar a lição de casa dentro de um registro de "Aula", a Secretaria nunca vai achar nada com o prefixo "Casa_".
-
-Para resolver isso, vamos ajustar o código para que ele procure a "Lição de Casa" em qualquer registro que tenha o campo Licao_Casa preenchido e o Status como "Pendente".
-
-🛠️ Código Corrigido (Aba 4 da Secretaria)
-Substitua o bloco da Aba 4 pelo código abaixo. Ele é mais "inteligente": ele varre o banco atrás de qualquer lição de casa pendente, independentemente de como a professora salvou o "Tipo".
-
-Python
     # --- ABA 4: CONTROLE DE LIÇÕES (CORRIGIDO) ---
     with tab_licao:
         st.subheader("📝 Controle e Metas")
@@ -887,6 +872,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
