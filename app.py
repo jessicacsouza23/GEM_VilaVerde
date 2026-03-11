@@ -342,15 +342,15 @@ if menu == "🏠 Secretaria":
         "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros"
     ])
 
-    # --- ABA 1: VISÃO GERAL (DESIGN CLEAN) ---
+    # --- ABA 1: VISÃO GERAL DIÁRIA (TOTALIZADA) ---
     with tab_consolidado:
         c1, c2 = st.columns([1, 2])
         data_visao = c1.date_input("📅 Data da Análise:", datetime.now(), key="sec_v_dia_vfinal").strftime("%d/%m/%Y")
         
         st.markdown(f"""
-            <div style='text-align: center; background: linear-gradient(90deg, #1B2631, #2E4053); padding: 25px; border-radius: 15px; margin-bottom: 20px;'>
-                <h2 style='margin: 0; color: #D5D8DC; letter-spacing: 2px;'>🎼 DIÁRIO PEDAGÓGICO</h2>
-                <p style='margin: 5px; color: #AEB6BF; font-family: monospace;'>{data_visao}</p>
+            <div style='text-align: center; background: linear-gradient(90deg, #1B2631, #2E4053); padding: 20px; border-radius: 12px; margin-bottom: 20px;'>
+                <h2 style='margin: 0; color: #D5D8DC; font-size: 24px;'>🎼 RELATÓRIO COMPLETO VILA VERDE</h2>
+                <p style='margin: 5px; color: #AEB6BF;'>Status e Dificuldades Pedagógicas • {data_visao}</p>
             </div>
         """, unsafe_allow_html=True)
         
@@ -358,42 +358,60 @@ if menu == "🏠 Secretaria":
 
         if not df_historico.empty:
             df_dia = df_historico[df_historico['Data'] == data_visao]
+            
             if not df_dia.empty:
+                # Loop por Aluna
                 for aluna_v in sorted(df_dia['Aluna'].unique()):
                     with st.expander(f"👤 {aluna_v.upper()}", expanded=True):
                         dados_aluna = df_dia[df_dia['Aluna'] == aluna_v]
                         texto_whatsapp += f"👤 *{aluna_v.upper()}*\n"
                         
+                        # Processar cada registro daquela aluna no dia
                         for _, r in dados_aluna.iterrows():
                             tipo = str(r.get('Tipo', 'Aula')).replace("Aula_", "").replace("_", " ")
                             
                             if tipo == "Chamada":
-                                status = r.get('Status')
-                                cor = "#28B463" if status == "Presente" else "#CB4335"
-                                st.markdown(f"<span style='color:{cor}; font-weight:bold;'>📍 {status}</span>", unsafe_allow_html=True)
+                                status = r.get('Status', '---')
+                                st.markdown(f"📍 **Presença:** {status}")
                                 texto_whatsapp += f"📍 Presença: {status}\n"
                             
                             elif tipo == "Controle Licao":
                                 cat = r.get('Categoria', 'Geral')
-                                st.markdown(f"""
-                                    <div style='background-color: #F8F9F9; border-left: 5px solid #2E4053; padding: 10px; margin: 5px 0;'>
-                                        <b style='color: #2E4053;'>📘 {cat}:</b> {r.get('Licao_Detalhe', '---')}<br>
-                                        <i style='color: #566573; font-size: 14px;'>└─ {r.get('Observacao', 'Sem obs.')}</i>
-                                    </div>
-                                """, unsafe_allow_html=True)
-                                texto_whatsapp += f"📘 *{cat}*: {r.get('Licao_Detalhe')}\n   └─ {r.get('Observacao')}\n"
+                                det = r.get('Licao_Detalhe', '---')
+                                obs = r.get('Observacao', '---')
+                                st.markdown(f"📘 **{cat}:** {det}\n\n*Análise:* {obs}")
+                                texto_whatsapp += f"📘 *{cat}*: {det}\n   └─ {obs}\n"
                             
                             else:
-                                st.markdown(f"🎹 **{tipo}**: {r.get('Licao_Atual')} | Casa: {r.get('Licao_Casa')}")
-                                texto_whatsapp += f"• {tipo}: {r.get('Licao_Atual')} (Casa: {r.get('Licao_Casa')})\n"
+                                # DADOS DA PROFESSORA (Onde moram as dificuldades)
+                                lic_at = r.get('Licao_Atual', '---')
+                                lic_cs = r.get('Licao_Casa', '---')
+                                difs = r.get('Dificuldades', []) # Geralmente uma lista ou string
+                                
+                                # Visual no Streamlit
+                                with st.container(border=True):
+                                    st.markdown(f"🎹 **{tipo}**")
+                                    st.write(f"**Lição:** {lic_at} | **Para Casa:** {lic_cs}")
+                                    
+                                    # Se houver dificuldades, exibe com destaque
+                                    if difs:
+                                        # Trata se for lista ou string
+                                        txt_difs = ", ".join(difs) if isinstance(difs, list) else str(difs)
+                                        st.markdown(f"<div style='background-color: #FDEDEC; padding: 8px; border-radius: 5px; border-left: 4px solid #CB4335; color: #943126;'><b>⚠️ Dificuldades:</b> {txt_difs}</div>", unsafe_allow_html=True)
+                                        texto_whatsapp += f"• {tipo}: {lic_at}\n   ⚠️ *Dificuldades:* {txt_difs}\n   🏠 *Casa:* {lic_cs}\n"
+                                    else:
+                                        texto_whatsapp += f"• {tipo}: {lic_at}\n   🏠 *Casa:* {lic_cs}\n"
+                                    
                         texto_whatsapp += "\n"
                 
                 st.divider()
-                st.subheader("📋 Enviar Relatório")
-                st.text_area("Texto formatado:", value=texto_whatsapp, height=200)
+                st.subheader("📋 Enviar para WhatsApp")
+                st.text_area("Texto pronto para cópia:", value=texto_whatsapp, height=250)
             else:
-                st.info("Nenhum registro para esta data.")
-                
+                st.info("Nenhum dado encontrado para esta data.")
+        else:
+            st.warning("O banco de dados está vazio.")
+            
     # --- ABA 2: PLANEJAMENTO (RODÍZIO CARROSSEL) ---
     with tab_plan:
         c1, c2 = st.columns(2)
@@ -812,6 +830,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
