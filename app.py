@@ -533,9 +533,9 @@ if menu == "🏠 Secretaria":
         
         # Seleção de Contexto
         c1, c2, c3 = st.columns([2, 1, 1])
-        aluna_sel = c1.selectbox("Aluna:", ALUNAS_LISTA, key="v8_aluna")
-        sec_resp = c2.selectbox("Secretaria Responsável:", SECRETARIAS_LISTA, key="v8_sec")
-        data_ref = c3.date_input("Data:", datetime.now(), key="v8_data").strftime("%d/%m/%Y")
+        aluna_sel = c1.selectbox("Aluna:", ALUNAS_LISTA, key="sec_v8_aluna")
+        sec_resp = c2.selectbox("Secretaria Responsável:", SECRETARIAS_LISTA, key="sec_v8_sec")
+        data_ref = c3.date_input("Data:", datetime.now(), key="sec_v8_data").strftime("%d/%m/%Y")
 
         st.divider()
 
@@ -548,32 +548,33 @@ if menu == "🏠 Secretaria":
                 df_aluna['dt_sort'] = pd.to_datetime(df_aluna['Data'], format='%d/%m/%Y', errors='coerce')
                 df_aluna = df_aluna.sort_values('dt_sort', ascending=False)
 
-                # --- 1. EXIBIÇÃO DA ANÁLISE PEDAGÓGICA (O que a professora observou) ---
+                # --- 1. EXIBIÇÃO DA ANÁLISE PEDAGÓGICA ---
+                # Pega o registro mais recente para mostrar o resumo pedagógico
+                ultima_aula = df_aluna.iloc[0]
                 with st.expander("🔍 Ver Análise Pedagógica da Professora", expanded=True):
-                    ultima_obs = df_aluna.iloc[0] # Pega o registro mais recente
                     col_an1, col_an2 = st.columns(2)
-                    col_an1.metric("Última Aula", ultima_obs['Data'])
-                    col_an1.write(f"**Observação Técnica:** {ultima_obs.get('Observacao', 'Sem observações.')}")
+                    col_an1.metric("Última Aula", str(ultima_aula['Data']))
                     
-                    # Se houver campo de análise específico no seu banco, ele entra aqui
-                    if 'Analise_Pedagogica' in ultima_obs:
-                        st.info(f"**Resumo da Secretaria:** {ultima_obs['Analise_Pedagogica']}")
+                    # Exibe a observação técnica que a professora deixou na ficha dela
+                    obs_prof = ultima_aula.get('Observacao', 'Sem observações técnicas.')
+                    st.info(f"**Resumo/Análise da Professora:**\n\n{obs_prof}")
 
                 st.markdown("### 📝 Lições de Casa para Corrigir")
                 
-                # --- 2. LISTAGEM DAS LIÇÕES (Conversando com o lançamento da Professora) ---
+                # --- 2. LISTAGEM DAS LIÇÕES ---
                 count_exibidos = 0
                 for _, row in df_aluna.iterrows():
                     licao_texto = str(row['Licao_Casa'])
                     tipo_material = str(row.get('Tipo', ''))
 
-                    # Bloqueio de Métodos de Prática (Piano/Órgão)
+                    # Bloqueio de Métodos de Prática (Piano/Órgão) que a secretaria NÃO corrige
                     proibidos = ["Volume", "Piano", "Divertido", "Beyer", "Kohler", "Pratica", "Prática"]
                     if any(p.lower() in licao_texto.lower() or p.lower() in tipo_material.lower() for p in proibidos):
                         continue
                     
-                    # Filtro de lixo
-                    if licao_texto.strip() in ["None", "---", "||", ""]:
+                    # Limpeza de lixo e verificação de conteúdo
+                    texto_limpo = licao_texto.replace("||", "").replace("Métodos:", "").strip()
+                    if texto_limpo in ["None", "---", "", "||"]:
                         continue
 
                     count_exibidos += 1
@@ -581,47 +582,60 @@ if menu == "🏠 Secretaria":
                         c_inf, c_act = st.columns([3, 2])
                         
                         with c_inf:
-                            st.markdown(f"**📌 {tipo_material.replace('Casa_', '').upper()}**")
-                            st.markdown(f"### {licao_licao := licao_texto.replace('||', '').replace('Métodos:', '').strip()}")
-                            st.caption(f"Professora: {row.get('Instrutora', '---')} | Data: {row['Data']}")
+                            mat_nome = tipo_material.replace('Casa_', '').replace('Aula_', '').replace('_', ' ').upper()
+                            st.markdown(f"**📌 {mat_nome}**")
+                            st.markdown(f"### 📖 {texto_limpo}")
+                            st.caption(f"Instrutora: {row.get('Instrutora', '---')} | Data: {row['Data']}")
 
                         with c_act:
-                            visto = st.radio("Visto:", ["Realizada", "Não Realizada", "Devolvida"], key=f"v8_v_{row['id']}", horizontal=True)
-                            obs_s = st.text_input("Correção/Dica:", key=f"v8_o_{row['id']}")
+                            visto = st.radio("Visto:", ["Realizada", "Não Realizada", "Devolvida"], key=f"visto_row_{row['id']}", horizontal=True)
+                            obs_s = st.text_input("Correção/Dica:", key=f"obs_row_{row['id']}")
                             
-                            if st.button("Gravar Visto", key=f"v8_b_{row['id']}", use_container_width=True):
+                            if st.button("Gravar Visto", key=f"btn_row_{row['id']}", use_container_width=True):
                                 supabase.table("historico_geral").update({
                                     "Status": visto,
                                     "Observacao": obs_s,
                                     "Secretaria": sec_resp
                                 }).eq("id", row['id']).execute()
-                                st.success("Visto Gravado!"); import time; time.sleep(0.4); st.rerun()
+                                st.success("Visto Gravado!")
+                                import time; time.sleep(0.4); st.rerun()
 
                 if count_exibidos == 0:
-                    st.warning("Nenhuma lição de MSA ou Hino encontrada nos registros das professoras.")
+                    st.warning("Nenhuma lição de MSA ou Hino encontrada nos registros recentes.")
             else:
                 st.info("Nenhum histórico encontrado para esta aluna.")
 
         st.divider()
 
-        # --- 3. LANÇAR NOVA ATIVIDADE (SECRETARIA) ---
-        st.markdown("### ✍️ Lançar Meta Extra")
-        with st.form("form_v8", clear_on_submit=True):
+        # --- 3. LANÇAR NOVA META EXTRA (SECRETARIA) ---
+        st.markdown("### ✍️ Lançar Meta Extra da Secretaria")
+        with st.form("form_novo_v8", clear_on_submit=True):
             f1, f2 = st.columns(2)
             m_tipo = f1.radio("Material:", ["MSA(verde)", "MSA(preto)", "Apostila", "Hino", "Extra"], horizontal=True)
-            m_stat = f2.radio("Status:", ["Pendente", "Realizada"], horizontal=True)
-            m_lic = st.text_input("Lição/Meta:")
-            m_obs = st.text_area("Dica para a próxima aula:")
+            m_stat = f2.radio("Status Inicial:", ["Pendente", "Realizada"], horizontal=True)
+            m_lic = st.text_input("Lição ou Página da Meta:")
+            m_obs = st.text_area("Observação/Instrução para a Aluna:")
             
-            if st.form_submit_button("💾 SALVAR ATIVIDADE"):
+            if st.form_submit_button("💾 SALVAR META"):
                 if m_lic:
-                    supabase.table("historico_geral").insert({
-                        "Aluna": aluna_sel, "Data": data_ref, "Tipo": f"Casa_{m_tipo}",
-                        "Licao_Atual": "Meta Secretaria", "Licao_Casa": m_lic,
-                        "Status": m_stat, "Secretaria": sec_resp, "Observacao": m_obs
-                    }).execute()
-                    st.success("Salvo com sucesso!"); import time; time.sleep(0.5); st.rerun()
-                    
+                    try:
+                        supabase.table("historico_geral").insert({
+                            "Aluna": aluna_sel,
+                            "Data": data_ref,
+                            "Tipo": f"Casa_{m_tipo}",
+                            "Licao_Atual": "Lançado pela Secretaria",
+                            "Licao_Casa": m_lic,
+                            "Status": m_stat,
+                            "Secretaria": sec_resp,
+                            "Observacao": m_obs
+                        }).execute()
+                        st.success("Meta salva com sucesso!")
+                        import time; time.sleep(0.5); st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar: {e}")
+                else:
+                    st.error("Preencha a lição antes de salvar.")
+                                       
     # --- ABA 5: AJUSTES ---
     with tab_ajustes:
         st.subheader("🛠️ Ajustar Registros")
@@ -891,6 +905,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
