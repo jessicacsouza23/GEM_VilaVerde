@@ -527,101 +527,106 @@ if menu == "🏠 Secretaria":
             supabase.table("historico_geral").insert(novos_ch).execute()
             st.success("✅ Chamada Salva!"); st.cache_data.clear()
 
-    # --- ABA 4: CONTROLE DE LIÇÕES (LÓGICA DE EXCLUSÃO DE MÉTODOS) ---
+    # --- ABA 4: CONTROLE DE LIÇÕES (VERSÃO SEGURA E DIRETA) ---
     with tab_licao:
-        st.subheader("📝 Conferência de Metas e Lições")
+        st.subheader("📝 Conferência e Novas Metas")
         
+        # Cabeçalho de Seleção
         c1, c2, c3 = st.columns([2, 1, 1])
-        aluna_sel = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_final_v600")
-        sec_resp = c2.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp_v600")
-        data_corr_str = c3.date_input("Data:", datetime.now(), key="sec_data_v600").strftime("%d/%m/%Y")
+        aluna_sel = c1.selectbox("Aluna:", ALUNAS_LISTA, key="final_v700_al")
+        sec_resp = c2.selectbox("Responsável:", SECRETARIAS_LISTA, key="final_v700_sec")
+        data_hj = c3.date_input("Data:", datetime.now(), key="final_v700_dt").strftime("%d/%m/%Y")
 
         st.divider()
 
+        # --- PARTE A: LIÇÕES LANÇADAS ---
+        st.markdown("### 🏠 Lições de Casa Encontradas")
+        
         if not df_historico.empty:
-            # 1. LISTA NEGRA: Métodos que a secretaria NÃO quer ver (ajuste os nomes se necessário)
-            metodos_proibidos = ["Volume 1", "Volume 2", "Volume 3", "Volume 4", "Meu Piano", "Divertido", "Piano"]
-
-            # 2. FILTRO: Aluna + Tem texto na Lição de Casa + Não é "None"
-            df_aluna = df_historico[
-                (df_historico['Aluna'] == aluna_sel) &
-                (df_historico['Licao_Casa'].notna()) &
-                (df_historico['Licao_Casa'] != "") &
-                (df_historico['Licao_Casa'] != "None") &
-                (df_historico['Licao_Casa'] != "---")
+            # Filtro básico: apenas a aluna selecionada e que tenha algo escrito na lição de casa
+            df_lista = df_historico[
+                (df_historico['Aluna'] == aluna_sel) & 
+                (df_historico['Licao_Casa'].notna()) & 
+                (df_historico['Licao_Casa'] != "")
             ].copy()
 
-            if not df_aluna.empty:
-                # Ordenar por data
-                df_aluna['dt_temp'] = pd.to_datetime(df_aluna['Data'], format='%d/%m/%Y', errors='coerce')
-                df_aluna = df_aluna.sort_values('dt_temp', ascending=False)
+            if not df_lista.empty:
+                # Ordenar por data (mais recente no topo)
+                df_lista['temp_dt'] = pd.to_datetime(df_lista['Data'], format='%d/%m/%Y', errors='coerce')
+                df_lista = df_lista.sort_values('temp_dt', ascending=False)
 
-                count_exibidos = 0
-                for _, row in df_aluna.iterrows():
-                    texto_licao = str(row['Licao_Casa'])
-                    tipo_registro = str(row.get('Tipo', ''))
-
-                    # REGRA DE EXCLUSÃO: Se o nome do método proibido estiver no texto ou no tipo, a gente PULA
-                    if any(metodo.lower() in texto_licao.lower() or metodo.lower() in tipo_registro.lower() for metodo in metodos_proibidos):
+                for _, row in df_lista.iterrows():
+                    conteudo = str(row['Licao_Casa'])
+                    
+                    # FILTRO DE EXCLUSÃO: Se for método de prática (Volume, Piano), não mostra
+                    proibidos = ["Volume", "Piano", "Divertido", "Prática", "Pratica"]
+                    if any(p.lower() in conteudo.lower() for p in proibidos):
                         continue
                     
-                    # Se chegou aqui, é algo que a Secretaria deve ver (MSA, Hino, etc)
-                    count_exibidos += 1
-                    
-                    # Limpeza visual
-                    exibir_limpo = texto_licao.replace("||", "").replace("Métodos:", "").strip()
+                    # Se o conteúdo for apenas "None" ou "---", não mostra
+                    if conteudo.strip() in ["None", "---", "||"]:
+                        continue
 
                     with st.container(border=True):
-                        col_info, col_visto = st.columns([3, 2])
+                        col_txt, col_visto = st.columns([3, 2])
                         
-                        with col_info:
-                            origem = tipo_registro.replace("Casa_", "").replace("Aula_", "").replace("_", " ")
-                            st.markdown(f"**📌 {origem.upper()}**")
-                            st.markdown(f"### 📖 {exibir_limpo}")
-                            st.caption(f"📅 Data: {row['Data']} | Prof: {row.get('Instrutora', '---')}")
+                        with col_txt:
+                            # Limpeza de exibição
+                            txt_limpo = conteudo.replace("||", "").replace("Métodos:", "").strip()
+                            st.markdown(f"**📍 MATERIAL:** {str(row.get('Tipo', 'Extra')).upper()}")
+                            st.markdown(f"## 📖 {txt_limpo}")
+                            st.caption(f"📅 {row['Data']} | Instrutora: {row.get('Instrutora', '---')}")
 
                         with col_visto:
-                            visto = st.radio("Visto:", ["Realizada", "Não Realizada", "Devolvida"], key=f"v_{row['id']}", horizontal=True)
-                            obs_s = st.text_input("Nota/Obs:", key=f"o_{row['id']}")
+                            v_status = st.radio("Visto:", ["Realizada", "Não Realizada", "Devolvida"], key=f"st_{row['id']}", horizontal=True)
+                            v_obs = st.text_input("Observação:", key=f"ob_{row['id']}")
                             
-                            if st.button("Confirmar Visto", key=f"b_{row['id']}", use_container_width=True):
+                            if st.button("Confirmar Visto", key=f"bt_{row['id']}", use_container_width=True):
                                 supabase.table("historico_geral").update({
-                                    "Status": visto,
-                                    "Observacao": obs_s,
+                                    "Status": v_status,
+                                    "Observacao": v_obs,
                                     "Secretaria": sec_resp
                                 }).eq("id", row['id']).execute()
-                                st.success("Visto salvo!"); import time; time.sleep(0.4); st.rerun()
-
-                if count_exibidos == 0:
-                    st.info(f"Nenhuma lição de MSA, Hino ou Apostila pendente para {aluna_sel}.")
+                                st.success("Salvo!")
+                                import time; time.sleep(0.4); st.rerun()
             else:
-                st.info(f"Sem registros de lição de casa para {aluna_sel}.")
+                st.info("Nenhuma lição pendente para esta aluna.")
 
         st.divider()
 
-        # --- PARTE B: INCLUIR NOVA ATIVIDADE (META DA SECRETARIA) ---
-        st.markdown("### ✍️ Lançar Nova Meta Secretaria")
-        with st.form("form_secretaria_v600", clear_on_submit=True):
-            f1, f2 = st.columns(2)
-            met_n = f1.radio("Material:", ["MSA(verde)", "MSA(preto)", "Apostila", "Hino", "Extra"], horizontal=True)
-            status_n = f2.radio("Status:", ["Pendente", "Realizada"], horizontal=True)
+        # --- PARTE B: NOVA ATIVIDADE (AQUI ESTAVA O ERRO DE NÃO SALVAR) ---
+        st.markdown("### ✍️ Lançar Nova Meta Extra (Secretaria)")
+        with st.form("form_novo_sec_v700", clear_on_submit=True):
+            f_c1, f_c2 = st.columns(2)
+            novo_tipo = f_c1.radio("Material:", ["MSA(verde)", "MSA(preto)", "Apostila", "Hino", "Extra"])
+            novo_status = f_c2.radio("Status Inicial:", ["Pendente", "Realizada"])
             
-            lic_t = st.text_input("Lição / Página:")
-            obs_t = st.text_area("Instruções Adicionais:")
+            nova_licao = st.text_input("Lição / Página / Meta:")
+            nova_obs = st.text_area("Dica Técnica (Opcional):")
             
-            if st.form_submit_button("💾 SALVAR META"):
-                if lic_t:
+            if st.form_submit_button("💾 SALVAR NOVA ATIVIDADE"):
+                if nova_licao:
+                    # Monta o dicionário exatamente como o banco espera
+                    dados_visto = {
+                        "Aluna": aluna_sel,
+                        "Data": data_hj,
+                        "Tipo": f"Casa_{novo_tipo}",
+                        "Licao_Atual": "Meta Secretaria",
+                        "Licao_Casa": nova_licao,
+                        "Status": novo_status,
+                        "Secretaria": sec_resp,
+                        "Observacao": nova_obs
+                    }
+                    # Inserção direta no banco
                     try:
-                        # Salva direto no Supabase para garantir que funcione
-                        supabase.table("historico_geral").insert({
-                            "Aluna": aluna_sel, "Data": data_corr_str, "Tipo": f"Casa_{met_n}",
-                            "Licao_Atual": "Meta Secretaria", "Licao_Casa": lic_t,
-                            "Status": status_n, "Secretaria": sec_resp, "Observacao": obs_t
-                        }).execute()
-                        st.success("Meta gravada com sucesso!"); import time; time.sleep(0.5); st.rerun()
+                        supabase.table("historico_geral").insert(dados_visto).execute()
+                        st.success("Atividade salva com sucesso!")
+                        import time; time.sleep(0.5); st.rerun()
                     except Exception as e:
-                        st.error(f"Erro ao salvar meta: {e}")
-                        
+                        st.error(f"Erro técnico ao salvar: {e}")
+                else:
+                    st.error("Por favor, preencha a lição.")
+                    
     # --- ABA 5: AJUSTES ---
     with tab_ajustes:
         st.subheader("🛠️ Ajustar Registros")
@@ -891,6 +896,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
