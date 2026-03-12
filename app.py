@@ -527,59 +527,64 @@ if menu == "🏠 Secretaria":
             supabase.table("historico_geral").insert(novos_ch).execute()
             st.success("✅ Chamada Salva!"); st.cache_data.clear()
 
-    # --- ABA 4: CONTROLE DE LIÇÕES (APENAS LIÇÕES PARA CASA) ---
+    # --- ABA 4: CONTROLE DE LIÇÕES (FILTRO POR CONTEÚDO REAL) ---
     with tab_licao:
         st.subheader("📝 Conferência de Lições de Casa")
         
         # Cabeçalho de Seleção
         c1, c2, c3 = st.columns([2, 1, 1])
-        aluna_sel = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_v300")
-        sec_resp = c2.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp_v300")
-        data_corr_str = c3.date_input("Data:", datetime.now(), key="sec_data_v300").strftime("%d/%m/%Y")
+        aluna_sel = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_v400")
+        sec_resp = c2.selectbox("Responsável:", SECRETARIAS_LISTA, key="sec_resp_v400")
+        data_corr_str = c3.date_input("Data:", datetime.now(), key="sec_data_v400").strftime("%d/%m/%Y")
 
         st.divider()
 
-        # --- PARTE A: LISTAGEM DE LIÇÕES (FILTRO RÍGIDO) ---
+        # --- PARTE A: LISTAGEM DE LIÇÕES ---
         if not df_historico.empty:
-            # FILTRO: 
-            # 1. Aluna correta
-            # 2. O 'Tipo' deve conter 'Casa' (ignora registros de Aula Prática)
-            # 3. 'Licao_Casa' não pode ser vazio ou None
-            mask_casa_only = (
+            # Filtramos apenas a aluna e garantimos que o campo de lição de casa NÃO seja nulo/vazio
+            df_filtro = df_historico[
                 (df_historico['Aluna'] == aluna_sel) & 
-                (df_historico['Tipo'].str.contains('Casa', case=False, na=False)) &
                 (df_historico['Licao_Casa'].notna()) & 
                 (df_historico['Licao_Casa'] != "") & 
-                (df_historico['Licao_Casa'] != "None")
-            )
-            
-            df_exibir = df_historico[mask_casa_only].copy()
+                (df_historico['Licao_Casa'] != "None") &
+                (df_historico['Licao_Casa'] != "---")
+            ].copy()
 
-            if not df_exibir.empty:
+            if not df_filtro.empty:
                 # Ordenar por data
-                df_exibir['dt_temp'] = pd.to_datetime(df_exibir['Data'], format='%d/%m/%Y', errors='coerce')
-                df_exibir = df_exibir.sort_values('dt_temp', ascending=False)
+                df_filtro['dt_temp'] = pd.to_datetime(df_filtro['Data'], format='%d/%m/%Y', errors='coerce')
+                df_filtro = df_filtro.sort_values('dt_temp', ascending=False)
 
-                for _, row in df_exibir.iterrows():
-                    # Limpeza final do texto para remover prefixos repetitivos
-                    texto_final = str(row['Licao_Casa']).replace("Métodos:", "").replace("||", "").strip()
+                for _, row in df_filtro.iterrows():
+                    # Limpeza: remove as barras e os rótulos de "Métodos"
+                    texto_raw = str(row['Licao_Casa'])
+                    
+                    # Se o texto contém apenas o nome do método com barras (ex: "Volume 1: || ") 
+                    # e nada depois das barras, nós ignoramos.
+                    if "||" in texto_raw:
+                        conteudo_pos_barra = texto_raw.split("||")[-1].replace("Métodos:", "").strip()
+                        if len(conteudo_pos_barra) < 1:
+                            continue
+                        texto_exibir = conteudo_pos_barra
+                    else:
+                        texto_exibir = texto_raw.replace("Métodos:", "").strip()
 
+                    # Card de exibição
                     with st.container(border=True):
                         col_info, col_visto = st.columns([3, 2])
                         
                         with col_info:
-                            # Mostra qual material a aluna deve estudar em casa
-                            material = str(row['Tipo']).replace("Casa_", "").replace("_", " ")
-                            st.markdown(f"**📌 ESTUDAR EM CASA: {material.upper()}**")
-                            st.markdown(f"## 📖 {texto_final}")
-                            st.caption(f"📅 Aula de: {row['Data']} | Prof: {row.get('Instrutora', '---')}")
+                            # Mostra o material de origem (seja aula ou casa)
+                            origem = str(row['Tipo']).replace("Aula_", "").replace("Casa_", "").replace("_", " ")
+                            st.markdown(f"**📌 MATERIAL: {origem.upper()}**")
+                            st.markdown(f"## 📖 {texto_exibir}")
+                            st.caption(f"📅 Aula: {row['Data']} | Prof: {row.get('Instrutora', '---')}")
 
                         with col_visto:
-                            # Opções de Correção
                             visto = st.radio("Visto:", ["Realizada", "Não Realizada", "Devolvida"], key=f"v_{row['id']}", horizontal=True)
                             obs_s = st.text_input("Nota da Secretaria:", key=f"o_{row['id']}")
                             
-                            if st.button("Confirmar", key=f"b_{row['id']}", use_container_width=True):
+                            if st.button("Confirmar Visto", key=f"b_{row['id']}", use_container_width=True):
                                 supabase.table("historico_geral").update({
                                     "Status": visto,
                                     "Observacao": obs_s,
@@ -587,13 +592,13 @@ if menu == "🏠 Secretaria":
                                 }).eq("id", row['id']).execute()
                                 st.success("Visto registrado!"); import time; time.sleep(0.4); st.rerun()
             else:
-                st.info(f"Nenhuma lição de casa específica encontrada para {aluna_sel}.")
+                st.info(f"Nenhuma lição de casa preenchida encontrada para {aluna_sel}.")
 
         st.divider()
 
-        # --- PARTE B: INCLUIR NOVA ATIVIDADE (PARA A SECRETARIA LANÇAR) ---
+        # --- PARTE B: INCLUIR NOVA ATIVIDADE (FIXO) ---
         st.markdown("### ✍️ Lançar Nova Meta Extra")
-        with st.form("form_sec_final", clear_on_submit=True):
+        with st.form("form_sec_v400", clear_on_submit=True):
             f1, f2 = st.columns(2)
             met_n = f1.radio("Material:", ["MSA(verde)", "MSA(preto)", "Apostila", "Hino", "Extra"], horizontal=True)
             status_n = f2.radio("Status Inicial:", ["Pendente", "Realizada"], horizontal=True)
@@ -618,9 +623,7 @@ if menu == "🏠 Secretaria":
                         st.success("Meta salva!"); import time; time.sleep(0.5); st.rerun()
                     except Exception as e:
                         st.error(f"Erro: {e}")
-                else:
-                    st.error("Preencha o campo da lição.")
-                    
+                        
     # --- ABA 5: AJUSTES ---
     with tab_ajustes:
         st.subheader("🛠️ Ajustar Registros")
@@ -890,6 +893,7 @@ elif menu == "📊 Analítico IA":
                 st.warning("🏆 **Dicas para a Banca**\n\n- Foco na expressividade\n- Pedal de expressão")
 
         st.divider()
+
 
 
 
