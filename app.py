@@ -412,12 +412,10 @@ if menu == "🏠 Secretaria":
         else:
             st.warning("O banco de dados está vazio.")
             
-    # --- ABA 2: PLANEJAMENTO (RODÍZIO CARROSSEL) ---
-    # --- ABA 2: PLANEJAMENTO (COM CORREÇÃO DE VARIAVEL) ---
+    # --- ABA 2: PLANEJAMENTO (COM EDIÇÃO MANUAL PÓS-GERAÇÃO) ---
     with tab_plan:
         st.markdown("### 🗓️ Gestão de Escala")
         
-        # INICIALIZAÇÃO (Evita o NameError)
         folga_ativa = [] 
         
         c1, c2 = st.columns(2)
@@ -429,9 +427,9 @@ if menu == "🏠 Secretaria":
         
         if sabados:
             data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_plan")
-
             calendario_db = db_get_calendario()
 
+            # --- CASO A: RODÍZIO NÃO GERADO (MOSTRA O GERADOR) ---
             if data_sel_str not in calendario_db:
                 with st.container(border=True):
                     st.warning("⚡ O Rodízio ainda não foi gerado.")
@@ -447,13 +445,11 @@ if menu == "🏠 Secretaria":
                         ps3 = st.selectbox("H3", PROFESSORAS_LISTA, index=4, key="s3")
                         ps4 = st.selectbox("H4", PROFESSORAS_LISTA, index=5, key="s4")
                     
-                    # Define folgas aqui
                     folga_ativa = st.multiselect("Professoras de Folga:", PROFESSORAS_LISTA, key="folgas_dia")
 
                     if st.button("🚀 GERAR ESCALA AUTOMÁTICA", use_container_width=True, type="primary"):
                         dt_obj = datetime.strptime(data_sel_str, "%d/%m/%Y")
                         offset = dt_obj.isocalendar()[1]
-                        
                         mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
                         for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
                         
@@ -465,10 +461,8 @@ if menu == "🏠 Secretaria":
                         
                         for h in [HORARIOS[1], HORARIOS[2], HORARIOS[3]]:
                             conf = config_h[h]
-                            # Usa a variável folga_ativa aqui dentro com segurança
                             profs_ocupadas = [conf["P_Teo"], conf["P_Sol"]] + folga_ativa
                             profs_livres = [p for p in PROFESSORAS_LISTA if p not in profs_ocupadas]
-                            
                             alunas_pratica = []
                             for t_nome, alunas in TURMAS.items():
                                 if conf["Teo"] == t_nome:
@@ -485,20 +479,58 @@ if menu == "🏠 Secretaria":
                                     prof = profs_livres[pos]
                                     sala = ((pos + offset) % 7) + 1
                                     mapa[aluna_p][h] = f"🎹 SALA {sala} | {prof}"
-                            else:
-                                for a in alunas_pratica: mapa[a][h] = "⚠️ S/ Prof. Disponível"
-
+                        
                         supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                         st.success("Rodízio Gerado!")
                         st.cache_data.clear()
                         st.rerun()
+
+            # --- CASO B: RODÍZIO ATIVO (AQUI ENTRA A EDIÇÃO MANUAL) ---
             else:
-                # Exibição do Rodízio Ativo
                 st.success(f"🗓️ Escala confirmada para {data_sel_str}")
-                df_raw = pd.DataFrame(calendario_db[data_sel_str])
-                st.dataframe(df_raw, use_container_width=True, hide_index=True)
-                if st.button("🗑️ Resetar Rodízio"):
+                
+                # Pegamos a escala atual
+                escala_atual = calendario_db[data_sel_str]
+                
+                # Criamos um formulário de edição para que o salvamento seja em bloco
+                with st.form("form_edicao_escala"):
+                    st.markdown("#### ✏️ Ajuste Manual da Escala")
+                    
+                    # Lista para guardar as alterações
+                    nova_escala_editada = []
+                    
+                    for i, linha in enumerate(escala_atual):
+                        with st.container(border=True):
+                            st.markdown(f"**Aluna: {linha['Aluna']}** (Turma: {linha.get('Turma', '---')})")
+                            cols = st.columns(4)
+                            
+                            # Campos editáveis para cada horário
+                            h0 = cols[0].text_input(f"H1 ({HORARIOS[0]})", value=linha.get(HORARIOS[0], ""), key=f"h0_{i}")
+                            h1 = cols[1].text_input(f"H2 ({HORARIOS[1]})", value=linha.get(HORARIOS[1], ""), key=f"h1_{i}")
+                            h2 = cols[2].text_input(f"H3 ({HORARIOS[2]})", value=linha.get(HORARIOS[2], ""), key=f"h2_{i}")
+                            h3 = cols[3].text_input(f"H4 ({HORARIOS[3]})", value=linha.get(HORARIOS[3], ""), key=f"h3_{i}")
+                            
+                            # Monta a nova linha com os valores editados
+                            linha_editada = {
+                                "Aluna": linha['Aluna'],
+                                "Turma": linha.get('Turma', ''),
+                                HORARIOS[0]: h0,
+                                HORARIOS[1]: h1,
+                                HORARIOS[2]: h2,
+                                HORARIOS[3]: h3
+                            }
+                            nova_escala_editada.append(linha_editada)
+
+                    col_save, col_reset = st.columns([1, 1])
+                    if col_save.form_submit_button("💾 SALVAR ALTERAÇÕES", use_container_width=True, type="primary"):
+                        supabase.table("calendario").upsert({"id": data_sel_str, "escala": nova_escala_editada}).execute()
+                        st.success("Alterações salvas no banco!")
+                        st.cache_data.clear()
+                        st.rerun()
+
+                if st.button("🗑️ Resetar Tudo (Apagar Rodízio do Dia)"):
                     supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                    st.cache_data.clear()
                     st.rerun()
                     
     # --- ABA 3: CHAMADA GERAL ---
