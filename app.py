@@ -565,110 +565,149 @@ if menu == "🏠 Secretaria":
             supabase.table("historico_geral").insert(novos_ch).execute()
             st.success("✅ Chamada Salva!"); st.cache_data.clear()
 
-    # --- ABA: CORREÇÃO DE LIÇÕES (FOCO EM PENDÊNCIAS) ---
-    with tab_licao:
-        st.subheader("✅ Conferência de Atividades")
+    # --- ABA 4: CONTROLE DE LIÇÕES E PENDÊNCIAS (ESTILO CONGELADO) ---
+with tab_licao:
+    st.subheader("📋 Registro de Correção de Lições")
+    
+    # Garante o histórico atualizado
+    df_historico = pd.DataFrame(db_get_historico())
+    data_hj = datetime.now()
+    
+    # Cabeçalho de Seleção
+    c1, c2, c3 = st.columns([2, 1, 1])
+    with c1:
+        aluna = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_v10")
         
-        # Seleção de Contexto
-        c1, c2, c3 = st.columns([2, 1, 1])
-        aluna_sel = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="corr_aluna")
-        sec_resp = c2.selectbox("Responsável:", SECRETARIAS_LISTA, key="corr_sec")
-        data_hj = c3.date_input("Data de Hoje:", datetime.now(), key="corr_data")
+    with c2:
+        sec_resp = st.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="sec_resp_v10")
+        
+    with c3:
+        data_corr = st.date_input("Data da Conferência:", data_hj, key="sec_data_v10")
+        data_corr_str = data_corr.strftime("%d/%m/%Y")
+
+    st.divider()
+
+    # --- LÓGICA DE PENDÊNCIAS REAIS ---
+    # Filtra o que é Teoria, Solfejo ou Apostila e que NÃO está realizado
+    pendencias_reais = []
+    if not df_historico.empty:
+        df_alu = df_historico[df_historico['Aluna'] == aluna].copy()
+        if not df_alu.empty:
+            # Filtro de materiais permitidos
+            materiais_foco = ["teoria", "solfejo", "apostila", "hino", "extra"]
+            df_alu['tipo_lower'] = df_alu['Tipo'].str.lower()
+            
+            # Converte data para ordenação
+            df_alu["dt_obj"] = pd.to_datetime(df_alu["Data"], format="%d/%m/%Y", errors="coerce")
+            
+            # Pega a última situação de cada lição específica
+            ultimos_status = (
+                df_alu.sort_values("dt_obj")
+                .groupby(["Tipo", "Licao_Casa"])
+                .last()
+                .reset_index()
+            )
+            
+            # Filtra apenas o que é do interesse e não está pronto
+            mask = (
+                ultimos_status['tipo_lower'].str.contains('|'.join(materiais_foco)) & 
+                (~ultimos_status['Status'].isin(["Realizada", "Realizadas - sem pendência"]))
+            )
+            pendencias_reais = ultimos_status[mask].to_dict('records')
+
+    # --- EXIBIÇÃO DAS PENDÊNCIAS (Estilo Erro/🚨) ---
+    if pendencias_reais:
+        st.error(f"🚨 ATIVIDADES PENDENTES PARA {aluna.upper()}")
+        for p in pendencias_reais:
+            with st.container(border=True):
+                col_info, col_acao = st.columns([2, 1])
+                with col_info:
+                    tipo_p = p['Tipo'].replace('Casa_', '').upper()
+                    st.markdown(f"📖 **{tipo_p}** | {p['Licao_Casa']}")
+                    st.caption(f"📅 Lançado em: {p['Data']} | Status Atual: {p['Status']}")
+                    if p.get('Observacao'):
+                        st.info(f"💬 Nota: {p['Observacao']}")
+                
+                with col_acao:
+                    with st.expander("✅ Resolver"):
+                        # Key única baseada no ID do banco para evitar conflitos
+                        key_id = f"res_{p['id']}"
+                        st_res = st.radio("Nova Situação:", ["Pendente", "Realizada", "Não Realizada", "Devolvida"], key=f"st_{key_id}", horizontal=True)
+                        obs_res = st.text_area("Obs da Secretaria:", key=f"obs_{key_id}")
+                        
+                        if st.button("Atualizar Status", key=f"btn_{key_id}", use_container_width=True):
+                            supabase.table("historico_geral").update({
+                                "Status": st_res,
+                                "Observacao": f"{p.get('Observacao', '')} | Sec: {obs_res}" if obs_res else p.get('Observacao'),
+                                "Secretaria": sec_resp,
+                                "Data": data_corr_str # Atualiza para a data da correção
+                            }).eq("id", p['id']).execute()
+                            st.success("Atualizado!"); st.cache_data.clear(); st.rerun()
+    else:
+        st.success(f"✅ Nenhuma pendência de Teoria ou Apostila para {aluna}.")
+
+    st.divider()
+
+    # --- FORMULÁRIO PARA NOVAS ATIVIDADES (Estilo "Congelar e Salvar") ---
+    # Verifica se já existe algo lançado hoje para editar ou criar novo
+    registro_previo = None
+    if not df_historico.empty:
+        condicao = (df_historico['Aluna'] == aluna) & \
+                   (df_historico['Data'] == data_corr_str) & \
+                   (df_historico['Tipo'].str.contains("Casa_"))
+        match = df_historico[condicao]
+        if not match.empty:
+            registro_previo = match.iloc[-1].to_dict()
+            st.warning(f"⚠️ Editando registro existente de hoje ({data_corr_str}).")
+
+    with st.form("f_nova_atividade_v10", clear_on_submit=False):
+        st.markdown("### ✍️ Registrar Nova Atividade / Meta")
+        
+        c_cat, c_det = st.columns([1, 2])
+        
+        # Define as categorias conforme sua lista padrão
+        opcoes_cat = ["Apostila", "Teoria", "Solfejo", "Hino", "Extra"]
+        idx_cat = 0
+        if registro_previo:
+            tipo_limpo = registro_previo['Tipo'].replace('Casa_', '')
+            if tipo_limpo in opcoes_cat:
+                idx_cat = opcoes_cat.index(tipo_limpo)
+        
+        cat_sel = c_cat.radio("Material:", opcoes_cat, index=idx_cat)
+        det_lic = c_det.text_input("Lição / Página Target:", 
+                                     value=registro_previo.get('Licao_Casa', "") if registro_previo else "",
+                                     placeholder="Ex: Lição 05, pág 12")
         
         st.divider()
-
-        # 1. Carregar Histórico Total e Filtrar
-        if not df_historico.empty:
-            # Filtra apenas a aluna selecionada
-            df_alu = df_historico[df_historico['Aluna'] == aluna_sel].copy()
-            
-            if not df_alu.empty:
-                # REGRA DE FILTRO: 
-                # Somente Teoria, Solfejo, Apostila ou Hinos (Ignora Métodos/Volumes)
-                # Somente o que NÃO está como "Realizada"
-                materiais_foco = ["teoria", "solfejo", "apostila", "hino", "extra"]
-                
-                # Criamos uma coluna auxiliar para filtro de texto
-                df_alu['tipo_lower'] = df_alu['Tipo'].str.lower()
-                
-                mask = (
-                    df_alu['tipo_lower'].str.contains('|'.join(materiais_foco)) & 
-                    (df_alu['Status'] != "Realizada")
-                )
-                
-                pendencias = df_alu[mask].copy()
-
-                if not pendencias.empty:
-                    st.error(f"🚨 Atividades Pendentes ({len(pendencias)})")
-                    
-                    for _, row in pendencias.iterrows():
-                        with st.container(border=True):
-                            col_txt, col_ops = st.columns([3, 2])
-                            
-                            with col_txt:
-                                tipo_limpo = row['Tipo'].replace('Casa_', '').upper()
-                                st.markdown(f"**📌 {tipo_limpo}**")
-                                st.markdown(f"### 📖 {row['Licao_Casa']}")
-                                st.caption(f"Lançado em: {row['Data']} | Por: {row.get('Instrutora', '---')}")
-                                
-                                # Mostra observação anterior da professora se houver
-                                if row.get('Observacao'):
-                                    st.info(f"💬 Obs. Prof: {row['Observacao']}")
-
-                            with col_ops:
-                                # Campo de Visto e Nova Observação
-                                novo_status = st.radio(
-                                    "Visto da Secretaria:",
-                                    ["Pendente", "Realizada", "Não Realizada", "Devolvida"],
-                                    index=0 if row['Status'] not in ["Não Realizada", "Devolvida"] else ["Pendente", "Realizada", "Não Realizada", "Devolvida"].index(row['Status']),
-                                    key=f"status_{row['id']}",
-                                    horizontal=True
-                                )
-                                
-                                nova_obs = st.text_input("Dica/Correção da Secretaria:", key=f"obs_sec_{row['id']}")
-
-                                if st.button("Gravar Visto", key=f"btn_save_{row['id']}", use_container_width=True, type="primary"):
-                                    try:
-                                        supabase.table("historico_geral").update({
-                                            "Status": novo_status,
-                                            "Observacao": f"{row.get('Observacao', '')} | Sec: {nova_obs}" if nova_obs else row.get('Observacao'),
-                                            "Secretaria": sec_resp
-                                        }).eq("id", row['id']).execute()
-                                        
-                                        st.success("Salvo!")
-                                        st.cache_data.clear()
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Erro ao salvar: {e}")
-                else:
-                    st.success(f"✅ Tudo em dia! Nenhuma pendência de Teoria ou Apostila para {aluna_sel}.")
+        
+        status_sel = st.radio("Status Inicial:", ["Pendente", "Em Treinamento", "Realizada"], horizontal=True)
+        obs_hoje = st.text_area("Observações Técnicas / Dicas:", 
+                               value=registro_previo.get('Observacao', "") if registro_previo else "")
+        
+        btn_label = "🔄 ATUALIZAR REGISTRO" if registro_previo else "❄️ CONGELAR E SALVAR"
+        
+        if st.form_submit_button(btn_label, use_container_width=True, type="primary"):
+            if not det_lic:
+                st.error("⚠️ Informe a Lição/Página!")
             else:
-                st.info("Nenhum registro encontrado para esta aluna.")
-        else:
-            st.warning("Banco de dados vazio ou sem conexão.")
-    
-        # --- FORMULÁRIO DE NOVA META (BANCA) ---
-        st.markdown("### ✍️ Definir Nova Meta / Atividade")
-        with st.form("f_nova_meta_v9", clear_on_submit=True):
-            c_mat, c_lic = st.columns([1, 2])
-            m_tipo = c_mat.selectbox("Material:", ["Apostila", "MSA", "Hino", "Método Extra"])
-            m_lic = c_lic.text_input("Lição/Página Alvo:")
-            m_obs = st.text_area("Observações Técnicas para a Aluna:")
-            
-            if st.form_submit_button("💾 SALVAR E NOTIFICAR"):
-                if m_lic:
-                    supabase.table("historico_geral").insert({
-                        "Aluna": aluna_sel,
-                        "Data": data_str,
-                        "Tipo": f"Casa_{m_tipo}",
-                        "Licao_Casa": m_lic,
-                        "Status": "Pendente",
-                        "Secretaria": sec_resp,
-                        "Observacao": m_obs
-                    }).execute()
-                    st.success("Nova meta registrada!"); st.rerun()
+                dados_save = {
+                    "Aluna": aluna, 
+                    "Tipo": f"Casa_{cat_sel}", 
+                    "Data": data_corr_str,
+                    "Secretaria": sec_resp, 
+                    "Licao_Casa": det_lic,
+                    "Status": status_sel, 
+                    "Observacao": obs_hoje
+                }
+                
+                if registro_previo:
+                    supabase.table("historico_geral").update(dados_save).eq("id", registro_previo['id']).execute()
                 else:
-                    st.error("Informe a lição da meta.")
+                    supabase.table("historico_geral").insert(dados_save).execute()
+                
+                st.success("✅ Registro processado com sucesso!")
+                st.cache_data.clear()
+                st.rerun()
 
     with tab_ajustes:
         st.subheader("🛠️ Ajustar Registros")
