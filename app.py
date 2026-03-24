@@ -421,124 +421,141 @@ if menu == "🏠 Secretaria":
         else:
             st.warning("O banco de dados está vazio.")
             
-    # --- ABA 2: PLANEJAMENTO (TABELA EDITÁVEL E SALVAMENTO) ---
-    with tab_plan:
-        st.markdown("### 🗓️ Gestão de Escala")
-        
-        # Inicialização de variáveis de controle
-        if 'df_edicao' not in st.session_state:
-            st.session_state.df_edicao = None
+    # --- ABA 2: PLANEJAMENTO (COM REGRAS DE REPETIÇÃO E FIXAS) ---
+with tab_plan:
+    st.markdown("### 🗓️ Gestão de Escala")
+    
+    # Controle de Fixas Dinâmicas para o Gerador
+    if 'fixas_escala' not in st.session_state:
+        st.session_state.fixas_escala = []
 
-        c1, c2 = st.columns(2)
-        mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="mes_plan")
-        ano = c2.selectbox("Ano:", [2026, 2027], key="ano_plan")
-        
-        sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
-                   for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
-        
-        if sabados:
-            data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_plan")
-            calendario_db = db_get_calendario()
+    c1, c2 = st.columns(2)
+    mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="mes_plan")
+    ano = c2.selectbox("Ano:", [2026, 2027], key="ano_plan")
+    
+    sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
+               for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
+    
+    if sabados:
+        data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_plan")
+        calendario_db = db_get_calendario()
+        df_historico_total = pd.DataFrame(db_get_historico()) # Para checar repetições
 
-            # --- CASO A: GERADOR AUTOMÁTICO ---
-            if data_sel_str not in calendario_db:
-                with st.container(border=True):
-                    st.warning("⚡ O Rodízio ainda não foi gerado.")
-                    # ... (Mantive sua lógica de seleção de professores para o gerador)
-                    col_t, col_s = st.columns(2)
-                    with col_t:
-                        st.markdown("**📚 Teoria (Sala 8)**")
-                        pt2 = st.selectbox("H2", PROFESSORAS_LISTA, index=0, key="t2")
-                        pt3 = st.selectbox("H3", PROFESSORAS_LISTA, index=1, key="t3")
-                        pt4 = st.selectbox("H4", PROFESSORAS_LISTA, index=2, key="t4")
-                    with col_s:
-                        st.markdown("**🔊 Solfejo (Sala 9)**")
-                        ps2 = st.selectbox("H2", PROFESSORAS_LISTA, index=3, key="s2")
-                        ps3 = st.selectbox("H3", PROFESSORAS_LISTA, index=4, key="s3")
-                        ps4 = st.selectbox("H4", PROFESSORAS_LISTA, index=5, key="s4")
+        # --- CASO A: GERADOR AUTOMÁTICO COM REGRAS ---
+        if data_sel_str not in calendario_db:
+            with st.container(border=True):
+                st.warning("⚡ O Rodízio ainda não foi gerado.")
+                
+                # 1. Seleção de Professores para Teoria/Solfejo
+                col_t, col_s = st.columns(2)
+                with col_t:
+                    st.markdown("**📚 Teoria (Sala 8)**")
+                    pt2 = st.selectbox("H2", PROFESSORAS_LISTA, index=0, key="t2")
+                    pt3 = st.selectbox("H3", PROFESSORAS_LISTA, index=1, key="t3")
+                    pt4 = st.selectbox("H4", PROFESSORAS_LISTA, index=2, key="t4")
+                with col_s:
+                    st.markdown("**🔊 Solfejo (Sala 9)**")
+                    ps2 = st.selectbox("H2", PROFESSORAS_LISTA, index=3, key="s2")
+                    ps3 = st.selectbox("H3", PROFESSORAS_LISTA, index=4, key="s3")
+                    ps4 = st.selectbox("H4", PROFESSORAS_LISTA, index=5, key="s4")
+                
+                # 2. Definição de Duplas Fixas para HOJE
+                st.divider()
+                st.markdown("📌 **Definir Duplas Fixas para esta data**")
+                cf1, cf2, cf3 = st.columns([2, 2, 1])
+                f_alu = cf1.selectbox("Aluna:", ALUNAS_LISTA, key="f_alu_plan")
+                f_pro = cf2.selectbox("Professora:", PROFESSORAS_LISTA, key="f_pro_plan")
+                if cf3.button("➕ Fixar"):
+                    st.session_state.fixas_escala.append({"Aluna": f_alu, "Prof": f_pro})
+                
+                if st.session_state.fixas_escala:
+                    st.caption(f"Fixas: {', '.join([f['Aluna'] for f in st.session_state.fixas_escala])}")
+                    if st.button("🗑️ Limpar Fixas"): st.session_state.fixas_escala = []; st.rerun()
+
+                folga_ativa = st.multiselect("Professoras de Folga:", PROFESSORAS_LISTA, key="folgas_dia")
+
+                # 3. Lógica do Gerador com Anti-Repetição
+                if st.button("🚀 GERAR ESCALA AUTOMÁTICA", use_container_width=True, type="primary"):
+                    dt_obj = datetime.strptime(data_sel_str, "%d/%m/%Y")
+                    offset = dt_obj.isocalendar()[1]
+                    mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
+                    for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
                     
-                    folga_ativa = st.multiselect("Professoras de Folga:", PROFESSORAS_LISTA, key="folgas_dia")
-
-                    if st.button("🚀 GERAR ESCALA AUTOMÁTICA", use_container_width=True, type="primary"):
-                        # ... (Sua lógica de geração de mapa preservada)
-                        dt_obj = datetime.strptime(data_sel_str, "%d/%m/%Y")
-                        offset = dt_obj.isocalendar()[1]
-                        mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
-                        for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
+                    config_h = {
+                        HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "P_Teo": pt2, "P_Sol": ps2},
+                        HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "P_Teo": pt3, "P_Sol": ps3},
+                        HORARIOS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "P_Teo": pt4, "P_Sol": ps4}
+                    }
+                    
+                    for h in [HORARIOS[1], HORARIOS[2], HORARIOS[3]]:
+                        conf = config_h[h]
+                        profs_ocupadas_h = [conf["P_Teo"], conf["P_Sol"]] + folga_ativa
                         
-                        config_h = {
-                            HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "P_Teo": pt2, "P_Sol": ps2},
-                            HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "P_Teo": pt3, "P_Sol": ps3},
-                            HORARIOS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "P_Teo": pt4, "P_Sol": ps4}
-                        }
+                        # Alunas que estão na Prática neste horário
+                        alunas_pratica_h = []
+                        for t_nome, alunas in TURMAS.items():
+                            if conf["Teo"] == t_nome:
+                                for a in alunas: mapa[a][h] = f"📚 SALA 8 | {conf['P_Teo']}"
+                            elif conf["Sol"] == t_nome:
+                                for a in alunas: mapa[a][h] = f"🔊 SALA 9 | {conf['P_Sol']}"
+                            else:
+                                alunas_pratica_h.extend(alunas)
                         
-                        for h in [HORARIOS[1], HORARIOS[2], HORARIOS[3]]:
-                            conf = config_h[h]
-                            profs_ocupadas = [conf["P_Teo"], conf["P_Sol"]] + folga_ativa
-                            profs_livres = [p for p in PROFESSORAS_LISTA if p not in profs_ocupadas]
-                            alunas_pratica = []
-                            for t_nome, alunas in TURMAS.items():
-                                if conf["Teo"] == t_nome:
-                                    for a in alunas: mapa[a][h] = f"📚 SALA 8 | {conf['P_Teo']}"
-                                elif conf["Sol"] == t_nome:
-                                    for a in alunas: mapa[a][h] = f"🔊 SALA 9 | {conf['P_Sol']}"
-                                else: alunas_pratica.extend(alunas)
+                        # Atribuir Prática (🎹) respeitando Fixas e Repetição
+                        random.shuffle(alunas_pratica_h)
+                        profs_disponiveis = [p for p in PROFESSORAS_LISTA if p not in profs_ocupadas_h]
+                        
+                        for aluna in alunas_pratica_h:
+                            # Regra 1: Verificar se é Fixa
+                            fixa = next((f for f in st.session_state.fixas_escala if f['Aluna'] == aluna), None)
+                            if fixa and fixa['Prof'] in profs_disponiveis:
+                                prof_final = fixa['Prof']
+                                nota = "📌"
+                            else:
+                                # Regra 2: Evitar repetir professora da última aula
+                                ultima_prof = "---"
+                                if not df_historico_total.empty:
+                                    h_alu = df_historico_total[df_historico_total['Aluna'] == aluna]
+                                    if not h_alu.empty:
+                                        ultima_prof = h_alu.sort_values('id', ascending=False).iloc[0].get('Instrutora', '---')
+                                
+                                candidatas = [p for p in profs_disponiveis if p != ultima_prof]
+                                prof_final = random.choice(candidatas if candidatas else profs_disponiveis)
+                                nota = "🎹"
                             
-                            num_profs = len(profs_livres)
-                            if num_profs > 0:
-                                for i, aluna_p in enumerate(alunas_pratica):
-                                    pos = (i + offset) % num_profs
-                                    prof = profs_livres[pos]
-                                    sala = ((pos + offset) % 7) + 1
-                                    mapa[aluna_p][h] = f"🎹 SALA {sala} | {prof}"
+                            sala = (PROFESSORAS_LISTA.index(prof_final) % 7) + 1
+                            mapa[aluna][h] = f"{nota} SALA {sala} | {prof_final}"
+                            if prof_final in profs_disponiveis: profs_disponiveis.remove(prof_final)
 
-                        supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
-                        st.success("Rodízio Gerado!")
-                        st.cache_data.clear()
-                        st.rerun()
-
-            # --- CASO B: EXIBIÇÃO E EDIÇÃO EM TABELA ---
-            else:
-                st.success(f"🗓️ Escala confirmada para {data_sel_str}")
-                
-                # Carrega os dados da escala em um DataFrame
-                df_raw = pd.DataFrame(calendario_db[data_sel_str])
-                
-                # Reorganiza colunas para garantir a ordem visual correta
-                cols_ordem = ["Aluna", "Turma"] + HORARIOS
-                df_raw = df_raw[cols_ordem]
-
-                st.markdown("#### 📝 Edite as células abaixo e clique em Salvar")
-                
-                # O st.data_editor permite editar como se fosse Excel
-                df_editado = st.data_editor(
-                    df_raw, 
-                    use_container_width=True, 
-                    hide_index=True,
-                    key="editor_escala_v42"
-                )
-
-                col_s1, col_s2 = st.columns([1, 1])
-                
-                if col_s1.button("💾 SALVAR ALTERAÇÕES NA TABELA", use_container_width=True, type="primary"):
-                    # Converte o DataFrame editado de volta para lista de dicionários
-                    nova_escala = df_editado.to_dict(orient='records')
-                    
-                    # Salva no Supabase
-                    supabase.table("calendario").upsert({
-                        "id": data_sel_str, 
-                        "escala": nova_escala
-                    }).execute()
-                    
-                    st.success("Alterações salvas com sucesso!")
+                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
+                    st.session_state.fixas_escala = [] # Limpa após gerar
+                    st.success("Rodízio Gerado com Sucesso!")
                     st.cache_data.clear()
                     st.rerun()
 
-                if col_s2.button("🗑️ Resetar Rodízio", use_container_width=True):
-                    supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-                    st.cache_data.clear()
-                    st.rerun()
-                    
+        # --- CASO B: EXIBIÇÃO E EDIÇÃO EM TABELA (Seu código original preservado) ---
+        else:
+            st.success(f"🗓️ Escala confirmada para {data_sel_str}")
+            df_raw = pd.DataFrame(calendario_db[data_sel_str])
+            cols_ordem = ["Aluna", "Turma"] + HORARIOS
+            df_raw = df_raw[cols_ordem]
+
+            st.markdown("#### 📝 Edite as células abaixo e clique em Salvar")
+            df_editado = st.data_editor(df_raw, use_container_width=True, hide_index=True, key="editor_escala_v42")
+
+            col_s1, col_s2 = st.columns([1, 1])
+            if col_s1.button("💾 SALVAR ALTERAÇÕES NA TABELA", use_container_width=True, type="primary"):
+                nova_escala = df_editado.to_dict(orient='records')
+                supabase.table("calendario").upsert({"id": data_sel_str, "escala": nova_escala}).execute()
+                st.success("Alterações salvas!")
+                st.cache_data.clear()
+                st.rerun()
+
+            if col_s2.button("🗑️ Resetar Rodízio", use_container_width=True):
+                supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                st.cache_data.clear()
+                st.rerun()
+                
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
         st.subheader("📍 Chamada Geral")
