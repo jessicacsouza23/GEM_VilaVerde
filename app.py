@@ -712,12 +712,12 @@ if menu == "🏠 Secretaria":
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao apagar: {e}")
+                else:
+                    st.info(f"Nenhum histórico encontrado para {al_aj}.")
             else:
-                st.info(f"Nenhum histórico encontrado para {al_aj}.")
-        else:
-            st.error("O banco de dados está vazio ou inacessível.")
-                    supabase.table("historico_geral").delete().eq("id", df_f.iloc[idx]['id']).execute()
-                    st.rerun()
+                st.error("O banco de dados está vazio ou inacessível.")
+                        supabase.table("historico_geral").delete().eq("id", df_f.iloc[idx]['id']).execute()
+                        st.rerun()
                     
 # ============================================================
 # MÓDULO PROFESSORA - V42 (ANÁLISE POR MÉTODO + SALVAMENTO INDIVIDUAL)
