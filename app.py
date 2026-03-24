@@ -611,7 +611,7 @@ if menu == "🏠 Secretaria":
                 df_alu = df_historico[df_historico['Aluna'] == aluna].copy()
                 if not df_alu.empty:
                     # Filtro de materiais permitidos
-                    materiais_foco = ["teoria", "solfejo", "apostila", "hino", "extra"]
+                    materiais_foco = ["teoria", "solfejo", "apostila", "extra"]
                     df_alu['tipo_lower'] = df_alu['Tipo'].str.lower()
                     
                     # Converte data para ordenação
@@ -683,7 +683,7 @@ if menu == "🏠 Secretaria":
                 c_cat, c_det = st.columns([1, 2])
                 
                 # Define as categorias conforme sua lista padrão
-                opcoes_cat = ["Apostila", "Teoria", "Solfejo", "Hino", "Extra"]
+                opcoes_cat = ["Apostila", "Teoria", "Solfejo", "Extra"]
                 idx_cat = 0
                 if registro_previo:
                     tipo_limpo = registro_previo['Tipo'].replace('Casa_', '')
@@ -867,7 +867,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     
                     else: # Prática
                         # Aqui garantimos que df_metodos seja acessível
-                        m_list = ["Apostila", "Hino"] + (df_metodos['nome'].tolist() if 'df_metodos' in locals() and not df_metodos.empty else [])
+                        m_list = ["Apostila"] + (df_metodos['nome'].tolist() if 'df_metodos' in locals() and not df_metodos.empty else [])
                         met_c = st.selectbox("Escolha o Método para Casa:", m_list, key="sel_met_casa")
                         tarefas_para_casa[met_c] = st.text_input(f"Lição de {met_c}:", key="val_met_casa")
 
