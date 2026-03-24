@@ -761,28 +761,48 @@ if menu == "🏠 Secretaria":
                         st.info(f"Nenhum histórico para {al_aj}.")
                         
 # ============================================================
-# MÓDULO PROFESSORA - V44 (LIÇÃO DE CASA E PENDÊNCIAS)
+# MÓDULO PROFESSORA - V45 (CORREÇÃO DE SCOPO E FORMULÁRIO)
 # ============================================================
 elif menu == "👩‍🏫 Minhas Aulas":
     st.header(f"👩‍🏫 Painel da Professora: {st.session_state.nome_logado}")
     
     tab_aula, tab_config = st.tabs(["📝 Registro de Aula", "⚙️ Configurar Métodos"])
 
+    # --- ABA 1: CONFIGURAÇÃO DE MÉTODOS (Garante que df_metodos exista) ---
     with tab_config:
-        # ... (Mantém sua lógica de cadastro de métodos prática aqui)
-        pass
+        st.subheader("📚 Gerenciar Métodos de Prática")
+        try:
+            res_m = supabase.table("config_metodos").select("*").execute()
+            df_metodos = pd.DataFrame(res_m.data) if res_m.data else pd.DataFrame()
+        except:
+            df_metodos = pd.DataFrame()
 
+        if not df_metodos.empty:
+            st.dataframe(df_metodos[['nome']], use_container_width=True, hide_index=True)
+            met_del = st.selectbox("Remover método:", ["Selecione..."] + df_metodos['nome'].tolist(), key="del_met_key")
+            if st.button("🗑️ Remover"):
+                if met_del != "Selecione...":
+                    supabase.table("config_metodos").delete().eq("nome", met_del).execute()
+                    st.success("Removido!"); st.rerun()
+        
+        st.divider()
+        n_met = st.text_input("Novo Método:", key="new_met_key")
+        if st.button("➕ Cadastrar"):
+            if n_met:
+                supabase.table("config_metodos").insert({"nome": n_met, "categoria": "Prática"}).execute()
+                st.success("Cadastrado!"); st.rerun()
+
+    # --- ABA 2: REGISTRO DE AULA ---
     with tab_aula:
         instr_sel = st.session_state.get('nome_logado', 'Selecione...')
         hoje = datetime.now()
-        dt_str = st.date_input("Data da Aula:", hoje).strftime("%d/%m/%Y")
+        dt_str = st.date_input("Data da Aula:", hoje, key="date_aula_key").strftime("%d/%m/%Y")
 
         cal_db = db_get_calendario()
         n_bus = limpar_texto(instr_sel).lower().strip()
         aulas_agrupadas = []
         vistos = set()
 
-        # Busca as aulas no calendário
         if dt_str in cal_db:
             for reg in cal_db[dt_str]:
                 for h in HORARIOS:
@@ -798,22 +818,22 @@ elif menu == "👩‍🏫 Minhas Aulas":
         if not aulas_agrupadas:
             st.warning(f"Nenhuma aula para {dt_str}.")
         else:
-            sel_lbl = st.radio("Selecione a Aula/Turma:", [x["label"] for x in sorted(aulas_agrupadas, key=lambda x: x['h'])])
+            sel_lbl = st.radio("Selecione a Aula/Turma:", [x["label"] for x in sorted(aulas_agrupadas, key=lambda x: x['h'])], key="radio_aula_sel")
             d_sel = next(x for x in aulas_agrupadas if x["label"] == sel_lbl)
             
-            # --- CHAMADA ---
             st.divider()
             als_ref = TURMAS.get(d_sel["tr"], [d_sel["al"]]) if d_sel["tipo"] != "Prática" else [d_sel["al"]]
             st.markdown(f"### 👥 Chamada e Pendências: {d_sel['loc']}")
             
             als_selecionadas = []
+            # Busca histórico UMA VEZ para otimizar
+            df_h = pd.DataFrame(db_get_historico())
+
             for al in als_ref:
                 col_ch, col_info = st.columns([1, 3])
                 if col_ch.checkbox(al, value=True, key=f"ch_{al}_{sel_lbl}"):
                     als_selecionadas.append(al)
                     
-                    # --- MOSTRAR ATIVIDADES PENDENTES DA ALUNA ---
-                    df_h = pd.DataFrame(db_get_historico())
                     if not df_h.empty:
                         pendentes = df_h[(df_h['Aluna'] == al) & (df_h['Status'] == 'Pendente')]
                         if not pendentes.empty:
@@ -822,64 +842,64 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     st.caption(f"📅 {p['Data']} | {p['Tipo'].replace('Casa_', '')}: **{p['Licao_Casa']}**")
 
             if als_selecionadas:
-                with st.form(key=f"form_v44_{sel_lbl}"):
-                    # --- SEÇÃO 1: O QUE FOI FEITO HOJE ---
+                # O FORMULÁRIO COMEÇA AQUI
+                with st.form(key=f"form_v45_exec_{sel_lbl}"):
                     st.subheader("🔍 1. Análise da Aula de Hoje")
-                    lic_hoje = st.text_input("O que foi trabalhado hoje?", placeholder="Ex: MSA Pág 10 ou Lição 5 do Método")
+                    lic_hoje = st.text_input("O que foi trabalhado hoje?", placeholder="Ex: MSA Pág 10", key="lic_hoje_val")
                     
                     lista_difs = DIF_TEORIA if d_sel["tipo"] == "Teoria" else DIF_SOLFEJO if d_sel["tipo"] == "Solfejo" else DIF_PRATICA
                     cols_d = st.columns(3)
-                    difs_sel = [d for idx, d in enumerate(lista_difs) if cols_d[idx%3].checkbox(d, key=f"dif_{idx}")]
+                    difs_sel = [d for idx, d in enumerate(lista_difs) if cols_d[idx%3].checkbox(d, key=f"dif_chk_{idx}")]
                     
-                    # --- SEÇÃO 2: LIÇÃO DE CASA (PARA A SECRETARIA) ---
                     st.divider()
                     st.subheader("🏠 2. Lições para Casa")
                     tarefas_para_casa = {}
 
                     if d_sel["tipo"] == "Teoria":
                         c1, c2 = st.columns(2)
-                        tarefas_para_casa["MSA_Preto"] = c1.text_input("📚 MSA (Preto):")
-                        tarefas_para_casa["Folha_Extra"] = c2.text_input("📑 Folha Extra:")
+                        tarefas_para_casa["MSA_Preto"] = c1.text_input("📚 MSA (Preto):", key="casa_teo_1")
+                        tarefas_para_casa["Folha_Extra"] = c2.text_input("📑 Folha Extra:", key="casa_teo_2")
                     
                     elif d_sel["tipo"] == "Solfejo":
                         c1, c2 = st.columns(2)
-                        tarefas_para_casa["MSA_Verde"] = c1.text_input("🎵 MSA (Verde):")
-                        tarefas_para_casa["Folha_Extra"] = c2.text_input("📑 Folha Extra:")
+                        tarefas_para_casa["MSA_Verde"] = c1.text_input("🎵 MSA (Verde):", key="casa_sol_1")
+                        tarefas_para_casa["Folha_Extra"] = c2.text_input("📑 Folha Extra:", key="casa_sol_2")
                     
                     else: # Prática
-                        m_opts = ["Apostila", "Hino"] + (df_metodos['nome'].tolist() if not df_metodos.empty else [])
-                        met_c = st.selectbox("Escolha o Método para Casa:", m_opts)
-                        tarefas_para_casa[met_c] = st.text_input(f"Lição de {met_c}:")
+                        # Aqui garantimos que df_metodos seja acessível
+                        m_list = ["Apostila", "Hino"] + (df_metodos['nome'].tolist() if 'df_metodos' in locals() and not df_metodos.empty else [])
+                        met_c = st.selectbox("Escolha o Método para Casa:", m_list, key="sel_met_casa")
+                        tarefas_para_casa[met_c] = st.text_input(f"Lição de {met_c}:", key="val_met_casa")
 
-                    obs_geral = st.text_area("✍️ Observações Gerais:")
+                    obs_geral = st.text_area("✍️ Observações Gerais:", key="obs_geral_val")
 
-                    if st.form_submit_button("💾 CONGELAR E ENVIAR PARA SECRETARIA"):
+                    # BOTÃO DE SUBMIT (Obrigatório dentro do st.form)
+                    btn_enviar = st.form_submit_button("💾 CONGELAR E ENVIAR PARA SECRETARIA", use_container_width=True)
+
+                    if btn_enviar:
                         for al_f in als_selecionadas:
-                            # 1. Salva o registro da aula de hoje (Análise)
+                            # Registro da Aula (Realizada)
                             db_save_historico({
                                 "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                 "Tipo": f"Analise_{d_sel['tipo']}",
-                                "Licao_Atual": lic_hoje,
-                                "Licao_Casa": "---",
-                                "Dificuldades": difs_sel,
-                                "Observacao": obs_geral, "Status": "Realizada"
+                                "Licao_Atual": lic_hoje, "Licao_Casa": "---",
+                                "Dificuldades": difs_sel, "Observacao": obs_geral, "Status": "Realizada"
                             })
 
-                            # 2. Salva as lições de casa como PENDENTES para a Secretaria/Próxima Aula
+                            # Registro das Lições (Pendentes)
                             for mat, conteudo in tarefas_para_casa.items():
                                 if conteudo:
                                     db_save_historico({
                                         "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                         "Tipo": f"Casa_{mat}",
-                                        "Licao_Atual": "Definido Hoje",
-                                        "Licao_Casa": conteudo,
-                                        "Dificuldades": [],
-                                        "Observacao": obs_geral, "Status": "Pendente"
+                                        "Licao_Atual": "Definido Hoje", "Licao_Casa": conteudo,
+                                        "Dificuldades": [], "Observacao": obs_geral, "Status": "Pendente"
                                     })
                         
-                        st.success("✅ Aula e Lições de Casa salvas com sucesso!")
-                        time.sleep(1); st.rerun()
-                            
+                        st.success("✅ Registro concluído!")
+                        time.sleep(1)
+                        st.rerun()
+                        
 # ==========================================
 # MÓDULO ANÁLISE DE IA - V43 (PRONTUÁRIO + RESUMO PEDAGÓGICO)
 # ==========================================
