@@ -825,12 +825,6 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 </div>
             """, unsafe_allow_html=True)
             
-        else:
-            # --- TELA DE AULAS ATIVAS ---
-            st.success(f"Você tem **{len(aulas_listagem)}** aula(s) hoje. Bom trabalho!")
-            aulas_ordenadas = sorted(aulas_listagem, key=lambda x: x['h'])
-            sel_lbl = st.radio("Selecione a Aula:", [x["label"] for x in aulas_ordenadas], key="rd_v57")
-            
         if not aulas_listagem:
             st.warning("Nenhuma aula encontrada para hoje.")
         else:
