@@ -807,6 +807,30 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         
                         aulas_listagem.append({"label": label, "id": id_unica, "h": h, "tipo": tipo, "al": reg.get("Aluna"), "tr": reg.get("Turma"), "loc": sala})
 
+        # --- LÓGICA DE FOLGA ---
+        if not aulas_listagem:
+            st.markdown("---")
+            # Efeito visual de balões e festa
+            st.balloons() 
+            
+            st.markdown(f"""
+                <div style="text-align: center; padding: 50px; border-radius: 20px; background-color: #F0F3F4; border: 2px dashed #BDC3C7;">
+                    <h1 style="font-size: 80px; margin-bottom: 0;">🎈🎈🎈</h1>
+                    <h2 style="color: #2E4053; margin-top: 10px;">Aproveite o seu descanso!</h2>
+                    <p style="font-size: 1.5em; color: #7F8C8D;">Não identificamos aulas para você no dia <b>{dt_str}</b>.</p>
+                    <p style="font-size: 1.2em; color: #7F8C8D;">Sua folga é merecida! ✨</p>
+                    <h1 style="font-size: 80px; margin-top: 0;">🎈🎈🎈</h1>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        else:
+            # --- TELA NORMAL DE AULAS (Se tiver aula) ---
+            aulas_ordenadas = sorted(aulas_listagem, key=lambda x: x['h'])
+            sel_lbl = st.radio("Selecione a Aula:", [x["label"] for x in aulas_ordenadas], key="rd_v56")
+            d_sel = next(x for x in aulas_listagem if x["label"] == sel_lbl)
+            
+            st.divider()
+            
         if not aulas_listagem:
             st.warning("Nenhuma aula encontrada para hoje.")
         else:
