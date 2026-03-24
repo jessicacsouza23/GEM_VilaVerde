@@ -565,124 +565,115 @@ if menu == "🏠 Secretaria":
             supabase.table("historico_geral").insert(novos_ch).execute()
             st.success("✅ Chamada Salva!"); st.cache_data.clear()
 
-    # --- ABA 4: ANÁLISE PEDAGÓGICA E CONTROLE DE METAS (APOSTILA E MSA) ---
-    with tab_licao:
-        st.subheader("📋 Painel de Análise Pedagógica")
+    # --- ABA 4: ANÁLISE PEDAGÓGICA E CONTROLE DE METAS (V9 - ATUALIZADA) ---
+with tab_licao:
+    st.subheader("📋 Painel de Análise e Correção")
+    
+    # 1. Configuração de Contexto
+    c1, c2, c3 = st.columns([2, 1, 1])
+    aluna_sel = c1.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="sec_aluna_v9")
+    sec_resp = c2.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="sec_resp_v9")
+    data_hj = c3.date_input("Data da Conferência:", datetime.now(), key="sec_data_v9")
+    data_str = data_hj.strftime("%d/%m/%Y")
+
+    # --- LÓGICA DE PENDÊNCIAS (Busca o último status de cada material) ---
+    pendencias_reais = []
+    df_historico = pd.DataFrame(db_get_historico()) # Garante dados frescos
+
+    if not df_historico.empty:
+        df_alu = df_historico[df_historico['Aluna'] == aluna_sel].copy()
+        if not df_alu.empty:
+            df_alu["dt_obj"] = pd.to_datetime(df_alu["Data"], format="%d/%m/%Y", errors="coerce")
+            # Agrupa para saber a situação atual de cada lição específica
+            ultimos_status = (
+                df_alu.sort_values("dt_obj")
+                .groupby(["Tipo", "Licao_Casa"])
+                .last()
+                .reset_index()
+            )
+            # Filtra o que NÃO está realizado
+            pendencias_reais = ultimos_status[~ultimos_status['Status'].isin(["Realizada", "Realizadas - sem pendência"])]
+
+    # --- EXIBIÇÃO: ANÁLISE PEDAGÓGICA (POSTURA, TÉCNICA, ETC) ---
+    st.markdown("### 🔍 Análise Pedagógica Atual")
+    
+    # Simulamos a extração de detalhes da última aula para o resumo visual
+    with st.container(border=True):
+        col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+        # Aqui você pode mapear palavras-chave da última 'Observacao' para definir as cores
+        col_p1.info("**🪑 Postura**\n\nVerificar Banco")
+        col_p2.success("**🎹 Técnica**\n\nDedilhado OK")
+        col_p3.warning("**⏱️ Ritmo**\n\nUso do Metrônomo")
+        col_p4.error("**📖 Teoria**\n\nRevisar MSA")
+
+        # BOTÃO CONGELAR ANÁLISE
+        if st.button("❄️ CONGELAR ANÁLISE PARA CONSULTA FUTURA", use_container_width=True, type="primary"):
+            user_id = st.session_state.get("user_id", "admin") # Fallback se não houver login
+            try:
+                # Monta o conteúdo técnico para salvar
+                texto_congelado = f"Postura: OK | Técnica: Evoluindo | Ritmo: Atenção | Teoria: Estudar"
+                supabase.table("analises_congeladas").insert({
+                    "aluna": aluna_sel,
+                    "periodo_tipo": "Banca Semestral",
+                    "periodo_id": data_str,
+                    "conteudo": texto_congelado,
+                    "user_id": user_id
+                }).execute()
+                st.success(f"✅ Análise de {aluna_sel} congelada com sucesso!")
+            except Exception as e:
+                st.error(f"Erro ao congelar: {e}")
+
+    st.divider()
+
+    # --- EXIBIÇÃO DAS PENDÊNCIAS (LISTA DE LIÇÕES) ---
+    if not pendencias_reais.empty:
+        st.error(f"🚨 LIÇÕES PENDENTES: {aluna_sel.upper()}")
+        for _, p in pendencias_reais.iterrows():
+            with st.container(border=True):
+                c_info, c_acao = st.columns([3, 2])
+                with c_info:
+                    st.markdown(f"**📖 {p['Tipo'].replace('Casa_', '').upper()}**")
+                    st.markdown(f"#### {p['Licao_Casa']}")
+                    st.caption(f"📅 Registrado em: {p['Data']} | Status Atual: {p['Status']}")
+                
+                with c_acao:
+                    with st.expander("✅ Resolver / Dar Visto"):
+                        novo_st = st.selectbox("Nova Situação:", ["Realizada", "Não Realizada", "Devolvida"], key=f"st_{p['id']}")
+                        nova_obs = st.text_area("Dica da Secretaria:", key=f"obs_{p['id']}")
+                        if st.button("Gravar Atualização", key=f"btn_{p['id']}", use_container_width=True):
+                            supabase.table("historico_geral").update({
+                                "Status": novo_st,
+                                "Observacao": nova_obs,
+                                "Secretaria": sec_resp
+                            }).eq("id", p['id']).execute()
+                            st.success("Atualizado!"); st.rerun()
+    else:
+        st.success("✅ Nenhuma pendência de lição encontrada.")
+
+    st.divider()
+
+    # --- FORMULÁRIO DE NOVA META (BANCA) ---
+    st.markdown("### ✍️ Definir Nova Meta / Atividade")
+    with st.form("f_nova_meta_v9", clear_on_submit=True):
+        c_mat, c_lic = st.columns([1, 2])
+        m_tipo = c_mat.selectbox("Material:", ["Apostila", "MSA", "Hino", "Método Extra"])
+        m_lic = c_lic.text_input("Lição/Página Alvo:")
+        m_obs = st.text_area("Observações Técnicas para a Aluna:")
         
-        # Seleção de Contexto
-        c1, c2, c3 = st.columns([2, 1, 1])
-        aluna_sel = c1.selectbox("Aluna:", ALUNAS_LISTA, key="final_v9_aluna")
-        sec_resp = c2.selectbox("Responsável Secretaria:", SECRETARIAS_LISTA, key="final_v9_sec")
-        data_ref = c3.date_input("Data da Conferência:", datetime.now(), key="final_v9_data").strftime("%d/%m/%Y")
-
-        st.divider()
-
-        if not df_historico.empty:
-            # Filtro da Aluna
-            df_aluna = df_historico[df_historico['Aluna'] == aluna_sel].copy()
-
-            if not df_aluna.empty:
-                # Ordenação (Mais recente primeiro)
-                df_aluna['dt_sort'] = pd.to_datetime(df_aluna['Data'], format='%d/%m/%Y', errors='coerce')
-                df_aluna = df_aluna.sort_values('dt_sort', ascending=False)
-                ultima_aula = df_aluna.iloc[0]
-
-                # --- 1. APRESENTAÇÃO DA ANÁLISE PEDAGÓGICA ---
-                st.markdown("### 🔍 Resumo Pedagógico da Última Aula")
-                
-                # Criando áreas separadas para facilitar a leitura
-                col_p1, col_p2, col_p3, col_p4 = st.columns(4)
-                
-                # Exemplo de como separar as dificuldades por áreas (se houver no texto ou campos específicos)
-                with col_p1:
-                    st.info("**🪑 Postura**\n\nOK")
-                with col_p2:
-                    st.success("**🎹 Técnica**\n\nEm evolução")
-                with col_p3:
-                    st.warning("**⏱️ Ritmo**\n\nAtenção")
-                with col_p4:
-                    st.error("**📖 Teoria**\n\nEstudar mais")
-
-                with st.expander("📝 Detalhes Técnicos e Dicas da Professora", expanded=True):
-                    st.write(f"**Data do Registro:** {ultima_aula['Data']}")
-                    st.write(f"**Observação da Professora:**")
-                    st.info(ultima_aula.get('Observacao', 'Nenhuma observação detalhada.'))
-
-                st.divider()
-
-                # --- 2. LISTAGEM DE LIÇÕES (APENAS APOSTILA E MSA - BLOQUEIO DE MÉTODOS) ---
-                st.markdown("### 📝 Lições para Casa e Metas")
-                
-                count_exibidos = 0
-                for _, row in df_aluna.iterrows():
-                    licao_texto = str(row['Licao_Casa'])
-                    tipo_material = str(row.get('Tipo', '')).lower()
-
-                    # REGRA: Só mostra se for Apostila, MSA, Hino ou Extra. 
-                    # Se for Método, Volume ou Piano, o código PULA.
-                    materiais_permitidos = ["apostila", "msa", "hino", "extra"]
-                    if not any(m in tipo_material or m in licao_texto.lower() for m in materiais_permitidos):
-                        continue
-                    
-                    # Limpeza de texto
-                    texto_limpo = licao_texto.replace("||", "").replace("Métodos:", "").strip()
-                    if texto_limpo in ["None", "---", "", "||"]:
-                        continue
-
-                    count_exibidos += 1
-                    with st.container(border=True):
-                        c_inf, c_act = st.columns([3, 2])
-                        
-                        with c_inf:
-                            st.markdown(f"**📌 {tipo_material.replace('casa_', '').upper()}**")
-                            st.markdown(f"#### 📖 {texto_limpo}")
-                            st.caption(f"Instrutora: {row.get('Instrutora', '---')} | Data: {row['Data']}")
-
-                        with c_act:
-                            visto = st.radio("Visto da Secretaria:", ["Realizada", "Não Realizada", "Devolvida"], key=f"visto_{row['id']}", horizontal=True)
-                            obs_s = st.text_input("Dica/Correção:", placeholder="Ex: Cuidado com a ligadura", key=f"obs_{row['id']}")
-                            
-                            if st.button("Gravar", key=f"btn_{row['id']}", use_container_width=True):
-                                supabase.table("historico_geral").update({
-                                    "Status": visto,
-                                    "Observacao": obs_s,
-                                    "Secretaria": sec_resp
-                                }).eq("id", row['id']).execute()
-                                st.success("Salvo!"); import time; time.sleep(0.4); st.rerun()
-
-                if count_exibidos == 0:
-                    st.warning("Nenhuma lição de Apostila ou MSA encontrada para conferência.")
+        if st.form_submit_button("💾 SALVAR E NOTIFICAR"):
+            if m_lic:
+                supabase.table("historico_geral").insert({
+                    "Aluna": aluna_sel,
+                    "Data": data_str,
+                    "Tipo": f"Casa_{m_tipo}",
+                    "Licao_Casa": m_lic,
+                    "Status": "Pendente",
+                    "Secretaria": sec_resp,
+                    "Observacao": m_obs
+                }).execute()
+                st.success("Nova meta registrada!"); st.rerun()
             else:
-                st.info("Aluna sem histórico registrado.")
-
-        st.divider()
-
-        # --- 3. LANÇAR NOVA META PARA A BANCA (SECRETARIA) ---
-        st.markdown("### ✍️ Definir Metas para a Banca Semestral")
-        with st.form("form_banca", clear_on_submit=True):
-            f1, f2 = st.columns(2)
-            m_tipo = f1.selectbox("Material da Meta:", ["Apostila", "MSA(verde)", "MSA(preto)", "Hino", "Teoria"])
-            m_stat = f2.radio("Status Inicial:", ["Pendente", "Em Treinamento"], horizontal=True)
-            
-            m_lic = st.text_input("Lição ou Página Alvo:")
-            m_obs = st.text_area("Dicas Específicas para a Banca (Postura, Técnica, etc):")
-            
-            if st.form_submit_button("💾 SALVAR META PARA A BANCA"):
-                if m_lic:
-                    try:
-                        supabase.table("historico_geral").insert({
-                            "Aluna": aluna_sel,
-                            "Data": data_ref,
-                            "Tipo": f"Casa_{m_tipo}",
-                            "Licao_Atual": "Meta para Banca",
-                            "Licao_Casa": m_lic,
-                            "Status": m_stat,
-                            "Secretaria": sec_resp,
-                            "Observacao": m_obs
-                        }).execute()
-                        st.success("Meta da banca salva!"); import time; time.sleep(0.5); st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro: {e}")
+                st.error("Informe a lição da meta.")
 
     # --- ABA 5: AJUSTES ---
     with tab_ajustes:
