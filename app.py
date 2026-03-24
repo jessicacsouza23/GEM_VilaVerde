@@ -12,7 +12,16 @@ import io
 import streamlit as st
 import unicodedata
 import json
+import streamlit as st
 
+# Verificação de Segurança
+try:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+except KeyError:
+    st.error("⚠️ As credenciais do banco de dados não foram encontradas nas Secrets!")
+    st.stop()
+    
 def limpar_texto(txt):
     """Remove acentos, espaços extras e coloca em maiúsculo para comparação"""
     if not txt: return ""
