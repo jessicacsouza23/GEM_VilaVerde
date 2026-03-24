@@ -678,13 +678,44 @@ if menu == "🏠 Secretaria":
     # --- ABA 5: AJUSTES ---
     with tab_ajustes:
         st.subheader("🛠️ Ajustar Registros")
-        al_aj = st.selectbox("Aluna:", ALUNAS_LISTA, key="aj_al_vfinal")
+        al_aj = st.selectbox("Selecione a Aluna para ajustar:", ALUNAS_LISTA, key="aj_al_vfinal")
+        
         if not df_historico.empty:
-            df_f = df_historico[df_historico['Aluna'] == al_aj].sort_values('dt_obj', ascending=False)
+            # 1. Garantir a coluna de data para ordenação
+            df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
+            
+            # 2. Filtrar e ordenar (mais recente primeiro)
+            df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
+            
             if not df_f.empty:
-                st.dataframe(df_f[['Data', 'Tipo', 'Licao_Atual']], use_container_width=True)
-                idx = st.selectbox("Escolha para apagar:", range(len(df_f)), format_func=lambda x: f"{df_f.iloc[x]['Data']} - {df_f.iloc[x]['Tipo']}")
-                if st.button("❌ APAGAR"):
+                df_f = df_f.sort_values('dt_obj', ascending=False)
+                
+                # Criar uma lista legível para o selectbox de exclusão
+                # Ex: "25/03/2026 - Casa_MSA - Lição 10"
+                df_f['label_excluir'] = df_f['Data'] + " - " + df_f['Tipo'] + " - " + df_f['Licao_Casa'].astype(str)
+                
+                registro_para_excluir = st.selectbox(
+                    "Selecione o registro que deseja apagar:", 
+                    options=df_f['id'].tolist(),
+                    format_func=lambda x: df_f[df_f['id'] == x]['label_excluir'].values[0]
+                )
+
+                # Detalhes do registro selecionado para conferência
+                detalhe = df_f[df_f['id'] == registro_para_excluir].iloc[0]
+                st.warning(f"⚠️ Você está prestes a apagar: {detalhe['label_excluir']}")
+
+                if st.button("❌ APAGAR DEFINITIVAMENTE", type="primary", use_container_width=True):
+                    try:
+                        supabase.table("historico_geral").delete().eq("id", registro_para_excluir).execute()
+                        st.success("✅ Registro removido com sucesso!")
+                        st.cache_data.clear() # Limpa o cache para atualizar a lista
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao apagar: {e}")
+            else:
+                st.info(f"Nenhum histórico encontrado para {al_aj}.")
+        else:
+            st.error("O banco de dados está vazio ou inacessível.")
                     supabase.table("historico_geral").delete().eq("id", df_f.iloc[idx]['id']).execute()
                     st.rerun()
                     
