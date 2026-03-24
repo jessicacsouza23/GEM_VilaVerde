@@ -143,12 +143,12 @@ OPCOES_LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
 # ==========================================
 
 def db_get_historico():
-    """Busca todo o histórico da tabela historico_geral"""
     try:
-        response = supabase.table("historico_geral").select("*").execute()
-        return response.data if response.data else []
+        res = supabase.table("historico_geral").select("*").execute()
+        return res.data
     except Exception as e:
-        st.error(f"Erro ao buscar histórico: {e}")
+        # Se der erro de conexão, retorna uma lista vazia e avisa de forma amigável
+        st.error("🔄 Erro de conexão com o banco. Tente atualizar a página (F5).")
         return []
 
 def db_get_calendario():
