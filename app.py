@@ -994,7 +994,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             time.sleep(1); st.rerun()
                         
 # ============================================================
-# MÓDULO ANÁLISE DE IA - V60 (CORREÇÃO DE NAMEERROR + FALTAS)
+# MÓDULO ANÁLISE DE IA - V63 (CORREÇÃO DE FREQUÊNCIA REAL)
 # ============================================================
 elif menu == "📊 Analítico IA":
     st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico</h1>", unsafe_allow_html=True)
@@ -1005,13 +1005,12 @@ elif menu == "📊 Analítico IA":
     if df.empty:
         st.info("ℹ️ O banco de dados está vazio.")
     else:
-        # 1. TRATAMENTO DE DATAS
         df['dt_obj'] = pd.to_datetime(df['Data'], format="%d/%m/%Y", errors='coerce')
         df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
 
         with st.sidebar:
             st.header("🔍 Filtros de Período")
-            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v60")
+            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v63")
             tipo_p = st.selectbox("📅 Período:", ["Mensal", "Bimestral", "Semestral", "Anual", "Personalizado"])
             hoje = datetime.now()
             
@@ -1022,55 +1021,58 @@ elif menu == "📊 Analítico IA":
             else: data_ini = st.date_input("De:", hoje - timedelta(days=30))
             data_fim = st.date_input("Até:", hoje)
 
-        # 2. FILTRAGEM POR ALUNA E PERÍODO
         mask = (df['Aluna'] == aluna_sel) & \
                (df['dt_obj'].dt.date >= pd.to_datetime(data_ini).date()) & \
                (df['dt_obj'].dt.date <= pd.to_datetime(data_fim).date())
         df_aluna = df[mask].copy()
 
         if not df_aluna.empty:
-            # --- CÁLCULO 1: APROVEITAMENTO PEDAGÓGICO (Define a variável antes do KPI) ---
+            # --- CÁLCULO 1: APROVEITAMENTO PEDAGÓGICO ---
             pendentes = len(df_aluna[df_aluna['Status'] == 'Pendente'])
             realizadas = len(df_aluna[df_aluna['Status'] == 'Realizada'])
-            total_atividades = realizadas + pendentes
-            aproveitamento = int((realizadas / total_atividades * 100)) if total_atividades > 0 else 0
+            aproveitamento = int((realizadas / (realizadas + pendentes) * 100)) if (realizadas + pendentes) > 0 else 0
 
-            # --- CÁLCULO 2: FREQUÊNCIA E FALTAS ---
-            def identificar_status(row):
-                # Procura palavras-chave no Tipo ou Observação para capturar a falta
+            # --- CÁLCULO 2: FREQUÊNCIA REAL (LÓGICA PRIORITÁRIA) ---
+            def definir_hierarquia(lista_status):
+                # Se no mesmo dia houver registro de falta e aula, a FALTA domina para o gráfico ser real
+                if 'F' in lista_status: return 'F'
+                if 'J' in lista_status: return 'J'
+                if 'P' in lista_status: return 'P'
+                return 'P' # Caso tenha aula mas não tenha "presença" escrita
+
+            def converter_texto_status(row):
                 texto = (str(row.get('Tipo', '')) + " " + str(row.get('Observacao', ''))).lower()
                 if 'justificada' in texto: return 'J'
                 if 'falta' in texto: return 'F'
                 if 'presença' in texto or 'presenca' in texto: return 'P'
+                # Se for aula prática/teoria/solfejo, é uma presença implícita
+                if any(x in texto for x in ['pratica', 'teoria', 'solfejo', 'analise']): return 'P'
                 return None
 
-            df_aluna['status_dia'] = df_aluna.apply(identificar_status, axis=1)
+            df_aluna['st_check'] = df_aluna.apply(converter_texto_status, axis=1)
             
-            # Agrupa por data para não contar a mesma aula várias vezes
-            resumo_chamada = df_aluna.groupby('Data')['status_dia'].first().dropna()
+            # Agrupa por data e aplica a hierarquia (Falta > Justificada > Presença)
+            resumo_dias = df_aluna.groupby('Data')['st_check'].apply(lambda x: definir_hierarquia(list(x)))
             
-            faltas_n = (resumo_chamada == 'F').sum()
-            faltas_j = (resumo_chamada == 'J').sum()
-            presencas = (resumo_chamada == 'P').sum()
-            total_dias = len(resumo_chamada)
+            faltas_n = (resumo_dias == 'F').sum()
+            faltas_j = (resumo_dias == 'J').sum()
+            presencas = (resumo_dias == 'P').sum()
+            total_dias = len(resumo_dias)
 
-            # Se não houver registro de chamada explícito, mas houver análise técnica, assumimos presença
-            if total_dias == 0:
-                total_dias = df_aluna['Data'].nunique()
-                presencas = total_dias
-
+            # Cálculo da Frequência: (Presenças + Justificadas) / Total
             perc_freq = int(((presencas + faltas_j) / total_dias * 100)) if total_dias > 0 else 100
 
-            # --- 3. DASHBOARD DE MÉTRICAS (Agora com todas as variáveis definidas) ---
+            # --- 3. DASHBOARD DE MÉTRICAS ---
             st.markdown(f"### 📋 Relatório Consolidado - {aluna_sel}")
             kpi1, kpi2, kpi3, kpi4 = st.columns(4)
             kpi1.metric("Média Geral", f"{aproveitamento}%")
-            kpi2.metric("Aulas no Período", total_dias)
+            kpi2.metric("Dias Letivos", total_dias)
             kpi3.metric("Frequência", f"{perc_freq}%")
             kpi4.metric("Faltas (J/N)", f"{faltas_j}J / {faltas_n}N", 
                        delta=f"-{faltas_n}" if faltas_n > 0 else None, delta_color="inverse")
 
-            # --- 4. BLOCOS COLORIDOS (DIFICULDADES) ---
+            # --- 4. BLOCOS COLORIDOS ---
+            # ... (seu código de blocos coloridos de postura/ritmo permanece o mesmo) ...
             todas_difs = []
             for d in df_aluna['Dificuldades'].dropna():
                 if isinstance(d, list): todas_difs.extend(d)
@@ -1089,7 +1091,7 @@ elif menu == "📊 Analítico IA":
                     <small>{ritmo_status}<br>Evolução teórica dentro do cronograma.</small>
                 </div>""", unsafe_allow_html=True)
 
-            # --- 5. GRÁFICOS ---
+            # --- 5. GRÁFICOS (FALTAS EM DESTAQUE) ---
             st.divider()
             col_g1, col_g2 = st.columns([2, 1])
             with col_g1:
@@ -1099,10 +1101,15 @@ elif menu == "📊 Analítico IA":
             
             with col_g2:
                 st.write("**Status de Frequência**")
-                chart_freq = pd.DataFrame({'Status': ['Presenças', 'Justificadas', 'Faltas'], 'Qtd': [presencas, faltas_j, faltas_n]})
+                chart_freq = pd.DataFrame({
+                    'Status': ['Presenças', 'Justificadas', 'Faltas'], 
+                    'Qtd': [int(presencas), int(faltas_j), int(faltas_n)]
+                })
+                # Usando o gráfico do Streamlit
                 st.bar_chart(chart_freq, x='Status', y='Qtd', color="#27AE60")
 
             # --- DETALHAMENTO POR AULA ---
+            # ... (seu código de detalhamento permanece o mesmo) ...
             st.divider()
             data_sel = st.selectbox("📅 Detalhar aula específica:", df_aluna['Data'].unique())
             dados_dia = df_aluna[df_aluna['Data'] == data_sel]
@@ -1119,8 +1126,8 @@ elif menu == "📊 Analítico IA":
             # METAS E DICAS
             st.divider()
             m1, m2 = st.columns(2)
-            m1.info("🎯 **Metas**\n\n- Concluir lições pendentes")
-            m2.warning("🏆 **Dicas**\n\n- Estudo metronômico")
+            m1.info("🎯 **Metas**\n\n- Sanar faltas e recuperar conteúdo")
+            m2.warning("🏆 **Dicas**\n\n- Manter a regularidade para evitar atrasos no cronograma")
             
         else:
             st.warning("Sem dados para esta aluna no período.")
