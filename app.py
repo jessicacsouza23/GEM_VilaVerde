@@ -976,7 +976,7 @@ elif menu == "📊 Analítico IA":
                (df['dt_obj'].dt.date <= pd.to_datetime(data_fim).date())
         df_aluna = df[mask]
 
-        f not df_aluna.empty:
+        if not df_aluna.empty:
             # --- CÁLCULOS DE FREQUÊNCIA (CORRIGIDO) ---
             # Verificamos em 'Tipo' e 'Status' para garantir que pegamos a chamada
             # Criamos colunas auxiliares para identificar o status do dia
