@@ -976,31 +976,43 @@ elif menu == "📊 Analítico IA":
                (df['dt_obj'].dt.date <= pd.to_datetime(data_fim).date())
         df_aluna = df[mask]
 
-        if not df_aluna.empty:
-            # --- CÁLCULOS DE FREQUÊNCIA E FALTAS ---
-            # Filtramos registros de chamada (Presença, Falta, Justificada)
-            df_chamada = df_aluna[df_aluna['Tipo'].str.contains('Presença|Falta|Justificada', case=False, na=False)]
-            
-            total_chamadas = len(df_chamada)
-            faltas_n = len(df_chamada[df_chamada['Tipo'].str.contains('Falta', case=False) & ~df_chamada['Tipo'].str.contains('Justificada', case=False)])
-            faltas_j = len(df_chamada[df_chamada['Tipo'].str.contains('Justificada', case=False)])
-            presencas = len(df_chamada[df_chamada['Tipo'].str.contains('Presença', case=False)])
+        f not df_aluna.empty:
+            # --- CÁLCULOS DE FREQUÊNCIA (CORRIGIDO) ---
+            # Verificamos em 'Tipo' e 'Status' para garantir que pegamos a chamada
+            # Criamos colunas auxiliares para identificar o status do dia
+            def identificar_presenca(row):
+                texto = (str(row['Tipo']) + " " + str(row.get('Status', ''))).lower()
+                if 'justificada' in texto: return 'J'
+                if 'falta' in texto: return 'F'
+                if 'presença' in texto or 'presenca' in texto: return 'P'
+                return None
 
-            # Frequência: Justificadas contam positivamente para a média de assiduidade
+            df_aluna['status_dia'] = df_aluna.apply(identificar_presenca, axis=1)
+            
+            # Agrupamos por data para não contar 2x se houver 2 registros no mesmo dia
+            resumo_dias = df_aluna.groupby('Data')['status_dia'].first().dropna()
+            
+            total_chamadas = len(resumo_dias)
+            faltas_n = (resumo_dias == 'F').sum()
+            faltas_j = (resumo_dias == 'J').sum()
+            presencas = (resumo_dias == 'P').sum()
+
+            # Se não houver registro explícito de chamada, mas houver "Analise", contamos como presença implícita
+            if total_chamadas == 0:
+                dias_com_aula = df_aluna[df_aluna['Tipo'].str.contains('Analise', na=False)]['Data'].nunique()
+                presencas = dias_com_aula
+                total_chamadas = dias_com_aula
+
             perc_freq = int(((presencas + faltas_j) / total_chamadas * 100)) if total_chamadas > 0 else 100
 
-            # Aproveitamento Pedagógico (Lições Realizadas vs Pendentes)
-            pendentes = len(df_aluna[df_aluna['Status'] == 'Pendente'])
-            realizadas = len(df_aluna[df_aluna['Status'] == 'Realizada'])
-            aproveitamento = int((realizadas / (realizadas + pendentes) * 100)) if (realizadas + pendentes) > 0 else 0
-
-            # --- DASHBOARD DE MÉTRICAS (ESTILO IMAGEM 1) ---
+            # --- DASHBOARD DE MÉTRICAS ---
             st.markdown(f"### 📋 Relatório Consolidado - {aluna_sel}")
             kpi1, kpi2, kpi3, kpi4 = st.columns(4)
             kpi1.metric("Média Geral", f"{aproveitamento}%")
             kpi2.metric("Aulas no Período", total_chamadas)
             kpi3.metric("Frequência", f"{perc_freq}%")
-            kpi4.metric("Faltas (J/N)", f"{faltas_j}J / {faltas_n}N")
+            # Agora mostra claramente as faltas
+            kpi4.metric("Faltas (J/N)", f"{faltas_j}J / {faltas_n}N", delta=f"-{faltas_n}" if faltas_n > 0 else None, delta_color="inverse")
 
             # --- BLOCOS DE DIFICULDADES (DADOS DA PROFESSORA) ---
             todas_difs = []
@@ -1033,13 +1045,14 @@ elif menu == "📊 Analítico IA":
                 })
                 st.bar_chart(chart_data, x='Matéria', y='Evolução', color="#2E86C1")
             
+            # --- GRÁFICO DE STATUS DE FREQUÊNCIA (CORRIGIDO) ---
             with col_g2:
                 st.write("**Status de Frequência**")
-                # Gráfico focado no comportamento de faltas
                 freq_data = pd.DataFrame({
                     'Status': ['Presenças', 'Justificadas', 'Faltas'],
                     'Qtd': [presencas, faltas_j, faltas_n]
                 })
+                # Usando cores baseadas no status
                 st.bar_chart(freq_data, x='Status', y='Qtd', color="#27AE60")
 
             # --- ANÁLISE DE EVOLUÇÃO (MANTIDA) ---
