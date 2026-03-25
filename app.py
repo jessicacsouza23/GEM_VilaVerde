@@ -727,39 +727,85 @@ if menu == "🏠 Secretaria":
                         st.cache_data.clear()
                         st.rerun()
         
-            with tab_ajustes:
-                st.subheader("🛠️ Ajustar Registros")
-                al_aj = st.selectbox("Aluna:", ALUNAS_LISTA, key="aj_al_vfinal")
+            # ============================================================
+# MÓDULO AJUSTES - V61 (ORGANIZAÇÃO E LIMPEZA GERAL)
+# ============================================================
+with tab_ajustes:
+    st.subheader("🛠️ Gestão do Banco de Dados")
+    
+    # --- SEÇÃO 1: APAGAR TUDO (CUIDADO!) ---
+    with st.expander("🚨 ÁREA CRÍTICA: Limpar Banco de Dados", expanded=False):
+        st.error("Esta ação apagará TODO o histórico de todas as alunas. Não pode ser desfeita.")
+        confirma_geral = st.checkbox("Eu entendo que isso apagará todos os registros definitivamente.")
+        
+        if st.button("🔥 APAGAR TODO O HISTÓRICO", type="secondary", use_container_width=True, disabled=not confirma_geral):
+            try:
+                # Deleta todos os registros onde o ID não é nulo (limpa a tabela)
+                supabase.table("historico_geral").delete().neq("id", 0).execute()
+                st.success("💥 O banco de dados foi resetado com sucesso!")
+                st.cache_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao limpar banco: {e}")
+
+    st.divider()
+
+    # --- SEÇÃO 2: AJUSTAR REGISTROS INDIVIDUAIS ---
+    st.markdown("### 📝 Ajustar Registros por Aluna")
+    al_aj = st.selectbox("Selecione a Aluna para filtrar:", ALUNAS_LISTA, key="aj_al_v61")
+    
+    if not df_historico.empty:
+        # 1. Preparação dos dados
+        df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
+        df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
+        
+        if not df_f.empty:
+            df_f = df_f.sort_values('dt_obj', ascending=False)
+            
+            # 2. Criação de um Rótulo Inteligente para Identificação Fácil
+            def criar_label(row):
+                tipo = str(row.get('Tipo', '')).upper()
+                # Define o ícone baseado no tipo
+                icon = "🎹" if "PRATICA" in tipo else "📚" if "TEORIA" in tipo else "🏠" if "CASA" in tipo else "⏱️" if "SOLFEJO" in tipo else "📌"
+                if "FALTA" in tipo: icon = "❌"
+                if "PRESENCA" in tipo: icon = "✅"
                 
-                if not df_historico.empty:
-                    # 1. Garantir a coluna de data para ordenação
-                    df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
+                data = row.get('Data', '---')
+                info = row.get('Licao_Casa', row.get('Licao_Atual', 'Registro de Aula'))
+                instrutora = row.get('Instrutora', '---')
+                
+                return f"{icon} {data} | {tipo} | {info} (Prof. {instrutora})"
+
+            df_f['label_visual'] = df_f.apply(criar_label, axis=1)
+            
+            # 3. Seletor de exclusão
+            idx = st.selectbox(
+                "Selecione o registro específico para remover:", 
+                range(len(df_f)), 
+                format_func=lambda x: df_f['label_visual'].iloc[x]
+            )
+            
+            registro_sel = df_f.iloc[idx]
+            
+            # Mostrar um "Card" do que será apagado para conferência
+            with st.container(border=True):
+                st.warning(f"**Confirmar exclusão?**")
+                st.write(f"📅 **Data:** {registro_sel['Data']}")
+                st.write(f"📂 **Tipo:** {registro_sel['Tipo']}")
+                st.write(f"📖 **Conteúdo:** {registro_sel.get('Licao_Casa', registro_sel.get('Licao_Atual', '---'))}")
+
+            if st.button("❌ EXCLUIR REGISTRO SELECIONADO", type="primary", use_container_width=True):
+                try:
+                    id_registro = registro_sel['id']
+                    supabase.table("historico_geral").delete().eq("id", id_registro).execute()
                     
-                    # 2. Filtrar e ordenar
-                    df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
-                    
-                    if not df_f.empty:
-                        df_f = df_f.sort_values('dt_obj', ascending=False)
-                        
-                        # Criar lista para o seletor de exclusão
-                        opcoes = df_f['Data'] + " - " + df_f['Licao_Casa'].astype(str)
-                        idx = st.selectbox("Selecione qual registro apagar:", range(len(df_f)), format_func=lambda x: opcoes.iloc[x])
-                        
-                        st.warning(f"⚠️ Confirmar exclusão do registro: {opcoes.iloc[idx]}")
-                        
-                        if st.button("❌ APAGAR DEFINITIVAMENTE", type="primary", use_container_width=True):
-                            try:
-                                # A LINHA ABAIXO DEVE ESTAR EXATAMENTE 4 ESPAÇOS À DIREITA DO 'try'
-                                id_registro = df_f.iloc[idx]['id']
-                                supabase.table("historico_geral").delete().eq("id", id_registro).execute()
-                                
-                                st.success("✅ Registro apagado!")
-                                st.cache_data.clear()
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro ao apagar: {e}")
-                    else:
-                        st.info(f"Nenhum histórico para {al_aj}.")
+                    st.success("✅ Registro removido!")
+                    st.cache_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao apagar: {e}")
+        else:
+            st.info(f"Nenhum histórico encontrado para {al_aj}.")
                         
 # ============================================================
 # MÓDULO PROFESSORA - V52 (CAMPOS DE PRÁTICA EXPOSTOS)
