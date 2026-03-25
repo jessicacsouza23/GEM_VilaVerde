@@ -727,22 +727,24 @@ if menu == "🏠 Secretaria":
                         st.cache_data.clear()
                         st.rerun()
         
+                    
             # ============================================================
-            # MÓDULO AJUSTES - V61 (ORGANIZAÇÃO E LIMPEZA GERAL)
+            # MÓDULO AJUSTES - V62 (CORREÇÃO UUID + ORGANIZAÇÃO)
             # ============================================================
             with tab_ajustes:
                 st.subheader("🛠️ Gestão do Banco de Dados")
                 
-                # --- SEÇÃO 1: APAGAR TUDO (CUIDADO!) ---
+                # --- SEÇÃO 1: APAGAR TUDO (CORRIGIDO PARA UUID) ---
                 with st.expander("🚨 ÁREA CRÍTICA: Limpar Banco de Dados", expanded=False):
-                    st.error("Esta ação apagará TODO o histórico de todas as alunas. Não pode ser desfeita.")
-                    confirma_geral = st.checkbox("Eu entendo que isso apagará todos os registros definitivamente.")
+                    st.error("Esta ação apagará TODO o histórico do sistema. Cuidado!")
+                    confirma_geral = st.checkbox("Confirmar reset total do banco de dados.")
                     
-                    if st.button("🔥 APAGAR TODO O HISTÓRICO", type="secondary", use_container_width=True, disabled=not confirma_geral):
+                    if st.button("🔥 LIMPAR TUDO", type="secondary", use_container_width=True, disabled=not confirma_geral):
                         try:
-                            # Deleta todos os registros onde o ID não é nulo (limpa a tabela)
-                            supabase.table("historico_geral").delete().neq("id", 0).execute()
-                            st.success("💥 O banco de dados foi resetado com sucesso!")
+                            # CORREÇÃO: Usamos .not_.is_("id", "null") que funciona para qualquer tipo de ID (UUID ou Int)
+                            supabase.table("historico_geral").delete().not_.is_("id", "null").execute()
+                            
+                            st.success("💥 O banco de dados foi limpo com sucesso!")
                             st.cache_data.clear()
                             st.rerun()
                         except Exception as e:
@@ -752,60 +754,66 @@ if menu == "🏠 Secretaria":
             
                 # --- SEÇÃO 2: AJUSTAR REGISTROS INDIVIDUAIS ---
                 st.markdown("### 📝 Ajustar Registros por Aluna")
-                al_aj = st.selectbox("Selecione a Aluna para filtrar:", ALUNAS_LISTA, key="aj_al_v61")
+                al_aj = st.selectbox("Selecione a Aluna:", ALUNAS_LISTA, key="aj_al_v62")
                 
                 if not df_historico.empty:
-                    # 1. Preparação dos dados
+                    # 1. Preparação e Ordenação
                     df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
                     df_f = df_historico[df_historico['Aluna'] == al_aj].copy()
                     
                     if not df_f.empty:
                         df_f = df_f.sort_values('dt_obj', ascending=False)
                         
-                        # 2. Criação de um Rótulo Inteligente para Identificação Fácil
-                        def criar_label(row):
+                        # 2. Rótulo detalhado para identificação fácil
+                        def formatar_label(row):
+                            data = row.get('Data', '00/00/0000')
                             tipo = str(row.get('Tipo', '')).upper()
-                            # Define o ícone baseado no tipo
-                            icon = "🎹" if "PRATICA" in tipo else "📚" if "TEORIA" in tipo else "🏠" if "CASA" in tipo else "⏱️" if "SOLFEJO" in tipo else "📌"
+                            instr = row.get('Instrutora', '---')
+                            
+                            # Identifica o conteúdo principal para mostrar no nome
+                            conteudo = row.get('Licao_Casa') or row.get('Licao_Atual') or row.get('Observacao') or "Registro"
+                            # Limita o tamanho do texto do conteúdo
+                            conteudo_resumo = (str(conteudo)[:30] + '...') if len(str(conteudo)) > 30 else conteudo
+                            
+                            # Ícones por categoria
+                            icon = "🎹" if "PRATICA" in tipo else "📚" if "TEORIA" in tipo else "⏱️" if "SOLFEJO" in tipo else "🏠" if "CASA" in tipo else "📌"
                             if "FALTA" in tipo: icon = "❌"
-                            if "PRESENCA" in tipo: icon = "✅"
                             
-                            data = row.get('Data', '---')
-                            info = row.get('Licao_Casa', row.get('Licao_Atual', 'Registro de Aula'))
-                            instrutora = row.get('Instrutora', '---')
-                            
-                            return f"{icon} {data} | {tipo} | {info} (Prof. {instrutora})"
+                            return f"{icon} {data} | {tipo} | {conteudo_resumo} (Prof. {instr})"
             
-                        df_f['label_visual'] = df_f.apply(criar_label, axis=1)
+                        df_f['display'] = df_f.apply(formatar_label, axis=1)
                         
-                        # 3. Seletor de exclusão
-                        idx = st.selectbox(
-                            "Selecione o registro específico para remover:", 
+                        # 3. Seletor Melhorado
+                        idx_sel = st.selectbox(
+                            "Qual registro deseja remover?", 
                             range(len(df_f)), 
-                            format_func=lambda x: df_f['label_visual'].iloc[x]
+                            format_func=lambda x: df_f['display'].iloc[x]
                         )
                         
-                        registro_sel = df_f.iloc[idx]
+                        reg = df_f.iloc[idx_sel]
                         
-                        # Mostrar um "Card" do que será apagado para conferência
+                        # Card de visualização para não apagar o errado
                         with st.container(border=True):
-                            st.warning(f"**Confirmar exclusão?**")
-                            st.write(f"📅 **Data:** {registro_sel['Data']}")
-                            st.write(f"📂 **Tipo:** {registro_sel['Tipo']}")
-                            st.write(f"📖 **Conteúdo:** {registro_sel.get('Licao_Casa', registro_sel.get('Licao_Atual', '---'))}")
+                            c1, c2 = st.columns(2)
+                            c1.write(f"**Data:** {reg['Data']}")
+                            c1.write(f"**Tipo:** {reg['Tipo']}")
+                            c2.write(f"**Instrutora:** {reg.get('Instrutora')}")
+                            c2.write(f"**Status:** {reg.get('Status', '---')}")
+                            st.info(f"**Conteúdo:** {reg.get('Licao_Casa', reg.get('Licao_Atual', '---'))}")
             
-                        if st.button("❌ EXCLUIR REGISTRO SELECIONADO", type="primary", use_container_width=True):
+                        if st.button("❌ EXCLUIR ESTE REGISTRO", type="primary", use_container_width=True):
                             try:
-                                id_registro = registro_sel['id']
-                                supabase.table("historico_geral").delete().eq("id", id_registro).execute()
+                                # Aqui o ID vai como string (UUID), o que o Supabase aceita perfeitamente
+                                id_remocao = str(reg['id'])
+                                supabase.table("historico_geral").delete().eq("id", id_remocao).execute()
                                 
-                                st.success("✅ Registro removido!")
+                                st.success("✅ Registro apagado com sucesso!")
                                 st.cache_data.clear()
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao apagar: {e}")
                     else:
-                        st.info(f"Nenhum histórico encontrado para {al_aj}.")
+                        st.info(f"Nenhum dado encontrado para {al_aj}.")
                         
 # ============================================================
 # MÓDULO PROFESSORA - V52 (CAMPOS DE PRÁTICA EXPOSTOS)
