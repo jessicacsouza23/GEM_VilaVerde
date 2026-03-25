@@ -994,7 +994,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             time.sleep(1); st.rerun()
                         
 # ============================================================
-# MÓDULO ANÁLISE DE IA - V64 (VARREDURA TOTAL DE FALTAS)
+# MÓDULO ANÁLISE DE IA - V65 (DIAGNÓSTICO DE CAPTURA)
 # ============================================================
 elif menu == "📊 Analítico IA":
     st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico</h1>", unsafe_allow_html=True)
@@ -1005,110 +1005,74 @@ elif menu == "📊 Analítico IA":
     if df.empty:
         st.info("ℹ️ O banco de dados está vazio.")
     else:
-        # Tratamento de Datas
-        df['dt_obj'] = pd.to_datetime(df['Data'], format="%d/%m/%Y", errors='coerce')
-        df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
-
+        # 1. TRATAMENTO DE DATAS (Garantindo que o formato bata com o banco)
+        df['dt_obj'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
+        
         with st.sidebar:
-            st.header("🔍 Filtros de Período")
-            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v64")
-            tipo_p = st.selectbox("📅 Período:", ["Mensal", "Bimestral", "Semestral", "Anual", "Personalizado"])
-            hoje = datetime.now()
+            st.header("🔍 Filtros")
+            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v65")
+            tipo_p = st.selectbox("📅 Período:", ["Tudo", "Mensal", "Semestral", "Personalizado"])
             
-            if tipo_p == "Mensal": data_ini = hoje - timedelta(days=30)
-            elif tipo_p == "Bimestral": data_ini = hoje - timedelta(days=60)
-            elif tipo_p == "Semestral": data_ini = hoje - timedelta(days=180)
-            elif tipo_p == "Anual": data_ini = hoje - timedelta(days=365)
-            else: data_ini = st.date_input("De:", hoje - timedelta(days=30))
-            data_fim = st.date_input("Até:", hoje)
+            hoje = datetime.now().date()
+            if tipo_p == "Tudo": 
+                data_ini = datetime(2000, 1, 1).date()
+            elif tipo_p == "Mensal": 
+                data_ini = hoje - timedelta(days=30)
+            else: 
+                data_ini = st.date_input("De:", hoje - timedelta(days=30))
+            
+            data_fim = st.date_input("Até:", hoje + timedelta(days=1)) # +1 para garantir o dia de hoje
 
-        # Filtro de Aluna e Data
+        # 2. FILTRAGEM (Removendo travas para teste)
         mask = (df['Aluna'] == aluna_sel) & \
-               (df['dt_obj'].dt.date >= pd.to_datetime(data_ini).date()) & \
-               (df['dt_obj'].dt.date <= pd.to_datetime(data_fim).date())
+               (df['dt_obj'].dt.date >= data_ini) & \
+               (df['dt_obj'].dt.date <= data_fim)
         df_aluna = df[mask].copy()
 
         if not df_aluna.empty:
-            # --- CÁLCULO 1: APROVEITAMENTO (Lições) ---
-            pendentes = len(df_aluna[df_aluna['Status'] == 'Pendente'])
-            realizadas = len(df_aluna[df_aluna['Status'] == 'Realizada'])
-            aproveitamento = int((realizadas / (realizadas + pendentes) * 100)) if (realizadas + pendentes) > 0 else 0
+            # --- DEBUG: Verificador de Palavras-Chave ---
+            # Vamos criar uma coluna que diz EXATAMENTE o que o sistema achou
+            def checar_presenca_real(row):
+                # Junta tudo: Tipo, Status e Observação
+                txt = f"{row.get('Tipo','')} {row.get('Status','')} {row.get('Observacao','')}".upper()
+                if 'FALTA' in txt: return 'FALTA'
+                if 'JUSTIFICADA' in txt: return 'JUSTIFICADA'
+                return 'PRESENÇA'
 
-            # --- CÁLCULO 2: FREQUÊNCIA (VARREDURA TOTAL) ---
-            def identificar_status_robusto(row):
-                # Transforma toda a linha em uma única string minúscula para busca
-                conteudo_linha = " ".join([str(val) for val in row.values]).lower()
-                
-                if 'justificada' in conteudo_linha: return 'J'
-                if 'falta' in conteudo_linha: return 'F'
-                if any(x in conteudo_linha for x in ['presença', 'presenca', 'pratica', 'teoria', 'solfejo']): 
-                    return 'P'
-                return None
+            df_aluna['VEREDITO'] = df_aluna.apply(checar_presenca_real, axis=1)
 
-            df_aluna['st_robusto'] = df_aluna.apply(identificar_status_robusto, axis=1)
+            # Contagem real por Data (Um status por dia)
+            resumo_final = df_aluna.groupby('Data')['VEREDITO'].last()
             
-            # Agrupar por data: Se houver um 'F' no dia, o dia inteiro é 'F'
-            def selecionar_melhor_status(series):
-                lista = list(series)
-                if 'F' in lista: return 'F'
-                if 'J' in lista: return 'J'
-                if 'P' in lista: return 'P'
-                return 'P'
+            faltas_n = int((resumo_final == 'FALTA').sum())
+            faltas_j = int((resumo_final == 'JUSTIFICADA').sum())
+            presencas = int((resumo_final == 'PRESENÇA').sum())
+            total = len(resumo_final)
 
-            resumo_dias = df_aluna.groupby('Data')['st_robusto'].apply(selecionar_melhor_status)
-            
-            faltas_n = int((resumo_dias == 'F').sum())
-            faltas_j = int((resumo_dias == 'J').sum())
-            presencas = int((resumo_dias == 'P').sum())
-            total_dias = len(resumo_dias)
+            perc_freq = int(((presencas + faltas_j) / total * 100)) if total > 0 else 0
 
-            # Cálculo de frequência real
-            perc_freq = int(((presencas + faltas_j) / total_dias * 100)) if total_dias > 0 else 0
-
-            # --- 3. DASHBOARD DE MÉTRICAS ---
-            st.markdown(f"### 📋 Relatório Consolidado - {aluna_sel}")
+            # --- 3. DASHBOARD ---
             kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-            kpi1.metric("Média Geral", f"{aproveitamento}%")
-            kpi2.metric("Dias Letivos", total_dias)
+            kpi1.metric("Média Geral", f"{presencas} Pres.") # Mudado para teste
+            kpi2.metric("Dias no Banco", total)
             kpi3.metric("Frequência", f"{perc_freq}%")
-            kpi4.metric("Faltas (J/N)", f"{faltas_j}J / {faltas_n}N", 
-                       delta=f"-{faltas_n}" if faltas_n > 0 else None, delta_color="inverse")
+            kpi4.metric("Faltas (J/N)", f"{faltas_j}J / {faltas_n}N", delta=f"-{faltas_n}" if faltas_n > 0 else None)
 
-            # --- 4. GRÁFICOS ---
+            # --- 4. GRÁFICO ---
             st.divider()
-            col_g1, col_g2 = st.columns([2, 1])
-            with col_g1:
-                st.write("**Desenvoltura Técnica (%)**")
-                # Gráfico de barras simples para evolução
-                chart_ev = pd.DataFrame({'Matéria': ['Prática', 'Teoria', 'Solfejo'], 'Nota': [aproveitamento, min(aproveitamento+10, 100), max(aproveitamento-5, 0)]})
-                st.bar_chart(chart_ev, x='Matéria', y='Nota', color="#2E86C1")
-            
-            with col_g2:
-                st.write("**Status de Frequência**")
-                # Dados para o gráfico de presença
-                chart_freq_data = pd.DataFrame({
-                    'Status': ['Presenças', 'Justificadas', 'Faltas'], 
-                    'Qtd': [presencas, faltas_j, faltas_n]
-                })
-                st.bar_chart(chart_freq_data, x='Status', y='Qtd', color="#27AE60")
+            st.write("**Resumo de Frequência**")
+            chart_data = pd.DataFrame({
+                'Status': ['Presenças', 'Justificadas', 'Faltas'],
+                'Qtd': [presencas, faltas_j, faltas_n]
+            })
+            # Forçando a exibição do gráfico
+            st.bar_chart(chart_data, x='Status', y='Qtd', color="#27AE60")
 
-            # --- DETALHAMENTO POR AULA ---
-            st.divider()
-            # Mostra todas as linhas filtradas para conferência
-            with st.expander("🔍 Ver todos os registros brutos deste período"):
-                st.dataframe(df_aluna[['Data', 'Tipo', 'Licao_Atual', 'Status', 'Observacao']])
-
-            data_sel = st.selectbox("📅 Detalhar aula específica:", df_aluna['Data'].unique())
-            dados_dia = df_aluna[df_aluna['Data'] == data_sel]
-
-            for disc in ["Prática", "Teoria", "Solfejo", "Falta", "Presença"]:
-                d_f = dados_dia[dados_dia['Tipo'].astype(str).str.contains(disc, case=False)]
-                if not d_f.empty:
-                    st.markdown(f"#### 📖 {disc}")
-                    for _, r in d_f.iterrows():
-                        with st.container(border=True):
-                            st.write(f"**Registro:** {r.get('Tipo')} | **Instrutora:** {r.get('Instrutora')}")
-                            st.info(f"📝 {r.get('Observacao', 'Sem observação')}")
+            # --- 5. TABELA DE AUDITORIA (O PULO DO GATO) ---
+            st.markdown("### 🔍 Auditoria de Dados (O que o sistema está lendo)")
+            st.dataframe(df_aluna[['Data', 'Tipo', 'Status', 'VEREDITO', 'Observacao']], use_container_width=True)
 
         else:
-            st.warning("Nenhum registro encontrado.")
+            st.warning(f"O banco retornou {len(df)} linhas totais, mas NENHUMA para {aluna_sel} neste período.")
+            if st.button("Ver dados brutos do banco"):
+                st.write(df[['Aluna', 'Data', 'Tipo']].head(10))
