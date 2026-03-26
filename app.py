@@ -995,7 +995,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
 
 # ============================================================
-# MÓDULO ANÁLISE DE IA - V68 (SINTONIA COM CHAMADA GERAL)
+# MÓDULO ANÁLISE DE IA - V69 (AUDITORIA PEDAGÓGICA TOTAL)
 # ============================================================
 elif menu == "📊 Analítico IA":
     st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico Master</h1>", unsafe_allow_html=True)
@@ -1011,99 +1011,101 @@ elif menu == "📊 Analítico IA":
         df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
 
         with st.sidebar:
-            st.header("🔍 Filtros de Análise")
-            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v68")
-            tipo_p = st.selectbox("📅 Período:", ["Tudo", "Mensal", "Bimestral", "Semestral", "Personalizado"])
-            hoje = datetime.now().date()
+            st.header("🔍 Filtros de Auditoria")
+            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v69")
             
-            if tipo_p == "Tudo": data_ini = datetime(2024, 1, 1).date()
+            tipo_p = st.selectbox("📅 Tipo de Filtro:", 
+                                ["Mensal", "Bimestral", "Semestral", "Anual", "Por Dia Específico", "Personalizado", "Tudo"])
+            
+            hoje = datetime.now().date()
+            data_ini, data_fim = hoje, hoje
+
+            if tipo_p == "Por Dia Específico":
+                dia_sel = st.date_input("Escolha o dia da aula:", hoje)
+                data_ini = data_fim = dia_sel
             elif tipo_p == "Mensal": data_ini = hoje - timedelta(days=30)
             elif tipo_p == "Bimestral": data_ini = hoje - timedelta(days=60)
             elif tipo_p == "Semestral": data_ini = hoje - timedelta(days=180)
-            else: data_ini = st.date_input("De:", hoje - timedelta(days=30))
-            data_fim = st.date_input("Até:", hoje)
+            elif tipo_p == "Anual": data_ini = hoje - timedelta(days=365)
+            elif tipo_p == "Personalizado":
+                data_ini = st.date_input("De:", hoje - timedelta(days=30))
+                data_fim = st.date_input("Até:", hoje)
+            else: data_ini = datetime(2024, 1, 1).date(); data_fim = hoje + timedelta(days=1)
 
         # Filtragem Base
         mask = (df['Aluna'] == aluna_sel) & (df['dt_obj'].dt.date >= data_ini) & (df['dt_obj'].dt.date <= data_fim)
         df_aluna = df[mask].copy()
 
         if not df_aluna.empty:
-            # --- CÁLCULO DE FREQUÊNCIA (CONECTADO À CHAMADA GERAL) ---
-            def identificar_status_sincronizado(row):
-                # Pegamos os campos que a sua Chamada Geral preenche
-                tipo = str(row.get('Tipo', '')).upper()
-                status_banco = str(row.get('Status', '')).upper()
-                obs = str(row.get('Observacao', '')).upper()
-                
-                # BUSCA POR AUSÊNCIA (Como está no seu rádio button da Chamada)
-                if 'AUSENTE' in status_banco or 'FALTA' in status_banco or 'AUSENTE' in tipo:
-                    return 'F'
-                if 'JUSTIFICADA' in status_banco or 'JUSTIFICADA' in obs:
-                    return 'J'
-                # Se for "Chamada" e "Presente", ou se for aula Prática/Teoria
-                if 'PRESENTE' in status_banco or any(x in tipo for x in ['PRATICA', 'TEORIA', 'SOLFEJO', 'CHAMADA']):
-                    return 'P'
+            # --- CÁLCULO DE FREQUÊNCIA (CHAMADA + AULAS) ---
+            def identificar_status_v69(row):
+                t, s, o = str(row.get('Tipo','')).upper(), str(row.get('Status','')).upper(), str(row.get('Observacao','')).upper()
+                if 'AUSENTE' in s or 'FALTA' in s: return 'F'
+                if 'JUSTIFICADA' in s or 'JUSTIFICADA' in o: return 'J'
                 return 'P'
 
-            df_aluna['status_final'] = df_aluna.apply(identificar_status_sincronizado, axis=1)
+            df_aluna['st_final'] = df_aluna.apply(identificar_status_v69, axis=1)
+            resumo_chamada = df_aluna.groupby('Data')['st_final'].apply(lambda x: 'F' if 'F' in list(x) else ('J' if 'J' in list(x) else 'P'))
             
-            # Agrupar por Data: Se houver 'Ausente' no dia, ganha de tudo (Prioridade Secretaria)
-            resumo_dias = df_aluna.groupby('Data')['status_final'].apply(lambda x: 'F' if 'F' in list(x) else ('J' if 'J' in list(x) else 'P'))
-            
-            f_n = int((resumo_dias == 'F').sum())
-            f_j = int((resumo_dias == 'J').sum())
-            pres = int((resumo_dias == 'P').sum())
-            tot_dias = len(resumo_dias)
-            perc_frequencia = int(((pres + f_j) / tot_dias * 100)) if tot_dias > 0 else 0
+            f_n, f_j, pres = (resumo_chamada == 'F').sum(), (resumo_chamada == 'J').sum(), (resumo_chamada == 'P').sum()
+            tot_dias = len(resumo_chamada)
+            perc_freq = int(((pres + f_j) / tot_dias * 100)) if tot_dias > 0 else 0
 
-            # --- EXIBIÇÃO DASHBOARD ---
-            st.markdown(f"### 📋 Relatório Consolidado: {aluna_sel}")
+            # --- KPIS PRINCIPAIS ---
+            st.markdown(f"### 📋 Relatório de {aluna_sel}")
             k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Frequência", f"{perc_frequencia}%")
-            k2.metric("Dias Letivos", tot_dias)
+            k1.metric("Frequência", f"{perc_freq}%")
+            k2.metric("Aulas/Chamadas", tot_dias)
             k3.metric("Faltas (N/J)", f"{f_n} / {f_j}", delta=f"-{f_n}" if f_n > 0 else None, delta_color="inverse")
             
-            # Aproveitamento das lições
             realizadas = len(df_aluna[df_aluna['Status'].str.contains("Realizada", na=False)])
-            total_atividades = len(df_aluna[df_aluna['Tipo'] != 'Chamada']) # Não conta a chamada como atividade
-            aprov = int((realizadas / total_atividades * 100)) if total_atividades > 0 else 0
+            total_pedag = len(df_aluna[df_aluna['Tipo'] != 'Chamada'])
+            aprov = int((realizadas / total_pedag * 100)) if total_pedag > 0 else 0
             k4.metric("Aproveitamento", f"{aprov}%")
 
-            # --- GRÁFICO E DIFICULDADES ---
+            # --- DETALHAMENTO DE DIFICULDADES (PROFESSORAS) ---
             st.divider()
-            c_g1, c_g2 = st.columns([2, 1])
-            with c_g1:
-                st.write("**Histórico de Assiduidade (Chamada)**")
-                chart_data = pd.DataFrame({'Status': ['Presenças', 'Justificadas', 'Faltas'], 'Qtd': [pres, f_j, f_n]})
-                st.bar_chart(chart_data, x='Status', y='Qtd', color="#2E4053")
+            st.subheader("⚠️ Dificuldades Técnicas Reportadas")
+            col_d1, col_d2 = st.columns(2)
             
-            with c_g2:
-                st.write("**Dificuldades Detectadas**")
-                difs = []
-                for d in df_aluna['Dificuldades'].dropna():
-                    if isinstance(d, list): difs.extend(d)
-                    else: difs.append(str(d))
-                
-                if difs:
-                    for d_unica in list(set(difs))[:5]:
-                        st.warning(f"⚠️ {d_unica}")
-                else:
-                    st.success("✅ Nenhuma dificuldade técnica reportada.")
+            difs_totais = []
+            for d in df_aluna['Dificuldades'].dropna():
+                if isinstance(d, list): difs_totais.extend(d)
+                else: difs_totais.append(str(d))
+            
+            with col_d1:
+                st.write("**Lista de Impedimentos:**")
+                if difs_totais:
+                    for d_u in sorted(list(set(difs_totais))):
+                        st.error(f"❌ {d_u}")
+                else: st.success("✅ Nenhuma dificuldade técnica listada.")
 
-            # --- DETALHAMENTO DAS PROFESSORAS E SECRETARIA ---
-            st.divider()
-            st.subheader("📝 Notas Pedagógicas e de Chamada")
-            with st.expander("Ver detalhes de cada registro"):
-                for _, r in df_aluna.iterrows():
-                    tipo_cor = "🔵" if r['Tipo'] != 'Chamada' else "📌"
-                    st.markdown(f"{tipo_cor} **{r['Data']} - {r['Tipo']}**: {r.get('Status')} | {r.get('Observacao', '')}")
+            with col_d2:
+                # Gráfico de evolução mensal (Resumão)
+                st.write("**Resumão Mensal (Frequência %)**")
+                df_aluna['Mes'] = df_aluna['dt_obj'].dt.strftime('%b/%y')
+                resumo_mensal = df_aluna.groupby('Mes')['st_final'].apply(lambda x: (x == 'P').sum() / len(x) * 100).reset_index()
+                st.line_chart(resumo_mensal, x='Mes', y='st_final', color="#2E4053")
 
-            # --- METAS PARA BANCA ---
+            # --- AUDITORIA DA SECRETARIA (CORREÇÕES) ---
             st.divider()
-            st.info("🎯 **Dicas para a Próxima Aula e Banca Semestral**\n\n"
-                    "- Focar na regularidade da pedaleira nos hinos.\n"
-                    "- Manter o metrônomo 10bpm abaixo até a segurança total.\n"
-                    "- Registrar todas as dificuldades no prontuário para revisão na banca.")
+            st.subheader("🏢 Auditoria da Secretaria (Correção de Lições)")
+            # Filtramos registros que venham da secretaria ou que tenham status de correção
+            df_sec = df_aluna[df_aluna['Status'].str.contains("Realizada", na=False) | (df_aluna['Tipo'] == 'Chamada')]
+            
+            if not df_sec.empty:
+                for _, r in df_sec.iterrows():
+                    with st.expander(f"📅 Registro de {r['Data']} - {r['Tipo']}"):
+                        st.write(f"**Status:** {r['Status']}")
+                        st.write(f"**Observação/Dica:** {r.get('Observacao', 'Sem notas adicionais')}")
+                        if r.get('Instrutora'): st.caption(f"Responsável: {r['Instrutora']}")
+            else:
+                st.info("Nenhuma correção da secretaria registrada no período.")
+
+            # --- DIÁRIO COMPLETO ---
+            st.divider()
+            st.subheader("📖 Diário de Classe Detalhado")
+            st.dataframe(df_aluna[['Data', 'Tipo', 'Licao_Atual', 'Status', 'Observacao', 'Instrutora']], use_container_width=True)
 
         else:
-            st.warning("Selecione uma aluna para ver os dados.")
+            st.warning("Nenhum registro encontrado para os filtros aplicados.")
