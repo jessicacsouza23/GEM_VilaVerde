@@ -995,117 +995,123 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
 
 # ============================================================
-# MÓDULO ANÁLISE DE IA - V69 (AUDITORIA PEDAGÓGICA TOTAL)
+# MÓDULO ANÁLISE DE IA - V70 (CORREÇÃO DE GRÁFICOS DINÂMICOS)
 # ============================================================
 elif menu == "📊 Analítico IA":
     st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico Master</h1>", unsafe_allow_html=True)
     
+    # Busca dados atualizados do banco
     historico_raw = db_get_historico()
-    df = pd.DataFrame(historico_raw)
+    df_base = pd.DataFrame(historico_raw)
 
-    if df.empty:
+    if df_base.empty:
         st.info("ℹ️ O banco de dados está vazio.")
     else:
-        # 1. TRATAMENTO DE DATAS
-        df['dt_obj'] = pd.to_datetime(df['Data'], format="%d/%m/%Y", errors='coerce')
-        df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
+        # 1. TRATAMENTO DE DATAS (Garante que o Python entenda o formato do banco)
+        df_base['dt_obj'] = pd.to_datetime(df_base['Data'], format="%d/%m/%Y", errors='coerce')
+        df_base = df_base.dropna(subset=['dt_obj'])
 
         with st.sidebar:
             st.header("🔍 Filtros de Auditoria")
-            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v69")
+            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v70")
             
             tipo_p = st.selectbox("📅 Tipo de Filtro:", 
-                                ["Mensal", "Bimestral", "Semestral", "Anual", "Por Dia Específico", "Personalizado", "Tudo"])
+                                ["Tudo", "Mensal", "Bimestral", "Semestral", "Anual", "Por Dia Específico", "Personalizado"])
             
             hoje = datetime.now().date()
-            data_ini, data_fim = hoje, hoje
-
             if tipo_p == "Por Dia Específico":
-                dia_sel = st.date_input("Escolha o dia da aula:", hoje)
-                data_ini = data_fim = dia_sel
-            elif tipo_p == "Mensal": data_ini = hoje - timedelta(days=30)
-            elif tipo_p == "Bimestral": data_ini = hoje - timedelta(days=60)
-            elif tipo_p == "Semestral": data_ini = hoje - timedelta(days=180)
-            elif tipo_p == "Anual": data_ini = hoje - timedelta(days=365)
+                data_ini = data_fim = st.date_input("Escolha o dia:", hoje)
+            elif tipo_p == "Mensal": data_ini, data_fim = hoje - timedelta(days=30), hoje
+            elif tipo_p == "Bimestral": data_ini, data_fim = hoje - timedelta(days=60), hoje
+            elif tipo_p == "Semestral": data_ini, data_fim = hoje - timedelta(days=180), hoje
+            elif tipo_p == "Anual": data_ini, data_fim = hoje - timedelta(days=365), hoje
             elif tipo_p == "Personalizado":
                 data_ini = st.date_input("De:", hoje - timedelta(days=30))
                 data_fim = st.date_input("Até:", hoje)
-            else: data_ini = datetime(2024, 1, 1).date(); data_fim = hoje + timedelta(days=1)
+            else: 
+                data_ini, data_fim = datetime(2024, 1, 1).date(), hoje + timedelta(days=1)
 
-        # Filtragem Base
-        mask = (df['Aluna'] == aluna_sel) & (df['dt_obj'].dt.date >= data_ini) & (df['dt_obj'].dt.date <= data_fim)
-        df_aluna = df[mask].copy()
+        # 2. FILTRAGEM RIGOROSA (É aqui que o gráfico "muda")
+        mask = (df_base['Aluna'] == aluna_sel) & \
+               (df_base['dt_obj'].dt.date >= data_ini) & \
+               (df_base['dt_obj'].dt.date <= data_fim)
+        
+        df_aluna = df_base[mask].copy()
 
         if not df_aluna.empty:
-            # --- CÁLCULO DE FREQUÊNCIA (CHAMADA + AULAS) ---
-            def identificar_status_v69(row):
-                t, s, o = str(row.get('Tipo','')).upper(), str(row.get('Status','')).upper(), str(row.get('Observacao','')).upper()
+            # --- LÓGICA DE STATUS SINCRONIZADA ---
+            def identificar_v70(row):
+                s = str(row.get('Status', '')).upper()
+                t = str(row.get('Tipo', '')).upper()
                 if 'AUSENTE' in s or 'FALTA' in s: return 'F'
-                if 'JUSTIFICADA' in s or 'JUSTIFICADA' in o: return 'J'
+                if 'JUSTIFICADA' in s: return 'J'
                 return 'P'
 
-            df_aluna['st_final'] = df_aluna.apply(identificar_status_v69, axis=1)
-            resumo_chamada = df_aluna.groupby('Data')['st_final'].apply(lambda x: 'F' if 'F' in list(x) else ('J' if 'J' in list(x) else 'P'))
+            df_aluna['st_calc'] = df_aluna.apply(identificar_v70, axis=1)
             
-            f_n, f_j, pres = (resumo_chamada == 'F').sum(), (resumo_chamada == 'J').sum(), (resumo_chamada == 'P').sum()
-            tot_dias = len(resumo_chamada)
-            perc_freq = int(((pres + f_j) / tot_dias * 100)) if tot_dias > 0 else 0
-
-            # --- KPIS PRINCIPAIS ---
-            st.markdown(f"### 📋 Relatório de {aluna_sel}")
-            k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Frequência", f"{perc_freq}%")
-            k2.metric("Aulas/Chamadas", tot_dias)
-            k3.metric("Faltas (N/J)", f"{f_n} / {f_j}", delta=f"-{f_n}" if f_n > 0 else None, delta_color="inverse")
+            # Agrupamento por data para o gráfico não duplicar barras
+            resumo_grafico = df_aluna.groupby('Data')['st_calc'].first()
             
-            realizadas = len(df_aluna[df_aluna['Status'].str.contains("Realizada", na=False)])
-            total_pedag = len(df_aluna[df_aluna['Tipo'] != 'Chamada'])
-            aprov = int((realizadas / total_pedag * 100)) if total_pedag > 0 else 0
-            k4.metric("Aproveitamento", f"{aprov}%")
+            v_pres = int((resumo_grafico == 'P').sum())
+            v_falt = int((resumo_grafico == 'F').sum())
+            v_just = int((resumo_grafico == 'J').sum())
+            total_periodo = len(resumo_grafico)
 
-            # --- DETALHAMENTO DE DIFICULDADES (PROFESSORAS) ---
+            # --- EXIBIÇÃO KPIS ---
+            st.subheader(f"📌 Resumo do Período: {data_ini.strftime('%d/%m')} até {data_fim.strftime('%d/%m')}")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Aulas Totais", total_periodo)
+            col2.metric("Frequência", f"{int((v_pres+v_just)/total_periodo*100) if total_periodo > 0 else 0}%")
+            col3.metric("Faltas Acumuladas", f"{v_falt}N / {v_just}J", delta=f"-{v_falt}" if v_falt > 0 else None, delta_color="inverse")
+
+            # --- GRÁFICOS DINÂMICOS (FORÇANDO ATUALIZAÇÃO) ---
             st.divider()
-            st.subheader("⚠️ Dificuldades Técnicas Reportadas")
-            col_d1, col_d2 = st.columns(2)
+            g_col1, g_col2 = st.columns([2, 1])
             
-            difs_totais = []
+            with g_col1:
+                st.write("**Evolução de Presenças no Período Selecionado**")
+                # Gráfico de barras que muda conforme o filtro de data
+                data_chart = pd.DataFrame({
+                    'Data': resumo_grafico.index,
+                    'Status': resumo_grafico.values
+                }).sort_values('Data')
+                
+                # Criando um mapeamento numérico para o gráfico mostrar algo visual
+                data_chart['Nível'] = data_chart['Status'].map({'P': 1, 'J': 0.5, 'F': 0})
+                st.line_chart(data_chart, x='Data', y='Nível', color="#2E86C1")
+
+            with g_col2:
+                st.write("**Distribuição de Faltas**")
+                pie_data = pd.DataFrame({
+                    'Categoria': ['Presença', 'Falta', 'Justificada'],
+                    'Total': [v_pres, v_falt, v_just]
+                })
+                st.bar_chart(pie_data, x='Categoria', y='Total', color="#2E4053")
+
+            # --- DETALHAMENTO DE DIFICULDADES E OBSERVAÇÕES ---
+            st.divider()
+            st.subheader("📝 Detalhamento Pedagógico (Auditado)")
+            
+            # Coleta todas as dificuldades do período filtrado
+            lista_difs = []
             for d in df_aluna['Dificuldades'].dropna():
-                if isinstance(d, list): difs_totais.extend(d)
-                else: difs_totais.append(str(d))
+                if isinstance(d, list): lista_difs.extend(d)
+                else: lista_difs.append(str(d))
             
-            with col_d1:
-                st.write("**Lista de Impedimentos:**")
-                if difs_totais:
-                    for d_u in sorted(list(set(difs_totais))):
-                        st.error(f"❌ {d_u}")
-                else: st.success("✅ Nenhuma dificuldade técnica listada.")
-
-            with col_d2:
-                # Gráfico de evolução mensal (Resumão)
-                st.write("**Resumão Mensal (Frequência %)**")
-                df_aluna['Mes'] = df_aluna['dt_obj'].dt.strftime('%b/%y')
-                resumo_mensal = df_aluna.groupby('Mes')['st_final'].apply(lambda x: (x == 'P').sum() / len(x) * 100).reset_index()
-                st.line_chart(resumo_mensal, x='Mes', y='st_final', color="#2E4053")
-
-            # --- AUDITORIA DA SECRETARIA (CORREÇÕES) ---
-            st.divider()
-            st.subheader("🏢 Auditoria da Secretaria (Correção de Lições)")
-            # Filtramos registros que venham da secretaria ou que tenham status de correção
-            df_sec = df_aluna[df_aluna['Status'].str.contains("Realizada", na=False) | (df_aluna['Tipo'] == 'Chamada')]
+            if lista_difs:
+                st.error(f"⚠️ **Dificuldades Identificadas:** {', '.join(list(set(lista_difs)))}")
             
-            if not df_sec.empty:
-                for _, r in df_sec.iterrows():
-                    with st.expander(f"📅 Registro de {r['Data']} - {r['Tipo']}"):
-                        st.write(f"**Status:** {r['Status']}")
-                        st.write(f"**Observação/Dica:** {r.get('Observacao', 'Sem notas adicionais')}")
-                        if r.get('Instrutora'): st.caption(f"Responsável: {r['Instrutora']}")
-            else:
-                st.info("Nenhuma correção da secretaria registrada no período.")
-
-            # --- DIÁRIO COMPLETO ---
-            st.divider()
-            st.subheader("📖 Diário de Classe Detalhado")
-            st.dataframe(df_aluna[['Data', 'Tipo', 'Licao_Atual', 'Status', 'Observacao', 'Instrutora']], use_container_width=True)
+            # Tabela de observações completa
+            st.write("**Histórico de Observações e Dicas:**")
+            for _, r in df_aluna.sort_values('dt_obj', ascending=False).iterrows():
+                with st.expander(f"📅 {r['Data']} - {r['Tipo']} ({r['Status']})"):
+                    st.write(f"**Observação:** {r.get('Observacao', 'Sem notas')}")
+                    st.caption(f"Instrutora/Responsável: {r.get('Instrutora', 'Não informado')}")
 
         else:
-            st.warning("Nenhum registro encontrado para os filtros aplicados.")
+            st.warning("Nenhum dado encontrado para o filtro selecionado. Tente mudar a data ou a aluna.")
+
+        # Botão para limpar cache se os dados travarem
+        if st.sidebar.button("♻️ Forçar Atualização de Dados"):
+            st.cache_data.clear()
+            st.rerun()
