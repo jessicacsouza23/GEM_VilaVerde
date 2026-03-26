@@ -995,7 +995,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
 
 # ============================================================
-# MÓDULO ANÁLISE DE IA - V67 (DETALHAMENTO TOTAL + CHAMADA REAL)
+# MÓDULO ANÁLISE DE IA - V67 (CORRIGIDO: TYPO + ANÁLISE MASTER)
 # ============================================================
 elif menu == "📊 Analítico IA":
     st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico Master</h1>", unsafe_allow_html=True)
@@ -1012,7 +1012,7 @@ elif menu == "📊 Analítico IA":
 
         with st.sidebar:
             st.header("🔍 Filtros de Análise")
-            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v67")
+            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v67_fix")
             tipo_p = st.selectbox("📅 Período:", ["Tudo", "Mensal", "Bimestral", "Semestral", "Personalizado"])
             hoje = datetime.now().date()
             
@@ -1030,16 +1030,17 @@ elif menu == "📊 Analítico IA":
         if not df_aluna.empty:
             # --- CÁLCULO DE FREQUÊNCIA REAL (SECRETARIA) ---
             def identificar_status_estrito(row):
+                # Varredura total na linha para achar "Falta"
                 texto = f"{str(row.get('Tipo',''))} {str(row.get('Status',''))} {str(row.get('Observacao',''))}".upper()
                 if 'FALTA' in texto: return 'F'
                 if 'JUSTIFICADA' in texto: return 'J'
-                # Considera presença se houver atividade pedagógica registrada
                 if any(x in texto for x in ['PRATICA', 'TEORIA', 'SOLFEJO', 'PRESENÇA', 'PRESENCA']): return 'P'
-                return None
+                return 'P' # Default para registros pedagógicos
 
-            df_aluna['status_check'] = df_aluna.apply(identificar_status_estrict, axis=1)
+            # CORRIGIDO: O nome da função aqui deve bater exatamente com o 'def' acima
+            df_aluna['status_check'] = df_aluna.apply(identificar_status_estrito, axis=1)
             
-            # Hierarquia: Se houver 'F' na data, o dia é falta.
+            # Agrupar por Data: Se houver qualquer 'F' no dia, o dia é considerado Falta (Prioridade da Secretaria)
             resumo_chamada = df_aluna.groupby('Data')['status_check'].apply(lambda x: 'F' if 'F' in list(x) else ('J' if 'J' in list(x) else 'P'))
             
             f_n = int((resumo_chamada == 'F').sum())
@@ -1054,78 +1055,83 @@ elif menu == "📊 Analítico IA":
             evolucao_texto = []
 
             for _, r in df_aluna.iterrows():
-                # Captura Dificuldades (seja lista ou string)
                 dif = r.get('Dificuldades')
                 if dif:
                     if isinstance(dif, list): dificuldades_set.extend(dif)
                     else: dificuldades_set.append(str(dif))
                 
-                # Captura Dicas e Observações Pedagógicas
                 obs = r.get('Observacao', '')
                 if obs and len(str(obs)) > 5:
-                    if "Dica:" in str(obs) or "Próxima" in str(obs):
-                        dicas_proxima_aula.append(f"📍 {r['Data']}: {obs}")
-                    else:
-                        evolucao_texto.append(f"• {r['Data']} ({r['Tipo']}): {obs}")
+                    evolucao_texto.append(f"• **{r['Data']}** ({r['Tipo']}): {obs}")
+                    # Se a professora marcou como 'Dica' ou 'Próxima aula'
+                    if any(x in str(obs).lower() for x in ['dica', 'proxima', 'próxima', 'estudar']):
+                        dicas_proxima_aula.append(f"📍 **{r['Data']}**: {obs}")
 
             # --- EXIBIÇÃO DASHBOARD ---
             st.markdown(f"## 📑 Relatório Analítico: {aluna_sel}")
             
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("Frequência", f"{perc_frequencia}%")
-            k2.metric("Aulas Realizadas", pres)
+            k2.metric("Dias Letivos", tot_dias)
             k3.metric("Faltas (N/J)", f"{f_n} / {f_j}", delta=f"-{f_n}" if f_n > 0 else None, delta_color="inverse")
-            k4.metric("Dificuldades Ativas", len(set(dificuldades_set)))
+            
+            # Aproveitamento baseado em status 'Realizada'
+            realizadas = len(df_aluna[df_aluna['Status'] == 'Realizada'])
+            total_atividades = len(df_aluna)
+            aprov = int((realizadas / total_atividades * 100)) if total_atividades > 0 else 0
+            k4.metric("Aproveitamento", f"{aprov}%")
 
-            # --- ÁREAS TÉCNICAS (CONGELADO PARA CONSULTA) ---
+            # --- ÁREAS TÉCNICAS ---
             st.divider()
             col1, col2 = st.columns(2)
             
             with col1:
-                st.subheader("🛠️ Análise por Áreas")
-                # Separação por categorias
-                difs_unicas = list(set(dificuldades_set))
+                st.subheader("🛠️ Dificuldades por Área")
+                difs_unicas = list(set([str(d) for d in dificuldades_set]))
                 
                 with st.container(border=True):
-                    st.markdown("**Postura e Técnica**")
-                    postura = [d for d in difs_unicas if any(x in d.lower() for x in ['mão', 'dedo', 'postura', 'pé', 'banco'])]
-                    st.write(", ".join(postura) if postura else "✅ Sem intercorrências técnicas.")
+                    st.markdown("**🎹 Postura e Técnica**")
+                    postura = [d for d in difs_unicas if any(x in d.lower() for x in ['mão', 'dedo', 'postura', 'pé', 'banco', 'articula'])]
+                    st.write(", ".join(postura) if postura else "✅ Técnica em conformidade.")
 
                 with st.container(border=True):
-                    st.markdown("**Ritmo e Teoria**")
-                    ritmo = [d for d in difs_unicas if any(x in d.lower() for x in ['tempo', 'ritmo', 'compasso', 'teoria', 'nota'])]
-                    st.write(", ".join(ritmo) if ritmo else "✅ Ritmo estável e seguro.")
+                    st.markdown("**⏱️ Ritmo e Teoria**")
+                    ritmo = [d for d in difs_unicas if any(x in d.lower() for x in ['tempo', 'ritmo', 'compasso', 'teoria', 'nota', 'metronomo'])]
+                    st.write(", ".join(ritmo) if ritmo else "✅ Ritmo e teoria estáveis.")
 
             with col2:
-                st.subheader("📈 Evolução e Desempenho")
+                st.subheader("📈 Gráfico de Assiduidade")
                 chart_data = pd.DataFrame({
                     'Status': ['Presenças', 'Justificadas', 'Faltas'],
                     'Qtd': [pres, f_j, f_n]
                 })
                 st.bar_chart(chart_data, x='Status', y='Qtd', color="#2E4053")
 
-            # --- SEÇÃO DETALHADA DE DICAS E METAS ---
+            # --- SEÇÃO DETALHADA DE DICAS ---
             st.divider()
-            st.subheader("💡 Dicas para as Próximas Aulas")
+            st.subheader("💡 Recomendações para Próximas Aulas")
             if dicas_proxima_aula:
-                for dica in dicas_proxima_aula[:5]: # Mostra as 5 mais recentes
-                    st.write(dica)
+                for dica in dicas_proxima_aula[:5]: 
+                    st.info(dica)
             else:
-                st.info("Nenhuma dica específica registrada para as próximas aulas.")
+                st.write("Sem recomendações específicas registradas recentemente.")
 
-            st.subheader("📝 Histórico de Evolução (Notas das Professoras)")
-            with st.expander("Clique para ver os detalhes de cada aula"):
-                for nota in evolucao_texto:
-                    st.markdown(nota)
+            # --- HISTÓRICO COMPLETO ---
+            with st.expander("📝 Ver Diário de Classe Detalhado (Evolução)"):
+                if evolucao_texto:
+                    for nota in evolucao_texto:
+                        st.markdown(nota)
+                else:
+                    st.write("Nenhum detalhamento pedagógico disponível.")
 
-            # --- METAS PARA BANCA SEMESTRAL ---
+            # --- METAS BANCA ---
             st.divider()
-            st.subheader("🏆 Planejamento para Banca Semestral")
+            st.subheader("🏆 Planejamento Estratégico (Banca Semestral)")
             m1, m2 = st.columns(2)
             with m1:
-                st.info("**Metas de Curto Prazo**\n\n1. Regularizar frequência\n2. Finalizar métodos atuais\n3. Revisar hinos com dificuldades")
+                st.success("**Foco Técnico**\n\n1. Corrigir postura de mãos\n2. Estudo de hinos com pedaleira\n3. Leitura rítmica diária")
             with m2:
-                st.warning("**Foco para a Banca**\n\n- Intensificar leitura rítmica\n- Estudo focado em mãos separadas nos trechos complexos\n- Gravar vídeos para auto-avaliação")
+                st.warning("**Metas Administrativas**\n\n- Recuperar conteúdo das faltas\n- Manter frequência acima de 90%\n- Finalizar métodos do semestre")
 
         else:
             st.warning("Nenhum dado encontrado para os filtros selecionados.")
