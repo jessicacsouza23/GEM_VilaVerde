@@ -994,7 +994,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             time.sleep(1); st.rerun()
 
 # ============================================================
-# MÓDULO ANÁLISE DE IA - V71 (RESUMO 360° E PENDÊNCIAS)
+# MÓDULO ANÁLISE DE IA - V72 (CORREÇÃO APROV + GRÁFICOS)
 # ============================================================
 elif menu == "📊 Analítico IA":
     st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico Master</h1>", unsafe_allow_html=True)
@@ -1005,13 +1005,13 @@ elif menu == "📊 Analítico IA":
     if df_base.empty:
         st.info("ℹ️ O banco de dados está vazio.")
     else:
-        # 1. TRATAMENTO DE DATAS E FILTROS
+        # 1. TRATAMENTO DE DATAS
         df_base['dt_obj'] = pd.to_datetime(df_base['Data'], format="%d/%m/%Y", errors='coerce')
         df_base = df_base.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
 
         with st.sidebar:
             st.header("🔍 Filtros de Auditoria")
-            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v71")
+            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v72")
             tipo_p = st.selectbox("📅 Período:", ["Tudo", "Mensal", "Bimestral", "Semestral", "Por Dia Específico", "Personalizado"])
             
             hoje = datetime.now().date()
@@ -1029,30 +1029,49 @@ elif menu == "📊 Analítico IA":
         df_aluna = df_base[mask].copy()
 
         if not df_aluna.empty:
+            # --- CÁLCULO DE APROVEITAMENTO (DEFINIDO NO TOPO PARA EVITAR ERRO) ---
+            pedag_rows = df_aluna[df_aluna['Tipo'].str.contains("Prática|Teoria|Solfejo", case=False, na=False)]
+            realizadas = len(pedag_rows[pedag_rows['Status'].str.contains("Realizada", na=False)])
+            total_pedag = len(pedag_rows)
+            aprov_valor = int((realizadas / total_pedag * 100)) if total_pedag > 0 else 0
+
             # --- PROCESSAMENTO DE STATUS E FREQUÊNCIA ---
-            def identificar_v71(row):
+            def identificar_v72(row):
                 s, t = str(row.get('Status','')).upper(), str(row.get('Tipo','')).upper()
                 if 'AUSENTE' in s or 'FALTA' in s: return 'F'
                 if 'JUSTIFICADA' in s: return 'J'
                 return 'P'
 
-            df_aluna['st_calc'] = df_aluna.apply(identificar_v71, axis=1)
+            df_aluna['st_calc'] = df_aluna.apply(identificar_v72, axis=1)
             resumo_dias = df_aluna.groupby('Data')['st_calc'].first()
             v_pres, v_falt, v_just = (resumo_dias=='P').sum(), (resumo_dias=='F').sum(), (resumo_dias=='J').sum()
 
             # --- 1. RESUMO DE DESEMPENHO (DASHBOARD) ---
             st.subheader(f"📈 Resumo de Desempenho - {aluna_sel}")
-            k1, k2, k3 = st.columns(3)
-            k1.metric("Frequência Real", f"{int((v_pres+v_just)/len(resumo_dias)*100) if len(resumo_dias)>0 else 0}%")
-            k2.metric("Aulas no Período", len(resumo_dias))
-            k3.metric("Faltas (N/J)", f"{v_falt} / {v_just}", delta=f"-{v_falt}" if v_falt > 0 else None, delta_color="inverse")
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Frequência", f"{int((v_pres+v_just)/len(resumo_dias)*100) if len(resumo_dias)>0 else 0}%")
+            k2.metric("Aulas/Chamadas", len(resumo_dias))
+            k3.metric("Faltas (N/J)", f"{v_falt} / {v_just}")
+            k4.metric("Aproveitamento", f"{aprov_valor}%")
 
-            # --- 2. ÁREA DE DIFICULDADES E PENDÊNCIAS (CRÍTICO) ---
+            # --- 2. GRÁFICOS (RESTAURADOS) ---
             st.divider()
-            col_d1, col_d2 = st.columns(2)
+            col_g1, col_g2 = st.columns([2, 1])
+            with col_g1:
+                st.write("**Linha do Tempo de Assiduidade**")
+                chart_ts = pd.DataFrame({'Data': resumo_dias.index, 'Nivel': resumo_dias.map({'P':1, 'J':0.5, 'F':0}).values})
+                st.line_chart(chart_ts, x='Data', y='Nivel', color="#2E4053")
             
-            with col_d1:
-                st.markdown("### ⚠️ Dificuldades Detectadas")
+            with col_g2:
+                st.write("**Status de Frequência**")
+                chart_bar = pd.DataFrame({'Status': ['Presença', 'Falta', 'Justificada'], 'Qtd': [v_pres, v_falt, v_just]})
+                st.bar_chart(chart_bar, x='Status', y='Qtd', color="#27AE60")
+
+            # --- 3. DIFICULDADES E PENDÊNCIAS ---
+            st.divider()
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("### ⚠️ Dificuldades Técnicas")
                 difs = []
                 for d in df_aluna['Dificuldades'].dropna():
                     if isinstance(d, list): difs.extend(d)
@@ -1061,74 +1080,42 @@ elif menu == "📊 Analítico IA":
                 if difs:
                     for d_u in sorted(list(set(difs))):
                         st.error(f"❌ {d_u}")
-                else:
-                    st.success("✅ Nenhuma dificuldade técnica reportada no período.")
+                else: st.success("✅ Sem dificuldades reportadas.")
 
-            with col_d2:
-                st.markdown("### 📚 Lições de Casa Pendentes")
-                # Filtra lições que NÃO estão como "Realizada" e são dos tipos de estudo
-                pendencias = df_aluna[
-                    (~df_aluna['Status'].str.contains("Realizada", na=False)) & 
-                    (df_aluna['Tipo'].str.contains("Teoria|Solfejo|Prática|Apostila", case=False, na=False))
-                ]
+            with c2:
+                st.markdown("### 📚 Lições Pendentes")
+                pendencias = df_aluna[(~df_aluna['Status'].str.contains("Realizada", na=False)) & 
+                                      (df_aluna['Tipo'].str.contains("Teoria|Solfejo|Prática", case=False, na=False))]
                 if not pendencias.empty:
                     for _, p in pendencias.iterrows():
-                        st.warning(f"📖 **{p['Tipo']}**: {p['Licao_Casa'] if p['Licao_Casa'] else p['Licao_Atual']}")
-                else:
-                    st.success("✅ Tudo em dia! Sem lições pendentes.")
+                        st.warning(f"📖 **{p['Tipo']}**: {p['Licao_Casa'] if p.get('Licao_Casa') else p.get('Licao_Atual')}")
+                else: st.success("✅ Lições em dia.")
 
-            # --- 3. RESUMO DAS AULAS (O QUE CADA UM DISSE) ---
+            # --- 4. FEEDBACK DETALHADO (PROFESSORAS E SECRETARIA) ---
             st.divider()
-            st.subheader("📖 Resumo das Aulas e Feedback")
+            tab_p, tab_s = st.tabs(["👩‍🏫 Feedback Pedagógico", "🏢 Notas da Secretaria"])
             
-            # Aba de Professora e Secretaria para organizar o feedback
-            tab_prof, tab_sec = st.tabs(["👩‍🏫 Feedback das Professoras", "🏢 Observações da Secretaria"])
+            with tab_p:
+                aulas = df_aluna[df_aluna['Tipo'].str.contains("Prática|Teoria|Solfejo", case=False, na=False)]
+                for _, r in aulas.iterrows():
+                    with st.container(border=True):
+                        st.write(f"📅 **{r['Data']} - {r['Tipo']}**")
+                        st.write(f"📝 {r.get('Observacao', 'Sem notas')}")
             
-            with tab_prof:
-                # Pega registros pedagógicos (Prática, Teoria, Solfejo)
-                aulas_pedag = df_aluna[df_aluna['Tipo'].str.contains("Prática|Teoria|Solfejo", case=False, na=False)]
-                if not aulas_pedag.empty:
-                    for _, r in aulas_pedag.iterrows():
-                        with st.container(border=True):
-                            st.write(f"📅 **{r['Data']} - {r['Tipo']}** ({r['Status']})")
-                            st.write(f"**Observação:** {r.get('Observacao', 'Sem notas')}")
-                            st.caption(f"Instrutora: {r.get('Instrutora')}")
-                else: st.info("Sem feedback pedagógico registrado.")
+            with tab_s:
+                sec = df_aluna[df_aluna['Tipo'].str.contains("Chamada|Correção", case=False, na=False)]
+                for _, r in sec.iterrows():
+                    with st.container(border=True):
+                        st.write(f"📅 **{r['Data']} - {r['Tipo']}**")
+                        st.info(f"📌 {r.get('Observacao', 'Sem observações')}")
 
-            with tab_sec:
-                # Pega registros de Chamada e Correções de Lição
-                sec_records = df_aluna[df_aluna['Tipo'].str.contains("Chamada|Correção", case=False, na=False)]
-                if not sec_records.empty:
-                    for _, r in sec_records.iterrows():
-                        with st.container(border=True):
-                            st.write(f"📅 **{r['Data']} - {r['Tipo']}**")
-                            st.info(f"📌 **Nota da Secretaria:** {r.get('Observacao', 'Sem observação')}")
-                            if r.get('Status') == 'Justificada':
-                                st.warning(f"Motivo da falta: {r.get('Observacao')}")
-                else: st.info("Sem observações da secretaria.")
-
-            # --- 4. DICAS E SUGESTÕES PARA PRÓXIMA AULA ---
+            # --- 5. RESUMO FINAL E DICAS ---
             st.divider()
-            st.markdown("### 🏆 Dicas e Planejamento para Próxima Aula")
+            st.info(f"💡 **Dicas para Próxima Aula:** Foque em resolver as dificuldades de " + 
+                    (", ".join(list(set(difs))[:2]) if difs else "técnica e postura") + ".")
             
-            # Lógica para gerar dicas baseadas nas dificuldades
-            if difs:
-                st.info("💡 **Dica de Estudo:** Como foram detectadas dificuldades em " + ", ".join(list(set(difs))[:2]) + 
-                        ", foque o estudo diário nestes pontos por pelo menos 15 minutos antes de iniciar o repertório novo.")
-            
-            st.success(f"📌 **Como a aluna está indo:** O aproveitamento pedagógico atual é de {aprov}%." + 
-                       (" Recomenda-se reforçar a presença para manter o ritmo da banca semestral." if v_falt > 0 else " Ótimo engajamento e assiduidade!"))
-
-            # --- 5. GRÁFICO DE EVOLUÇÃO ---
-            st.write("**Evolução da Presença**")
-            chart_data = pd.DataFrame({'Data': resumo_dias.index, 'Frequência': resumo_dias.values})
-            chart_data['Nível'] = chart_data['Frequência'].map({'P': 1, 'J': 0.5, 'F': 0})
-            st.line_chart(chart_data, x='Data', y='Nível', color="#2E4053")
+            status_aluna = "Ótimo desempenho!" if aprov_valor > 80 else "Atenção necessária às lições."
+            st.success(f"📌 **Como a aluna está indo:** {status_aluna} (Aproveitamento: {aprov_valor}%)")
 
         else:
-            st.warning("Nenhum registro para esta aluna.")
-
-        if st.sidebar.button("♻️ Atualizar Prontuário"):
-            st.cache_data.clear()
-            st.rerun()
-            
+            st.warning("Selecione uma aluna ou mude o filtro para ver os registros.")
