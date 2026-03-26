@@ -995,7 +995,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
 
 # ============================================================
-# MÓDULO ANÁLISE DE IA - V67 (CORRIGIDO: TYPO + ANÁLISE MASTER)
+# MÓDULO ANÁLISE DE IA - V68 (SINTONIA COM CHAMADA GERAL)
 # ============================================================
 elif menu == "📊 Analítico IA":
     st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico Master</h1>", unsafe_allow_html=True)
@@ -1006,13 +1006,13 @@ elif menu == "📊 Analítico IA":
     if df.empty:
         st.info("ℹ️ O banco de dados está vazio.")
     else:
-        # 1. TRATAMENTO DE DATAS E FILTROS
+        # 1. TRATAMENTO DE DATAS
         df['dt_obj'] = pd.to_datetime(df['Data'], format="%d/%m/%Y", errors='coerce')
         df = df.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
 
         with st.sidebar:
             st.header("🔍 Filtros de Análise")
-            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v67_fix")
+            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v68")
             tipo_p = st.selectbox("📅 Período:", ["Tudo", "Mensal", "Bimestral", "Semestral", "Personalizado"])
             hoje = datetime.now().date()
             
@@ -1028,110 +1028,82 @@ elif menu == "📊 Analítico IA":
         df_aluna = df[mask].copy()
 
         if not df_aluna.empty:
-            # --- CÁLCULO DE FREQUÊNCIA REAL (SECRETARIA) ---
-            def identificar_status_estrito(row):
-                # Varredura total na linha para achar "Falta"
-                texto = f"{str(row.get('Tipo',''))} {str(row.get('Status',''))} {str(row.get('Observacao',''))}".upper()
-                if 'FALTA' in texto: return 'F'
-                if 'JUSTIFICADA' in texto: return 'J'
-                if any(x in texto for x in ['PRATICA', 'TEORIA', 'SOLFEJO', 'PRESENÇA', 'PRESENCA']): return 'P'
-                return 'P' # Default para registros pedagógicos
+            # --- CÁLCULO DE FREQUÊNCIA (CONECTADO À CHAMADA GERAL) ---
+            def identificar_status_sincronizado(row):
+                # Pegamos os campos que a sua Chamada Geral preenche
+                tipo = str(row.get('Tipo', '')).upper()
+                status_banco = str(row.get('Status', '')).upper()
+                obs = str(row.get('Observacao', '')).upper()
+                
+                # BUSCA POR AUSÊNCIA (Como está no seu rádio button da Chamada)
+                if 'AUSENTE' in status_banco or 'FALTA' in status_banco or 'AUSENTE' in tipo:
+                    return 'F'
+                if 'JUSTIFICADA' in status_banco or 'JUSTIFICADA' in obs:
+                    return 'J'
+                # Se for "Chamada" e "Presente", ou se for aula Prática/Teoria
+                if 'PRESENTE' in status_banco or any(x in tipo for x in ['PRATICA', 'TEORIA', 'SOLFEJO', 'CHAMADA']):
+                    return 'P'
+                return 'P'
 
-            # CORRIGIDO: O nome da função aqui deve bater exatamente com o 'def' acima
-            df_aluna['status_check'] = df_aluna.apply(identificar_status_estrito, axis=1)
+            df_aluna['status_final'] = df_aluna.apply(identificar_status_sincronizado, axis=1)
             
-            # Agrupar por Data: Se houver qualquer 'F' no dia, o dia é considerado Falta (Prioridade da Secretaria)
-            resumo_chamada = df_aluna.groupby('Data')['status_check'].apply(lambda x: 'F' if 'F' in list(x) else ('J' if 'J' in list(x) else 'P'))
+            # Agrupar por Data: Se houver 'Ausente' no dia, ganha de tudo (Prioridade Secretaria)
+            resumo_dias = df_aluna.groupby('Data')['status_final'].apply(lambda x: 'F' if 'F' in list(x) else ('J' if 'J' in list(x) else 'P'))
             
-            f_n = int((resumo_chamada == 'F').sum())
-            f_j = int((resumo_chamada == 'J').sum())
-            pres = int((resumo_chamada == 'P').sum())
-            tot_dias = len(resumo_chamada)
+            f_n = int((resumo_dias == 'F').sum())
+            f_j = int((resumo_dias == 'J').sum())
+            pres = int((resumo_dias == 'P').sum())
+            tot_dias = len(resumo_dias)
             perc_frequencia = int(((pres + f_j) / tot_dias * 100)) if tot_dias > 0 else 0
 
-            # --- CONSOLIDAÇÃO DE DIFICULDADES E DICAS ---
-            dificuldades_set = []
-            dicas_proxima_aula = []
-            evolucao_texto = []
-
-            for _, r in df_aluna.iterrows():
-                dif = r.get('Dificuldades')
-                if dif:
-                    if isinstance(dif, list): dificuldades_set.extend(dif)
-                    else: dificuldades_set.append(str(dif))
-                
-                obs = r.get('Observacao', '')
-                if obs and len(str(obs)) > 5:
-                    evolucao_texto.append(f"• **{r['Data']}** ({r['Tipo']}): {obs}")
-                    # Se a professora marcou como 'Dica' ou 'Próxima aula'
-                    if any(x in str(obs).lower() for x in ['dica', 'proxima', 'próxima', 'estudar']):
-                        dicas_proxima_aula.append(f"📍 **{r['Data']}**: {obs}")
-
             # --- EXIBIÇÃO DASHBOARD ---
-            st.markdown(f"## 📑 Relatório Analítico: {aluna_sel}")
-            
+            st.markdown(f"### 📋 Relatório Consolidado: {aluna_sel}")
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("Frequência", f"{perc_frequencia}%")
             k2.metric("Dias Letivos", tot_dias)
             k3.metric("Faltas (N/J)", f"{f_n} / {f_j}", delta=f"-{f_n}" if f_n > 0 else None, delta_color="inverse")
             
-            # Aproveitamento baseado em status 'Realizada'
-            realizadas = len(df_aluna[df_aluna['Status'] == 'Realizada'])
-            total_atividades = len(df_aluna)
+            # Aproveitamento das lições
+            realizadas = len(df_aluna[df_aluna['Status'].str.contains("Realizada", na=False)])
+            total_atividades = len(df_aluna[df_aluna['Tipo'] != 'Chamada']) # Não conta a chamada como atividade
             aprov = int((realizadas / total_atividades * 100)) if total_atividades > 0 else 0
             k4.metric("Aproveitamento", f"{aprov}%")
 
-            # --- ÁREAS TÉCNICAS ---
+            # --- GRÁFICO E DIFICULDADES ---
             st.divider()
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("🛠️ Dificuldades por Área")
-                difs_unicas = list(set([str(d) for d in dificuldades_set]))
-                
-                with st.container(border=True):
-                    st.markdown("**🎹 Postura e Técnica**")
-                    postura = [d for d in difs_unicas if any(x in d.lower() for x in ['mão', 'dedo', 'postura', 'pé', 'banco', 'articula'])]
-                    st.write(", ".join(postura) if postura else "✅ Técnica em conformidade.")
-
-                with st.container(border=True):
-                    st.markdown("**⏱️ Ritmo e Teoria**")
-                    ritmo = [d for d in difs_unicas if any(x in d.lower() for x in ['tempo', 'ritmo', 'compasso', 'teoria', 'nota', 'metronomo'])]
-                    st.write(", ".join(ritmo) if ritmo else "✅ Ritmo e teoria estáveis.")
-
-            with col2:
-                st.subheader("📈 Gráfico de Assiduidade")
-                chart_data = pd.DataFrame({
-                    'Status': ['Presenças', 'Justificadas', 'Faltas'],
-                    'Qtd': [pres, f_j, f_n]
-                })
+            c_g1, c_g2 = st.columns([2, 1])
+            with c_g1:
+                st.write("**Histórico de Assiduidade (Chamada)**")
+                chart_data = pd.DataFrame({'Status': ['Presenças', 'Justificadas', 'Faltas'], 'Qtd': [pres, f_j, f_n]})
                 st.bar_chart(chart_data, x='Status', y='Qtd', color="#2E4053")
-
-            # --- SEÇÃO DETALHADA DE DICAS ---
-            st.divider()
-            st.subheader("💡 Recomendações para Próximas Aulas")
-            if dicas_proxima_aula:
-                for dica in dicas_proxima_aula[:5]: 
-                    st.info(dica)
-            else:
-                st.write("Sem recomendações específicas registradas recentemente.")
-
-            # --- HISTÓRICO COMPLETO ---
-            with st.expander("📝 Ver Diário de Classe Detalhado (Evolução)"):
-                if evolucao_texto:
-                    for nota in evolucao_texto:
-                        st.markdown(nota)
+            
+            with c_g2:
+                st.write("**Dificuldades Detectadas**")
+                difs = []
+                for d in df_aluna['Dificuldades'].dropna():
+                    if isinstance(d, list): difs.extend(d)
+                    else: difs.append(str(d))
+                
+                if difs:
+                    for d_unica in list(set(difs))[:5]:
+                        st.warning(f"⚠️ {d_unica}")
                 else:
-                    st.write("Nenhum detalhamento pedagógico disponível.")
+                    st.success("✅ Nenhuma dificuldade técnica reportada.")
 
-            # --- METAS BANCA ---
+            # --- DETALHAMENTO DAS PROFESSORAS E SECRETARIA ---
             st.divider()
-            st.subheader("🏆 Planejamento Estratégico (Banca Semestral)")
-            m1, m2 = st.columns(2)
-            with m1:
-                st.success("**Foco Técnico**\n\n1. Corrigir postura de mãos\n2. Estudo de hinos com pedaleira\n3. Leitura rítmica diária")
-            with m2:
-                st.warning("**Metas Administrativas**\n\n- Recuperar conteúdo das faltas\n- Manter frequência acima de 90%\n- Finalizar métodos do semestre")
+            st.subheader("📝 Notas Pedagógicas e de Chamada")
+            with st.expander("Ver detalhes de cada registro"):
+                for _, r in df_aluna.iterrows():
+                    tipo_cor = "🔵" if r['Tipo'] != 'Chamada' else "📌"
+                    st.markdown(f"{tipo_cor} **{r['Data']} - {r['Tipo']}**: {r.get('Status')} | {r.get('Observacao', '')}")
+
+            # --- METAS PARA BANCA ---
+            st.divider()
+            st.info("🎯 **Dicas para a Próxima Aula e Banca Semestral**\n\n"
+                    "- Focar na regularidade da pedaleira nos hinos.\n"
+                    "- Manter o metrônomo 10bpm abaixo até a segurança total.\n"
+                    "- Registrar todas as dificuldades no prontuário para revisão na banca.")
 
         else:
-            st.warning("Nenhum dado encontrado para os filtros selecionados.")
+            st.warning("Selecione uma aluna para ver os dados.")
