@@ -521,7 +521,33 @@ if menu == "🏠 Secretaria":
                                                 ultima_prof = h_alu.sort_values('id', ascending=False).iloc[0].get('Instrutora', '---')
                                         
                                         candidatas = [p for p in profs_disponiveis if p != ultima_prof]
-                                        prof_final = random.choice(candidatas if candidatas else profs_disponiveis)
+                                        #	 =============================================
+																																# ============================================================
+																																# ============================================================
+																																# MÓDULO RODÍZIO - V73 (TRAVA DE SEGURANÇA PARA INDEXERROR)
+																																# ============================================================
+
+																																# ... (dentro do seu loop de atribuição de professores)
+
+																																# 1. Filtra quem está disponível no horário
+																																profs_disponiveis = [p for p in lista_professoras if p not in alocadas_no_horario]
+
+																																if not profs_disponiveis:
+    																																# SE NÃO HOUVER NINGUÉM DISPONÍVEL, O APP NÃO PODE TRAVAR
+    																																prof_final = "⚠️ SEM PROF. DISPONÍVEL" 
+																																else:
+    																																# 2. Tenta filtrar candidatas que a aluna ainda não teve aula
+   																																 candidatas = [p for p in profs_disponiveis if p not in historico_da_aluna]
+    
+ 																														   # 3. SORTEIO SEGURO
+   																													  if candidatas:
+        																															prof_final = random.choice(candidatas)
+   																														 else:
+      																													  # Se todas as disponíveis já deram aula para ela, sorteia qualquer uma das disponíveis
+       																															 prof_final = random.choice(profs_disponiveis)
+
+																																# 4. Continua o código com prof_final definido
+
                                         nota = "🎹"
                                     
                                     sala = (PROFESSORAS_LISTA.index(prof_final) % 7) + 1
