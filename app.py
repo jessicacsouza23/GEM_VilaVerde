@@ -422,52 +422,26 @@ if menu == "🏠 Secretaria":
         else:
             st.warning("O banco de dados está vazio.")
             
-    # --- ABA 2: PLANEJAMENTO (EXIBIÇÃO PERMANENTE) ---
-with tab_plan:
-    st.markdown("### 🗓️ Gestão de Escala")
-    
-    c1, c2 = st.columns(2)
-    mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="mes_plan")
-    ano = c2.selectbox("Ano:", [2026, 2027], key="ano_plan")
-    
-    sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
-               for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
-    
-    if sabados:
-        data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_plan")
+    # --- ABA 2: PLANEJAMENTO (COM REGRAS DE REPETIÇÃO E FIXAS) ---
+        with tab_plan:
+            st.markdown("### 🗓️ Gestão de Escala")
+            
+            # Controle de Fixas Dinâmicas para o Gerador
+            if 'fixas_escala' not in st.session_state:
+                st.session_state.fixas_escala = []
         
-        # BUSCA NO BANCO ANTES DE TUDO
-        calendario_db = db_get_calendario() 
+            c1, c2 = st.columns(2)
+            mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="mes_plan")
+            ano = c2.selectbox("Ano:", [2026, 2027], key="ano_plan")
+            
+            sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
+                       for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
+            
+            if sabados:
+                data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_plan")
+                calendario_db = db_get_calendario()
+                df_historico_total = pd.DataFrame(db_get_historico()) # Para checar repetições
         
-        if data_sel_str in calendario_db:
-            st.success(f"✅ Escala confirmada para {data_sel_str}")
-            df_exibir = pd.DataFrame(calendario_db[data_sel_str])
-            
-            # Exibição da Tabela para consulta das professoras e secretaria
-            st.control_data = st.data_editor(
-                df_exibir, 
-                use_container_width=True, 
-                hide_index=True, 
-                key=f"editor_{data_sel_str}"
-            )
-            
-            # Botões de Ação para a Secretaria
-            if st.session_state.perfil == "Secretaria":
-                c_s1, c_s2 = st.columns(2)
-                if c_s1.button("💾 Salvar Alterações", use_container_width=True):
-                    nova_escala = st.control_data.to_dict(orient='records')
-                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": nova_escala}).execute()
-                    st.toast("Alterações salvas!")
-                    st.rerun()
-                
-                if c_s2.button("🗑️ Excluir e Gerar Nova", use_container_width=True):
-                    supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-                    st.cache_data.clear()
-                    st.rerun()
-        else:
-            st.warning("⚡ Escala ainda não gerada para esta data.")
-            # ... (Aqui entra o seu botão de "GERAR ESCALA AUTOMÁTICA" que você já tem)
-            
                 # --- CASO A: GERADOR AUTOMÁTICO COM REGRAS ---
                 if data_sel_str not in calendario_db:
                     with st.container(border=True):
