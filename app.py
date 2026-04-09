@@ -431,18 +431,44 @@ if menu == "🏠 Secretaria":
     with tab_plan:
         st.markdown("### 🗓️ Planejamento e Mural")
         
-        # 1. GERENCIAMENTO DE ALUNAS FIXAS (EDITÁVEL)
+        # 1. GERENCIAMENTO DE ALUNAS FIXAS (SELEÇÃO SIMPLIFICADA)
         st.subheader("📌 Configurar Alunas Fixas")
-        # Mantendo a persistência das fixas em um DataFrame editável
+        
+        # Criamos as listas de opções para os menus suspensos dentro da tabela
+        todas_alunas = sorted([aluna for turma in TURMAS.values() for aluna in turma])
+        lista_professoras = sorted(PROFESSORAS_LISTA)
+    
+        # Inicializa o DataFrame se não existir
         if 'df_fixas' not in st.session_state:
             st.session_state.df_fixas = pd.DataFrame(columns=["Aluna", "Prof"])
     
+        # Configuração das colunas para exibir menus de seleção (dropdown)
+        config_colunas = {
+            "Aluna": st.column_config.SelectboxColumn(
+                "Nome da Aluna",
+                help="Selecione a aluna",
+                options=todas_alunas,
+                required=True,
+            ),
+            "Prof": st.column_config.SelectboxColumn(
+                "Professora Fixa",
+                help="Selecione a professora responsável",
+                options=lista_professoras,
+                required=True,
+            )
+        }
+    
+        # Tabela editável com menus de escolha
+        st.write("Escolha a aluna e a professora abaixo. Use o '+' para adicionar e o 'Lixo' para excluir.")
         df_fixas_editado = st.data_editor(
             st.session_state.df_fixas,
-            num_rows="dynamic",
+            column_config=config_colunas,
+            num_rows="dynamic", # Permite adicionar e excluir linhas
             use_container_width=True,
-            key="editor_fixas_v92"
+            key="editor_fixas_v93"
         )
+        
+        # Atualiza o estado da sessão
         st.session_state.df_fixas = df_fixas_editado
     
         st.divider()
