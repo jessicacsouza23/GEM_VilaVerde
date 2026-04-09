@@ -923,37 +923,58 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
     # No seu loop principal, dentro da tab_config:
    # --- ABA DE CONFIGURAÇÃO (ONDE DAVA O ERRO) ---
-    with tab_config:
-        st.subheader("⚙️ Gerenciar Biblioteca de Métodos")
-        
-        # Agora a função já existe no topo do arquivo, então não dará NameError
-        df_metodos_db = db_get_metodos_cadastrados()
+   with tab_config:
+    st.subheader("⚙️ Gerenciar Biblioteca de Métodos")
+    
+    # Busca os métodos do banco (Certifique-se que a função db_get_metodos_cadastrados está no topo)
+    df_metodos_db = db_get_metodos_cadastrados()
 
-        # Editor dinâmico
-        df_editado = st.data_editor(
-            df_metodos_db,
-            column_config={
-                "nome": st.column_config.TextColumn("Nome do Método", placeholder="Ex: Burgmüller, MSA...", required=True),
-                "categoria": st.column_config.SelectboxColumn("Área", options=["Prática", "Teoria", "Solfejo"], required=True)
-            },
-            num_rows="dynamic",
-            use_container_width=True,
-            key="editor_metodos_v53"
-        )
+    # EDITOR DE DADOS CORRIGIDO (Removido 'placeholder' que causa o TypeError)
+    df_editado = st.data_editor(
+        df_metodos_db,
+        column_config={
+            "nome": st.column_config.TextColumn(
+                "Nome do Método", 
+                help="Digite o nome do livro ou método (Ex: Kohler, MSA)",
+                required=True
+            ),
+            "categoria": st.column_config.SelectboxColumn(
+                "Área", 
+                options=["Prática", "Teoria", "Solfejo"], 
+                required=True,
+                help="Selecione onde este material será usado"
+            )
+        },
+        num_rows="dynamic",
+        use_container_width=True,
+        key="editor_metodos_v54"
+    )
 
-        if st.button("💾 Salvar Biblioteca", use_container_width=True):
-            try:
-                novos_dados = df_editado.to_dict('records')
-                # Limpa e reinsere para manter a lista atualizada conforme o editor
-                supabase.table("config_metodos").delete().neq("nome", "---").execute()
-                if novos_dados:
-                    supabase.table("config_metodos").insert(novos_dados).execute()
-                
-                st.success("Biblioteca atualizada com sucesso!")
-                time.sleep(1)
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao salvar: {e}")
+    # Botão de Salvamento
+    if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary"):
+        try:
+            # Converte o DataFrame editado para lista de dicionários
+            novos_dados = df_editado.to_dict('records')
+            
+            # 1. Limpa os dados antigos (Garante que a lista seja substituída pela nova)
+            # O filtro neq("nome", "---") é apenas um truque para deletar tudo
+            supabase.table("config_metodos").delete().neq("nome", "---").execute()
+            
+            # 2. Insere os novos dados se a lista não estiver vazia
+            if novos_dados:
+                supabase.table("config_metodos").insert(novos_dados).execute()
+            
+            st.success("✅ Biblioteca de métodos atualizada com sucesso!")
+            st.rerun()
+            
+        except Exception as e:
+            st.error(f"Erro técnico ao salvar: {e}")
+
+# ============================================================
+# DICA PARA O REGISTRO DE AULA
+# ============================================================
+# Quando for carregar os métodos no selectbox da aula, use:
+# m_list = ["Selecione..."] + df_metodos_db['nome'].tolist()
                 
     with tab_aula:
         instr_sel = st.session_state.get('nome_logado', 'Selecione...')
