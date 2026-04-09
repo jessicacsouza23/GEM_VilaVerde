@@ -572,14 +572,14 @@ if menu == "🏠 Secretaria":
     
                             # Montagem do Card (Tamanho reduzido para 20px/18px)
                             html_cards += f'<div style="background-color:{bg}; border:2px solid #000; padding:8px; margin-bottom:8px; border-radius:8px; font-family:sans-serif;">'
-                            html_cards += f'<b style="font-size:20px; color:#000; display:block; line-height:1.1;">{local_exibicao}</b>'
-                            html_cards += f'<span style="font-size:18px; color:#333; font-weight:700;">{text_alunas}</span>'
+                            html_cards += f'<b style="font-size:18px; color:#000; display:block; line-height:1.1;">{local_exibicao}</b>'
+                            html_cards += f'<span style="font-size:14px; color:#333; font-weight:700;">{text_alunas}</span>'
                             html_cards += '</div>'
     
                         # Container principal (Sem scroll, tamanho 24px para o título)
                         mural_visual = f"""
                         <div id="{div_id}" style="background:white; padding:10px; border:4px solid #000; border-radius:12px; width:100%;">
-                            <div style="background:#262730; color:white; padding:8px; border-radius:5px; text-align:center; font-size:24px; font-weight:bold; margin-bottom:12px; font-family:sans-serif;">
+                            <div style="background:#262730; color:white; padding:8px; border-radius:5px; text-align:center; font-size:20px; font-weight:bold; margin-bottom:12px; font-family:sans-serif;">
                                 {h_col}
                             </div>
                             {html_cards}
