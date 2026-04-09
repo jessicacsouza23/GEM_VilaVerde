@@ -14,6 +14,7 @@ import unicodedata
 import json
 import time # <--- ESSENCIAL PARA O SLEEP FUNCIONAR
 import random
+import streamlit.components.v1 as components
 
 # Verificação de Segurança
 try:
@@ -426,167 +427,151 @@ if menu == "🏠 Secretaria":
 
     import base64
     
-    # --- ABA 2: PLANEJAMENTO (V89 - CORRIGIDO) ---
+    # --- ABA 2: PLANEJAMENTO (V91 - LAYOUT IDÊNTICO À IMAGEM) ---
     with tab_plan:
         st.markdown("### 🗓️ Planejamento e Mural")
         
-        if 'fixas_escala' not in st.session_state:
-            st.session_state.fixas_escala = []
+        # 1. GERENCIAMENTO DE ALUNAS FIXAS
+        with st.expander("📌 Configurar Alunas Fixas", expanded=False):
+            if 'fixas_escala' not in st.session_state:
+                st.session_state.fixas_escala = []
+            
+            cf1, cf2 = st.columns(2)
+            aluna_f = cf1.selectbox("Aluna:", [a for t in TURMAS.values() for a in t], key="fix_a")
+            prof_f = cf2.selectbox("Professora:", PROFESSORAS_LISTA, key="fix_p")
+            if st.button("Vincular Fixa"):
+                st.session_state.fixas_escala.append({"Aluna": aluna_f, "Prof": prof_f})
+                st.rerun()
+            
+            if st.session_state.fixas_escala:
+                st.write("Vínculos Ativos:")
+                for i, f in enumerate(st.session_state.fixas_escala):
+                    st.write(f"- {f['Aluna']} → {f['Prof']}")
     
+        # 2. SELEÇÃO DE DATA
         c1, c2 = st.columns(2)
-        mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="mes_plan")
-        ano = c2.selectbox("Ano:", [2026, 2027], key="ano_plan")
+        mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
+        ano = c2.selectbox("Ano:", [2026, 2027])
         
         sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
                    for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
         
         if sabados:
-            data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_plan")
-            
-            # Chamadas de banco de dados
-            calendario_db = db_get_calendario() 
-            df_hist = pd.DataFrame(db_get_historico())
+            data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
+            calendario_db = db_get_calendario()
     
             if data_sel_str not in calendario_db:
-                with st.container(border=True):
-                    st.info("Configuração do Novo Rodízio")
-                    
-                    col_t, col_s = st.columns(2)
-                    with col_t:
-                        st.markdown("**📚 Teoria (Sala 8)**")
-                        pt2, pt3, pt4 = st.selectbox("H2", PROFESSORAS_LISTA, index=0), st.selectbox("H3", PROFESSORAS_LISTA, index=1), st.selectbox("H4", PROFESSORAS_LISTA, index=2)
-                    with col_s:
-                        st.markdown("**🔊 Solfejo (Sala 9)**")
-                        ps2, ps3, ps4 = st.selectbox("H2", PROFESSORAS_LISTA, index=3), st.selectbox("H3", PROFESSORAS_LISTA, index=4), st.selectbox("H4", PROFESSORAS_LISTA, index=5)
-                    
-                    st.divider()
-                    folga_ativa = st.multiselect("Professoras de Folga:", PROFESSORAS_LISTA)
+                # Interface de Geração (Compacta)
+                col_t, col_s = st.columns(2)
+                with col_t:
+                    st.write("**📚 Teoria (Sala 8)**")
+                    pt = [st.selectbox(f"Prof {h}", PROFESSORAS_LISTA, index=i, key=f"pt{i}") for i, h in enumerate(HORARIOS[1:])]
+                with col_s:
+                    st.write("**🔊 Solfejo (Sala 9)**")
+                    ps = [st.selectbox(f"Prof {h}", PROFESSORAS_LISTA, index=i+3, key=f"ps{i}") for i, h in enumerate(HORARIOS[1:])]
+                
+                folga_ativa = st.multiselect("Folgas:", PROFESSORAS_LISTA)
     
-                    if st.button("🚀 GERAR E SALVAR ESCALA", use_container_width=True, type="primary"):
-                        mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
-                        for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
+                if st.button("🚀 GERAR RODÍZIO", use_container_width=True, type="primary"):
+                    # --- LÓGICA DE GERAÇÃO (RESPEITANDO FIXAS E ROTAÇÃO) ---
+                    mapa = {aluna: {"Aluna": aluna} for t in TURMAS.values() for aluna in t}
+                    for a in mapa: mapa[a][HORARIOS[0]] = "Roberta | Todas as alunas" # Conforme sua imagem
+                    
+                    profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
+                    
+                    for i, h in enumerate(HORARIOS[1:]):
+                        prof_t, prof_s = pt[i], ps[i]
+                        turmas_list = list(TURMAS.keys()) # ["Turma 1", "Turma 2", "Turma 3"]
                         
-                        # --- Lógica de Rodízio ---
-                        profs_pratica = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
-                        salas_do_dia = {}
-                        
-                        vagas_salas = [1, 2, 3, 4, 5, 6, 7]
-                        random.shuffle(profs_pratica)
-                        for p in profs_pratica:
-                            if vagas_salas:
-                                s = random.choice(vagas_salas)
-                                salas_do_dia[p] = s
-                                vagas_salas.remove(s)
+                        # Rodízio Simples de Turmas para Teo/Sol
+                        t_teo = turmas_list[i % 3]
+                        t_sol = turmas_list[(i+1) % 3]
+                        t_pra = turmas_list[(i+2) % 3]
     
-                        config_h = {
-                            HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "P_Teo": pt2, "P_Sol": ps2},
-                            HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "P_Teo": pt3, "P_Sol": ps3},
-                            HORARIOS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "P_Teo": pt4, "P_Sol": ps4}
-                        }
+                        for a in TURMAS[t_teo]: mapa[a][h] = f"Sala 8 | {prof_t}"
+                        for a in TURMAS[t_sol]: mapa[a][h] = f"Sala 9 | {prof_s}"
                         
-                        for h in [HORARIOS[1], HORARIOS[2], HORARIOS[3]]:
-                            conf = config_h[h]
-                            profs_off = [conf["P_Teo"], conf["P_Sol"]] + folga_ativa
-                            alunas_p = [a for t, girls in TURMAS.items() if conf["Teo"] != t and conf["Sol"] != t for a in girls]
+                        # Prática (Sala 1 a 7)
+                        disponiveis_p = [p for p in profs_base if p not in [prof_t, prof_s]]
+                        random.shuffle(disponiveis_p)
+                        
+                        vagas_salas = list(range(1, 8))
+                        random.shuffle(vagas_salas)
+    
+                        for a in TURMAS[t_pra]:
+                            # Checa se é fixa
+                            fixa = next((f['Prof'] for f in st.session_state.fixas_escala if f['Aluna'] == a), None)
+                            p_final = fixa if (fixa and fixa in disponiveis_p) else (disponiveis_p.pop(0) if disponiveis_p else None)
                             
-                            for t_nome, girls in TURMAS.items():
-                                if conf["Teo"] == t_nome:
-                                    for a in girls: mapa[a][h] = f"📚 SALA 8 | {conf['P_Teo']}"
-                                elif conf["Sol"] == t_nome:
-                                    for a in girls: mapa[a][h] = f"🔊 SALA 9 | {conf['P_Sol']}"
+                            if p_final:
+                                s_n = vagas_salas.pop(0) if vagas_salas else "X"
+                                mapa[a][h] = f"Sala {s_n} | {p_final}"
+                            else:
+                                mapa[a][h] = "Atividade Autônoma | Secretaria"
     
-                            disponiveis_h = [p for p in PROFESSORAS_LISTA if p not in profs_off]
-                            for aluna in alunas_p:
-                                if disponiveis_h:
-                                    prof_f = random.choice(disponiveis_h)
-                                    s_n = salas_do_dia.get(prof_f, 0)
-                                    mapa[aluna][h] = f"🎹 SALA {s_n} | {prof_f}"
-                                    disponiveis_h.remove(prof_f)
-                                else:
-                                    mapa[aluna][h] = "📂 Atividade Autônoma | Secretaria"
-    
-                        try:
-                            dados_salvar = list(mapa.values())
-                            supabase.table("calendario").upsert({"id": data_sel_str, "escala": dados_salvar}).execute()
-                            st.success("Escala salva com sucesso!")
-                            st.cache_data.clear()
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao salvar: {e}")
+                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
+                    st.rerun()
     
             else:
-                st.success(f"✅ Escala Carregada: {data_sel_str}")
+                # --- EXIBIÇÃO NO MODELO DA IMAGEM ---
+                df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
-                with st.expander("📝 Editar Planilha Manualmente"):
-                    df_atual = pd.DataFrame(calendario_db[data_sel_str])
-                    df_edt = st.data_editor(df_atual, use_container_width=True, hide_index=True)
-                    if st.button("💾 Atualizar Banco de Dados"):
-                        supabase.table("calendario").upsert({"id": data_sel_str, "escala": df_edt.to_dict('records')}).execute()
-                        st.cache_data.clear()
-                        st.rerun()
-    
-                st.divider()
-    
-                html_final = f"""
-                <div id='mural-print' style='background-color: white; color: black; padding: 25px; font-family: sans-serif; border: 1px solid #ddd;'>
-                    <h1 style='text-align: center; border-bottom: 3px solid black; padding-bottom: 10px;'>MURAL DE AULAS - {data_sel_str}</h1>
-                """
+                # Mapeamento de Cores (CSS)
+                estilos = {
+                    "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3",
+                    "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1",
+                    "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"
+                }
     
                 for h_col in HORARIOS:
-                    html_final += f"<div style='background-color: #f0f0f0; padding: 10px; margin-top: 25px; border: 2px solid black; text-align: center;'><h2>{h_col}</h2></div>"
-                    html_final += "<div style='display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px;'>"
-                    
-                    salas_dict = {}
-                    autonomas = []
-                    for _, r in pd.DataFrame(calendario_db[data_sel_str]).iterrows():
-                        cel = str(r[h_col])
-                        if "SALA" in cel:
-                            header = cel.split(" | ")[0].replace("📌","").replace("🎹","").replace("📚","").replace("🔊","")
-                            prof = cel.split(" | ")[1] if "|" in cel else "---"
-                            if (header, prof) not in salas_dict: salas_dict[(header, prof)] = []
-                            salas_dict[(header, prof)].append(r['Aluna'])
-                        else:
-                            autonomas.append(r['Aluna'])
-    
-                    for (s_nome, p_nome) in sorted(salas_dict.keys()):
-                        # CORREÇÃO AQUI: p_nome e s_nome usados corretamente
-                        alunas_str = "".join([f"<div style='margin-left:5px;'>• {a}</div>" for a in sorted(salas_dict[(s_nome, p_nome)])])
-                        html_final += f"""
-                            <div style="flex: 1; min-width: 200px; border: 2px solid black; padding: 10px; background-color: white;">
-                                <b style="font-size: 18px;">{s_nome}</b><br>
-                                <span style="font-size: 14px;">Profª {p_nome}</span>
-                                <hr style="border: 1px solid black; margin: 5px 0;">
-                                {alunas_str}
-                            </div>
-                        """
-                    # ... dentro do loop for h_col in HORARIOS:
-                        html_final += "</div>"
-                        
-                        if autonomas:
-                            # CORREÇÃO: Adicionada a aspa inicial f" no início da linha
-                            html_final += f"<div style='margin-top:15px; border: 2px dashed black; padding:10px;'><b>📂 AUTÔNOMA:</b> {', '.join(sorted(autonomas))}</div>"
-        
-                    html_final += "</div>"
-                    st.markdown(html_final, unsafe_allow_html=True)
-                    # ... restante do código
-    
-                if st.button("🖨️ IMPRIMIR / SALVAR PDF", use_container_width=True):
-                    js_code = f"""
-                    <script>
-                        var divToPrint = document.getElementById('mural-print');
-                        var newWin = window.open('', 'Print-Window');
-                        newWin.document.open();
-                        newWin.document.write('<html><body onload="window.print()">' + divToPrint.innerHTML + '</body></html>');
-                        newWin.document.close();
-                        setTimeout(function(){{newWin.close();}},10);
-                    </script>
+                    # Criar o HTML para o horário específico
+                    html_mural = f"""
+                    <div id="mural-{h_col.replace(':','')}" style="background:white; padding:40px; font-family: sans-serif; min-width:800px; border:1px solid #eee;">
+                        <h1 style="text-align:center; font-size:32px; margin-bottom:30px;">{h_col} — {'1ª AULA (IGREJA)' if h_col == '08h45' else 'AULA'}</h1>
                     """
-                    st.components.v1.html(js_code, height=0)
+                    
+                    # Agrupar por Professor/Sala para criar os blocos
+                    grupos = {}
+                    for _, r in df_escala.iterrows():
+                        info = r[h_col]
+                        if info not in grupos: grupos[info] = []
+                        grupos[info].append(r['Aluna'])
+                    
+                    for local_prof, alunas in grupos.items():
+                        cor = estilos.get(local_prof.split(" | ")[0].upper(), "#f3f4f6")
+                        if "SECRETARIA" in local_prof.upper(): cor = estilos["SECRETARIA"]
+                        
+                        html_mural += f"""
+                        <div style="background-color:{cor}; border:1px solid #333; margin-bottom:12px; padding:10px; border-radius:4px;">
+                            <b style="font-size:18px;">{local_prof}</b><br>
+                            <span style="font-size:16px; color:#333;">{', '.join(sorted(alunas))}</span>
+                        </div>
+                        """
+                    
+                    html_mural += "</div>"
+                    
+                    # Renderizar o HTML e o botão de baixar
+                    st.markdown(html_mural, unsafe_allow_html=True)
+                    
+                    if st.button(f"📸 Baixar Foto - {h_col}", key=f"btn_{h_col}"):
+                        js_snap = f"""
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+                        <script>
+                            html2canvas(document.getElementById('mural-{h_col.replace(':','')}')).then(canvas => {{
+                                var link = document.createElement('a');
+                                link.download = 'Aula_{h_col}_{data_sel_str.replace('/','-')}.png';
+                                link.href = canvas.toDataURL();
+                                link.click();
+                            }});
+                        </script>
+                        """
+                        components.html(js_snap, height=0)
+                    st.divider()
     
-                if st.button("🗑️ Resetar Sábado"):
+                if st.button("🗑️ Apagar Escala"):
                     supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-                    st.cache_data.clear()
                     st.rerun()
+                    
                 
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
