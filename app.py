@@ -427,53 +427,36 @@ if menu == "🏠 Secretaria":
 
     import base64
     
-    # --- ABA 2: PLANEJAMENTO (V92 - COM MURAL VISUAL E TABELAS) ---
+    # --- ABA 2: PLANEJAMENTO (V94 - MURAL RESTAURADO E ORDENADO) ---
     with tab_plan:
         st.markdown("### 🗓️ Planejamento e Mural")
         
         # 1. GERENCIAMENTO DE ALUNAS FIXAS (SELEÇÃO SIMPLIFICADA)
         st.subheader("📌 Configurar Alunas Fixas")
         
-        # Criamos as listas de opções para os menus suspensos dentro da tabela
         todas_alunas = sorted([aluna for turma in TURMAS.values() for aluna in turma])
         lista_professoras = sorted(PROFESSORAS_LISTA)
     
-        # Inicializa o DataFrame se não existir
         if 'df_fixas' not in st.session_state:
             st.session_state.df_fixas = pd.DataFrame(columns=["Aluna", "Prof"])
     
-        # Configuração das colunas para exibir menus de seleção (dropdown)
         config_colunas = {
-            "Aluna": st.column_config.SelectboxColumn(
-                "Nome da Aluna",
-                help="Selecione a aluna",
-                options=todas_alunas,
-                required=True,
-            ),
-            "Prof": st.column_config.SelectboxColumn(
-                "Professora Fixa",
-                help="Selecione a professora responsável",
-                options=lista_professoras,
-                required=True,
-            )
+            "Aluna": st.column_config.SelectboxColumn("Nome da Aluna", options=todas_alunas, required=True),
+            "Prof": st.column_config.SelectboxColumn("Professora Fixa", options=lista_professoras, required=True)
         }
     
-        # Tabela editável com menus de escolha
-        st.write("Escolha a aluna e a professora abaixo. Use o '+' para adicionar e o 'Lixo' para excluir.")
         df_fixas_editado = st.data_editor(
             st.session_state.df_fixas,
             column_config=config_colunas,
-            num_rows="dynamic", # Permite adicionar e excluir linhas
+            num_rows="dynamic",
             use_container_width=True,
-            key="editor_fixas_v93"
+            key="editor_fixas_v94"
         )
-        
-        # Atualiza o estado da sessão
         st.session_state.df_fixas = df_fixas_editado
     
         st.divider()
     
-        # 2. SELEÇÃO DE DATA E LÓGICA DE RODÍZIO
+        # 2. SELEÇÃO DE DATA
         c1, c2 = st.columns(2)
         mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
         ano = c2.selectbox("Ano:", [2026, 2027])
@@ -485,8 +468,9 @@ if menu == "🏠 Secretaria":
             data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
             calendario_db = db_get_calendario()
     
+            # CASO A: NÃO EXISTE ESCALA NO BANCO (MOSTRA INTERFACE DE GERAÇÃO)
             if data_sel_str not in calendario_db:
-                # INTERFACE DE GERAÇÃO
+                st.info(f"Nenhuma escala encontrada para {data_sel_str}. Configure e gere abaixo.")
                 col_t, col_s = st.columns(2)
                 with col_t:
                     st.write("**📚 Teoria (Sala 8)**")
@@ -498,7 +482,6 @@ if menu == "🏠 Secretaria":
                 folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA)
     
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
-                    # --- LÓGICA DE ROTAÇÃO INTELIGENTE ---
                     mapa = {aluna: {"Aluna": aluna} for t in TURMAS.values() for aluna in t}
                     for a in mapa: mapa[a][HORARIOS[0]] = "Roberta | Todas as alunas"
                     
@@ -507,25 +490,18 @@ if menu == "🏠 Secretaria":
                     for i, h in enumerate(HORARIOS[1:]):
                         prof_t, prof_s = pt[i], ps[i]
                         turmas_list = list(TURMAS.keys())
-                        
-                        # Rotação de Turmas
-                        t_teo = turmas_list[i % 3]
-                        t_sol = turmas_list[(i+1) % 3]
-                        t_pra = turmas_list[(i+2) % 3]
+                        t_teo, t_sol, t_pra = turmas_list[i%3], turmas_list[(i+1)%3], turmas_list[(i+2)%3]
     
                         for a in TURMAS[t_teo]: mapa[a][h] = f"Sala 8 | {prof_t}"
                         for a in TURMAS[t_sol]: mapa[a][h] = f"Sala 9 | {prof_s}"
                         
-                        # Prática (Sala 1 a 7) - Evitando repetição
                         disponiveis_p = [p for p in profs_base if p not in [prof_t, prof_s]]
                         random.shuffle(disponiveis_p)
                         vagas_salas = list(range(1, 8))
                         random.shuffle(vagas_salas)
     
                         for a in TURMAS[t_pra]:
-                            # Verifica se é aluna fixa na tabela editável
                             fixa = next((row['Prof'] for _, row in df_fixas_editado.iterrows() if row['Aluna'] == a), None)
-                            
                             p_final = fixa if (fixa and fixa in disponiveis_p) else (disponiveis_p.pop(0) if disponiveis_p else None)
                             
                             if p_final:
@@ -534,84 +510,78 @@ if menu == "🏠 Secretaria":
                             else:
                                 mapa[a][h] = "Atividade Autônoma | Secretaria"
     
-                    # Salva no banco
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
-               
+    
+            # CASO B: ESCALA JÁ EXISTE (MOSTRA MURAL E EDITOR)
             else:
-                    # --- EXIBIÇÃO: MURAL VISUAL (PARA PRINT) ---
-                    st.subheader(f"📸 Mural para Impressão/Print - {data_sel_str}")
-                    
-                    df_escala = pd.DataFrame(calendario_db[data_sel_str])
-                    
-                    # Estilização das caixas
-                    cores = {
-                        "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3",
-                        "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1",
-                        "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", 
-                        "SECRETARIA": "#fef3c7"
-                    }
-        
-                    for h_col in HORARIOS:
-                        with st.container():
-                            # Cabeçalho do Horário
-                            st.markdown(f"""<div style="background:#f8f9fa; padding:10px; border:1px solid #ddd; text-align:center; font-size:20px; font-weight:bold; margin-top:20px;">{h_col} — {'1ª AULA (IGREJA)' if h_col == HORARIOS[0] else 'AULA'}</div>""", unsafe_allow_html=True)
+                df_escala = pd.DataFrame(calendario_db[data_sel_str])
+                
+                # --- PARTE 1: MURAL VISUAL ---
+                st.subheader(f"📸 Mural para Print - {data_sel_str}")
+                
+                cores = {
+                    "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3",
+                    "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1",
+                    "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", 
+                    "SECRETARIA": "#fef3c7"
+                }
+    
+                for h_col in HORARIOS:
+                    if h_col in df_escala.columns:
+                        st.markdown(f"""<div style="background:#f8f9fa; padding:10px; border:1px solid #ddd; text-align:center; font-size:20px; font-weight:bold; margin-top:20px; border-radius:5px;">{h_col} — {'1ª AULA (IGREJA)' if h_col == HORARIOS[0] else 'AULA'}</div>""", unsafe_allow_html=True)
+                        
+                        grupos = {}
+                        for _, r in df_escala.iterrows():
+                            info = r[h_col]
+                            if info not in grupos: grupos[info] = []
+                            grupos[info].append(r['Aluna'])
+                        
+                        # Ordenação das salas
+                        chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
+                            0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
+                            1 if "SALA 8" in x.upper() else 
+                            2 if "SALA 9" in x.upper() else 3, 
+                            x
+                        ))
+                        
+                        for local_prof in chaves_ordenadas:
+                            alunas = grupos[local_prof]
+                            bg_color = "#ffffff"
+                            for sala, cor in cores.items():
+                                if sala in local_prof.upper():
+                                    bg_color = cor
+                                    break
                             
-                            # Agrupar alunas por Professor/Sala
-                            grupos = {}
-                            for _, r in df_escala.iterrows():
-                                info = r[h_col]
-                                if info not in grupos: grupos[info] = []
-                                grupos[info].append(r['Aluna'])
-                            
-                            # ORDENAÇÃO CRESCENTE DAS SALAS
-                            # Criamos uma regra: Salas numéricas primeiro (1,2,3...), depois 8, 9 e por fim Secretaria
-                            chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
-                                0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
-                                1 if "SALA 8" in x.upper() else 
-                                2 if "SALA 9" in x.upper() else 3, 
-                                x
-                            ))
-                            
-                            # Exibir as caixas coloridas na ordem correta
-                            for local_prof in chaves_ordenadas:
-                                alunas = grupos[local_prof]
-                                bg_color = "#ffffff"
-                                
-                                # Define a cor baseada na sala encontrada na string
-                                for sala, cor in cores.items():
-                                    if sala in local_prof.upper():
-                                        bg_color = cor
-                                        break
-                                
-                                alunas_str = ", ".join(sorted(alunas))
-                                st.markdown(f"""
-                                    <div style="background-color:{bg_color}; border:1px solid #333; padding:10px; margin-top:5px; border-radius:3px;">
-                                        <b style="font-size:16px;">{local_prof}</b><br>
-                                        <span style="font-size:15px; color:#1a1a1a;">{alunas_str}</span>
-                                    </div>
-                                """, unsafe_allow_html=True)
-        
-                    st.divider()
-        
-                    # --- EXIBIÇÃO: TABELA EDITÁVEL (PARA CONSULTA E AJUSTES) ---
-                    st.subheader("⚙️ Editor da Escala (Tabela)")
-                    df_editado_final = st.data_editor(
-                        df_escala,
-                        use_container_width=True,
-                        key=f"edit_final_{data_sel_str}"
-                    )
+                            alunas_str = ", ".join(sorted(alunas))
+                            st.markdown(f"""
+                                <div style="background-color:{bg_color}; border:1px solid #333; padding:10px; margin-top:5px; border-radius:3px;">
+                                    <b style="font-size:16px;">{local_prof}</b><br>
+                                    <span style="font-size:15px; color:#1a1a1a;">{alunas_str}</span>
+                                </div>
+                            """, unsafe_allow_html=True)
+    
+                st.divider()
+    
+                # --- PARTE 2: EDITOR DE TABELA ---
+                st.subheader("⚙️ Editor da Escala (Tabela)")
+                df_editado_final = st.data_editor(
+                    df_escala,
+                    use_container_width=True,
+                    key=f"edit_final_{data_sel_str}"
+                )
+                
+                c_save1, c_save2 = st.columns(2)
+                if c_save1.button("💾 Salvar Alterações", use_container_width=True):
+                    lista_ajustada = df_editado_final.to_dict('records')
+                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_ajustada}).execute()
+                    st.success("Escala atualizada!")
+                    st.rerun()
+    
+                if c_save2.button("🗑️ Apagar e Reiniciar", use_container_width=True):
+                    supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                    st.rerun()
                     
-                    c_save1, c_save2 = st.columns(2)
-                    if c_save1.button("💾 Salvar Alterações da Tabela", use_container_width=True):
-                        lista_ajustada = df_editado_final.to_dict('records')
-                        supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_ajustada}).execute()
-                        st.success("Escala atualizada!")
-        
-                    if c_save2.button("🗑️ Apagar e Gerar Novamente", use_container_width=True):
-                        supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-                        st.rerun()
-            
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
         st.subheader("📍 Chamada Geral")
