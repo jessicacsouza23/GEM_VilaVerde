@@ -426,7 +426,7 @@ if menu == "🏠 Secretaria":
 
     import base64
     
-    # --- ABA 2: PLANEJAMENTO (V89 - CORREÇÃO DE SALVAMENTO E EXIBIÇÃO HTML) ---
+    # --- ABA 2: PLANEJAMENTO (V89 - CORRIGIDO) ---
     with tab_plan:
         st.markdown("### 🗓️ Planejamento e Mural")
         
@@ -466,7 +466,7 @@ if menu == "🏠 Secretaria":
                         mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
                         for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
                         
-                        # --- Lógica de Rodízio (Salas e Alunas) ---
+                        # --- Lógica de Rodízio ---
                         profs_pratica = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                         salas_do_dia = {}
                         
@@ -505,21 +505,18 @@ if menu == "🏠 Secretaria":
                                 else:
                                     mapa[aluna][h] = "📂 Atividade Autônoma | Secretaria"
     
-                        # SALVAMENTO CRÍTICO NO SUPABASE
                         try:
                             dados_salvar = list(mapa.values())
                             supabase.table("calendario").upsert({"id": data_sel_str, "escala": dados_salvar}).execute()
-                            st.success("Escala salva com sucesso no banco de dados!")
+                            st.success("Escala salva com sucesso!")
                             st.cache_data.clear()
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Erro ao salvar no banco: {e}")
+                            st.error(f"Erro ao salvar: {e}")
     
             else:
-                # --- SE A ESCALA JÁ EXISTE, MOSTRA O MURAL ---
                 st.success(f"✅ Escala Carregada: {data_sel_str}")
                 
-                # Botão para Editar (Caso precise corrigir algo antes de imprimir)
                 with st.expander("📝 Editar Planilha Manualmente"):
                     df_atual = pd.DataFrame(calendario_db[data_sel_str])
                     df_edt = st.data_editor(df_atual, use_container_width=True, hide_index=True)
@@ -530,7 +527,6 @@ if menu == "🏠 Secretaria":
     
                 st.divider()
     
-                # --- CONSTRUÇÃO DO MURAL EM ALTO CONTRASTE ---
                 html_final = f"""
                 <div id='mural-print' style='background-color: white; color: black; padding: 25px; font-family: sans-serif; border: 1px solid #ddd;'>
                     <h1 style='text-align: center; border-bottom: 3px solid black; padding-bottom: 10px;'>MURAL DE AULAS - {data_sel_str}</h1>
@@ -540,7 +536,6 @@ if menu == "🏠 Secretaria":
                     html_final += f"<div style='background-color: #f0f0f0; padding: 10px; margin-top: 25px; border: 2px solid black; text-align: center;'><h2>{h_col}</h2></div>"
                     html_final += "<div style='display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px;'>"
                     
-                    # Agrupamento para o mural
                     salas_dict = {}
                     autonomas = []
                     for _, r in pd.DataFrame(calendario_db[data_sel_str]).iterrows():
@@ -553,13 +548,13 @@ if menu == "🏠 Secretaria":
                         else:
                             autonomas.append(r['Aluna'])
     
-                    # Cards de Sala
                     for (s_nome, p_nome) in sorted(salas_dict.keys()):
-                        alunas_str = "".join([f"<div style='margin-left:5px;'>• {a}</div>" for a in sorted(salas_dict[(s_nome, p_name)])])
+                        # CORREÇÃO AQUI: p_nome e s_nome usados corretamente
+                        alunas_str = "".join([f"<div style='margin-left:5px;'>• {a}</div>" for a in sorted(salas_dict[(s_nome, p_nome)])])
                         html_final += f"""
                             <div style="flex: 1; min-width: 200px; border: 2px solid black; padding: 10px; background-color: white;">
-                                <b style="font-size: 18px;">{s_name}</b><br>
-                                <span style="font-size: 14px;">Profª {p_name}</span>
+                                <b style="font-size: 18px;">{s_nome}</b><br>
+                                <span style="font-size: 14px;">Profª {p_nome}</span>
                                 <hr style="border: 1px solid black; margin: 5px 0;">
                                 {alunas_str}
                             </div>
@@ -567,14 +562,11 @@ if menu == "🏠 Secretaria":
                     html_final += "</div>"
                     
                     if autonomas:
-                        html_final += f"<div style='margin-top:15px; border: 2px dashed black; padding:10px;'><b>📂 AUTÔNOMA:</b> {', '.join(sorted(autonomas))}</div>"
+                        html_final += f<div style='margin-top:15px; border: 2px dashed black; padding:10px;'><b>📂 AUTÔNOMA:</b> {', '.join(sorted(autonomas))}</div>"
     
                 html_final += "</div>"
-    
-                # EXIBE O HTML (O segredo está no unsafe_allow_html=True)
                 st.markdown(html_final, unsafe_allow_html=True)
     
-                # Botão de Impressão
                 if st.button("🖨️ IMPRIMIR / SALVAR PDF", use_container_width=True):
                     js_code = f"""
                     <script>
@@ -592,7 +584,7 @@ if menu == "🏠 Secretaria":
                     supabase.table("calendario").delete().eq("id", data_sel_str).execute()
                     st.cache_data.clear()
                     st.rerun()
-                    
+                
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
         st.subheader("📍 Chamada Geral")
