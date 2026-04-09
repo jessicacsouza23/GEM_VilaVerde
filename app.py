@@ -513,9 +513,7 @@ if menu == "🏠 Secretaria":
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
     
-            # CASO B: ESCALA JÁ EXISTE (MURAL EXPORTÁVEL COM FONTE GIGANTE)
-            # --- ABA 2: PLANEJAMENTO (V97 - MURAL NÍTIDO E EXPORTÁVEL SEM ERRO) ---
-            # --- ABA 2: PLANEJAMENTO (V100 - ADICIONADO TEORIA/SOLFEJO E FIX DE RENDERIZAÇÃO) ---
+           # --- ABA 2: PLANEJAMENTO (V101 - CORREÇÃO DEFINITIVA DE RENDERIZAÇÃO) ---
             else:
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
@@ -531,7 +529,7 @@ if menu == "🏠 Secretaria":
                     with cols_mural[idx]:
                         div_id = f"div_mural_{idx}"
                         
-                        # 1. CONSTRUÇÃO DO CONTEÚDO DOS CARDS
+                        # 1. CONSTRUÇÃO MANUAL DO CONTEÚDO DOS CARDS (Sem templates para evitar erro)
                         html_cards = ""
                         grupos = {}
                         for _, r in df_escala.iterrows():
@@ -545,7 +543,7 @@ if menu == "🏠 Secretaria":
                             local_up = local_prof.upper()
                             if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up: continue
     
-                            # --- NOVA LÓGICA: IDENTIFICAÇÃO DE MATÉRIA ---
+                            # Identificação de matéria (Teoria/Solfejo)
                             local_exibicao = local_prof
                             if "SALA 8" in local_up:
                                 local_exibicao = f"{local_prof} — TEORIA"
@@ -563,16 +561,13 @@ if menu == "🏠 Secretaria":
                                 presentes = [t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)]
                                 text_alunas = " + ".join(sorted(presentes)) if len(alunas_gp) > 1 else alunas_gp[0]
     
-                            # Template com fontes gigantes e cores dinâmicas
-                            card_template = """
-                            <div style="background-color: {bg}; border: 3px solid #000; padding: 12px; margin-bottom: 10px; border-radius: 10px; font-family: sans-serif;">
-                                <b style="font-size: 26px; color: #000; display: block; margin-bottom: 5px; line-height: 1.2;">{local}</b>
-                                <span style="font-size: 24px; color: #1a1a1a; font-weight: 800;">{alunas}</span>
-                            </div>
-                            """
-                            html_cards += card_template.format(bg=bg, local=local_exibicao, alunas=text_alunas)
+                            # Montagem manual concatenando as strings (Isso evita que o HTML apareça como texto)
+                            html_cards += '<div style="background-color:' + bg + '; border: 3px solid #000; padding: 12px; margin-bottom: 10px; border-radius: 10px; font-family: sans-serif;">'
+                            html_cards += '<b style="font-size: 26px; color: #000; display: block; margin-bottom: 5px; line-height: 1.2;">' + local_exibicao + '</b>'
+                            html_cards += '<span style="font-size: 24px; color: #1a1a1a; font-weight: 800;">' + text_alunas + '</span>'
+                            html_cards += '</div>'
     
-                        # 2. RENDERIZAÇÃO DO MURAL COMPLETO
+                        # 2. RENDERIZAÇÃO DO MURAL (Bloco Final)
                         mural_completo = f"""
                         <div id="{div_id}" style="background: white; padding: 15px; border: 5px solid #000; border-radius: 15px; width: 100%;">
                             <div style="background: #262730; color: white; padding: 12px; border-radius: 8px; text-align: center; font-size: 32px; font-weight: bold; margin-bottom: 15px; font-family: sans-serif;">
@@ -582,14 +577,15 @@ if menu == "🏠 Secretaria":
                         </div>
                         """
                         
-                        st.write(mural_completo, unsafe_allow_html=True)
+                        # Força a renderização como HTML
+                        st.components.v1.html(mural_completo, height=500, scrolling=True)
     
-                        # 3. BOTÃO DE DOWNLOAD VIA JAVASCRIPT
+                        # 3. BOTÃO DE DOWNLOAD
                         js_script = f"""
                         <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
                         <script>
                         function baixar{idx}() {{
-                            const el = window.parent.document.getElementById('{div_id}');
+                            const el = window.parent.document.getElementsByTagName('iframe')[{idx}].contentDocument.getElementById('{div_id}');
                             html2canvas(el, {{ scale: 2, backgroundColor: "#ffffff" }}).then(canvas => {{
                                 const a = document.createElement('a');
                                 a.download = 'Mural_{h_col.replace(':', 'h')}.png';
