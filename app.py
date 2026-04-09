@@ -35,6 +35,21 @@ def limpar_texto(txt):
 # --- 1. CONFIGURAÇÕES INICIAIS ---
 st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
 
+# ============================================================
+# FUNÇÃO DE SUPORTE - BUSCA MÉTODOS CADASTRADOS
+# ============================================================
+def db_get_metodos_cadastrados():
+    try:
+        # Tenta buscar os dados da tabela config_metodos
+        res = supabase.table("config_metodos").select("*").execute()
+        if res.data:
+            return pd.DataFrame(res.data)
+        # Se a tabela existir mas estiver vazia, retorna colunas padrão
+        return pd.DataFrame(columns=["nome", "categoria"])
+    except Exception as e:
+        # Se a tabela não existir ou houver erro de conexão, retorna vazio para não travar o app
+        return pd.DataFrame(columns=["nome", "categoria"])
+
 # --- 2. CONEXÃO IA COM ECONOMIA DE QUOTA (CACHE) ---
 @st.cache_resource(show_spinner=False)
 def inicializar_ia_economica():
@@ -905,20 +920,6 @@ elif menu == "👩‍🏫 Minhas Aulas":
     st.header(f"👩‍🏫 Painel da Professora: {st.session_state.nome_logado}")
     
     tab_aula, tab_config = st.tabs(["📝 Registro de Aula", "⚙️ Configurar Métodos"])
-        # ============================================================
-        # FUNÇÃO DE SUPORTE - BUSCA MÉTODOS CADASTRADOS
-        # ============================================================
-        def db_get_metodos_cadastrados():
-            try:
-                # Tenta buscar os dados da tabela config_metodos
-                res = supabase.table("config_metodos").select("*").execute()
-                if res.data:
-                    return pd.DataFrame(res.data)
-                # Se a tabela existir mas estiver vazia, retorna colunas padrão
-                return pd.DataFrame(columns=["nome", "categoria"])
-            except Exception as e:
-                # Se a tabela não existir ou houver erro de conexão, retorna vazio para não travar o app
-                return pd.DataFrame(columns=["nome", "categoria"])
 
     # No seu loop principal, dentro da tab_config:
    # --- ABA DE CONFIGURAÇÃO (ONDE DAVA O ERRO) ---
