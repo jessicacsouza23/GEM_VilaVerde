@@ -514,109 +514,109 @@ if menu == "🏠 Secretaria":
                     st.rerun()
     
          # --- ABA 2: PLANEJAMENTO (V113 - CORREÇÃO DOWNLOAD COMPLETO) ---
-        else:
-            df_escala = pd.DataFrame(calendario_db[data_sel_str])
-            
-            st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
-            
-            # 1. BOTÃO MESTRE CORRIGIDO
-            js_master = f"""
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-            <script>
-            async function baixarTudoEConjunto() {{
-                const numColunas = {len(HORARIOS)};
-                
-                // 1. BAIXAR INDIVIDUAIS
-                for (let i = 0; i < numColunas; i++) {{
-                    const divId = 'mural_export_' + i;
-                    const container = window.parent.document.getElementById(divId);
-                    if (container) {{
-                        const canvas = await html2canvas(container, {{ scale: 2, backgroundColor: "#ffffff" }});
-                        const link = window.parent.document.createElement('a');
-                        const hNome = container.querySelector('.horario-titulo').innerText.trim().replace(':', 'h');
-                        link.download = 'Individual_' + hNome + '.png';
-                        link.href = canvas.toDataURL("image/png");
-                        link.click();
-                        await new Promise(r => setTimeout(r, 600));
-                    }}
-                }}
-        
-                // 2. BAIXAR MURAL COMPLETO (Usando ID fixo agora)
-                const muralCompleto = window.parent.document.getElementById('mural_completo_total');
-                if (muralCompleto) {{
-                    const canvasGeral = await html2canvas(muralCompleto, {{ 
-                        scale: 2, 
-                        backgroundColor: "#ffffff",
-                        useCORS: true,
-                        logging: true
-                    }});
-                    const linkGeral = window.parent.document.createElement('a');
-                    linkGeral.download = 'Mural_Completo_{data_sel_str.replace("/", "-")}.png';
-                    linkGeral.href = canvasGeral.toDataURL("image/png");
-                    linkGeral.click();
-                }}
-            }}
-            </script>
-            <button onclick="baixarTudoEConjunto()" style="width:100%; background: linear-gradient(90deg, #107c10, #21a366); color:white; border:none; padding:20px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:20px; margin-bottom:25px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
-                ✅ Gerar Tudo: Fotos Individuais + Mural Completo
-            </button>
-            """
-            st.components.v1.html(js_master, height=110)
-        
-            # 2. MONTAGEM VISUAL (ENCAPSULADA PARA O PRINT)
-            termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
-            cores = {"SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"}
-        
-            # Criamos o HTML das colunas primeiro
-            html_todas_colunas = ""
-            for idx, h_col in enumerate(HORARIOS):
-                html_cards = ""
-                grupos = {}
-                for _, r in df_escala.iterrows():
-                    info = str(r[h_col])
-                    if info not in grupos: grupos[info] = []
-                    grupos[info].append(r['Aluna'])
-                
-                chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
-                    0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
-                    1 if "SALA 8" in x.upper() else 
-                    2 if "SALA 9" in x.upper() else 3, x
-                ))
-                
-                for local_prof in chaves_ordenadas:
-                    local_up = local_prof.upper()
-                    if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up: continue
+                else:
+                    df_escala = pd.DataFrame(calendario_db[data_sel_str])
                     
-                    bg = cores.get(next((s for s in cores if s in local_up), ""), "#ffffff")
-                    alunas_gp = grupos[local_prof]
-                    text_alunas = "Todas as alunas" if h_col == HORARIOS[0] else (" + ".join(sorted([t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)])) if len(alunas_gp) > 1 else alunas_gp[0])
-        
-                    html_cards += f'''
-                    <div style="background-color:{bg}; border:2px solid #000; padding:10px; margin-bottom:10px; border-radius:10px; font-family:sans-serif;">
-                        <b style="font-size:18px; color:#000; display:block; line-height:1.2;">{local_prof}</b>
-                        <span style="font-size:16px; color:#1a1a1a; font-weight:800;">{text_alunas}</span>
-                    </div>
-                    '''
+                    st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
+                    
+                    # 1. BOTÃO MESTRE CORRIGIDO
+                    js_master = f"""
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+                    <script>
+                    async function baixarTudoEConjunto() {{
+                        const numColunas = {len(HORARIOS)};
+                        
+                        // 1. BAIXAR INDIVIDUAIS
+                        for (let i = 0; i < numColunas; i++) {{
+                            const divId = 'mural_export_' + i;
+                            const container = window.parent.document.getElementById(divId);
+                            if (container) {{
+                                const canvas = await html2canvas(container, {{ scale: 2, backgroundColor: "#ffffff" }});
+                                const link = window.parent.document.createElement('a');
+                                const hNome = container.querySelector('.horario-titulo').innerText.trim().replace(':', 'h');
+                                link.download = 'Individual_' + hNome + '.png';
+                                link.href = canvas.toDataURL("image/png");
+                                link.click();
+                                await new Promise(r => setTimeout(r, 600));
+                            }}
+                        }}
                 
-                # Coluna individual (usada para o print individual e para compor o mural total)
-                html_todas_colunas += f"""
-                <div id="mural_export_{idx}" style="background:white; padding:15px; border:4px solid #000; border-radius:15px; width:300px; flex-shrink:0;">
-                    <div class="horario-titulo" style="background:#262730; color:white; padding:10px; border-radius:8px; text-align:center; font-size:24px; font-weight:bold; margin-bottom:15px; font-family:sans-serif;">
-                        {h_col}
+                        // 2. BAIXAR MURAL COMPLETO (Usando ID fixo agora)
+                        const muralCompleto = window.parent.document.getElementById('mural_completo_total');
+                        if (muralCompleto) {{
+                            const canvasGeral = await html2canvas(muralCompleto, {{ 
+                                scale: 2, 
+                                backgroundColor: "#ffffff",
+                                useCORS: true,
+                                logging: true
+                            }});
+                            const linkGeral = window.parent.document.createElement('a');
+                            linkGeral.download = 'Mural_Completo_{data_sel_str.replace("/", "-")}.png';
+                            linkGeral.href = canvasGeral.toDataURL("image/png");
+                            linkGeral.click();
+                        }}
+                    }}
+                    </script>
+                    <button onclick="baixarTudoEConjunto()" style="width:100%; background: linear-gradient(90deg, #107c10, #21a366); color:white; border:none; padding:20px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:20px; margin-bottom:25px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+                        ✅ Gerar Tudo: Fotos Individuais + Mural Completo
+                    </button>
+                    """
+                    st.components.v1.html(js_master, height=110)
+                
+                    # 2. MONTAGEM VISUAL (ENCAPSULADA PARA O PRINT)
+                    termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
+                    cores = {"SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"}
+                
+                    # Criamos o HTML das colunas primeiro
+                    html_todas_colunas = ""
+                    for idx, h_col in enumerate(HORARIOS):
+                        html_cards = ""
+                        grupos = {}
+                        for _, r in df_escala.iterrows():
+                            info = str(r[h_col])
+                            if info not in grupos: grupos[info] = []
+                            grupos[info].append(r['Aluna'])
+                        
+                        chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
+                            0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
+                            1 if "SALA 8" in x.upper() else 
+                            2 if "SALA 9" in x.upper() else 3, x
+                        ))
+                        
+                        for local_prof in chaves_ordenadas:
+                            local_up = local_prof.upper()
+                            if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up: continue
+                            
+                            bg = cores.get(next((s for s in cores if s in local_up), ""), "#ffffff")
+                            alunas_gp = grupos[local_prof]
+                            text_alunas = "Todas as alunas" if h_col == HORARIOS[0] else (" + ".join(sorted([t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)])) if len(alunas_gp) > 1 else alunas_gp[0])
+                
+                            html_cards += f'''
+                            <div style="background-color:{bg}; border:2px solid #000; padding:10px; margin-bottom:10px; border-radius:10px; font-family:sans-serif;">
+                                <b style="font-size:18px; color:#000; display:block; line-height:1.2;">{local_prof}</b>
+                                <span style="font-size:16px; color:#1a1a1a; font-weight:800;">{text_alunas}</span>
+                            </div>
+                            '''
+                        
+                        # Coluna individual (usada para o print individual e para compor o mural total)
+                        html_todas_colunas += f"""
+                        <div id="mural_export_{idx}" style="background:white; padding:15px; border:4px solid #000; border-radius:15px; width:300px; flex-shrink:0;">
+                            <div class="horario-titulo" style="background:#262730; color:white; padding:10px; border-radius:8px; text-align:center; font-size:24px; font-weight:bold; margin-bottom:15px; font-family:sans-serif;">
+                                {h_col}
+                            </div>
+                            {html_cards}
+                        </div>
+                        """
+                
+                    # RENDERIZAÇÃO FINAL: Colocamos tudo dentro de um DIV com ID 'mural_completo_total'
+                    # O style flex-row com overflow-x garante que fique um do lado do outro na tela e no print
+                    st.markdown(f"""
+                    <div id="mural_completo_total" style="display: flex; flex-direction: row; gap: 20px; padding: 20px; background: white; overflow-x: auto;">
+                        {html_todas_colunas}
                     </div>
-                    {html_cards}
-                </div>
-                """
-        
-            # RENDERIZAÇÃO FINAL: Colocamos tudo dentro de um DIV com ID 'mural_completo_total'
-            # O style flex-row com overflow-x garante que fique um do lado do outro na tela e no print
-            st.markdown(f"""
-            <div id="mural_completo_total" style="display: flex; flex-direction: row; gap: 20px; padding: 20px; background: white; overflow-x: auto;">
-                {html_todas_colunas}
-            </div>
-            """, unsafe_allow_html=True)
-        
-            st.divider()
+                    """, unsafe_allow_html=True)
+                
+                    st.divider()
                 
             # ... (Restante do código do editor de tabela continua igual)    
                 # --- PARTE 2: EDITOR DE TABELA ---
