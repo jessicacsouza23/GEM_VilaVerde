@@ -515,25 +515,23 @@ if menu == "🏠 Secretaria":
     
             # CASO B: ESCALA JÁ EXISTE (MURAL EXPORTÁVEL COM FONTE GIGANTE)
             # --- ABA 2: PLANEJAMENTO (V97 - MURAL NÍTIDO E EXPORTÁVEL SEM ERRO) ---
-            # --- ABA 2: PLANEJAMENTO (V98 - MURAL NÍTIDO, FONTE GIGANTE E SEM ERRO) ---
+            # --- ABA 2: PLANEJAMENTO (V100 - ADICIONADO TEORIA/SOLFEJO E FIX DE RENDERIZAÇÃO) ---
             else:
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
                 st.markdown(f"### 📸 Mural para Print/WhatsApp - {data_sel_str}")
-                st.write("Abra os botões abaixo para baixar a imagem nítida de cada horário.")
                 
                 # Filtros e Cores
                 termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
                 cores = {"SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"}
     
-                # Criar colunas para os horários lado a lado na tela
                 cols_mural = st.columns(len(HORARIOS))
     
                 for idx, h_col in enumerate(HORARIOS):
                     with cols_mural[idx]:
                         div_id = f"div_mural_{idx}"
                         
-                        # 1. CONSTRUÇÃO DO CONTEÚDO HTML DOS CARDS (FONTE MASTER)
+                        # 1. CONSTRUÇÃO DO CONTEÚDO DOS CARDS
                         html_cards = ""
                         grupos = {}
                         for _, r in df_escala.iterrows():
@@ -541,12 +539,18 @@ if menu == "🏠 Secretaria":
                             if info not in grupos: grupos[info] = []
                             grupos[info].append(r['Aluna'])
                         
-                        # Ordenação de Salas
                         chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 1 if "SALA 8" in x.upper() else 2 if "SALA 9" in x.upper() else 3, x))
                         
                         for local_prof in chaves_ordenadas:
                             local_up = local_prof.upper()
                             if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up: continue
+    
+                            # --- NOVA LÓGICA: IDENTIFICAÇÃO DE MATÉRIA ---
+                            local_exibicao = local_prof
+                            if "SALA 8" in local_up:
+                                local_exibicao = f"{local_prof} — TEORIA"
+                            elif "SALA 9" in local_up:
+                                local_exibicao = f"{local_prof} — SOLFEJO"
     
                             bg = "#ffffff"
                             for sala, cor in cores.items():
@@ -559,53 +563,49 @@ if menu == "🏠 Secretaria":
                                 presentes = [t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)]
                                 text_alunas = " + ".join(sorted(presentes)) if len(alunas_gp) > 1 else alunas_gp[0]
     
-                            # Cards com FONTES GIGANTES (26px e 24px)
-                            html_cards += f"""
-                            <div style="background-color:{bg}; border:3px solid #000; padding:12px; margin-bottom:10px; border-radius:10px; font-family: sans-serif;">
-                                <b style="font-size:26px; color:#000; display:block; margin-bottom:5px; line-height:1.2;">{local_prof}</b>
-                                <span style="font-size:24px; color:#1a1a1a; font-weight:800;">{text_alunas}</span>
+                            # Template com fontes gigantes e cores dinâmicas
+                            card_template = """
+                            <div style="background-color: {bg}; border: 3px solid #000; padding: 12px; margin-bottom: 10px; border-radius: 10px; font-family: sans-serif;">
+                                <b style="font-size: 26px; color: #000; display: block; margin-bottom: 5px; line-height: 1.2;">{local}</b>
+                                <span style="font-size: 24px; color: #1a1a1a; font-weight: 800;">{alunas}</span>
                             </div>
                             """
+                            html_cards += card_template.format(bg=bg, local=local_exibicao, alunas=text_alunas)
     
-                        # 2. RENDERIZAÇÃO DO MURAL NA TELA (Lado a Lado)
-                        # Container principal com borda grossa (5px) e horário master (32px)
-                        st.markdown(f"""
-                        <div id="{div_id}" style="background:white; padding:15px; border:5px solid #000; border-radius:15px;">
-                            <div style="background:#262730; color:white; padding:12px; border-radius:8px; text-align:center; font-size:32px; font-weight:bold; margin-bottom:15px; font-family: sans-serif;">
+                        # 2. RENDERIZAÇÃO DO MURAL COMPLETO
+                        mural_completo = f"""
+                        <div id="{div_id}" style="background: white; padding: 15px; border: 5px solid #000; border-radius: 15px; width: 100%;">
+                            <div style="background: #262730; color: white; padding: 12px; border-radius: 8px; text-align: center; font-size: 32px; font-weight: bold; margin-bottom: 15px; font-family: sans-serif;">
                                 {h_col}
                             </div>
                             {html_cards}
                         </div>
-                        """, unsafe_allow_html=True)
+                        """
+                        
+                        st.write(mural_completo, unsafe_allow_html=True)
     
-                        # 3. BOTÃO DE DOWNLOAD (Isolado no iframe seguro do Streamlit)
+                        # 3. BOTÃO DE DOWNLOAD VIA JAVASCRIPT
                         js_script = f"""
                         <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
                         <script>
-                        function baixar() {{
-                            // Mira no elemento que está fora do iframe (no Streamlit parent)
-                            const element = window.parent.document.getElementById('{div_id}');
-                            html2canvas(element, {{
-                                scale: 2, // DOBRA A RESOLUÇÃO PARA NITIDEZ MÁXIMA
-                                backgroundColor: "#ffffff" // Garante fundo branco na imagem
-                            }}).then(canvas => {{
-                                let a = document.createElement('a');
-                                // Gera nome de arquivo limpo (ex: Mural_18-05-2024_09h35.png)
-                                a.download = 'Mural_{data_sel_str.replace('/','-')}_{h_col.replace(':','h')}.png';
+                        function baixar{idx}() {{
+                            const el = window.parent.document.getElementById('{div_id}');
+                            html2canvas(el, {{ scale: 2, backgroundColor: "#ffffff" }}).then(canvas => {{
+                                const a = document.createElement('a');
+                                a.download = 'Mural_{h_col.replace(':', 'h')}.png';
                                 a.href = canvas.toDataURL("image/png");
                                 a.click();
                             }});
                         }}
                         </script>
-                        <button onclick="baixar()" style="width:100%; background:#107c10; color:white; border:none; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:16px; margin-top:10px;">
-                            📥 Salvar Imagem {h_col}
+                        <button onclick="baixar{idx}()" style="width:100%; background:#107c10; color:white; border:none; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:16px; margin-top:10px;">
+                            📥 Baixar {h_col}
                         </button>
                         """
-                        # Renderiza o botão dentro de um iframe seguro, prevenindo que o código vaze
                         st.components.v1.html(js_script, height=70)
     
-                st.divider()                    
-                            
+                st.divider()
+            
             # ... (Restante do código do editor de tabela continua igual)    
                 # --- PARTE 2: EDITOR DE TABELA ---
                 st.subheader("⚙️ Editor da Escala (Tabela)")
