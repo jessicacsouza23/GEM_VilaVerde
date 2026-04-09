@@ -427,171 +427,75 @@ if menu == "🏠 Secretaria":
 
     import base64
     
-    # --- ABA 2: PLANEJAMENTO (V91 - LAYOUT IDÊNTICO À IMAGEM) ---
+    # --- ABA 2: PLANEJAMENTO (V91 - ATUALIZADO) ---
     with tab_plan:
         st.markdown("### 🗓️ Planejamento e Mural")
         
-        # 1. GERENCIAMENTO DE ALUNAS FIXAS
-        with st.expander("📌 Configurar Alunas Fixas", expanded=False):
-            if 'fixas_escala' not in st.session_state:
-                st.session_state.fixas_escala = []
-            
-            cf1, cf2 = st.columns(2)
-            # Puxando alunas das turmas definidas globalmente
-            todas_alunas = sorted([aluna for turma in TURMAS.values() for aluna in turma])
-            aluna_f = cf1.selectbox("Selecione a Aluna:", todas_alunas, key="fix_a")
-            prof_f = cf2.selectbox("Selecione a Professora Fixa:", PROFESSORAS_LISTA, key="fix_p")
-            
-            if st.button("Vincular Aluna à Professora"):
-                # Evita duplicatas
-                st.session_state.fixas_escala = [f for f in st.session_state.fixas_escala if f['Aluna'] != aluna_f]
-                st.session_state.fixas_escala.append({"Aluna": aluna_f, "Prof": prof_f})
-                st.success(f"Vínculo criado: {aluna_f} → {prof_f}")
-                st.rerun()
-            
-            if st.session_state.fixas_escala:
-                st.write("**Vínculos Ativos:**")
-                for i, f in enumerate(st.session_state.fixas_escala):
-                    col_fix1, col_fix2 = st.columns([3, 1])
-                    col_fix1.write(f"🔹 {f['Aluna']} → {f['Prof']}")
-                    if col_fix2.button("Remover", key=f"del_fix_{i}"):
-                        st.session_state.fixas_escala.pop(i)
-                        st.rerun()
+        # 1. GERENCIAMENTO DE ALUNAS FIXAS (TABELA EDITÁVEL)
+        st.subheader("📌 Configurar Alunas Fixas")
+        if 'fixas_escala' not in st.session_state:
+            # Iniciando com estrutura de DataFrame para ser editável
+            st.session_state.fixas_escala = pd.DataFrame(columns=["Aluna", "Professora"])
+        
+        # Tabela editável para vincular alunas e professoras
+        # O parâmetro num_rows="dynamic" permite adicionar e remover linhas facilmente
+        df_fixas_editado = st.data_editor(
+            st.session_state.fixas_escala,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="editor_fixas_simples"
+        )
+        st.session_state.fixas_escala = df_fixas_editado
+    
+        st.divider()
     
         # 2. SELEÇÃO DE DATA
-        st.divider()
         c1, c2 = st.columns(2)
         mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
         ano = c2.selectbox("Ano:", [2026, 2027])
         
-        # Gerar sábados do mês selecionado
         sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
                    for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
         
         if sabados:
-            data_sel_str = st.selectbox("Selecione o Sábado para Gerar/Ver Escala:", [s.strftime("%d/%m/%Y") for s in sabados])
+            data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
             
-            # Simulação de busca no banco (substitua pela sua função db_get_calendario)
-            calendario_db = db_get_calendario() 
-    
-            if data_sel_str not in calendario_db:
-                st.warning(f"Não há escala gerada para {data_sel_str}")
-                
-                # Interface de Geração
-                col_t, col_s = st.columns(2)
-                with col_t:
-                    st.write("**📚 Teoria (Sala 8)**")
-                    pt = [st.selectbox(f"Prof Teor. {h}", PROFESSORAS_LISTA, index=0, key=f"pt{i}") for i, h in enumerate(HORARIOS[1:])]
-                with col_s:
-                    st.write("**🔊 Solfejo (Sala 9)**")
-                    ps = [st.selectbox(f"Prof Solf. {h}", PROFESSORAS_LISTA, index=1, key=f"ps{i}") for i, h in enumerate(HORARIOS[1:])]
-                
-                folga_ativa = st.multiselect("Professoras em Folga hoje:", PROFESSORAS_LISTA)
-    
-                if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
-                    mapa = {aluna: {"Aluna": aluna} for t in TURMAS.values() for aluna in t}
-                    
-                    # Horário Inicial (Geral)
-                    for a in mapa: 
-                        mapa[a][HORARIOS[0]] = "Roberta | Todas as alunas (Coro/Geral)"
-                    
-                    profs_disponiveis_hoje = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
-                    
-                    for i, h in enumerate(HORARIOS[1:]):
-                        prof_t, prof_s = pt[i], ps[i]
-                        turmas_list = list(TURMAS.keys())
-                        
-                        # Rotação de Turmas (Teoria / Solfejo / Prática)
-                        t_teo = turmas_list[i % 3]
-                        t_sol = turmas_list[(i+1) % 3]
-                        t_pra = turmas_list[(i+2) % 3]
-    
-                        for a in TURMAS[t_teo]: mapa[a][h] = f"Sala 8 | {prof_t}"
-                        for a in TURMAS[t_sol]: mapa[a][h] = f"Sala 9 | {prof_s}"
-                        
-                        # Lógica da Prática (Salas 1 a 7)
-                        disponiveis_p = [p for p in profs_disponiveis_hoje if p not in [prof_t, prof_s]]
-                        random.shuffle(disponiveis_p)
-                        vagas_salas = list(range(1, 8))
-                        random.shuffle(vagas_salas)
-    
-                        for a in TURMAS[t_pra]:
-                            # Verifica se a aluna tem professora fixa
-                            fixa = next((f['Prof'] for f in st.session_state.fixas_escala if f['Aluna'] == a), None)
-                            
-                            # Atribui a fixa se ela estiver disponível, senão pega uma aleatória
-                            if fixa and fixa in disponiveis_p:
-                                p_final = fixa
-                                disponiveis_p.remove(fixa)
-                            else:
-                                p_final = disponiveis_p.pop(0) if disponiveis_p else "Substituta"
-    
-                            s_n = vagas_salas.pop(0) if vagas_salas else "Extra"
-                            mapa[a][h] = f"Sala {s_n} | {p_final}"
-    
-                    # Salva no Supabase
-                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
-                    st.success("Escala Gerada!")
-                    st.rerun()
-    
+            # 3. TABELA DE RODÍZIO EDITÁVEL
+            st.subheader(f"🔄 Rodízio para o dia {data_sel_str}")
+            
+            # Recupera os dados do banco ou cria uma estrutura vazia
+            calendario_db = db_get_calendario()
+            
+            if data_sel_str in calendario_db:
+                dados_existentes = pd.DataFrame(calendario_db[data_sel_str])
             else:
-                # --- EXIBIÇÃO DO MURAL PARA DOWNLOAD ---
-                df_escala = pd.DataFrame(calendario_db[data_sel_str])
-                
-                estilos = {
-                    "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7",
-                    "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3"
-                }
+                # Estrutura padrão baseada nos seus horários se não houver escala
+                dados_existentes = pd.DataFrame(columns=["Aluna"] + HORARIOS)
     
-                for h_col in HORARIOS:
-                    # Criando o container visual do mural
-                    html_mural = f"""
-                    <div id="mural-{h_col.replace(':','')}" style="background:white; padding:30px; border:2px solid #333; border-radius:10px;">
-                        <h2 style="text-align:center; color:black; margin-bottom:20px;">{h_col} — PROGRAMAÇÃO</h2>
-                    """
-                    
-                    # Agrupamento por Local/Prof
-                    grupos = {}
-                    for _, r in df_escala.iterrows():
-                        loc = r[h_col]
-                        if loc not in grupos: grupos[loc] = []
-                        grupos[loc].append(r['Aluna'])
+            st.write("Edite a escala abaixo (Alterações são salvas ao clicar no botão):")
+            df_rodizio_editavel = st.data_editor(
+                dados_existentes,
+                num_rows="dynamic",
+                use_container_width=True,
+                key=f"editor_rodizio_{data_sel_str}"
+            )
     
-                    for local, alunas in grupos.items():
-                        cor = "#f3f4f6"
-                        for chave, valor in estilos.items():
-                            if chave in local.upper(): cor = valor
-                        
-                        html_mural += f"""
-                        <div style="background:{cor}; padding:10px; margin-bottom:8px; border-radius:5px; border-left:5px solid #333;">
-                            <b style="font-size:16px;">{local}</b><br>
-                            <span style="font-size:14px;">{', '.join(alunas)}</span>
-                        </div>
-                        """
-                    html_mural += "</div>"
-                    
-                    st.markdown(html_mural, unsafe_allow_html=True)
-                    
-                    # Botão para disparar o print da div
-                    if st.button(f"📸 Salvar Imagem {h_col}", key=f"print_{h_col}"):
-                        js_code = f"""
-                        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-                        <script>
-                            html2canvas(document.getElementById('mural-{h_col.replace(':','')}')).then(canvas => {{
-                                var link = document.createElement('a');
-                                link.download = 'Mural_{h_col}_{data_sel_str.replace('/','-')}.png';
-                                link.href = canvas.toDataURL();
-                                link.click();
-                            }});
-                        </script>
-                        """
-                        components.html(js_code, height=0)
-                    st.divider()
+            # Botões de Ação
+            col_btn1, col_btn2 = st.columns(2)
+            
+            if col_btn1.button("💾 Salvar/Atualizar Escala", use_container_width=True, type="primary"):
+                # Converte o DataFrame editado para lista de dicionários antes de salvar
+                lista_para_salvar = df_rodizio_editavel.to_dict('records')
+                supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_para_salvar}).execute()
+                st.success("Escala salva com sucesso!")
+                st.rerun()
     
-                if st.button("🗑️ APAGAR ESTA ESCALA"):
-                    supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-                    st.rerun()                    
-                
+            if col_btn2.button("🗑️ Apagar Escala", use_container_width=True):
+                supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                st.rerun()
+    
+        # Removido código de captura de imagem (HTML/JS) para evitar que apareça código na tela.
+    
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
         st.subheader("📍 Chamada Geral")
