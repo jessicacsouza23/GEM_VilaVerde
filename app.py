@@ -517,8 +517,6 @@ if menu == "🏠 Secretaria":
     
               # --- ABA 2: PLANEJAMENTO (V108 - MURAL VISÍVEL + DOWNLOAD CORRIGIDO) ---
               # --- ABA 2: PLANEJAMENTO (V109 - CORREÇÃO DE VISIBILIDADE TOTAL) ---
-                if data_sel_str not in calendario_db:
-                    st.warning("Nenhum dado para esta data.")
                 else:
                     # 1. Obter dados
                     df_escala = pd.DataFrame(calendario_db[data_sel_str])
