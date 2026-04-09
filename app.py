@@ -513,7 +513,7 @@ if menu == "🏠 Secretaria":
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
     
-           # --- ABA 2: PLANEJAMENTO (V103 - VISUAL AJUSTADO E SEM ERRO DE CÓDIGO) ---
+           # --- ABA 2: PLANEJAMENTO (V104 - BOTÕES ALINHADOS NO RODAPÉ) ---
             else:
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
@@ -552,7 +552,6 @@ if menu == "🏠 Secretaria":
                             if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up: 
                                 continue
     
-                            # Matéria nas salas 8 e 9
                             local_exibicao = local_prof
                             if "SALA 8" in local_up: local_exibicao = f"{local_prof} (Teoria)"
                             elif "SALA 9" in local_up: local_exibicao = f"{local_prof} (Solfejo)"
@@ -570,26 +569,28 @@ if menu == "🏠 Secretaria":
                                 presentes = [t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)]
                                 text_alunas = " + ".join(sorted(presentes)) if len(alunas_gp) > 1 else alunas_gp[0]
     
-                            # Montagem do Card (Tamanho reduzido para 20px/18px)
+                            # Cards (Visual Reduzido)
                             html_cards += f'<div style="background-color:{bg}; border:2px solid #000; padding:8px; margin-bottom:8px; border-radius:8px; font-family:sans-serif;">'
                             html_cards += f'<b style="font-size:18px; color:#000; display:block; line-height:1.1;">{local_exibicao}</b>'
-                            html_cards += f'<span style="font-size:14px; color:#333; font-weight:700;">{text_alunas}</span>'
+                            html_cards += f'<span style="font-size:16px; color:#333; font-weight:700;">{text_alunas}</span>'
                             html_cards += '</div>'
     
-                        # Container principal (Sem scroll, tamanho 24px para o título)
+                        # Container principal com ALTURA MÍNIMA (min-height) para alinhar os botões
+                        # Ajuste o valor de 400px se precisar de mais espaço
                         mural_visual = f"""
-                        <div id="{div_id}" style="background:white; padding:10px; border:4px solid #000; border-radius:12px; width:100%;">
-                            <div style="background:#262730; color:white; padding:8px; border-radius:5px; text-align:center; font-size:20px; font-weight:bold; margin-bottom:12px; font-family:sans-serif;">
+                        <div id="{div_id}" style="background:white; padding:10px; border:4px solid #000; border-radius:12px; width:100%; min-height:450px; display: flex; flex-direction: column;">
+                            <div style="background:#262730; color:white; padding:8px; border-radius:5px; text-align:center; font-size:22px; font-weight:bold; margin-bottom:12px; font-family:sans-serif;">
                                 {h_col}
                             </div>
-                            {html_cards}
+                            <div style="flex-grow: 1;">
+                                {html_cards}
+                            </div>
                         </div>
                         """
                         
-                        # Renderização forçada como HTML
                         st.write(mural_visual, unsafe_allow_html=True)
     
-                        # Botão de Download (Corrigido para cada coluna)
+                        # Botão de Download (Agora sempre alinhado embaixo)
                         js_fix = f"""
                         <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
                         <script>
@@ -603,11 +604,11 @@ if menu == "🏠 Secretaria":
                             }});
                         }}
                         </script>
-                        <button onclick="salvarImagem{idx}()" style="width:100%; background:#107c10; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px; margin-top:8px;">
+                        <button onclick="salvarImagem{idx}()" style="width:100%; background:#107c10; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px; margin-top:15px;">
                             📥 Baixar {h_col}
                         </button>
                         """
-                        st.components.v1.html(js_fix, height=60)
+                        st.components.v1.html(js_fix, height=80)
     
                 st.divider()
             
