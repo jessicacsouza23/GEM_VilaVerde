@@ -513,11 +513,11 @@ if menu == "🏠 Secretaria":
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
     
-           # --- ABA 2: PLANEJAMENTO (V101 - CORREÇÃO DEFINITIVA DE RENDERIZAÇÃO) ---
+           # --- ABA 2: PLANEJAMENTO (V102 - VISUAL AJUSTADO E DOWNLOAD CORRIGIDO) ---
             else:
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
-                st.markdown(f"### 📸 Mural para Print/WhatsApp - {data_sel_str}")
+                st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
                 
                 # Filtros e Cores
                 termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
@@ -527,9 +527,9 @@ if menu == "🏠 Secretaria":
     
                 for idx, h_col in enumerate(HORARIOS):
                     with cols_mural[idx]:
-                        div_id = f"div_mural_{idx}"
+                        # ID único para cada coluna
+                        div_id = f"mural_col_{idx}"
                         
-                        # 1. CONSTRUÇÃO MANUAL DO CONTEÚDO DOS CARDS (Sem templates para evitar erro)
                         html_cards = ""
                         grupos = {}
                         for _, r in df_escala.iterrows():
@@ -543,12 +543,10 @@ if menu == "🏠 Secretaria":
                             local_up = local_prof.upper()
                             if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up: continue
     
-                            # Identificação de matéria (Teoria/Solfejo)
+                            # Matéria nas salas 8 e 9
                             local_exibicao = local_prof
-                            if "SALA 8" in local_up:
-                                local_exibicao = f"{local_prof} — TEORIA"
-                            elif "SALA 9" in local_up:
-                                local_exibicao = f"{local_prof} — SOLFEJO"
+                            if "SALA 8" in local_up: local_exibicao = f"{local_prof} (Teoria)"
+                            elif "SALA 9" in local_up: local_exibicao = f"{local_prof} (Solfejo)"
     
                             bg = "#ffffff"
                             for sala, cor in cores.items():
@@ -561,47 +559,53 @@ if menu == "🏠 Secretaria":
                                 presentes = [t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)]
                                 text_alunas = " + ".join(sorted(presentes)) if len(alunas_gp) > 1 else alunas_gp[0]
     
-                            # Montagem manual concatenando as strings (Isso evita que o HTML apareça como texto)
-                            html_cards += '<div style="background-color:' + bg + '; border: 3px solid #000; padding: 12px; margin-bottom: 10px; border-radius: 10px; font-family: sans-serif;">'
-                            html_cards += '<b style="font-size: 20px; color: #000; display: block; margin-bottom: 5px; line-height: 1.2;">' + local_exibicao + '</b>'
-                            html_cards += '<span style="font-size: 18px; color: #1a1a1a; font-weight: 800;">' + text_alunas + '</span>'
-                            html_cards += '</div>'
+                            # Cards com tamanho REDUZIDO (20px e 18px) para caber na tela
+                            html_cards += f"""
+                            <div style="background-color:{bg}; border:2px solid #000; padding:8px; margin-bottom:8px; border-radius:8px; font-family:sans-serif;">
+                                <b style="font-size:20px; color:#000; display:block; line-height:1.1;">{local_exibicao}</b>
+                                <span style="font-size:18px; color:#333; font-weight:700;">{text_alunas}</span>
+                            </div>
+                            """
     
-                        # 2. RENDERIZAÇÃO DO MURAL (Bloco Final)
-                        mural_completo = f"""
-                        <div id="{div_id}" style="background: white; padding: 15px; border: 5px solid #000; border-radius: 15px; width: 100%;">
-                            <div style="background: #262730; color: white; padding: 12px; border-radius: 8px; text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 15px; font-family: sans-serif;">
+                        # Renderização na TELA (sem barras de rolagem)
+                        # O scale:1.5 no print garante que o download fique nítido mesmo com a fonte menor na tela
+                        mural_visual = f"""
+                        <div id="{div_id}" style="background:white; padding:10px; border:4px solid #000; border-radius:12px; width:100%;">
+                            <div style="background:#262730; color:white; padding:8px; border-radius:5px; text-align:center; font-size:24px; font-weight:bold; margin-bottom:12px; font-family:sans-serif;">
                                 {h_col}
                             </div>
                             {html_cards}
                         </div>
                         """
-                        
-                        # Força a renderização como HTML
-                        st.components.v1.html(mural_completo, height=500, scrolling=True)
+                        st.write(mural_visual, unsafe_allow_html=True)
     
-                        # 3. BOTÃO DE DOWNLOAD
-                        js_script = f"""
+                        # Botão de Download isolado
+                        js_fix = f"""
                         <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
                         <script>
-                        function baixar{idx}() {{
-                            const el = window.parent.document.getElementsByTagName('iframe')[{idx}].contentDocument.getElementById('{div_id}');
-                            html2canvas(el, {{ scale: 2, backgroundColor: "#ffffff" }}).then(canvas => {{
-                                const a = document.createElement('a');
-                                a.download = 'Mural_{h_col.replace(':', 'h')}.png';
-                                a.href = canvas.toDataURL("image/png");
-                                a.click();
+                        function baixarColuna{idx}() {{
+                            // Busca o elemento na página principal do Streamlit
+                            const doc = window.parent.document;
+                            const alvo = doc.getElementById('{div_id}');
+                            html2canvas(alvo, {{
+                                scale: 2, 
+                                backgroundColor: "#ffffff",
+                                useCORS: true
+                            }}).then(canvas => {{
+                                const link = doc.createElement('a');
+                                link.download = 'Escala_{h_col.replace(':', 'h')}.png';
+                                link.href = canvas.toDataURL("image/png");
+                                link.click();
                             }});
                         }}
                         </script>
-                        <button onclick="baixar{idx}()" style="width:100%; background:#107c10; color:white; border:none; padding:12px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:16px; margin-top:10px;">
+                        <button onclick="baixarColuna{idx}()" style="width:100%; background:#107c10; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px; margin-top:8px;">
                             📥 Baixar {h_col}
                         </button>
                         """
-                        st.components.v1.html(js_script, height=70)
+                        st.components.v1.html(js_fix, height=60)
     
-                st.divider()
-            
+                st.divider()            
             # ... (Restante do código do editor de tabela continua igual)    
                 # --- PARTE 2: EDITOR DE TABELA ---
                 st.subheader("⚙️ Editor da Escala (Tabela)")
