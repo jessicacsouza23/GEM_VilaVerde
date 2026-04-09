@@ -513,13 +513,15 @@ if menu == "🏠 Secretaria":
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
     
-            # CASO B: ESCALA JÁ EXISTE (MURAL AMPLIADO E FILTRADO)
+            # CASO B: ESCALA JÁ EXISTE (VISUAL EM COLUNAS LADO A LADO)
             else:
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
-                # --- PARTE 1: MURAL VISUAL (ESTILO FULL WIDTH / FONTE GRANDE) ---
+                # --- PARTE 1: MURAL VISUAL EM COLUNAS ---
                 st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
                 
+                # Filtros e Cores
+                termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO", "-"]
                 cores = {
                     "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3",
                     "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1",
@@ -527,71 +529,73 @@ if menu == "🏠 Secretaria":
                     "SECRETARIA": "#fef3c7"
                 }
     
-                # Filtros de exclusão (exceto para secretaria/atividade)
-                termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO", "-"]
+                # Criamos as colunas baseadas na quantidade de horários
+                cols_mural = st.columns(len(HORARIOS))
     
-                for h_col in HORARIOS:
-                    if h_col in df_escala.columns:
-                        # Cabeçalho do Horário com fonte maior
+                for idx, h_col in enumerate(HORARIOS):
+                    with cols_mural[idx]:
+                        # Cabeçalho do Horário (Compacto e Elegante)
                         st.markdown(f"""
-                            <div style="background:#333; color:white; padding:15px; border-radius:10px; text-align:center; font-size:28px; font-weight:bold; margin-top:30px; margin-bottom:10px; width:100%;">
-                                {h_col} — {'1ª AULA (IGREJA)' if h_col == HORARIOS[0] else 'AULA'}
+                            <div style="background:#262730; color:white; padding:10px; border-radius:5px; text-align:center; font-size:22px; font-weight:bold; margin-bottom:10px;">
+                                {h_col}
                             </div>
                         """, unsafe_allow_html=True)
                         
-                        grupos = {}
-                        for _, r in df_escala.iterrows():
-                            info = str(r[h_col])
-                            if info not in grupos: grupos[info] = []
-                            grupos[info].append(r['Aluna'])
-                        
-                        # Ordenação das salas
-                        chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
-                            0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
-                            1 if "SALA 8" in x.upper() else 
-                            2 if "SALA 9" in x.upper() else 3, 
-                            x
-                        ))
-                        
-                        for local_prof in chaves_ordenadas:
-                            local_upper = local_prof.upper()
+                        if h_col in df_escala.columns:
+                            # Agrupamento
+                            grupos = {}
+                            for _, r in df_escala.iterrows():
+                                info = str(r[h_col])
+                                if info not in grupos: grupos[info] = []
+                                grupos[info].append(r['Aluna'])
                             
-                            # Lógica de Filtro: Pula se tiver termo de falta, A MENOS que seja Secretaria/Atividade
-                            is_atividade = "SECRETARIA" in local_upper or "ATIVIDADE" in local_upper
-                            if any(termo in local_upper for termo in termos_excluir) and not is_atividade:
-                                continue
-    
-                            alunas_do_grupo = grupos[local_prof]
-                            bg_color = "#ffffff"
-                            for sala, cor in cores.items():
-                                if sala in local_upper:
-                                    bg_color = cor
-                                    break
+                            # Ordenação
+                            chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
+                                0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
+                                1 if "SALA 8" in x.upper() else 
+                                2 if "SALA 9" in x.upper() else 3, 
+                                x
+                            ))
                             
-                            # Lógica de Exibição por Turma
-                            if h_col == HORARIOS[0]:
-                                exibicao_alunas = "Todas as alunas"
-                            else:
-                                turmas_presentes = []
-                                for nome_turma, lista_alunas in TURMAS.items():
-                                    if any(aluna in alunas_do_grupo for aluna in lista_alunas):
-                                        turmas_presentes.append(nome_turma)
+                            for local_prof in chaves_ordenadas:
+                                local_upper = local_prof.upper()
+                                is_atividade = "SECRETARIA" in local_upper or "ATIVIDADE" in local_upper
                                 
-                                if len(alunas_do_grupo) > 1:
-                                    exibicao_alunas = " + ".join(sorted(turmas_presentes))
-                                else:
-                                    exibicao_alunas = alunas_do_grupo[0] if alunas_do_grupo else "---"
+                                # Pula se for falta, exceto secretaria
+                                if any(termo in local_upper for termo in termos_excluir) and not is_atividade:
+                                    continue
     
-                            # Renderização do Bloco (Fonte 22px para Título e 20px para Alunas)
-                            st.markdown(f"""
-                                <div style="background-color:{bg_color}; border:2px solid #000; padding:15px; margin-top:8px; border-radius:8px; width:100%;">
-                                    <b style="font-size:24px; color:#000;">{local_prof}</b><br>
-                                    <div style="font-size:22px; color:#1a1a1a; font-weight:500; margin-top:5px;">{exibicao_alunas}</div>
-                                </div>
-                            """, unsafe_allow_html=True)
+                                alunas_do_grupo = grupos[local_prof]
+                                bg_color = "#ffffff"
+                                for sala, cor in cores.items():
+                                    if sala in local_upper:
+                                        bg_color = cor
+                                        break
+                                
+                                # Lógica de Turma/Aluna
+                                if h_col == HORARIOS[0]:
+                                    exibicao_alunas = "Todas as alunas"
+                                else:
+                                    turmas_presentes = []
+                                    for nome_turma, lista_alunas in TURMAS.items():
+                                        if any(aluna in alunas_do_grupo for aluna in lista_alunas):
+                                            turmas_presentes.append(nome_turma)
+                                    
+                                    if len(alunas_do_grupo) > 1:
+                                        exibicao_alunas = " + ".join(sorted(turmas_presentes))
+                                    else:
+                                        exibicao_alunas = alunas_do_grupo[0] if alunas_do_grupo else "---"
+    
+                                # Card de Aula (Ajustado para colunas)
+                                st.markdown(f"""
+                                    <div style="background-color:{bg_color}; border:1.5px solid #333; padding:8px; margin-bottom:8px; border-radius:5px; min-height:80px;">
+                                        <b style="font-size:16px; color:#000; line-height:1.2;">{local_prof}</b><br>
+                                        <div style="font-size:15px; color:#1a1a1a; font-weight:600; margin-top:4px;">{exibicao_alunas}</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
     
                 st.divider()
-                
+                # ... (segue o editor de tabela abaixo)                
             # ... (Restante do código do editor de tabela continua igual)    
                 # --- PARTE 2: EDITOR DE TABELA ---
                 st.subheader("⚙️ Editor da Escala (Tabela)")
