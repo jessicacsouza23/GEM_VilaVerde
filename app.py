@@ -563,14 +563,14 @@ if menu == "🏠 Secretaria":
     
                             # Montagem manual concatenando as strings (Isso evita que o HTML apareça como texto)
                             html_cards += '<div style="background-color:' + bg + '; border: 3px solid #000; padding: 12px; margin-bottom: 10px; border-radius: 10px; font-family: sans-serif;">'
-                            html_cards += '<b style="font-size: 26px; color: #000; display: block; margin-bottom: 5px; line-height: 1.2;">' + local_exibicao + '</b>'
-                            html_cards += '<span style="font-size: 24px; color: #1a1a1a; font-weight: 800;">' + text_alunas + '</span>'
+                            html_cards += '<b style="font-size: 20px; color: #000; display: block; margin-bottom: 5px; line-height: 1.2;">' + local_exibicao + '</b>'
+                            html_cards += '<span style="font-size: 18px; color: #1a1a1a; font-weight: 800;">' + text_alunas + '</span>'
                             html_cards += '</div>'
     
                         # 2. RENDERIZAÇÃO DO MURAL (Bloco Final)
                         mural_completo = f"""
                         <div id="{div_id}" style="background: white; padding: 15px; border: 5px solid #000; border-radius: 15px; width: 100%;">
-                            <div style="background: #262730; color: white; padding: 12px; border-radius: 8px; text-align: center; font-size: 32px; font-weight: bold; margin-bottom: 15px; font-family: sans-serif;">
+                            <div style="background: #262730; color: white; padding: 12px; border-radius: 8px; text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 15px; font-family: sans-serif;">
                                 {h_col}
                             </div>
                             {html_cards}
