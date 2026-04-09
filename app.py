@@ -422,7 +422,7 @@ if menu == "🏠 Secretaria":
         else:
             st.warning("O banco de dados está vazio.")
             
-    # --- ABA 2: PLANEJAMENTO (V82 - RODÍZIO TOTAL DE SALAS E PROFESSORAS) ---
+    # --- ABA 2: PLANEJAMENTO (V84 - RODÍZIO GLOBAL DE SALAS E ALUNAS) ---
     with tab_plan:
         st.markdown("### 🗓️ Gestão de Escala")
         
@@ -438,20 +438,21 @@ if menu == "🏠 Secretaria":
         
         if sabados:
             data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_plan")
-            calendario_db = db_get_calendario()
-            df_hist = pd.DataFrame(db_get_historico())
+            calendario_db = db_get_calendario() # Carrega todas as escalas já feitas
+            df_hist = pd.DataFrame(db_get_historico()) # Carrega todo o histórico de aulas
     
             if data_sel_str not in calendario_db:
                 with st.container(border=True):
                     st.warning("⚡ O Rodízio ainda não foi gerado.")
                     
+                    # Interface de Teoria/Solfejo
                     col_t, col_s = st.columns(2)
                     with col_t:
                         st.markdown("**📚 Teoria (Sala 8)**")
                         pt2, pt3, pt4 = st.selectbox("H2", PROFESSORAS_LISTA, index=0), st.selectbox("H3", PROFESSORAS_LISTA, index=1), st.selectbox("H4", PROFESSORAS_LISTA, index=2)
                     with col_s:
                         st.markdown("**🔊 Solfejo (Sala 9)**")
-                        ps2, ps3, ps4 = st.selectbox("H2", PROFESSORAS_LISTA, index=3, key="s2"), st.selectbox("H3", PROFESSORAS_LISTA, index=4, key="s3"), st.selectbox("H4", PROFESSORAS_LISTA, index=5, key="s4")
+                        ps2, ps3, ps4 = st.selectbox("H2", PROFESSORAS_LISTA, index=3), st.selectbox("H3", PROFESSORAS_LISTA, index=4), st.selectbox("H4", PROFESSORAS_LISTA, index=5)
                     
                     st.divider()
                     st.markdown("📌 **Configurar Duplas Fixas**")
@@ -473,45 +474,45 @@ if menu == "🏠 Secretaria":
                         mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
                         for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
                         
-                        # --- LÓGICA DE RODÍZIO DE SALAS ENTRE SÁBADOS ---
+                        # --- 1. RODÍZIO DE SALAS (ANÁLISE DE TODO O HISTÓRICO) ---
                         profs_pratica = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
-                        salas_fixas = {}
+                        salas_do_dia = {}
                         
-                        # Busca a última escala gerada para ver as salas
-                        ultimas_escalas = sorted(calendario_db.keys(), key=lambda x: datetime.strptime(x, "%d/%m/%Y"), reverse=True)
-                        ultima_sala_por_prof = {}
-                        if ultimas_escalas:
-                            ultima_data = ultimas_escalas[0]
-                            for item in calendario_db[ultima_data]:
-                                for h in HORARIOS:
-                                    val = item.get(h, "")
-                                    if "SALA" in val and "|" in val:
-                                        sala_num = val.split("SALA ")[1].split(" |")[0]
-                                        prof_nome = val.split("| ")[1]
-                                        ultima_sala_por_prof[prof_nome] = int(sala_num)
+                        # Mapeia quantas vezes cada prof usou cada sala (1 a 7) no passado
+                        uso_salas_hist = {p: {s: 0 for s in range(1, 8)} for p in profs_pratica}
+                        for data_id, escala in calendario_db.items():
+                            for linha in escala:
+                                for h in HORARIOS[1:]:
+                                    txt = linha.get(h, "")
+                                    if "SALA" in txt and "|" in txt:
+                                        try:
+                                            num = int(txt.split("SALA ")[1].split(" |")[0])
+                                            prof = txt.split("| ")[1]
+                                            if prof in uso_salas_hist and num <= 7:
+                                                uso_salas_hist[prof][num] += 1
+                                        except: continue
     
-                        # Atribui sala nova (Incrementa a sala anterior ou gera aleatório se for nova)
-                        salas_disponiveis = [1, 2, 3, 4, 5, 6, 7]
+                        vagas_globais = [1, 2, 3, 4, 5, 6, 7]
                         random.shuffle(profs_pratica)
                         
                         for p in profs_pratica:
-                            if p in ultima_sala_por_prof:
-                                proxima_sala = (ultima_sala_por_prof[p] % 7) + 1
-                                # Se a próxima sala sugerida já estiver ocupada por outra prof neste sorteio, pega a próxima vaga
-                                while proxima_sala not in salas_disponiveis and salas_disponiveis:
-                                    proxima_sala = (proxima_sala % 7) + 1
-                                if proxima_sala in salas_disponiveis:
-                                    salas_fixas[p] = proxima_sala
-                                    salas_disponiveis.remove(proxima_sala)
+                            # Escolhe a sala que a professora MENOS usou no histórico total
+                            salas_ordenadas = sorted(uso_salas_hist[p], key=uso_salas_hist[p].get)
+                            sala_escolhida = None
+                            for s in salas_ordenadas:
+                                if s in vagas_globais:
+                                    sala_escolhida = s
+                                    break
                             
-                        # Preenche quem sobrou (profs novas ou sem histórico)
-                        for p in profs_pratica:
-                            if p not in salas_fixas and salas_disponiveis:
-                                s = random.choice(salas_disponiveis)
-                                salas_fixas[p] = s
-                                salas_disponiveis.remove(s)
+                            if sala_escolhida:
+                                salas_do_dia[p] = sala_escolhida
+                                vagas_globais.remove(sala_escolhida)
+                            elif vagas_globais: # Backup se a lógica de histórico falhar
+                                s = random.choice(vagas_globais)
+                                salas_do_dia[p] = s
+                                vagas_globais.remove(s)
     
-                        # --- EXECUÇÃO DOS HORÁRIOS ---
+                        # --- 2. DISTRIBUIÇÃO NOS HORÁRIOS (RODÍZIO DE ALUNAS) ---
                         config_h = {
                             HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "P_Teo": pt2, "P_Sol": ps2},
                             HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "P_Teo": pt3, "P_Sol": ps3},
@@ -520,45 +521,45 @@ if menu == "🏠 Secretaria":
                         
                         for h in [HORARIOS[1], HORARIOS[2], HORARIOS[3]]:
                             conf = config_h[h]
-                            profs_ocupadas_h = [conf["P_Teo"], conf["P_Sol"]] + folga_ativa
+                            profs_indisponiveis = [conf["P_Teo"], conf["P_Sol"]] + folga_ativa
                             
-                            alunas_na_pratica = []
-                            for t_nome, alunas in TURMAS.items():
+                            alunas_p = [a for t, girls in TURMAS.items() if conf["Teo"] != t and conf["Sol"] != t for a in girls]
+                            for t_nome, girls in TURMAS.items():
                                 if conf["Teo"] == t_nome:
-                                    for a in alunas: mapa[a][h] = f"📚 SALA 8 | {conf['P_Teo']}"
+                                    for a in girls: mapa[a][h] = f"📚 SALA 8 | {conf['P_Teo']}"
                                 elif conf["Sol"] == t_nome:
-                                    for a in alunas: mapa[a][h] = f"🔊 SALA 9 | {conf['P_Sol']}"
-                                else:
-                                    alunas_na_pratica.extend(alunas)
-                            
-                            profs_livres_h = [p for p in PROFESSORAS_LISTA if p not in profs_ocupadas_h]
-                            random.shuffle(alunas_na_pratica)
+                                    for a in girls: mapa[a][h] = f"🔊 SALA 9 | {conf['P_Sol']}"
     
-                            # PASSO A: FIXAS
-                            alunas_restantes = alunas_na_pratica.copy()
-                            for fixa in st.session_state.fixas_escala:
-                                if fixa['Aluna'] in alunas_restantes and fixa['Prof'] in profs_livres_h:
-                                    s_num = salas_fixas.get(fixa['Prof'], "?")
-                                    mapa[fixa['Aluna']][h] = f"📌 SALA {s_num} | {fixa['Prof']}"
-                                    alunas_restantes.remove(fixa['Aluna'])
-                                    profs_livres_h.remove(fixa['Prof'])
+                            disponiveis_h = [p for p in PROFESSORAS_LISTA if p not in profs_indisponiveis]
+                            random.shuffle(alunas_p)
     
-                            # PASSO B: RODÍZIO HISTÓRICO ALUNA x PROF
-                            for aluna in alunas_restantes:
-                                if profs_livres_h:
-                                    contagem = {p: (len(df_hist[(df_hist['Aluna'] == aluna) & (df_hist['Instrutora'] == p)]) if not df_hist.empty else 0) for p in profs_livres_h}
-                                    prof_sorteada = sorted(contagem, key=contagem.get)[0]
-                                    s_num = salas_fixas.get(prof_sorteada, "?")
-                                    mapa[aluna][h] = f"🎹 SALA {s_num} | {prof_sorteada}"
-                                    profs_livres_h.remove(prof_sorteada)
+                            for aluna in alunas_p:
+                                prof_final = None
+                                # Prioridade 1: Dupla Fixa Editável
+                                fixa = next((f for f in st.session_state.fixas_escala if f['Aluna'] == aluna), None)
+                                if fixa and fixa['Prof'] in disponiveis_h:
+                                    prof_final = fixa['Prof']
+                                    nota = "📌"
+                                
+                                # Prioridade 2: Rodízio de Alunas (Verifica histórico total)
+                                elif disponiveis_h:
+                                    # Conta repetições aluna x prof em todo o histórico de aulas
+                                    contagem = {p: (len(df_hist[(df_hist['Aluna'] == aluna) & (df_hist['Instrutora'] == p)]) if not df_hist.empty else 0) for p in disponiveis_h}
+                                    prof_final = sorted(contagem, key=contagem.get)[0]
+                                    nota = "🎹"
+    
+                                if prof_final:
+                                    s_num = salas_do_dia.get(prof_final, random.randint(1, 7))
+                                    mapa[aluna][h] = f"{nota} SALA {s_num} | {prof_final}"
+                                    if prof_final in disponiveis_h: disponiveis_h.remove(prof_final)
                                 else:
                                     mapa[aluna][h] = "⚠️ SEM PROF"
     
                         supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
-                        st.success("Rodízio Completo Gerado (Salas e Professoras)!"); st.rerun()
+                        st.success("Rodízio Inteligente Gerado!"); st.rerun()
     
             else:
-                # Exibição e Edição
+                # Edição manual da escala salva
                 st.success(f"🗓️ Escala confirmada para {data_sel_str}")
                 df_view = pd.DataFrame(calendario_db[data_sel_str])
                 df_edit = st.data_editor(df_view[["Aluna", "Turma"] + HORARIOS], use_container_width=True, hide_index=True)
