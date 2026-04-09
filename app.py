@@ -902,13 +902,15 @@ if menu == "🏠 Secretaria":
         # ============================================================
         def db_get_metodos_cadastrados():
             try:
-                # Busca da tabela dedicada para não sobrecarregar a config_geral
+                # Tenta buscar os dados da tabela config_metodos
                 res = supabase.table("config_metodos").select("*").execute()
                 if res.data:
                     return pd.DataFrame(res.data)
-                return pd.DataFrame(columns=["id", "nome", "categoria"])
-            except:
-                return pd.DataFrame(columns=["id", "nome", "categoria"])
+                # Se a tabela existir mas estiver vazia, retorna colunas padrão
+                return pd.DataFrame(columns=["nome", "categoria"])
+            except Exception as e:
+                # Se a tabela não existir ou houver erro de conexão, retorna vazio para não travar o app
+                return pd.DataFrame(columns=["nome", "categoria"])
     
                         
 # ============================================================
@@ -920,36 +922,35 @@ elif menu == "👩‍🏫 Minhas Aulas":
     tab_aula, tab_config = st.tabs(["📝 Registro de Aula", "⚙️ Configurar Métodos"])
 
     # No seu loop principal, dentro da tab_config:
+   # --- ABA DE CONFIGURAÇÃO (ONDE DAVA O ERRO) ---
     with tab_config:
         st.subheader("⚙️ Gerenciar Biblioteca de Métodos")
-        st.caption("Cadastre aqui os métodos de órgão e livros que aparecerão no registro de aula.")
-    
+        
+        # Agora a função já existe no topo do arquivo, então não dará NameError
         df_metodos_db = db_get_metodos_cadastrados()
-    
+
         # Editor dinâmico
         df_editado = st.data_editor(
             df_metodos_db,
             column_config={
-                "nome": st.column_config.TextColumn("Nome do Método", placeholder="Ex: Burgmüller, Kohler, MSA...", required=True),
+                "nome": st.column_config.TextColumn("Nome do Método", placeholder="Ex: Burgmüller, MSA...", required=True),
                 "categoria": st.column_config.SelectboxColumn("Área", options=["Prática", "Teoria", "Solfejo"], required=True)
             },
             num_rows="dynamic",
             use_container_width=True,
             key="editor_metodos_v53"
         )
-    
+
         if st.button("💾 Salvar Biblioteca", use_container_width=True):
             try:
-                # Lógica para salvar: Deletamos o antigo e inserimos o novo (ou upsert se tiver ID)
-                # Para simplificar e evitar IDs órfãos, vamos converter para dict
                 novos_dados = df_editado.to_dict('records')
-                
-                # Limpa o banco e reinsere (Estratégia Full Refresh para tabelas de config pequena)
+                # Limpa e reinsere para manter a lista atualizada conforme o editor
                 supabase.table("config_metodos").delete().neq("nome", "---").execute()
                 if novos_dados:
                     supabase.table("config_metodos").insert(novos_dados).execute()
                 
-                st.success("Biblioteca atualizada!")
+                st.success("Biblioteca atualizada com sucesso!")
+                time.sleep(1)
                 st.rerun()
             except Exception as e:
                 st.error(f"Erro ao salvar: {e}")
