@@ -559,13 +559,16 @@ if menu == "🏠 Secretaria":
                                 {alunas_str}
                             </div>
                         """
+                    # ... dentro do loop for h_col in HORARIOS:
+                        html_final += "</div>"
+                        
+                        if autonomas:
+                            # CORREÇÃO: Adicionada a aspa inicial f" no início da linha
+                            html_final += f"<div style='margin-top:15px; border: 2px dashed black; padding:10px;'><b>📂 AUTÔNOMA:</b> {', '.join(sorted(autonomas))}</div>"
+        
                     html_final += "</div>"
-                    
-                    if autonomas:
-                        html_final += f<div style='margin-top:15px; border: 2px dashed black; padding:10px;'><b>📂 AUTÔNOMA:</b> {', '.join(sorted(autonomas))}</div>"
-    
-                html_final += "</div>"
-                st.markdown(html_final, unsafe_allow_html=True)
+                    st.markdown(html_final, unsafe_allow_html=True)
+                    # ... restante do código
     
                 if st.button("🖨️ IMPRIMIR / SALVAR PDF", use_container_width=True):
                     js_code = f"""
