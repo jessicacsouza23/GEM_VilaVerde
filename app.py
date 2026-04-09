@@ -516,6 +516,7 @@ if menu == "🏠 Secretaria":
                     st.rerun()
     
               # --- ABA 2: PLANEJAMENTO (V108 - MURAL VISÍVEL + DOWNLOAD CORRIGIDO) ---
+              # --- ABA 2: PLANEJAMENTO (V109 - CORREÇÃO DE VISIBILIDADE TOTAL) ---
                 if data_sel_str not in calendario_db:
                     st.warning("Nenhum dado para esta data.")
                 else:
@@ -546,7 +547,11 @@ if menu == "🏠 Secretaria":
                             const divId = 'mural_export_individual_' + i;
                             const container = window.parent.document.getElementById(divId);
                             if (container) {{
-                                const canvas = await html2canvas(container, {{ scale: 2, backgroundColor: "#ffffff", useCORS: true }});
+                                const canvas = await html2canvas(container, {{ 
+                                    scale: 2, 
+                                    backgroundColor: "#ffffff", 
+                                    useCORS: true 
+                                }});
                                 const link = window.parent.document.createElement('a');
                                 const hNome = container.querySelector('.horario-titulo').innerText.trim().replace(':', 'h');
                                 link.download = 'Individual_' + hNome + '.png';
@@ -559,7 +564,11 @@ if menu == "🏠 Secretaria":
                         // Print Mural Completo
                         const muralCompleto = window.parent.document.getElementById('mural_completo_container');
                         if (muralCompleto) {{
-                            const canvasGeral = await html2canvas(muralCompleto, {{ scale: 2, backgroundColor: "#ffffff", useCORS: true }});
+                            const canvasGeral = await html2canvas(muralCompleto, {{ 
+                                scale: 2, 
+                                backgroundColor: "#ffffff", 
+                                useCORS: true 
+                            }});
                             const linkGeral = window.parent.document.createElement('a');
                             linkGeral.download = 'Mural_Completo_{data_sel_str.replace("/", "-")}.png';
                             linkGeral.href = canvasGeral.toDataURL("image/png");
@@ -567,7 +576,7 @@ if menu == "🏠 Secretaria":
                         }}
                     }}
                     </script>
-                    <button onclick="baixarTudo()" style="width:100%; background: linear-gradient(90deg, #107c10, #21a366); color:white; border:none; padding:20px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:20px; margin-bottom:25px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                    <button onclick="baixarTudo()" style="width:100%; background: linear-gradient(90deg, #107c10, #21a366); color:white; border:none; padding:20px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:20px; margin-bottom:25px;">
                         ✅ Gerar Tudo: Fotos Individuais + Mural Completo
                     </button>
                     """
@@ -582,20 +591,18 @@ if menu == "🏠 Secretaria":
                         "SECRETARIA": "#fef3c7"
                     }
                 
-                    # --- CONSTRUÇÃO DO MURAL COMPLETO (O que será baixado e visto) ---
+                    # --- RENDERIZAÇÃO ---
+                    # Criamos o Mural Completo como uma string para o Download e para a Tela
                     html_mural_conteudo = ""
                     
                     for idx, h_col in enumerate(HORARIOS):
                         html_cards = ""
-                        
-                        # Agrupamento por Local/Professor
                         grupos = {}
                         for _, r in df_editado.iterrows():
                             info = str(r[h_col])
                             if info not in grupos: grupos[info] = []
                             grupos[info].append(r['Aluna'])
                         
-                        # Ordenação
                         chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
                             0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
                             1 if "SALA 8" in x.upper() else 
@@ -605,7 +612,6 @@ if menu == "🏠 Secretaria":
                         for local_prof in chaves_ordenadas:
                             local_up = local_prof.upper()
                             if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up: continue
-                
                             bg = cores.get(next((s for s in cores if s in local_up), ""), "#ffffff")
                             alunas_gp = grupos[local_prof]
                             
@@ -616,32 +622,29 @@ if menu == "🏠 Secretaria":
                                 text_alunas = " + ".join(sorted(presentes)) if len(alunas_gp) > 1 else alunas_gp[0]
                 
                             html_cards += f'''
-                            <div style="background-color:{bg}; border:2px solid #000; padding:10px; margin-bottom:10px; border-radius:10px;">
-                                <b style="font-size:16px; color:#000; display:block; line-height:1.1;">{local_prof}</b>
-                                <span style="font-size:15px; color:#1a1a1a; font-weight:800;">{text_alunas}</span>
+                            <div style="background-color:{bg}; border:2px solid #000; padding:8px; margin-bottom:8px; border-radius:8px;">
+                                <b style="font-size:15px; color:#000; display:block;">{local_prof}</b>
+                                <span style="font-size:14px; color:#111; font-weight:800;">{text_alunas}</span>
                             </div>
                             '''
                 
-                        # Cada coluna individual dentro do mural
                         html_mural_conteudo += f"""
-                        <div id="mural_export_individual_{idx}" style="background:white; padding:15px; border:3px solid #000; border-radius:15px; min-width:240px; font-family:sans-serif; flex-shrink: 0;">
+                        <div id="mural_export_individual_{idx}" style="background:white; padding:15px; border:3px solid #000; border-radius:15px; width:250px; flex-shrink:0; font-family:sans-serif; margin-right:10px;">
                             <div style="text-align:center;">{logo_html}</div>
-                            <div class="horario-titulo" style="background:#262730; color:white; padding:8px; border-radius:5px; text-align:center; font-size:20px; font-weight:bold; margin-bottom:12px;">
+                            <div class="horario-titulo" style="background:#262730; color:white; padding:8px; border-radius:5px; text-align:center; font-size:18px; font-weight:bold; margin-bottom:10px;">
                                 {h_col}
                             </div>
                             {html_cards}
                         </div>
                         """
                 
-                    # Montagem final do container que aparece na tela e é capturado pelo JS
-                    mural_final_html = f"""
-                    <div id="mural_completo_container" style="display: flex; gap: 15px; background: #f0f2f6; padding: 20px; overflow-x: auto; border-radius: 20px;">
+                    # O container principal que o Streamlit vai mostrar
+                    # Usamos st.markdown com unsafe_allow_html para garantir que ele renderize como HTML puro
+                    st.markdown(f"""
+                    <div id="mural_completo_container" style="display: flex; flex-direction: row; overflow-x: auto; padding: 20px; background-color: #f8f9fa; border-radius: 15px; border: 1px solid #ddd;">
                         {html_mural_conteudo}
                     </div>
-                    """
-                    
-                    # Exibe o mural na tela
-                    st.write(mural_final_html, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
                 
                 st.divider()
 
