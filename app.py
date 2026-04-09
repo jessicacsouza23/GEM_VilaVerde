@@ -515,14 +515,14 @@ if menu == "🏠 Secretaria":
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
     
-               # --- ABA 2: PLANEJAMENTO (V107 - BOTÃO MASTER: INDIVIDUAIS + MURAL COMPLETO) ---
+              # --- ABA 2: PLANEJAMENTO (V108 - MURAL VISÍVEL + DOWNLOAD CORRIGIDO) ---
                 if data_sel_str not in calendario_db:
                     st.warning("Nenhum dado para esta data.")
                 else:
                     # 1. Obter dados
                     df_escala = pd.DataFrame(calendario_db[data_sel_str])
                     
-                    # 2. Editor da Escala (Corrigindo o erro de indentação aqui)
+                    # 2. Editor da Escala
                     st.subheader("⚙️ Editor da Escala (Tabela)")
                     df_editado = st.data_editor(df_escala, use_container_width=True, key=f"editor_{data_sel_str}")
                 
@@ -543,7 +543,7 @@ if menu == "🏠 Secretaria":
                         
                         // Prints Individuais
                         for (let i = 0; i < numColunas; i++) {{
-                            const divId = 'mural_export_' + i;
+                            const divId = 'mural_export_individual_' + i;
                             const container = window.parent.document.getElementById(divId);
                             if (container) {{
                                 const canvas = await html2canvas(container, {{ scale: 2, backgroundColor: "#ffffff", useCORS: true }});
@@ -567,13 +567,13 @@ if menu == "🏠 Secretaria":
                         }}
                     }}
                     </script>
-                    <button onclick="baixarTudo()" style="width:100%; background: linear-gradient(90deg, #107c10, #21a366); color:white; border:none; padding:20px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:20px; margin-bottom:25px;">
+                    <button onclick="baixarTudo()" style="width:100%; background: linear-gradient(90deg, #107c10, #21a366); color:white; border:none; padding:20px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:20px; margin-bottom:25px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
                         ✅ Gerar Tudo: Fotos Individuais + Mural Completo
                     </button>
                     """
                     st.components.v1.html(js_master, height=110)
                 
-                    # 4. Montagem do Mural (Visual e para Download)
+                    # 4. Configurações Visuais
                     termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
                     cores = {
                         "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", 
@@ -582,21 +582,20 @@ if menu == "🏠 Secretaria":
                         "SECRETARIA": "#fef3c7"
                     }
                 
-                    html_mural_completo = '<div id="mural_completo_container" style="display: flex; gap: 10px; background: white; padding: 20px;">'
-                    cols_mural = st.columns(len(HORARIOS))
-                
+                    # --- CONSTRUÇÃO DO MURAL COMPLETO (O que será baixado e visto) ---
+                    html_mural_conteudo = ""
+                    
                     for idx, h_col in enumerate(HORARIOS):
-                        div_id = f"mural_export_{idx}"
                         html_cards = ""
                         
-                        # Agrupamento
+                        # Agrupamento por Local/Professor
                         grupos = {}
                         for _, r in df_editado.iterrows():
                             info = str(r[h_col])
                             if info not in grupos: grupos[info] = []
                             grupos[info].append(r['Aluna'])
                         
-                        # Ordenação das Salas
+                        # Ordenação
                         chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
                             0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
                             1 if "SALA 8" in x.upper() else 
@@ -618,13 +617,14 @@ if menu == "🏠 Secretaria":
                 
                             html_cards += f'''
                             <div style="background-color:{bg}; border:2px solid #000; padding:10px; margin-bottom:10px; border-radius:10px;">
-                                <b style="font-size:16px; color:#000; display:block;">{local_prof}</b>
+                                <b style="font-size:16px; color:#000; display:block; line-height:1.1;">{local_prof}</b>
                                 <span style="font-size:15px; color:#1a1a1a; font-weight:800;">{text_alunas}</span>
                             </div>
                             '''
                 
-                        mural_visual = f"""
-                        <div id="{div_id}" style="background:white; padding:15px; border:3px solid #000; border-radius:15px; min-width:220px; font-family:sans-serif;">
+                        # Cada coluna individual dentro do mural
+                        html_mural_conteudo += f"""
+                        <div id="mural_export_individual_{idx}" style="background:white; padding:15px; border:3px solid #000; border-radius:15px; min-width:240px; font-family:sans-serif; flex-shrink: 0;">
                             <div style="text-align:center;">{logo_html}</div>
                             <div class="horario-titulo" style="background:#262730; color:white; padding:8px; border-radius:5px; text-align:center; font-size:20px; font-weight:bold; margin-bottom:12px;">
                                 {h_col}
@@ -632,17 +632,19 @@ if menu == "🏠 Secretaria":
                             {html_cards}
                         </div>
                         """
-                        html_mural_completo += mural_visual
-                        with cols_mural[idx]:
-                            st.write(mural_visual, unsafe_allow_html=True)
                 
-                    html_mural_completo += "</div>"
+                    # Montagem final do container que aparece na tela e é capturado pelo JS
+                    mural_final_html = f"""
+                    <div id="mural_completo_container" style="display: flex; gap: 15px; background: #f0f2f6; padding: 20px; overflow-x: auto; border-radius: 20px;">
+                        {html_mural_conteudo}
+                    </div>
+                    """
                     
-                    # Renderiza o container escondido para o print completo funcionar
-                    st.write(f'<div style="overflow-x: auto; opacity: 0; height: 0;">{html_mural_completo}</div>', unsafe_allow_html=True)
-                    
+                    # Exibe o mural na tela
+                    st.write(mural_final_html, unsafe_allow_html=True)
+                
                 st.divider()
-                    
+
             # ... (Restante do código do editor de tabela continua igual)    
                 # --- PARTE 2: EDITOR DE TABELA ---
                 st.subheader("⚙️ Editor da Escala (Tabela)")
