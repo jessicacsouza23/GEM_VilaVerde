@@ -437,53 +437,71 @@ if menu == "🏠 Secretaria":
                 st.session_state.fixas_escala = []
             
             cf1, cf2 = st.columns(2)
-            aluna_f = cf1.selectbox("Aluna:", [a for t in TURMAS.values() for a in t], key="fix_a")
-            prof_f = cf2.selectbox("Professora:", PROFESSORAS_LISTA, key="fix_p")
-            if st.button("Vincular Fixa"):
+            # Puxando alunas das turmas definidas globalmente
+            todas_alunas = sorted([aluna for turma in TURMAS.values() for aluna in turma])
+            aluna_f = cf1.selectbox("Selecione a Aluna:", todas_alunas, key="fix_a")
+            prof_f = cf2.selectbox("Selecione a Professora Fixa:", PROFESSORAS_LISTA, key="fix_p")
+            
+            if st.button("Vincular Aluna à Professora"):
+                # Evita duplicatas
+                st.session_state.fixas_escala = [f for f in st.session_state.fixas_escala if f['Aluna'] != aluna_f]
                 st.session_state.fixas_escala.append({"Aluna": aluna_f, "Prof": prof_f})
+                st.success(f"Vínculo criado: {aluna_f} → {prof_f}")
                 st.rerun()
             
             if st.session_state.fixas_escala:
-                st.write("Vínculos Ativos:")
+                st.write("**Vínculos Ativos:**")
                 for i, f in enumerate(st.session_state.fixas_escala):
-                    st.write(f"- {f['Aluna']} → {f['Prof']}")
+                    col_fix1, col_fix2 = st.columns([3, 1])
+                    col_fix1.write(f"🔹 {f['Aluna']} → {f['Prof']}")
+                    if col_fix2.button("Remover", key=f"del_fix_{i}"):
+                        st.session_state.fixas_escala.pop(i)
+                        st.rerun()
     
         # 2. SELEÇÃO DE DATA
+        st.divider()
         c1, c2 = st.columns(2)
         mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
         ano = c2.selectbox("Ano:", [2026, 2027])
         
+        # Gerar sábados do mês selecionado
         sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
                    for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
         
         if sabados:
-            data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
-            calendario_db = db_get_calendario()
+            data_sel_str = st.selectbox("Selecione o Sábado para Gerar/Ver Escala:", [s.strftime("%d/%m/%Y") for s in sabados])
+            
+            # Simulação de busca no banco (substitua pela sua função db_get_calendario)
+            calendario_db = db_get_calendario() 
     
             if data_sel_str not in calendario_db:
-                # Interface de Geração (Compacta)
+                st.warning(f"Não há escala gerada para {data_sel_str}")
+                
+                # Interface de Geração
                 col_t, col_s = st.columns(2)
                 with col_t:
                     st.write("**📚 Teoria (Sala 8)**")
-                    pt = [st.selectbox(f"Prof {h}", PROFESSORAS_LISTA, index=i, key=f"pt{i}") for i, h in enumerate(HORARIOS[1:])]
+                    pt = [st.selectbox(f"Prof Teor. {h}", PROFESSORAS_LISTA, index=0, key=f"pt{i}") for i, h in enumerate(HORARIOS[1:])]
                 with col_s:
                     st.write("**🔊 Solfejo (Sala 9)**")
-                    ps = [st.selectbox(f"Prof {h}", PROFESSORAS_LISTA, index=i+3, key=f"ps{i}") for i, h in enumerate(HORARIOS[1:])]
+                    ps = [st.selectbox(f"Prof Solf. {h}", PROFESSORAS_LISTA, index=1, key=f"ps{i}") for i, h in enumerate(HORARIOS[1:])]
                 
-                folga_ativa = st.multiselect("Folgas:", PROFESSORAS_LISTA)
+                folga_ativa = st.multiselect("Professoras em Folga hoje:", PROFESSORAS_LISTA)
     
-                if st.button("🚀 GERAR RODÍZIO", use_container_width=True, type="primary"):
-                    # --- LÓGICA DE GERAÇÃO (RESPEITANDO FIXAS E ROTAÇÃO) ---
+                if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
                     mapa = {aluna: {"Aluna": aluna} for t in TURMAS.values() for aluna in t}
-                    for a in mapa: mapa[a][HORARIOS[0]] = "Roberta | Todas as alunas" # Conforme sua imagem
                     
-                    profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
+                    # Horário Inicial (Geral)
+                    for a in mapa: 
+                        mapa[a][HORARIOS[0]] = "Roberta | Todas as alunas (Coro/Geral)"
+                    
+                    profs_disponiveis_hoje = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                     
                     for i, h in enumerate(HORARIOS[1:]):
                         prof_t, prof_s = pt[i], ps[i]
-                        turmas_list = list(TURMAS.keys()) # ["Turma 1", "Turma 2", "Turma 3"]
+                        turmas_list = list(TURMAS.keys())
                         
-                        # Rodízio Simples de Turmas para Teo/Sol
+                        # Rotação de Turmas (Teoria / Solfejo / Prática)
                         t_teo = turmas_list[i % 3]
                         t_sol = turmas_list[(i+1) % 3]
                         t_pra = turmas_list[(i+2) % 3]
@@ -491,87 +509,88 @@ if menu == "🏠 Secretaria":
                         for a in TURMAS[t_teo]: mapa[a][h] = f"Sala 8 | {prof_t}"
                         for a in TURMAS[t_sol]: mapa[a][h] = f"Sala 9 | {prof_s}"
                         
-                        # Prática (Sala 1 a 7)
-                        disponiveis_p = [p for p in profs_base if p not in [prof_t, prof_s]]
+                        # Lógica da Prática (Salas 1 a 7)
+                        disponiveis_p = [p for p in profs_disponiveis_hoje if p not in [prof_t, prof_s]]
                         random.shuffle(disponiveis_p)
-                        
                         vagas_salas = list(range(1, 8))
                         random.shuffle(vagas_salas)
     
                         for a in TURMAS[t_pra]:
-                            # Checa se é fixa
+                            # Verifica se a aluna tem professora fixa
                             fixa = next((f['Prof'] for f in st.session_state.fixas_escala if f['Aluna'] == a), None)
-                            p_final = fixa if (fixa and fixa in disponiveis_p) else (disponiveis_p.pop(0) if disponiveis_p else None)
                             
-                            if p_final:
-                                s_n = vagas_salas.pop(0) if vagas_salas else "X"
-                                mapa[a][h] = f"Sala {s_n} | {p_final}"
+                            # Atribui a fixa se ela estiver disponível, senão pega uma aleatória
+                            if fixa and fixa in disponiveis_p:
+                                p_final = fixa
+                                disponiveis_p.remove(fixa)
                             else:
-                                mapa[a][h] = "Atividade Autônoma | Secretaria"
+                                p_final = disponiveis_p.pop(0) if disponiveis_p else "Substituta"
     
+                            s_n = vagas_salas.pop(0) if vagas_salas else "Extra"
+                            mapa[a][h] = f"Sala {s_n} | {p_final}"
+    
+                    # Salva no Supabase
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
+                    st.success("Escala Gerada!")
                     st.rerun()
     
             else:
-                # --- EXIBIÇÃO NO MODELO DA IMAGEM ---
+                # --- EXIBIÇÃO DO MURAL PARA DOWNLOAD ---
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
-                # Mapeamento de Cores (CSS)
                 estilos = {
-                    "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3",
-                    "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1",
-                    "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"
+                    "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7",
+                    "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3"
                 }
     
                 for h_col in HORARIOS:
-                    # Criar o HTML para o horário específico
+                    # Criando o container visual do mural
                     html_mural = f"""
-                    <div id="mural-{h_col.replace(':','')}" style="background:white; padding:40px; font-family: sans-serif; min-width:800px; border:1px solid #eee;">
-                        <h1 style="text-align:center; font-size:32px; margin-bottom:30px;">{h_col} — {'1ª AULA (IGREJA)' if h_col == '08h45' else 'AULA'}</h1>
+                    <div id="mural-{h_col.replace(':','')}" style="background:white; padding:30px; border:2px solid #333; border-radius:10px;">
+                        <h2 style="text-align:center; color:black; margin-bottom:20px;">{h_col} — PROGRAMAÇÃO</h2>
                     """
                     
-                    # Agrupar por Professor/Sala para criar os blocos
+                    # Agrupamento por Local/Prof
                     grupos = {}
                     for _, r in df_escala.iterrows():
-                        info = r[h_col]
-                        if info not in grupos: grupos[info] = []
-                        grupos[info].append(r['Aluna'])
-                    
-                    for local_prof, alunas in grupos.items():
-                        cor = estilos.get(local_prof.split(" | ")[0].upper(), "#f3f4f6")
-                        if "SECRETARIA" in local_prof.upper(): cor = estilos["SECRETARIA"]
+                        loc = r[h_col]
+                        if loc not in grupos: grupos[loc] = []
+                        grupos[loc].append(r['Aluna'])
+    
+                    for local, alunas in grupos.items():
+                        cor = "#f3f4f6"
+                        for chave, valor in estilos.items():
+                            if chave in local.upper(): cor = valor
                         
                         html_mural += f"""
-                        <div style="background-color:{cor}; border:1px solid #333; margin-bottom:12px; padding:10px; border-radius:4px;">
-                            <b style="font-size:18px;">{local_prof}</b><br>
-                            <span style="font-size:16px; color:#333;">{', '.join(sorted(alunas))}</span>
+                        <div style="background:{cor}; padding:10px; margin-bottom:8px; border-radius:5px; border-left:5px solid #333;">
+                            <b style="font-size:16px;">{local}</b><br>
+                            <span style="font-size:14px;">{', '.join(alunas)}</span>
                         </div>
                         """
-                    
                     html_mural += "</div>"
                     
-                    # Renderizar o HTML e o botão de baixar
                     st.markdown(html_mural, unsafe_allow_html=True)
                     
-                    if st.button(f"📸 Baixar Foto - {h_col}", key=f"btn_{h_col}"):
-                        js_snap = f"""
+                    # Botão para disparar o print da div
+                    if st.button(f"📸 Salvar Imagem {h_col}", key=f"print_{h_col}"):
+                        js_code = f"""
                         <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
                         <script>
                             html2canvas(document.getElementById('mural-{h_col.replace(':','')}')).then(canvas => {{
                                 var link = document.createElement('a');
-                                link.download = 'Aula_{h_col}_{data_sel_str.replace('/','-')}.png';
+                                link.download = 'Mural_{h_col}_{data_sel_str.replace('/','-')}.png';
                                 link.href = canvas.toDataURL();
                                 link.click();
                             }});
                         </script>
                         """
-                        components.html(js_snap, height=0)
+                        components.html(js_code, height=0)
                     st.divider()
     
-                if st.button("🗑️ Apagar Escala"):
+                if st.button("🗑️ APAGAR ESTA ESCALA"):
                     supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-                    st.rerun()
-                    
+                    st.rerun()                    
                 
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
