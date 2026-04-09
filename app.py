@@ -513,7 +513,7 @@ if menu == "🏠 Secretaria":
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
     
-            # CASO B: ESCALA JÁ EXISTE (MOSTRA MURAL E EDITOR)
+            # CASO B: ESCALA JÁ EXISTE (MOSTRA MURAL COM AGRUPAMENTO POR TURMA)
             else:
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
@@ -531,6 +531,7 @@ if menu == "🏠 Secretaria":
                     if h_col in df_escala.columns:
                         st.markdown(f"""<div style="background:#f8f9fa; padding:10px; border:1px solid #ddd; text-align:center; font-size:20px; font-weight:bold; margin-top:20px; border-radius:5px;">{h_col} — {'1ª AULA (IGREJA)' if h_col == HORARIOS[0] else 'AULA'}</div>""", unsafe_allow_html=True)
                         
+                        # Agrupar por Professor/Sala
                         grupos = {}
                         for _, r in df_escala.iterrows():
                             info = r[h_col]
@@ -546,23 +547,41 @@ if menu == "🏠 Secretaria":
                         ))
                         
                         for local_prof in chaves_ordenadas:
-                            alunas = grupos[local_prof]
+                            alunas_do_grupo = grupos[local_prof]
                             bg_color = "#ffffff"
                             for sala, cor in cores.items():
                                 if sala in local_prof.upper():
                                     bg_color = cor
                                     break
                             
-                            alunas_str = ", ".join(sorted(alunas))
+                            # --- NOVA LÓGICA DE EXIBIÇÃO POR TURMA ---
+                            if h_col == HORARIOS[0]:
+                                exibicao_alunas = "Todas as alunas"
+                            else:
+                                # Identifica quais turmas estão presentes nesse grupo
+                                turmas_presentes = []
+                                for nome_turma, lista_alunas in TURMAS.items():
+                                    # Se alguma aluna deste grupo pertence a esta turma
+                                    if any(aluna in alunas_do_grupo for aluna in lista_alunas):
+                                        turmas_presentes.append(nome_turma)
+                                
+                                # Se for aula individual (apenas 1 aluna), mostra o nome dela
+                                # Se for aula em conjunto, mostra as Turmas
+                                if len(alunas_do_grupo) > 1:
+                                    exibicao_alunas = " + ".join(sorted(turmas_presentes))
+                                else:
+                                    exibicao_alunas = alunas_do_grupo[0]
+    
                             st.markdown(f"""
                                 <div style="background-color:{bg_color}; border:1px solid #333; padding:10px; margin-top:5px; border-radius:3px;">
                                     <b style="font-size:16px;">{local_prof}</b><br>
-                                    <span style="font-size:15px; color:#1a1a1a;">{alunas_str}</span>
+                                    <span style="font-size:15px; color:#1a1a1a;">{exibicao_alunas}</span>
                                 </div>
                             """, unsafe_allow_html=True)
     
                 st.divider()
-    
+                
+            # ... (Restante do código do editor de tabela continua igual)    
                 # --- PARTE 2: EDITOR DE TABELA ---
                 st.subheader("⚙️ Editor da Escala (Tabela)")
                 df_editado_final = st.data_editor(
