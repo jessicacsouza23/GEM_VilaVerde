@@ -513,22 +513,25 @@ if menu == "🏠 Secretaria":
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
     
-           # --- ABA 2: PLANEJAMENTO (V102 - VISUAL AJUSTADO E DOWNLOAD CORRIGIDO) ---
+           # --- ABA 2: PLANEJAMENTO (V103 - VISUAL AJUSTADO E SEM ERRO DE CÓDIGO) ---
             else:
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
                 st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
                 
-                # Filtros e Cores
                 termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
-                cores = {"SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"}
+                cores = {
+                    "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3",
+                    "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1",
+                    "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", 
+                    "SECRETARIA": "#fef3c7"
+                }
     
                 cols_mural = st.columns(len(HORARIOS))
     
                 for idx, h_col in enumerate(HORARIOS):
                     with cols_mural[idx]:
-                        # ID único para cada coluna
-                        div_id = f"mural_col_{idx}"
+                        div_id = f"mural_export_{idx}"
                         
                         html_cards = ""
                         grupos = {}
@@ -537,11 +540,17 @@ if menu == "🏠 Secretaria":
                             if info not in grupos: grupos[info] = []
                             grupos[info].append(r['Aluna'])
                         
-                        chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 1 if "SALA 8" in x.upper() else 2 if "SALA 9" in x.upper() else 3, x))
+                        chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
+                            0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
+                            1 if "SALA 8" in x.upper() else 
+                            2 if "SALA 9" in x.upper() else 3, 
+                            x
+                        ))
                         
                         for local_prof in chaves_ordenadas:
                             local_up = local_prof.upper()
-                            if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up: continue
+                            if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up: 
+                                continue
     
                             # Matéria nas salas 8 e 9
                             local_exibicao = local_prof
@@ -550,7 +559,9 @@ if menu == "🏠 Secretaria":
     
                             bg = "#ffffff"
                             for sala, cor in cores.items():
-                                if sala in local_up: bg = cor; break
+                                if sala in local_up: 
+                                    bg = cor
+                                    break
                             
                             alunas_gp = grupos[local_prof]
                             if h_col == HORARIOS[0]: 
@@ -559,16 +570,13 @@ if menu == "🏠 Secretaria":
                                 presentes = [t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)]
                                 text_alunas = " + ".join(sorted(presentes)) if len(alunas_gp) > 1 else alunas_gp[0]
     
-                            # Cards com tamanho REDUZIDO (20px e 18px) para caber na tela
-                            html_cards += f"""
-                            <div style="background-color:{bg}; border:2px solid #000; padding:8px; margin-bottom:8px; border-radius:8px; font-family:sans-serif;">
-                                <b style="font-size:20px; color:#000; display:block; line-height:1.1;">{local_exibicao}</b>
-                                <span style="font-size:18px; color:#333; font-weight:700;">{text_alunas}</span>
-                            </div>
-                            """
+                            # Montagem do Card (Tamanho reduzido para 20px/18px)
+                            html_cards += f'<div style="background-color:{bg}; border:2px solid #000; padding:8px; margin-bottom:8px; border-radius:8px; font-family:sans-serif;">'
+                            html_cards += f'<b style="font-size:20px; color:#000; display:block; line-height:1.1;">{local_exibicao}</b>'
+                            html_cards += f'<span style="font-size:18px; color:#333; font-weight:700;">{text_alunas}</span>'
+                            html_cards += '</div>'
     
-                        # Renderização na TELA (sem barras de rolagem)
-                        # O scale:1.5 no print garante que o download fique nítido mesmo com a fonte menor na tela
+                        # Container principal (Sem scroll, tamanho 24px para o título)
                         mural_visual = f"""
                         <div id="{div_id}" style="background:white; padding:10px; border:4px solid #000; border-radius:12px; width:100%;">
                             <div style="background:#262730; color:white; padding:8px; border-radius:5px; text-align:center; font-size:24px; font-weight:bold; margin-bottom:12px; font-family:sans-serif;">
@@ -577,35 +585,32 @@ if menu == "🏠 Secretaria":
                             {html_cards}
                         </div>
                         """
+                        
+                        # Renderização forçada como HTML
                         st.write(mural_visual, unsafe_allow_html=True)
     
-                        # Botão de Download isolado
+                        # Botão de Download (Corrigido para cada coluna)
                         js_fix = f"""
                         <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
                         <script>
-                        function baixarColuna{idx}() {{
-                            // Busca o elemento na página principal do Streamlit
-                            const doc = window.parent.document;
-                            const alvo = doc.getElementById('{div_id}');
-                            html2canvas(alvo, {{
-                                scale: 2, 
-                                backgroundColor: "#ffffff",
-                                useCORS: true
-                            }}).then(canvas => {{
-                                const link = doc.createElement('a');
-                                link.download = 'Escala_{h_col.replace(':', 'h')}.png';
+                        function salvarImagem{idx}() {{
+                            const container = window.parent.document.getElementById('{div_id}');
+                            html2canvas(container, {{ scale: 2, backgroundColor: "#ffffff" }}).then(canvas => {{
+                                const link = window.parent.document.createElement('a');
+                                link.download = 'Mural_{h_col.replace(':', 'h')}.png';
                                 link.href = canvas.toDataURL("image/png");
                                 link.click();
                             }});
                         }}
                         </script>
-                        <button onclick="baixarColuna{idx}()" style="width:100%; background:#107c10; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px; margin-top:8px;">
+                        <button onclick="salvarImagem{idx}()" style="width:100%; background:#107c10; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px; margin-top:8px;">
                             📥 Baixar {h_col}
                         </button>
                         """
                         st.components.v1.html(js_fix, height=60)
     
-                st.divider()            
+                st.divider()
+            
             # ... (Restante do código do editor de tabela continua igual)    
                 # --- PARTE 2: EDITOR DE TABELA ---
                 st.subheader("⚙️ Editor da Escala (Tabela)")
