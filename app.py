@@ -896,6 +896,20 @@ if menu == "🏠 Secretaria":
                                 st.error(f"Erro ao apagar: {e}")
                     else:
                         st.info(f"Nenhum dado encontrado para {al_aj}.")
+
+# ============================================================
+# FUNÇÃO DE SUPORTE - BUSCA MÉTODOS CADASTRADOS
+# ============================================================
+def db_get_metodos_cadastrados():
+    try:
+        # Busca da tabela dedicada para não sobrecarregar a config_geral
+        res = supabase.table("config_metodos").select("*").execute()
+        if res.data:
+            return pd.DataFrame(res.data)
+        return pd.DataFrame(columns=["id", "nome", "categoria"])
+    except:
+        return pd.DataFrame(columns=["id", "nome", "categoria"])
+    
                         
 # ============================================================
 # MÓDULO PROFESSORA - V52 (CAMPOS DE PRÁTICA EXPOSTOS)
@@ -905,12 +919,41 @@ elif menu == "👩‍🏫 Minhas Aulas":
     
     tab_aula, tab_config = st.tabs(["📝 Registro de Aula", "⚙️ Configurar Métodos"])
 
+    # No seu loop principal, dentro da tab_config:
     with tab_config:
-        try:
-            res_m = supabase.table("config_metodos").select("*").execute()
-            df_metodos = pd.DataFrame(res_m.data) if res_m.data else pd.DataFrame()
-        except: df_metodos = pd.DataFrame()
-
+        st.subheader("⚙️ Gerenciar Biblioteca de Métodos")
+        st.caption("Cadastre aqui os métodos de órgão e livros que aparecerão no registro de aula.")
+    
+        df_metodos_db = db_get_metodos_cadastrados()
+    
+        # Editor dinâmico
+        df_editado = st.data_editor(
+            df_metodos_db,
+            column_config={
+                "nome": st.column_config.TextColumn("Nome do Método", placeholder="Ex: Burgmüller, Kohler, MSA...", required=True),
+                "categoria": st.column_config.SelectboxColumn("Área", options=["Prática", "Teoria", "Solfejo"], required=True)
+            },
+            num_rows="dynamic",
+            use_container_width=True,
+            key="editor_metodos_v53"
+        )
+    
+        if st.button("💾 Salvar Biblioteca", use_container_width=True):
+            try:
+                # Lógica para salvar: Deletamos o antigo e inserimos o novo (ou upsert se tiver ID)
+                # Para simplificar e evitar IDs órfãos, vamos converter para dict
+                novos_dados = df_editado.to_dict('records')
+                
+                # Limpa o banco e reinsere (Estratégia Full Refresh para tabelas de config pequena)
+                supabase.table("config_metodos").delete().neq("nome", "---").execute()
+                if novos_dados:
+                    supabase.table("config_metodos").insert(novos_dados).execute()
+                
+                st.success("Biblioteca atualizada!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao salvar: {e}")
+                
     with tab_aula:
         instr_sel = st.session_state.get('nome_logado', 'Selecione...')
         dt_input = st.date_input("Data da Aula:", datetime.now(), key="dt_v52")
@@ -1073,7 +1116,9 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                             "Dificuldades": [], "Observacao": obs_geral, "Status": "Pendente"
                                         })
                             st.success("Registro concluído com sucesso!")
-                            time.sleep(1); st.rerun()
+                            time.sleep(1);
+                            
+                            st.rerun()
 
 # ============================================================
 # MÓDULO ANÁLISE DE IA - V72 (CORREÇÃO APROV + GRÁFICOS)
