@@ -116,26 +116,26 @@ def carregar_dados_globais():
 PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamila", "Renata"]
 SECRETARIAS_LISTA = ["Esther", "Jéssica", "Larissa", "Lurdes", "Natasha", "Roseli"]
 ALUNAS_LISTA = sorted([
-    "Annie - Vila Verde", "Ana Marcela S. - Vila Verde", 
-    "Caroline C. - Vila Ré", "Elisa F. - Vila Verde", "Emilly O. - Vila Curuçá Velha", 
-    "Gabrielly V. - Vila Verde", "Heloísa R. - Vila Verde", "Ingrid M. - Pq do Carmo II", 
-    "Júlia Cristina - União de Vila Nova", "Júlia S. - Vila Verde", "Julya O. - Vila Curuçá Velha", 
-    "Mariana - Vila Araguaia", "Mellina S. - Jardim Lígia", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", 
-    "Rebeca R. - Vila Ré", "Rebecca A. - Vila Verde", "Rebeka S. - Jardim Lígia", 
-    "Sarah S. - Vila Verde", "Vitória A. - Vila Verde", "Vitória Bella T. - Vila Verde"
+    "Annie - Vila Verde", "Ana Marcela S - Vila Verde", 
+    "Caroline C - Vila Ré", "Elisa F - Vila Verde", "Emilly O - Vila Curuçá Velha", 
+    "Gabrielly V - Vila Verde", "Heloísa R - Vila Verde", "Ingrid M - Pq do Carmo II", 
+    "Júlia C - União de Vila Nova", "Júlia S. - Vila Verde", "Julya O - Vila Curuçá Velha", 
+    "Mariana - Vila Araguaia", "Mellina S - Jardim Lígia", "Micaelle S - Vila Verde", "Raquel L - Vila Verde", 
+    "Rebeca R - Vila Ré", "Rebecca A - Vila Verde", "Rebeka S - Jardim Lígia", 
+    "Sarah S - Vila Verde", "Vitória A - Vila Verde", "Vitória Bella - Vila Verde"
 ])
 
 CATEGORIAS_LICAO = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila", "Folhas avulsas (teoria)"]
 STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refazer", "Não realizada"]
 
 TURMAS = {
-    "Turma 1": ["Annie - Vila Verde", "Caroline C. - Vila Ré", "Ingrid M. - Pq do Carmo II",
-                "Mariana - Vila Araguaia", "Mellina S. - Jardim Lígia", "Rebecca A. - Vila Verde", 
-                "Rebeca R. - Vila Ré", "Rebeka S. - Jardim Lígia"],
-    "Turma 2": ["Vitória A. - Vila Verde", "Elisa F. - Vila Verde", "Sarah S. - Vila Verde", "Gabrielly V. - Vila Verde", 
-                "Emilly O. - Vila Curuçá Velha", "Julya O. - Vila Curuçá Velha"],
-    "Turma 3": ["Heloísa R. - Vila Verde", "Ana Marcela S. - Vila Verde", "Vitória Bella T. - Vila Verde", 
-                "Júlia S. - Vila Verde", "Micaelle S. - Vila Verde", "Raquel L. - Vila Verde", "Júlia Cristina - União de Vila Nova"]
+    "Turma 1": ["Annie - Vila Verde", "Caroline C - Vila Ré", "Ingrid M - Pq do Carmo II",
+                "Mariana - Vila Araguaia", "Mellina S - Jardim Lígia", "Rebecca A - Vila Verde", 
+                "Rebeca R - Vila Ré", "Rebeka S - Jardim Lígia"],
+    "Turma 2": ["Vitória A - Vila Verde", "Elisa F - Vila Verde", "Sarah S - Vila Verde", "Gabrielly V - Vila Verde", 
+                "Emilly O - Vila Curuçá Velha", "Julya O - Vila Curuçá Velha"],
+    "Turma 3": ["Heloísa R - Vila Verde", "Ana Marcela S - Vila Verde", "Vitória Bella - Vila Verde", 
+                "Júlia S - Vila Verde", "Micaelle S - Vila Verde", "Raquel L - Vila Verde", "Júlia C - União de Vila Nova"]
 }
 HORARIOS = ["08h45 (Igreja)", "09h35(H2)", "10h10(H3)", "10h45(H4)"]
 OPCOES_LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
