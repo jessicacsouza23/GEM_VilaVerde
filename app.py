@@ -422,127 +422,139 @@ if menu == "🏠 Secretaria":
         else:
             st.warning("O banco de dados está vazio.")
             
-    # --- ABA 2: PLANEJAMENTO (GERADOR INTELIGENTE V78) ---
-    with tab_plan:
-        st.markdown("### 🗓️ Gestão de Escala")
+    # --- ABA 2: PLANEJAMENTO (RODÍZIO HISTÓRICO TOTAL V80) ---
+with tab_plan:
+    st.markdown("### 🗓️ Gestão de Escala")
+    
+    if 'fixas_escala' not in st.session_state:
+        st.session_state.fixas_escala = []
+
+    c1, c2 = st.columns(2)
+    mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="mes_plan")
+    ano = c2.selectbox("Ano:", [2026, 2027], key="ano_plan")
+    
+    sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
+               for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
+    
+    if sabados:
+        data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_plan")
+        calendario_db = db_get_calendario()
         
-        if 'fixas_escala' not in st.session_state:
-            st.session_state.fixas_escala = []
-    
-        c1, c2 = st.columns(2)
-        mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="mes_plan")
-        ano = c2.selectbox("Ano:", [2026, 2027], key="ano_plan")
-        
-        sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
-                   for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
-        
-        if sabados:
-            data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_plan")
-            calendario_db = db_get_calendario()
-            
-            # BUSCA O HISTÓRICO COMPLETO PARA O RODÍZIO
-            historico_raw = db_get_historico()
-            df_hist = pd.DataFrame(historico_raw)
-            
-            if data_sel_str not in calendario_db:
-                with st.container(border=True):
-                    st.warning("⚡ O Rodízio ainda não foi gerado.")
-                    
-                    # Seleção de Teoria/Solfejo (Salas 8 e 9)
-                    col_t, col_s = st.columns(2)
-                    with col_t:
-                        st.markdown("**📚 Teoria (Sala 8)**")
-                        pt2 = st.selectbox("H2", PROFESSORAS_LISTA, index=0, key="t2")
-                        pt3 = st.selectbox("H3", PROFESSORAS_LISTA, index=1, key="t3")
-                        pt4 = st.selectbox("H4", PROFESSORAS_LISTA, index=2, key="t4")
-                    with col_s:
-                        st.markdown("**🔊 Solfejo (Sala 9)**")
-                        ps2 = st.selectbox("H2", PROFESSORAS_LISTA, index=3, key="s2")
-                        ps3 = st.selectbox("H3", PROFESSORAS_LISTA, index=4, key="s3")
-                        ps4 = st.selectbox("H4", PROFESSORAS_LISTA, index=5, key="s4")
-                    
-                    folga_ativa = st.multiselect("Professoras de Folga:", PROFESSORAS_LISTA, key="folgas_dia")
-    
-                    if st.button("🚀 GERAR ESCALA AUTOMÁTICA", use_container_width=True, type="primary"):
-                        mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
-                        for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
-                        
-                        config_h = {
-                            HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "P_Teo": pt2, "P_Sol": ps2},
-                            HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "P_Teo": pt3, "P_Sol": ps3},
-                            HORARIOS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "P_Teo": pt4, "P_Sol": ps4}
-                        }
-                        
-                        for h in [HORARIOS[1], HORARIOS[2], HORARIOS[3]]:
-                            conf = config_h[h]
-                            profs_ocupadas_h = [conf["P_Teo"], conf["P_Sol"]] + folga_ativa
-                            
-                            # --- GESTÃO DE SALAS ÚNICAS ---
-                            salas_pratica_disponiveis = [1, 2, 3, 4, 5, 6, 7] # Apenas salas de prática
-                            
-                            alunas_pratica_h = []
-                            for t_nome, alunas in TURMAS.items():
-                                if conf["Teo"] == t_nome:
-                                    for a in alunas: mapa[a][h] = f"📚 SALA 8 | {conf['P_Teo']}"
-                                elif conf["Sol"] == t_nome:
-                                    for a in alunas: mapa[a][h] = f"🔊 SALA 9 | {conf['P_Sol']}"
-                                else:
-                                    alunas_pratica_h.extend(alunas)
-                            
-                            random.shuffle(alunas_pratica_h)
-                            profs_disponiveis = [p for p in PROFESSORAS_LISTA if p not in profs_ocupadas_h]
-                            
-                            for aluna in alunas_pratica_h:
-                                prof_escolhida = None
-                                
-                                # 1. Prioridade: Duplas Fixas
-                                fixa = next((f for f in st.session_state.fixas_escala if f['Aluna'] == aluna), None)
-                                if fixa and fixa['Prof'] in profs_disponiveis:
-                                    prof_escolhida = fixa['Prof']
-                                    nota = "📌"
-                                
-                                # 2. Rodízio por Histórico (Quem deu menos aula para ela)
-                                elif profs_disponiveis:
-                                    contagem = {}
-                                    for p in profs_disponiveis:
-                                        if not df_hist.empty:
-                                            vezes = len(df_hist[(df_hist['Aluna'] == aluna) & (df_hist['Instrutora'] == p)])
-                                            contagem[p] = vezes
-                                        else:
-                                            contagem[p] = 0
-                                    
-                                    # Ordena pelo histórico (menor recorrência primeiro)
-                                    sorted_profs = sorted(contagem, key=contagem.get)
-                                    prof_escolhida = sorted_profs[0]
-                                    nota = "🎹"
-    
-                                # 3. Atribuição de Sala sem Repetição
-                                if prof_escolhida and salas_pratica_disponiveis:
-                                    s_num = random.choice(salas_pratica_disponiveis)
-                                    mapa[aluna][h] = f"{nota} SALA {s_num} | {prof_escolhida}"
-                                    
-                                    # Remove para não repetir
-                                    profs_disponiveis.remove(prof_escolhida)
-                                    salas_pratica_disponiveis.remove(s_num)
-                                else:
-                                    mapa[aluna][h] = "⚠️ INDISPONÍVEL"
-    
-                        supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
-                        st.success("Rodízio Gerado com Sucesso!"); st.cache_data.clear(); st.rerun()
-    
-            else:
-                st.success(f"🗓️ Escala confirmada para {data_sel_str}")
-                df_raw = pd.DataFrame(calendario_db[data_sel_str])
-                df_editado = st.data_editor(df_raw[["Aluna", "Turma"] + HORARIOS], use_container_width=True, hide_index=True)
-    
-                c_s1, c_s2 = st.columns(2)
-                if c_s1.button("💾 SALVAR ALTERAÇÕES", use_container_width=True, type="primary"):
-                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": df_editado.to_dict('records')}).execute()
-                    st.success("Salvo!"); st.cache_data.clear(); st.rerun()
+        # 1. CARREGAMENTO DO HISTÓRICO TOTAL PARA ANÁLISE DE REPETIÇÃO
+        historico_raw = db_get_historico()
+        df_hist = pd.DataFrame(historico_raw)
+
+        if data_sel_str not in calendario_db:
+            with st.container(border=True):
+                st.warning("⚡ O Rodízio ainda não foi gerado.")
                 
-                if c_s2.button("🗑️ Resetar Rodízio", use_container_width=True):
-                    supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-                    st.cache_data.clear(); st.rerun()
+                # Configuração de Salas Fixas de Teoria/Solfejo
+                col_t, col_s = st.columns(2)
+                with col_t:
+                    st.markdown("**📚 Teoria (Sala 8)**")
+                    pt2, pt3, pt4 = st.selectbox("H2", PROFESSORAS_LISTA, index=0), st.selectbox("H3", PROFESSORAS_LISTA, index=1), st.selectbox("H4", PROFESSORAS_LISTA, index=2)
+                with col_s:
+                    st.markdown("**🔊 Solfejo (Sala 9)**")
+                    ps2, ps3, ps4 = st.selectbox("H2", PROFESSORAS_LISTA, index=3, key="s2"), st.selectbox("H3", PROFESSORAS_LISTA, index=4, key="s3"), st.selectbox("H4", PROFESSORAS_LISTA, index=5, key="s4")
+                
+                st.divider()
+                
+                # SEÇÃO DE DUPLAS FIXAS (Não entram no rodízio)
+                st.markdown("📌 **Definir Duplas Fixas para este Sábado**")
+                cf1, cf2, cf3 = st.columns([2, 2, 1])
+                f_alu = cf1.selectbox("Aluna:", ["---"] + ALUNAS_LISTA)
+                f_pro = cf2.selectbox("Professora:", ["---"] + PROFESSORAS_LISTA)
+                if cf3.button("➕ Fixar"):
+                    if f_alu != "---" and f_pro != "---":
+                        st.session_state.fixas_escala.append({"Aluna": f_alu, "Prof": f_pro})
+                        st.rerun()
+                
+                if st.session_state.fixas_escala:
+                    st.table(pd.DataFrame(st.session_state.fixas_escala))
+                    if st.button("🗑️ Limpar Fixas"): st.session_state.fixas_escala = []; st.rerun()
+
+                folga_ativa = st.multiselect("Professoras de Folga:", PROFESSORAS_LISTA)
+
+                if st.button("🚀 GERAR ESCALA COM RODÍZIO HISTÓRICO", use_container_width=True, type="primary"):
+                    mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
+                    for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
+                    
+                    config_h = {
+                        HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "P_Teo": pt2, "P_Sol": ps2},
+                        HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "P_Teo": pt3, "P_Sol": ps3},
+                        HORARIOS[3]: {"Teo": "Turma 3", "Sol": "Turma 1", "P_Teo": pt4, "P_Sol": ps4}
+                    }
+                    
+                    for h in [HORARIOS[1], HORARIOS[2], HORARIOS[3]]:
+                        conf = config_h[h]
+                        profs_ocupadas = [conf["P_Teo"], conf["P_Sol"]] + folga_ativa
+                        salas_vagas = [1, 2, 3, 4, 5, 6, 7]
+                        
+                        alunas_pratica = []
+                        for t_nome, alunas in TURMAS.items():
+                            if conf["Teo"] == t_nome:
+                                for a in alunas: mapa[a][h] = f"📚 SALA 8 | {conf['P_Teo']}"
+                            elif conf["Sol"] == t_nome:
+                                for a in alunas: mapa[a][h] = f"🔊 SALA 9 | {conf['P_Sol']}"
+                            else:
+                                alunas_pratica.extend(alunas)
+                        
+                        profs_disponiveis = [p for p in PROFESSORAS_LISTA if p not in profs_ocupadas]
+                        random.shuffle(alunas_pratica)
+
+                        # --- PASSO 1: ALOCAR DUPLAS FIXAS ---
+                        alunas_restantes = alunas_pratica.copy()
+                        for fixa in st.session_state.fixas_escala:
+                            if fixa['Aluna'] in alunas_restantes and fixa['Prof'] in profs_disponiveis and salas_vagas:
+                                s_num = random.choice(salas_vagas)
+                                mapa[fixa['Aluna']][h] = f"📌 SALA {s_num} | {fixa['Prof']}"
+                                alunas_restantes.remove(fixa['Aluna'])
+                                profs_disponiveis.remove(fixa['Prof'])
+                                salas_vagas.remove(s_num)
+
+                        # --- PASSO 2: RODÍZIO POR HISTÓRICO TOTAL (ANTI-REPETIÇÃO) ---
+                        for aluna in alunas_restantes:
+                            if profs_disponiveis and salas_vagas:
+                                # Contagem de quantas vezes cada prof disponível já deu aula para esta aluna
+                                contagem_historica = {}
+                                for p in profs_disponiveis:
+                                    if not df_hist.empty:
+                                        qtd = len(df_hist[(df_hist['Aluna'] == aluna) & (df_hist['Instrutora'] == p)])
+                                        contagem_historica[p] = qtd
+                                    else:
+                                        contagem_historica[p] = 0
+                                
+                                # Ordena: Professoras que deram MENOS aulas primeiro
+                                sorted_profs = sorted(contagem_historica, key=contagem_historica.get)
+                                
+                                # Escolhe a melhor candidata (menor histórico de repetição)
+                                prof_sorteada = sorted_profs[0]
+                                s_num = random.choice(salas_vagas)
+                                
+                                mapa[aluna][h] = f"🎹 SALA {s_num} | {prof_sorteada}"
+                                
+                                profs_disponiveis.remove(prof_sorteada)
+                                salas_vagas.remove(s_num)
+                            else:
+                                mapa[aluna][h] = "⚠️ SEM PROF/SALA"
+
+                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
+                    st.success("Rodízio Gerado com Base no Histórico!"); st.rerun()
+
+        else:
+            # Interface de Escala Salva (Editável)
+            st.success(f"🗓️ Escala confirmada para {data_sel_str}")
+            df_view = pd.DataFrame(calendario_db[data_sel_str])
+            df_edit = st.data_editor(df_view[["Aluna", "Turma"] + HORARIOS], use_container_width=True, hide_index=True)
+            
+            c_s1, c_s2 = st.columns(2)
+            if c_s1.button("💾 SALVAR ALTERAÇÕES", use_container_width=True, type="primary"):
+                supabase.table("calendario").upsert({"id": data_sel_str, "escala": df_edit.to_dict('records')}).execute()
+                st.success("Salvo!"); st.cache_data.clear()
+            
+            if c_s2.button("🗑️ Resetar Rodízio", use_container_width=True):
+                supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                st.cache_data.clear(); st.rerun()
                 
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
