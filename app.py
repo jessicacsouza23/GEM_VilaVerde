@@ -429,159 +429,159 @@ if menu == "🏠 Secretaria":
 
     import base64
    # --- ABA 2: PLANEJAMENTO (V110 - MURAL UNIFICADO E VISÍVEL) ---
-with tab_plan:
-    st.markdown("### 🗓️ Planejamento e Mural")
+    with tab_plan:
+        st.markdown("### 🗓️ Planejamento e Mural")
+        
+        # 1. GERENCIAMENTO DE ALUNAS FIXAS
+        st.subheader("📌 Configurar Alunas Fixas")
+        todas_alunas = sorted([aluna for turma in TURMAS.values() for aluna in turma])
+        lista_professoras = sorted(PROFESSORAS_LISTA)
     
-    # 1. GERENCIAMENTO DE ALUNAS FIXAS
-    st.subheader("📌 Configurar Alunas Fixas")
-    todas_alunas = sorted([aluna for turma in TURMAS.values() for aluna in turma])
-    lista_professoras = sorted(PROFESSORAS_LISTA)
-
-    if 'df_fixas' not in st.session_state:
-        st.session_state.df_fixas = pd.DataFrame(columns=["Aluna", "Prof"])
-
-    config_colunas = {
-        "Aluna": st.column_config.SelectboxColumn("Nome da Aluna", options=todas_alunas, required=True),
-        "Prof": st.column_config.SelectboxColumn("Professora Fixa", options=lista_professoras, required=True)
-    }
-
-    df_fixas_editado = st.data_editor(
-        st.session_state.df_fixas,
-        column_config=config_colunas,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="editor_fixas_v110"
-    )
-    st.session_state.df_fixas = df_fixas_editado
-    st.divider()
-
-    # 2. SELEÇÃO DE DATA
-    c1, c2 = st.columns(2)
-    mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
-    ano = c2.selectbox("Ano:", [2026, 2027])
+        if 'df_fixas' not in st.session_state:
+            st.session_state.df_fixas = pd.DataFrame(columns=["Aluna", "Prof"])
     
-    sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
-               for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
+        config_colunas = {
+            "Aluna": st.column_config.SelectboxColumn("Nome da Aluna", options=todas_alunas, required=True),
+            "Prof": st.column_config.SelectboxColumn("Professora Fixa", options=lista_professoras, required=True)
+        }
     
-    if sabados:
-        data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
-        calendario_db = db_get_calendario()
-
-        # CASO A: GERAR NOVA ESCALA
-        if data_sel_str not in calendario_db:
-            st.info(f"Nenhuma escala para {data_sel_str}.")
-            # ... (Seu código de gerar rodízio automático aqui)
-            if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO"):
-                # (Lógica de geração...)
-                pass
-
-        # CASO B: ESCALA EXISTE (MOSTRAR MURAL E EDITOR)
-        else:
-            df_escala = pd.DataFrame(calendario_db[data_sel_str])
-            
-            st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
-
-            # --- JAVASCRIPT PARA DOWNLOAD ---
-            js_master = f"""
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-            <script>
-            async function baixarTudo() {{
-                const numColunas = {len(HORARIOS)};
-                for (let i = 0; i < numColunas; i++) {{
-                    const divId = 'mural_export_' + i;
-                    const container = window.parent.document.getElementById(divId);
-                    if (container) {{
-                        const canvas = await html2canvas(container, {{ scale: 2, backgroundColor: "#ffffff" }});
-                        const link = window.parent.document.createElement('a');
-                        const hNome = container.querySelector('.horario-titulo').innerText.trim().replace(':', 'h');
-                        link.download = 'Individual_' + hNome + '.png';
-                        link.href = canvas.toDataURL("image/png");
-                        link.click();
-                        await new Promise(r => setTimeout(r, 600));
+        df_fixas_editado = st.data_editor(
+            st.session_state.df_fixas,
+            column_config=config_colunas,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="editor_fixas_v110"
+        )
+        st.session_state.df_fixas = df_fixas_editado
+        st.divider()
+    
+        # 2. SELEÇÃO DE DATA
+        c1, c2 = st.columns(2)
+        mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
+        ano = c2.selectbox("Ano:", [2026, 2027])
+        
+        sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
+                   for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
+        
+        if sabados:
+            data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
+            calendario_db = db_get_calendario()
+    
+            # CASO A: GERAR NOVA ESCALA
+            if data_sel_str not in calendario_db:
+                st.info(f"Nenhuma escala para {data_sel_str}.")
+                # ... (Seu código de gerar rodízio automático aqui)
+                if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO"):
+                    # (Lógica de geração...)
+                    pass
+    
+            # CASO B: ESCALA EXISTE (MOSTRAR MURAL E EDITOR)
+            else:
+                df_escala = pd.DataFrame(calendario_db[data_sel_str])
+                
+                st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
+    
+                # --- JAVASCRIPT PARA DOWNLOAD ---
+                js_master = f"""
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+                <script>
+                async function baixarTudo() {{
+                    const numColunas = {len(HORARIOS)};
+                    for (let i = 0; i < numColunas; i++) {{
+                        const divId = 'mural_export_' + i;
+                        const container = window.parent.document.getElementById(divId);
+                        if (container) {{
+                            const canvas = await html2canvas(container, {{ scale: 2, backgroundColor: "#ffffff" }});
+                            const link = window.parent.document.createElement('a');
+                            const hNome = container.querySelector('.horario-titulo').innerText.trim().replace(':', 'h');
+                            link.download = 'Individual_' + hNome + '.png';
+                            link.href = canvas.toDataURL("image/png");
+                            link.click();
+                            await new Promise(r => setTimeout(r, 600));
+                        }}
+                    }}
+                    const muralGeral = window.parent.document.getElementById('mural_completo_container');
+                    if (muralGeral) {{
+                        const canvasG = await html2canvas(muralGeral, {{ scale: 2, backgroundColor: "#ffffff" }});
+                        const linkG = window.parent.document.createElement('a');
+                        linkG.download = 'Mural_Completo_{data_sel_str.replace("/", "-")}.png';
+                        linkG.href = canvasG.toDataURL("image/png");
+                        linkG.click();
                     }}
                 }}
-                const muralGeral = window.parent.document.getElementById('mural_completo_container');
-                if (muralGeral) {{
-                    const canvasG = await html2canvas(muralGeral, {{ scale: 2, backgroundColor: "#ffffff" }});
-                    const linkG = window.parent.document.createElement('a');
-                    linkG.download = 'Mural_Completo_{data_sel_str.replace("/", "-")}.png';
-                    linkG.href = canvasG.toDataURL("image/png");
-                    linkG.click();
-                }}
-            }}
-            </script>
-            <button onclick="baixarTudo()" style="width:100%; background: linear-gradient(90deg, #107c10, #21a366); color:white; border:none; padding:20px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:20px; margin-bottom:25px;">
-                ✅ Gerar Tudo: Fotos Individuais + Mural Completo
-            </button>
-            """
-            st.components.v1.html(js_master, height=110)
-
-            # --- CONSTRUÇÃO DO MURAL HTML (VISÍVEL) ---
-            termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
-            cores = {"SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"}
-
-            html_mural_colunas = ""
-            for idx, h_col in enumerate(HORARIOS):
-                html_cards = ""
-                grupos = {}
-                for _, r in df_escala.iterrows():
-                    info = str(r[h_col])
-                    if info not in grupos: grupos[info] = []
-                    grupos[info].append(r['Aluna'])
-
-                chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
-                    0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
-                    1 if "SALA 8" in x.upper() else 
-                    2 if "SALA 9" in x.upper() else 3, x
-                ))
-
-                for local_prof in chaves_ordenadas:
-                    local_up = local_prof.upper()
-                    if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up: continue
-                    
-                    bg = cores.get(next((s for s in cores if s in local_up), ""), "#ffffff")
-                    alunas_gp = grupos[local_prof]
-                    
-                    if h_col == HORARIOS[0]: text_alunas = "Todas as alunas"
-                    else:
-                        presentes = [t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)]
-                        text_alunas = " + ".join(sorted(presentes)) if len(alunas_gp) > 1 else alunas_gp[0]
-
-                    html_cards += f'''
-                    <div style="background-color:{bg}; border:2px solid #000; padding:10px; margin-bottom:10px; border-radius:10px;">
-                        <b style="font-size:16px; color:#000; display:block; line-height:1.2;">{local_prof}</b>
-                        <span style="font-size:15px; color:#1a1a1a; font-weight:800;">{text_alunas}</span>
-                    </div>
-                    '''
-
-                html_mural_colunas += f"""
-                <div id="mural_export_{idx}" style="background:white; padding:15px; border:3px solid #000; border-radius:15px; min-width:240px; flex-shrink:0; font-family:sans-serif;">
-                    <div class="horario-titulo" style="background:#262730; color:white; padding:8px; border-radius:5px; text-align:center; font-size:20px; font-weight:bold; margin-bottom:12px;">{h_col}</div>
-                    {html_cards}
-                </div>
+                </script>
+                <button onclick="baixarTudo()" style="width:100%; background: linear-gradient(90deg, #107c10, #21a366); color:white; border:none; padding:20px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:20px; margin-bottom:25px;">
+                    ✅ Gerar Tudo: Fotos Individuais + Mural Completo
+                </button>
                 """
-
-            # Renderiza o Mural na Tela com barra de rolagem
-            st.markdown(f"""
-            <div id="mural_completo_container" style="display: flex; gap: 15px; overflow-x: auto; padding: 20px; background: #eee; border-radius: 15px;">
-                {html_mural_colunas}
-            </div>
-            """, unsafe_allow_html=True)
-
-            # --- EDITOR DE TABELA (ABAIXO DO MURAL) ---
-            st.divider()
-            st.subheader("⚙️ Editor da Escala (Tabela)")
-            df_editado_final = st.data_editor(df_escala, use_container_width=True, key=f"edit_final_{data_sel_str}")
-            
-            c_save1, c_save2 = st.columns(2)
-            if c_save1.button("💾 Salvar Alterações", use_container_width=True):
-                supabase.table("calendario").upsert({"id": data_sel_str, "escala": df_editado_final.to_dict('records')}).execute()
-                st.success("Escala atualizada!")
-                st.rerun()
-            
-            if c_save2.button("🗑️ Apagar e Reiniciar", use_container_width=True):
-                supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-                st.rerun()
+                st.components.v1.html(js_master, height=110)
+    
+                # --- CONSTRUÇÃO DO MURAL HTML (VISÍVEL) ---
+                termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
+                cores = {"SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"}
+    
+                html_mural_colunas = ""
+                for idx, h_col in enumerate(HORARIOS):
+                    html_cards = ""
+                    grupos = {}
+                    for _, r in df_escala.iterrows():
+                        info = str(r[h_col])
+                        if info not in grupos: grupos[info] = []
+                        grupos[info].append(r['Aluna'])
+    
+                    chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
+                        0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
+                        1 if "SALA 8" in x.upper() else 
+                        2 if "SALA 9" in x.upper() else 3, x
+                    ))
+    
+                    for local_prof in chaves_ordenadas:
+                        local_up = local_prof.upper()
+                        if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up: continue
+                        
+                        bg = cores.get(next((s for s in cores if s in local_up), ""), "#ffffff")
+                        alunas_gp = grupos[local_prof]
+                        
+                        if h_col == HORARIOS[0]: text_alunas = "Todas as alunas"
+                        else:
+                            presentes = [t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)]
+                            text_alunas = " + ".join(sorted(presentes)) if len(alunas_gp) > 1 else alunas_gp[0]
+    
+                        html_cards += f'''
+                        <div style="background-color:{bg}; border:2px solid #000; padding:10px; margin-bottom:10px; border-radius:10px;">
+                            <b style="font-size:16px; color:#000; display:block; line-height:1.2;">{local_prof}</b>
+                            <span style="font-size:15px; color:#1a1a1a; font-weight:800;">{text_alunas}</span>
+                        </div>
+                        '''
+    
+                    html_mural_colunas += f"""
+                    <div id="mural_export_{idx}" style="background:white; padding:15px; border:3px solid #000; border-radius:15px; min-width:240px; flex-shrink:0; font-family:sans-serif;">
+                        <div class="horario-titulo" style="background:#262730; color:white; padding:8px; border-radius:5px; text-align:center; font-size:20px; font-weight:bold; margin-bottom:12px;">{h_col}</div>
+                        {html_cards}
+                    </div>
+                    """
+    
+                # Renderiza o Mural na Tela com barra de rolagem
+                st.markdown(f"""
+                <div id="mural_completo_container" style="display: flex; gap: 15px; overflow-x: auto; padding: 20px; background: #eee; border-radius: 15px;">
+                    {html_mural_colunas}
+                </div>
+                """, unsafe_allow_html=True)
+    
+                # --- EDITOR DE TABELA (ABAIXO DO MURAL) ---
+                st.divider()
+                st.subheader("⚙️ Editor da Escala (Tabela)")
+                df_editado_final = st.data_editor(df_escala, use_container_width=True, key=f"edit_final_{data_sel_str}")
+                
+                c_save1, c_save2 = st.columns(2)
+                if c_save1.button("💾 Salvar Alterações", use_container_width=True):
+                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": df_editado_final.to_dict('records')}).execute()
+                    st.success("Escala atualizada!")
+                    st.rerun()
+                
+                if c_save2.button("🗑️ Apagar e Reiniciar", use_container_width=True):
+                    supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                    st.rerun()
                     
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
