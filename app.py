@@ -519,46 +519,47 @@ if menu == "🏠 Secretaria":
                 if data_sel_str not in calendario_db:
                     st.warning("Nenhum dado para esta data.")
                 else:
+                    # 1. Obter dados
                     df_escala = pd.DataFrame(calendario_db[data_sel_str])
                     
+                    # 2. Editor da Escala (Corrigindo o erro de indentação aqui)
+                    st.subheader("⚙️ Editor da Escala (Tabela)")
+                    df_editado = st.data_editor(df_escala, use_container_width=True, key=f"editor_{data_sel_str}")
+                
+                    if st.button("💾 Salvar Alterações na Tabela"):
+                        calendario_db[data_sel_str] = df_editado.to_dict('records')
+                        st.success("Alterações salvas com sucesso!")
+                        st.rerun()
+                
+                    st.divider()
                     st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
                     
-                    # --- 1. BOTÃO MESTRE ---
+                    # 3. Botão Master com JavaScript
                     js_master = f"""
                     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
                     <script>
-                    async function baixarTudoEConjunto() {{
+                    async function baixarTudo() {{
                         const numColunas = {len(HORARIOS)};
                         
-                        // 1. BAIXAR INDIVIDUAIS
+                        // Prints Individuais
                         for (let i = 0; i < numColunas; i++) {{
                             const divId = 'mural_export_' + i;
                             const container = window.parent.document.getElementById(divId);
                             if (container) {{
-                                // logging para debug se necessário
-                                const canvas = await html2canvas(container, {{ 
-                                    scale: 2, 
-                                    backgroundColor: "#ffffff",
-                                    useCORS: true,
-                                    logging: false
-                                }});
+                                const canvas = await html2canvas(container, {{ scale: 2, backgroundColor: "#ffffff", useCORS: true }});
                                 const link = window.parent.document.createElement('a');
                                 const hNome = container.querySelector('.horario-titulo').innerText.trim().replace(':', 'h');
                                 link.download = 'Individual_' + hNome + '.png';
                                 link.href = canvas.toDataURL("image/png");
                                 link.click();
-                                await new Promise(r => setTimeout(r, 800)); // Tempo maior para evitar bloqueio do navegador
+                                await new Promise(r => setTimeout(r, 800));
                             }}
                         }}
                 
-                        // 2. BAIXAR MURAL COMPLETO
+                        // Print Mural Completo
                         const muralCompleto = window.parent.document.getElementById('mural_completo_container');
                         if (muralCompleto) {{
-                            const canvasGeral = await html2canvas(muralCompleto, {{ 
-                                scale: 2, 
-                                backgroundColor: "#ffffff",
-                                useCORS: true 
-                            }});
+                            const canvasGeral = await html2canvas(muralCompleto, {{ scale: 2, backgroundColor: "#ffffff", useCORS: true }});
                             const linkGeral = window.parent.document.createElement('a');
                             linkGeral.download = 'Mural_Completo_{data_sel_str.replace("/", "-")}.png';
                             linkGeral.href = canvasGeral.toDataURL("image/png");
@@ -566,38 +567,40 @@ if menu == "🏠 Secretaria":
                         }}
                     }}
                     </script>
-                    <button onclick="baixarTudoEConjunto()" style="width:100%; background: linear-gradient(90deg, #107c10, #21a366); color:white; border:none; padding:20px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:20px; margin-bottom:25px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+                    <button onclick="baixarTudo()" style="width:100%; background: linear-gradient(90deg, #107c10, #21a366); color:white; border:none; padding:20px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:20px; margin-bottom:25px;">
                         ✅ Gerar Tudo: Fotos Individuais + Mural Completo
                     </button>
                     """
                     st.components.v1.html(js_master, height=110)
                 
-                    # --- 2. MONTAGEM VISUAL ---
+                    # 4. Montagem do Mural (Visual e para Download)
                     termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
-                    cores = {"SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"}
+                    cores = {
+                        "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", 
+                        "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", 
+                        "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", 
+                        "SECRETARIA": "#fef3c7"
+                    }
                 
-                    # Criamos um container HTML gigante para o mural completo
-                    html_mural_completo = f'<div id="mural_completo_container" style="display: flex; flex-direction: row; gap: 10px; background: white; padding: 20px;">'
-                
-                    # Colunas do Streamlit para visualização na tela
+                    html_mural_completo = '<div id="mural_completo_container" style="display: flex; gap: 10px; background: white; padding: 20px;">'
                     cols_mural = st.columns(len(HORARIOS))
                 
                     for idx, h_col in enumerate(HORARIOS):
                         div_id = f"mural_export_{idx}"
                         html_cards = ""
                         
-                        # Agrupamento e Ordenação
+                        # Agrupamento
                         grupos = {}
-                        for _, r in df_escala.iterrows():
+                        for _, r in df_editado.iterrows():
                             info = str(r[h_col])
                             if info not in grupos: grupos[info] = []
                             grupos[info].append(r['Aluna'])
                         
+                        # Ordenação das Salas
                         chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
                             0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
                             1 if "SALA 8" in x.upper() else 
-                            2 if "SALA 9" in x.upper() else 3, 
-                            x
+                            2 if "SALA 9" in x.upper() else 3, x
                         ))
                         
                         for local_prof in chaves_ordenadas:
@@ -614,31 +617,30 @@ if menu == "🏠 Secretaria":
                                 text_alunas = " + ".join(sorted(presentes)) if len(alunas_gp) > 1 else alunas_gp[0]
                 
                             html_cards += f'''
-                            <div style="background-color:{bg}; border:2px solid #000; padding:10px; margin-bottom:10px; border-radius:10px; font-family:sans-serif;">
-                                <b style="font-size:18px; color:#000; display:block; line-height:1.2;">{local_prof}</b>
-                                <span style="font-size:16px; color:#1a1a1a; font-weight:800;">{text_alunas}</span>
+                            <div style="background-color:{bg}; border:2px solid #000; padding:10px; margin-bottom:10px; border-radius:10px;">
+                                <b style="font-size:16px; color:#000; display:block;">{local_prof}</b>
+                                <span style="font-size:15px; color:#1a1a1a; font-weight:800;">{text_alunas}</span>
                             </div>
                             '''
                 
                         mural_visual = f"""
-                        <div id="{div_id}" style="background:white; padding:15px; border:4px solid #000; border-radius:15px; min-width:250px;">
+                        <div id="{div_id}" style="background:white; padding:15px; border:3px solid #000; border-radius:15px; min-width:220px; font-family:sans-serif;">
                             <div style="text-align:center;">{logo_html}</div>
-                            <div class="horario-titulo" style="background:#262730; color:white; padding:10px; border-radius:8px; text-align:center; font-size:24px; font-weight:bold; margin-bottom:15px; font-family:sans-serif;">
+                            <div class="horario-titulo" style="background:#262730; color:white; padding:8px; border-radius:5px; text-align:center; font-size:20px; font-weight:bold; margin-bottom:12px;">
                                 {h_col}
                             </div>
                             {html_cards}
                         </div>
                         """
-                        # Adiciona ao mural completo (HTML) e mostra na coluna (Streamlit)
                         html_mural_completo += mural_visual
                         with cols_mural[idx]:
                             st.write(mural_visual, unsafe_allow_html=True)
                 
                     html_mural_completo += "</div>"
                     
-                    # Renderiza o container do mural completo escondido ou no fim para o script capturar
-                    st.write(f'<div style="overflow-x: auto;">{html_mural_completo}</div>', unsafe_allow_html=True)
-                
+                    # Renderiza o container escondido para o print completo funcionar
+                    st.write(f'<div style="overflow-x: auto; opacity: 0; height: 0;">{html_mural_completo}</div>', unsafe_allow_html=True)
+                    
                 st.divider()
                     
             # ... (Restante do código do editor de tabela continua igual)    
