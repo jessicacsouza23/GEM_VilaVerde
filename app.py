@@ -513,12 +513,12 @@ if menu == "🏠 Secretaria":
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
     
-            # CASO B: ESCALA JÁ EXISTE (MOSTRA MURAL COM AGRUPAMENTO POR TURMA)
+            # CASO B: ESCALA JÁ EXISTE (MURAL AMPLIADO E FILTRADO)
             else:
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
-                # --- PARTE 1: MURAL VISUAL ---
-                st.subheader(f"📸 Mural para Print - {data_sel_str}")
+                # --- PARTE 1: MURAL VISUAL (ESTILO FULL WIDTH / FONTE GRANDE) ---
+                st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
                 
                 cores = {
                     "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3",
@@ -527,14 +527,21 @@ if menu == "🏠 Secretaria":
                     "SECRETARIA": "#fef3c7"
                 }
     
+                # Filtros de exclusão (exceto para secretaria/atividade)
+                termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO", "-"]
+    
                 for h_col in HORARIOS:
                     if h_col in df_escala.columns:
-                        st.markdown(f"""<div style="background:#f8f9fa; padding:10px; border:1px solid #ddd; text-align:center; font-size:20px; font-weight:bold; margin-top:20px; border-radius:5px;">{h_col} — {'1ª AULA (IGREJA)' if h_col == HORARIOS[0] else 'AULA'}</div>""", unsafe_allow_html=True)
+                        # Cabeçalho do Horário com fonte maior
+                        st.markdown(f"""
+                            <div style="background:#333; color:white; padding:15px; border-radius:10px; text-align:center; font-size:28px; font-weight:bold; margin-top:30px; margin-bottom:10px; width:100%;">
+                                {h_col} — {'1ª AULA (IGREJA)' if h_col == HORARIOS[0] else 'AULA'}
+                            </div>
+                        """, unsafe_allow_html=True)
                         
-                        # Agrupar por Professor/Sala
                         grupos = {}
                         for _, r in df_escala.iterrows():
-                            info = r[h_col]
+                            info = str(r[h_col])
                             if info not in grupos: grupos[info] = []
                             grupos[info].append(r['Aluna'])
                         
@@ -547,35 +554,39 @@ if menu == "🏠 Secretaria":
                         ))
                         
                         for local_prof in chaves_ordenadas:
+                            local_upper = local_prof.upper()
+                            
+                            # Lógica de Filtro: Pula se tiver termo de falta, A MENOS que seja Secretaria/Atividade
+                            is_atividade = "SECRETARIA" in local_upper or "ATIVIDADE" in local_upper
+                            if any(termo in local_upper for termo in termos_excluir) and not is_atividade:
+                                continue
+    
                             alunas_do_grupo = grupos[local_prof]
                             bg_color = "#ffffff"
                             for sala, cor in cores.items():
-                                if sala in local_prof.upper():
+                                if sala in local_upper:
                                     bg_color = cor
                                     break
                             
-                            # --- NOVA LÓGICA DE EXIBIÇÃO POR TURMA ---
+                            # Lógica de Exibição por Turma
                             if h_col == HORARIOS[0]:
                                 exibicao_alunas = "Todas as alunas"
                             else:
-                                # Identifica quais turmas estão presentes nesse grupo
                                 turmas_presentes = []
                                 for nome_turma, lista_alunas in TURMAS.items():
-                                    # Se alguma aluna deste grupo pertence a esta turma
                                     if any(aluna in alunas_do_grupo for aluna in lista_alunas):
                                         turmas_presentes.append(nome_turma)
                                 
-                                # Se for aula individual (apenas 1 aluna), mostra o nome dela
-                                # Se for aula em conjunto, mostra as Turmas
                                 if len(alunas_do_grupo) > 1:
                                     exibicao_alunas = " + ".join(sorted(turmas_presentes))
                                 else:
-                                    exibicao_alunas = alunas_do_grupo[0]
+                                    exibicao_alunas = alunas_do_grupo[0] if alunas_do_grupo else "---"
     
+                            # Renderização do Bloco (Fonte 22px para Título e 20px para Alunas)
                             st.markdown(f"""
-                                <div style="background-color:{bg_color}; border:1px solid #333; padding:10px; margin-top:5px; border-radius:3px;">
-                                    <b style="font-size:16px;">{local_prof}</b><br>
-                                    <span style="font-size:15px; color:#1a1a1a;">{exibicao_alunas}</span>
+                                <div style="background-color:{bg_color}; border:2px solid #000; padding:15px; margin-top:8px; border-radius:8px; width:100%;">
+                                    <b style="font-size:24px; color:#000;">{local_prof}</b><br>
+                                    <div style="font-size:22px; color:#1a1a1a; font-weight:500; margin-top:5px;">{exibicao_alunas}</div>
                                 </div>
                             """, unsafe_allow_html=True)
     
