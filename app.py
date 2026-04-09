@@ -73,7 +73,8 @@ USUARIOS = {
     "luciene": {"senha": "456", "perfil": "Luciene", "nome_real": "Luciene"},
     "patricia": {"senha": "456", "perfil": "Patricia", "nome_real": "Patricia"},
     "flavia": {"senha": "456", "perfil": "Flavia", "nome_real": "Flavia"},
-    "kamila": {"senha": "456", "perfil": "Kamila", "nome_real": "Kamila"},
+    "kamyla": {"senha": "456", "perfil": "Kamila", "nome_real": "Kamyla"},
+    "renata": {"senha": "456", "perfil": "Renata", "nome_real": "Renata"},
     # ... adicione as demais seguindo o padrão: "login": {"senha": "...", "perfil": "Professora", "nome_real": "Nome Exato na Lista"}
 }
 
@@ -113,7 +114,7 @@ def carregar_dados_globais():
 
 
 # --- 2. DADOS MESTRE ---
-PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamila", "Renata"]
+PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla", "Renata"]
 SECRETARIAS_LISTA = ["Esther", "Jéssica", "Larissa", "Lurdes", "Natasha", "Roseli"]
 ALUNAS_LISTA = sorted([
     "Annie - Vila Verde", "Ana Marcela S - Vila Verde", 
