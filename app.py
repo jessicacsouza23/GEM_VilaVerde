@@ -15,6 +15,7 @@ import json
 import time # <--- ESSENCIAL PARA O SLEEP FUNCIONAR
 import random
 import streamlit.components.v1 as components
+from streamlit_pills import pills # NOVO: Precisa instalar (pip install streamlit-pills)
 
 # Verificação de Segurança
 try:
@@ -513,15 +514,16 @@ if menu == "🏠 Secretaria":
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
     
-            # CASO B: ESCALA JÁ EXISTE (VISUAL EM COLUNAS LADO A LADO)
+            # CASO B: ESCALA JÁ EXISTE (MURAL EXPORTÁVEL COM FONTE GIGANTE)
+            # CASO B: ESCALA JÁ EXISTE (MURAL EXPORTÁVEL COM FONTE GIGANTE)
             else:
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
-                # --- PARTE 1: MURAL VISUAL EM COLUNAS ---
-                st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
-                
-                # Filtros e Cores
-                termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO", "-"]
+                st.markdown(f"### 📸 Mural para Print/WhatsApp - {data_sel_str}")
+                st.write("Clique nos botões abaixo de cada coluna para baixar a imagem.")
+    
+                # Configurações Visuais
+                termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO", "-", "X"]
                 cores = {
                     "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3",
                     "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1",
@@ -529,27 +531,30 @@ if menu == "🏠 Secretaria":
                     "SECRETARIA": "#fef3c7"
                 }
     
-                # Criamos as colunas baseadas na quantidade de horários
+                # Criamos as colunas verticais
                 cols_mural = st.columns(len(HORARIOS))
     
                 for idx, h_col in enumerate(HORARIOS):
                     with cols_mural[idx]:
-                        # Cabeçalho do Horário (Compacto e Elegante)
-                        st.markdown(f"""
-                            <div style="background:#262730; color:white; padding:10px; border-radius:5px; text-align:center; font-size:22px; font-weight:bold; margin-bottom:10px;">
+                        
+                        # Identificador único para a captura de imagem
+                        div_id = f"mural_caixa_{idx}"
+    
+                        # Início da Div Capturável
+                        html_mural = f"""
+                        <div id="{div_id}" style="background:white; padding:15px; border:3px solid #000; border-radius:10px;">
+                            <div style="background:#262730; color:white; padding:15px; border-radius:5px; text-align:center; font-size:32px; font-weight:bold; margin-bottom:15px; width:100%;">
                                 {h_col}
                             </div>
-                        """, unsafe_allow_html=True)
+                        """
                         
                         if h_col in df_escala.columns:
-                            # Agrupamento
                             grupos = {}
                             for _, r in df_escala.iterrows():
                                 info = str(r[h_col])
                                 if info not in grupos: grupos[info] = []
                                 grupos[info].append(r['Aluna'])
                             
-                            # Ordenação
                             chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
                                 0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
                                 1 if "SALA 8" in x.upper() else 
@@ -561,7 +566,6 @@ if menu == "🏠 Secretaria":
                                 local_upper = local_prof.upper()
                                 is_atividade = "SECRETARIA" in local_upper or "ATIVIDADE" in local_upper
                                 
-                                # Pula se for falta, exceto secretaria
                                 if any(termo in local_upper for termo in termos_excluir) and not is_atividade:
                                     continue
     
@@ -572,7 +576,6 @@ if menu == "🏠 Secretaria":
                                         bg_color = cor
                                         break
                                 
-                                # Lógica de Turma/Aluna
                                 if h_col == HORARIOS[0]:
                                     exibicao_alunas = "Todas as alunas"
                                 else:
@@ -586,16 +589,50 @@ if menu == "🏠 Secretaria":
                                     else:
                                         exibicao_alunas = alunas_do_grupo[0] if alunas_do_grupo else "---"
     
-                                # Card de Aula (Ajustado para colunas)
-                                st.markdown(f"""
-                                    <div style="background-color:{bg_color}; border:1.5px solid #333; padding:8px; margin-bottom:8px; border-radius:5px; min-height:80px;">
-                                        <b style="font-size:16px; color:#000; line-height:1.2;">{local_prof}</b><br>
-                                        <div style="font-size:15px; color:#1a1a1a; font-weight:600; margin-top:4px;">{exibicao_alunas}</div>
+                                # Card de Aula - FONTES GIGANTES (26px e 24px)
+                                html_mural += f"""
+                                    <div style="background-color:{bg_color}; border:2.5px solid #000; padding:12px; margin-bottom:10px; border-radius:8px;">
+                                        <b style="font-size:26px; color:#000; line-height:1.2;">{local_prof}</b><br>
+                                        <div style="font-size:24px; color:#1a1a1a; font-weight:700; margin-top:6px;">{exibicao_alunas}</div>
                                     </div>
-                                """, unsafe_allow_html=True)
+                                """
+    
+                        # Fecha a Div Capturável
+                        html_mural += "</div>"
+                        
+                        # Renderiza o Mural
+                        st.markdown(html_mural, unsafe_allow_html=True)
+    
+                        # --- BOTÃO MÁGICO PARA SALVAR COMO IMAGEM (JavaScript) ---
+                        # Este botão usa a biblioteca html2canvas para tirar um "print" da div acima
+                        btn_label = f"💾 Baixar Imagem {h_col}"
+                        js_code = f"""
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+                        <script>
+                            function exportarMural{idx}() {{
+                                const element = document.getElementById('{div_id}');
+                                html2canvas(element, {{
+                                    scale: 2, // Aumenta a resolução da imagem gerada (nitidez)
+                                    backgroundColor: "#ffffff" // Garante fundo branco
+                                }}).then(canvas => {{
+                                    // Converte o canvas para imagem PNG e faz o download
+                                    var link = document.createElement('a');
+                                    link.download = 'Mural_{data_sel_str.replace('/','-')}_{h_col.replace(':','')}.png';
+                                    link.href = canvas.toDataURL("image/png");
+                                    link.click();
+                                }});
+                            }}
+                        </script>
+                        <button onclick="exportarMural{idx}()" style="width:100%; padding:10px; background-color:#28a745; color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold; margin-top:10px;">
+                            {btn_label}
+                        </button>
+                        """
+                        # Inserimos o botão como um componente HTML/JS
+                        components.html(js_code, height=60)
     
                 st.divider()
-                # ... (segue o editor de tabela abaixo)                
+                    
+                            
             # ... (Restante do código do editor de tabela continua igual)    
                 # --- PARTE 2: EDITOR DE TABELA ---
                 st.subheader("⚙️ Editor da Escala (Tabela)")
