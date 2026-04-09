@@ -896,7 +896,15 @@ if menu == "🏠 Secretaria":
                                 st.error(f"Erro ao apagar: {e}")
                     else:
                         st.info(f"Nenhum dado encontrado para {al_aj}.")
-
+  
+                        
+# ============================================================
+# MÓDULO PROFESSORA - V52 (CAMPOS DE PRÁTICA EXPOSTOS)
+# ============================================================
+elif menu == "👩‍🏫 Minhas Aulas":
+    st.header(f"👩‍🏫 Painel da Professora: {st.session_state.nome_logado}")
+    
+    tab_aula, tab_config = st.tabs(["📝 Registro de Aula", "⚙️ Configurar Métodos"])
         # ============================================================
         # FUNÇÃO DE SUPORTE - BUSCA MÉTODOS CADASTRADOS
         # ============================================================
@@ -911,15 +919,6 @@ if menu == "🏠 Secretaria":
             except Exception as e:
                 # Se a tabela não existir ou houver erro de conexão, retorna vazio para não travar o app
                 return pd.DataFrame(columns=["nome", "categoria"])
-    
-                        
-# ============================================================
-# MÓDULO PROFESSORA - V52 (CAMPOS DE PRÁTICA EXPOSTOS)
-# ============================================================
-elif menu == "👩‍🏫 Minhas Aulas":
-    st.header(f"👩‍🏫 Painel da Professora: {st.session_state.nome_logado}")
-    
-    tab_aula, tab_config = st.tabs(["📝 Registro de Aula", "⚙️ Configurar Métodos"])
 
     # No seu loop principal, dentro da tab_config:
    # --- ABA DE CONFIGURAÇÃO (ONDE DAVA O ERRO) ---
