@@ -521,7 +521,15 @@ if menu == "🏠 Secretaria":
                                                 ultima_prof = h_alu.sort_values('id', ascending=False).iloc[0].get('Instrutora', '---')
                                         
                                         candidatas = [p for p in profs_disponiveis if p != ultima_prof]
-                                        prof_final = random.choice(candidatas if candidatas else profs_dispoiveis)
+                                        # --- CORREÇÃO DA LINHA 524 (TYPO + SEGURANÇA) ---
+
+                                        # 1. Primeiro, garantimos que a lista de disponíveis existe e não está vazia
+                                        if 'profs_disponiveis' in locals() and profs_disponiveis:
+                                            # 2. Tentamos escolher das candidatas, se não houver, usamos as disponíveis (COM N)
+                                            prof_final = random.choice(candidatas if candidatas else profs_disponiveis)
+                                        else:
+                                            # 3. Caso não haja ninguém disponível no horário, evita que o app trave
+                                            prof_final = "⚠️ SEM PROF. DISPONÍVEL"
 
                                         nota = "🎹"
                                     
