@@ -422,9 +422,9 @@ if menu == "🏠 Secretaria":
         else:
             st.warning("O banco de dados está vazio.")
             
-    # --- ABA 2: PLANEJAMENTO (V84 - RODÍZIO GLOBAL DE SALAS E ALUNAS) ---
+    # --- ABA 2: PLANEJAMENTO (V85 - RODÍZIO GLOBAL + PAINEL MURAL) ---
     with tab_plan:
-        st.markdown("### 🗓️ Gestão de Escala")
+        st.markdown("### 🗓️ Planejamento e Mural")
         
         if 'fixas_escala' not in st.session_state:
             st.session_state.fixas_escala = []
@@ -438,14 +438,14 @@ if menu == "🏠 Secretaria":
         
         if sabados:
             data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_plan")
-            calendario_db = db_get_calendario() # Carrega todas as escalas já feitas
-            df_hist = pd.DataFrame(db_get_historico()) # Carrega todo o histórico de aulas
+            calendario_db = db_get_calendario() 
+            df_hist = pd.DataFrame(db_get_historico())
     
             if data_sel_str not in calendario_db:
                 with st.container(border=True):
-                    st.warning("⚡ O Rodízio ainda não foi gerado.")
+                    st.info("Configuração do Rodízio")
                     
-                    # Interface de Teoria/Solfejo
+                    # Definição de Teoria/Solfejo (Salas 8 e 9)
                     col_t, col_s = st.columns(2)
                     with col_t:
                         st.markdown("**📚 Teoria (Sala 8)**")
@@ -455,11 +455,11 @@ if menu == "🏠 Secretaria":
                         ps2, ps3, ps4 = st.selectbox("H2", PROFESSORAS_LISTA, index=3), st.selectbox("H3", PROFESSORAS_LISTA, index=4), st.selectbox("H4", PROFESSORAS_LISTA, index=5)
                     
                     st.divider()
-                    st.markdown("📌 **Configurar Duplas Fixas**")
+                    st.markdown("📌 **Definir Duplas Fixas (Opcional)**")
                     cf1, cf2, cf3 = st.columns([2, 2, 1])
                     f_alu = cf1.selectbox("Aluna:", ["---"] + ALUNAS_LISTA)
                     f_pro = cf2.selectbox("Professora:", ["---"] + PROFESSORAS_LISTA)
-                    if cf3.button("➕ Fixar"):
+                    if cf3.button("➕ Adicionar Fixa"):
                         if f_alu != "---" and f_pro != "---":
                             st.session_state.fixas_escala.append({"Aluna": f_alu, "Prof": f_pro})
                             st.rerun()
@@ -470,17 +470,15 @@ if menu == "🏠 Secretaria":
     
                     folga_ativa = st.multiselect("Professoras de Folga:", PROFESSORAS_LISTA)
     
-                    if st.button("🚀 GERAR ESCALA", use_container_width=True, type="primary"):
+                    if st.button("🚀 GERAR ESCALA INTELIGENTE", use_container_width=True, type="primary"):
                         mapa = {aluna: {"Aluna": aluna, "Turma": t_nome} for t_nome, alunas in TURMAS.items() for aluna in alunas}
                         for a in mapa: mapa[a][HORARIOS[0]] = "⛪ Igreja"
                         
-                        # --- 1. RODÍZIO DE SALAS (ANÁLISE DE TODO O HISTÓRICO) ---
+                        # --- 1. RODÍZIO GLOBAL DE SALAS (1 a 7) ---
                         profs_pratica = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                         salas_do_dia = {}
-                        
-                        # Mapeia quantas vezes cada prof usou cada sala (1 a 7) no passado
                         uso_salas_hist = {p: {s: 0 for s in range(1, 8)} for p in profs_pratica}
-                        for data_id, escala in calendario_db.items():
+                        for escala in calendario_db.values():
                             for linha in escala:
                                 for h in HORARIOS[1:]:
                                     txt = linha.get(h, "")
@@ -488,31 +486,20 @@ if menu == "🏠 Secretaria":
                                         try:
                                             num = int(txt.split("SALA ")[1].split(" |")[0])
                                             prof = txt.split("| ")[1]
-                                            if prof in uso_salas_hist and num <= 7:
-                                                uso_salas_hist[prof][num] += 1
+                                            if prof in uso_salas_hist and num <= 7: uso_salas_hist[prof][num] += 1
                                         except: continue
     
-                        vagas_globais = [1, 2, 3, 4, 5, 6, 7]
+                        vagas_salas = [1, 2, 3, 4, 5, 6, 7]
                         random.shuffle(profs_pratica)
-                        
                         for p in profs_pratica:
-                            # Escolhe a sala que a professora MENOS usou no histórico total
-                            salas_ordenadas = sorted(uso_salas_hist[p], key=uso_salas_hist[p].get)
-                            sala_escolhida = None
-                            for s in salas_ordenadas:
-                                if s in vagas_globais:
-                                    sala_escolhida = s
+                            ordenadas = sorted(uso_salas_hist[p], key=uso_salas_hist[p].get)
+                            for s in ordenadas:
+                                if s in vagas_salas:
+                                    salas_do_dia[p] = s
+                                    vagas_salas.remove(s)
                                     break
-                            
-                            if sala_escolhida:
-                                salas_do_dia[p] = sala_escolhida
-                                vagas_globais.remove(sala_escolhida)
-                            elif vagas_globais: # Backup se a lógica de histórico falhar
-                                s = random.choice(vagas_globais)
-                                salas_do_dia[p] = s
-                                vagas_globais.remove(s)
     
-                        # --- 2. DISTRIBUIÇÃO NOS HORÁRIOS (RODÍZIO DE ALUNAS) ---
+                        # --- 2. DISTRIBUIÇÃO NOS HORÁRIOS ---
                         config_h = {
                             HORARIOS[1]: {"Teo": "Turma 1", "Sol": "Turma 2", "P_Teo": pt2, "P_Sol": ps2},
                             HORARIOS[2]: {"Teo": "Turma 2", "Sol": "Turma 3", "P_Teo": pt3, "P_Sol": ps3},
@@ -521,7 +508,7 @@ if menu == "🏠 Secretaria":
                         
                         for h in [HORARIOS[1], HORARIOS[2], HORARIOS[3]]:
                             conf = config_h[h]
-                            profs_indisponiveis = [conf["P_Teo"], conf["P_Sol"]] + folga_ativa
+                            profs_off = [conf["P_Teo"], conf["P_Sol"]] + folga_ativa
                             
                             alunas_p = [a for t, girls in TURMAS.items() if conf["Teo"] != t and conf["Sol"] != t for a in girls]
                             for t_nome, girls in TURMAS.items():
@@ -530,48 +517,84 @@ if menu == "🏠 Secretaria":
                                 elif conf["Sol"] == t_nome:
                                     for a in girls: mapa[a][h] = f"🔊 SALA 9 | {conf['P_Sol']}"
     
-                            disponiveis_h = [p for p in PROFESSORAS_LISTA if p not in profs_indisponiveis]
+                            disponiveis_h = [p for p in PROFESSORAS_LISTA if p not in profs_off]
                             random.shuffle(alunas_p)
     
                             for aluna in alunas_p:
-                                prof_final = None
-                                # Prioridade 1: Dupla Fixa Editável
+                                prof_f = None
                                 fixa = next((f for f in st.session_state.fixas_escala if f['Aluna'] == aluna), None)
                                 if fixa and fixa['Prof'] in disponiveis_h:
-                                    prof_final = fixa['Prof']
-                                    nota = "📌"
-                                
-                                # Prioridade 2: Rodízio de Alunas (Verifica histórico total)
+                                    prof_f, nota = fixa['Prof'], "📌"
                                 elif disponiveis_h:
-                                    # Conta repetições aluna x prof em todo o histórico de aulas
-                                    contagem = {p: (len(df_hist[(df_hist['Aluna'] == aluna) & (df_hist['Instrutora'] == p)]) if not df_hist.empty else 0) for p in disponiveis_h}
-                                    prof_final = sorted(contagem, key=contagem.get)[0]
-                                    nota = "🎹"
+                                    cont = {p: (len(df_hist[(df_hist['Aluna'] == aluna) & (df_hist['Instrutora'] == p)]) if not df_hist.empty else 0) for p in disponiveis_h}
+                                    prof_f, nota = sorted(cont, key=cont.get)[0], "🎹"
     
-                                if prof_final:
-                                    s_num = salas_do_dia.get(prof_final, random.randint(1, 7))
-                                    mapa[aluna][h] = f"{nota} SALA {s_num} | {prof_final}"
-                                    if prof_final in disponiveis_h: disponiveis_h.remove(prof_final)
+                                if prof_f:
+                                    s_n = salas_do_dia.get(prof_f, random.randint(1,7))
+                                    mapa[aluna][h] = f"{nota} SALA {s_n} | {prof_f}"
+                                    if prof_f in disponiveis_h: disponiveis_h.remove(prof_f)
                                 else:
-                                    mapa[aluna][h] = "⚠️ SEM PROF"
+                                    mapa[aluna][h] = "📂 Atividade Autônoma | Secretaria"
     
                         supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
-                        st.success("Rodízio Inteligente Gerado!"); st.rerun()
-    
+                        st.rerun()
             else:
-                # Edição manual da escala salva
-                st.success(f"🗓️ Escala confirmada para {data_sel_str}")
-                df_view = pd.DataFrame(calendario_db[data_sel_str])
-                df_edit = st.data_editor(df_view[["Aluna", "Turma"] + HORARIOS], use_container_width=True, hide_index=True)
+                # --- PAINEL VISUAL PARA MURAL ---
+                st.success(f"🗓️ Escala Confirmada: {data_sel_str}")
                 
-                c_s1, c_s2 = st.columns(2)
-                if c_s1.button("💾 SALVAR ALTERAÇÕES", use_container_width=True, type="primary"):
-                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": df_edit.to_dict('records')}).execute()
-                    st.success("Salvo!"); st.cache_data.clear()
-                
-                if c_s2.button("🗑️ Resetar Rodízio", use_container_width=True):
+                with st.expander("📝 Editar ou Ajustar Manualmente"):
+                    df_view = pd.DataFrame(calendario_db[data_sel_str])
+                    df_edt = st.data_editor(df_view, use_container_width=True, hide_index=True)
+                    if st.button("💾 Salvar Alterações"):
+                        supabase.table("calendario").upsert({"id": data_sel_str, "escala": df_edt.to_dict('records')}).execute()
+                        st.cache_data.clear(); st.rerun()
+    
+                st.divider()
+                # Gerador de Cards para Mural
+                for h_col in HORARIOS:
+                    st.markdown(f"<div style='background-color:#1E1E1E; color:white; padding:10px; border-radius:5px; text-align:center; margin-top:30px;'><h2>{h_col}</h2></div>", unsafe_allow_html=True)
+                    
+                    salas_agrupadas = {}
+                    autonomas = []
+                    
+                    for _, r in pd.DataFrame(calendario_db[data_sel_str]).iterrows():
+                        val = r[h_col]
+                        if "SALA" in val:
+                            header = val.split(" | ")[0].replace("📌 ","").replace("🎹 ","").replace("📚 ","").replace("🔊 ","")
+                            prof = val.split(" | ")[1] if "|" in val else "---"
+                            if (header, prof) not in salas_agrupadas: salas_agrupadas[(header, prof)] = []
+                            salas_agrupadas[(header, prof)].append(r['Aluna'])
+                        else:
+                            autonomas.append(r['Aluna'])
+    
+                    # Ordenar salas numericamente
+                    keys = sorted(salas_agrupadas.keys(), key=lambda x: int(x[0].replace("SALA ","")) if "SALA" in x[0] else 99)
+                    
+                    c_idx = 0
+                    cols = st.columns(3)
+                    for s_name, p_name in keys:
+                        with cols[c_idx % 3]:
+                            alunas_html = "".join([f"<div style='font-size:15px;'>• {a}</div>" for a in sorted(salas_agrupadas[(s_name, p_name)])])
+                            st.markdown(f"""
+                                <div style="border:1px solid #555; padding:10px; border-radius:10px; margin-bottom:10px; background-color:#262730;">
+                                    <b style="color:#FF4B4B; font-size:18px;">{s_name}</b><br>
+                                    <small>Profª {p_name}</small><hr style="margin:5px 0;">
+                                    {alunas_html}
+                                </div>
+                            """, unsafe_allow_html=True)
+                            c_idx += 1
+                    
+                    if autonomas:
+                        st.markdown(f"""
+                            <div style="border:1px dashed #777; padding:10px; border-radius:10px; background-color:#1A1A1A;">
+                                <b style="color:#AAA;">📂 ATIVIDADE AUTÔNOMA</b> (Local: Secretaria | Supervisão: Secretárias)<br>
+                                <div style="column-count:3;">{"".join([f"<div>• {a}</div>" for a in sorted(autonomas)])}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+    
+                if st.button("🗑️ Apagar Rodízio Atual"):
                     supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-                    st.cache_data.clear(); st.rerun()
+                    st.rerun()
                     
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
