@@ -424,101 +424,101 @@ if menu == "🏠 Secretaria":
             
         import base64
 
-# --- ABA 2: PLANEJAMENTO (V86 - ALTO CONTRASTE + MODO IMPRESSÃO PDF) ---
-with tab_plan:
-    st.markdown("### 🗓️ Planejamento e Mural (Versão para Impressão)")
+    # --- ABA 2: PLANEJAMENTO (V86 - ALTO CONTRASTE + MODO IMPRESSÃO PDF) ---
+    with tab_plan:
+        st.markdown("### 🗓️ Planejamento e Mural (Versão para Impressão)")
+        
+        # ... (Mantém as inicializações de estado e seletores de data da V85) ...
     
-    # ... (Mantém as inicializações de estado e seletores de data da V85) ...
-
-    if data_sel_str in calendario_db:
-        st.success(f"✅ Escala Confirmada: {data_sel_str}")
-        
-        # Bloco de Edição (Oculto por padrão para não poluir)
-        with st.expander("📝 Editar Dados Brutos (Clique para abrir)"):
-            df_view = pd.DataFrame(calendario_db[data_sel_str])
-            df_edt = st.data_editor(df_view, use_container_width=True, hide_index=True)
-            if st.button("💾 Salvar Alterações"):
-                supabase.table("calendario").upsert({"id": data_sel_str, "escala": df_edt.to_dict('records')}).execute()
-                st.cache_data.clear(); st.rerun()
-
-        st.divider()
-
-        # PREPARAÇÃO DO CONTEÚDO PARA O MURAL (HTML DE ALTO CONTRASTE)
-        html_mural = f"<div id='mural-print' style='background-color: white; color: black; padding: 20px; font-family: sans-serif;'>"
-        html_mural += f"<h1 style='text-align: center; border-bottom: 3px solid black; padding-bottom: 10px;'>ESCALA DE AULAS - {data_sel_str}</h1>"
-
-        for h_col in HORARIOS:
-            html_mural += f"<div style='background-color: #EEE; padding: 10px; margin-top: 30px; border: 2px solid black; text-align: center;'><h2>{h_col}</h2></div>"
+        if data_sel_str in calendario_db:
+            st.success(f"✅ Escala Confirmada: {data_sel_str}")
             
-            # Organização dos dados
-            salas_agrupadas = {}
-            autonomas = []
-            for _, r in pd.DataFrame(calendario_db[data_sel_str]).iterrows():
-                val = r[h_col]
-                if "SALA" in val:
-                    header = val.split(" | ")[0].replace("📌 ","").replace("🎹 ","").replace("📚 ","").replace("🔊 ","")
-                    prof = val.split(" | ")[1] if "|" in val else "---"
-                    if (header, prof) not in salas_agrupadas: salas_agrupadas[(header, prof)] = []
-                    salas_agrupadas[(header, prof)].append(r['Aluna'])
-                else:
-                    autonomas.append(r['Aluna'])
-
-            # Renderização das Salas (Grid)
-            html_mural += "<div style='display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px;'>"
-            keys = sorted(salas_agrupadas.keys(), key=lambda x: int(x[0].replace("SALA ","")) if "SALA" in x[0] else 99)
-            
-            for s_name, p_name in keys:
-                alunas_lista = "".join([f"<div style='margin-left: 5px;'>• {a}</div>" for a in sorted(salas_agrupadas[(s_name, p_name)])])
-                html_mural += f"""
-                    <div style="flex: 1; min-width: 200px; border: 2px solid black; padding: 10px; background-color: white;">
-                        <b style="font-size: 20px;">{s_name}</b><br>
-                        <b style="font-size: 14px;">Profª {p_name}</b>
-                        <hr style="border: 1px solid black; margin: 5px 0;">
-                        {alunas_lista}
-                    </div>
-                """
-            html_mural += "</div>"
-            
-            # Atividade Autônoma
-            if autonomas:
-                html_mural += f"""
-                    <div style="margin-top: 15px; border: 2px dashed black; padding: 10px;">
-                        <b>📂 ATIVIDADE AUTÔNOMA</b> (Local: Secretaria | Supervisão: Secretárias)
-                        <div style='display: flex; flex-wrap: wrap; gap: 20px; margin-top: 5px;'>
-                            {"".join([f"<div>• {a}</div>" for a in sorted(autonomas)])}
+            # Bloco de Edição (Oculto por padrão para não poluir)
+            with st.expander("📝 Editar Dados Brutos (Clique para abrir)"):
+                df_view = pd.DataFrame(calendario_db[data_sel_str])
+                df_edt = st.data_editor(df_view, use_container_width=True, hide_index=True)
+                if st.button("💾 Salvar Alterações"):
+                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": df_edt.to_dict('records')}).execute()
+                    st.cache_data.clear(); st.rerun()
+    
+            st.divider()
+    
+            # PREPARAÇÃO DO CONTEÚDO PARA O MURAL (HTML DE ALTO CONTRASTE)
+            html_mural = f"<div id='mural-print' style='background-color: white; color: black; padding: 20px; font-family: sans-serif;'>"
+            html_mural += f"<h1 style='text-align: center; border-bottom: 3px solid black; padding-bottom: 10px;'>ESCALA DE AULAS - {data_sel_str}</h1>"
+    
+            for h_col in HORARIOS:
+                html_mural += f"<div style='background-color: #EEE; padding: 10px; margin-top: 30px; border: 2px solid black; text-align: center;'><h2>{h_col}</h2></div>"
+                
+                # Organização dos dados
+                salas_agrupadas = {}
+                autonomas = []
+                for _, r in pd.DataFrame(calendario_db[data_sel_str]).iterrows():
+                    val = r[h_col]
+                    if "SALA" in val:
+                        header = val.split(" | ")[0].replace("📌 ","").replace("🎹 ","").replace("📚 ","").replace("🔊 ","")
+                        prof = val.split(" | ")[1] if "|" in val else "---"
+                        if (header, prof) not in salas_agrupadas: salas_agrupadas[(header, prof)] = []
+                        salas_agrupadas[(header, prof)].append(r['Aluna'])
+                    else:
+                        autonomas.append(r['Aluna'])
+    
+                # Renderização das Salas (Grid)
+                html_mural += "<div style='display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px;'>"
+                keys = sorted(salas_agrupadas.keys(), key=lambda x: int(x[0].replace("SALA ","")) if "SALA" in x[0] else 99)
+                
+                for s_name, p_name in keys:
+                    alunas_lista = "".join([f"<div style='margin-left: 5px;'>• {a}</div>" for a in sorted(salas_agrupadas[(s_name, p_name)])])
+                    html_mural += f"""
+                        <div style="flex: 1; min-width: 200px; border: 2px solid black; padding: 10px; background-color: white;">
+                            <b style="font-size: 20px;">{s_name}</b><br>
+                            <b style="font-size: 14px;">Profª {p_name}</b>
+                            <hr style="border: 1px solid black; margin: 5px 0;">
+                            {alunas_lista}
                         </div>
-                    </div>
+                    """
+                html_mural += "</div>"
+                
+                # Atividade Autônoma
+                if autonomas:
+                    html_mural += f"""
+                        <div style="margin-top: 15px; border: 2px dashed black; padding: 10px;">
+                            <b>📂 ATIVIDADE AUTÔNOMA</b> (Local: Secretaria | Supervisão: Secretárias)
+                            <div style='display: flex; flex-wrap: wrap; gap: 20px; margin-top: 5px;'>
+                                {"".join([f"<div>• {a}</div>" for a in sorted(autonomas)])}
+                            </div>
+                        </div>
+                    """
+            
+            html_mural += "</div>"
+    
+            # EXIBIÇÃO NA TELA
+            st.markdown(html_mural, unsafe_allow_html=True)
+    
+            # BOTÃO PARA GERAR PDF (Via Print do Navegador)
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🖨️ GERAR PDF / IMPRIMIR MURAL", use_container_width=True):
+                # Script que foca apenas na div do mural e abre o diálogo de impressão (PDF)
+                js_print = f"""
+                    <script>
+                        var prtContent = document.getElementById('mural-print');
+                        var WinPrint = window.open('', '', 'left=0,top=0,width=800,height=900,toolbar=0,scrollbars=0,status=0');
+                        WinPrint.document.write('<html><head><title>Mural {data_sel_str}</title>');
+                        WinPrint.document.write('<style>body {{ font-family: Arial; }} @media print {{ .no-print {{ display: none; }} }}</style>');
+                        WinPrint.document.write('</head><body>');
+                        WinPrint.document.write(prtContent.innerHTML);
+                        WinPrint.document.write('</body></html>');
+                        WinPrint.document.close();
+                        WinPrint.focus();
+                        WinPrint.print();
+                        WinPrint.close();
+                    </script>
                 """
-        
-        html_mural += "</div>"
-
-        # EXIBIÇÃO NA TELA
-        st.markdown(html_mural, unsafe_allow_html=True)
-
-        # BOTÃO PARA GERAR PDF (Via Print do Navegador)
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🖨️ GERAR PDF / IMPRIMIR MURAL", use_container_width=True):
-            # Script que foca apenas na div do mural e abre o diálogo de impressão (PDF)
-            js_print = f"""
-                <script>
-                    var prtContent = document.getElementById('mural-print');
-                    var WinPrint = window.open('', '', 'left=0,top=0,width=800,height=900,toolbar=0,scrollbars=0,status=0');
-                    WinPrint.document.write('<html><head><title>Mural {data_sel_str}</title>');
-                    WinPrint.document.write('<style>body {{ font-family: Arial; }} @media print {{ .no-print {{ display: none; }} }}</style>');
-                    WinPrint.document.write('</head><body>');
-                    WinPrint.document.write(prtContent.innerHTML);
-                    WinPrint.document.write('</body></html>');
-                    WinPrint.document.close();
-                    WinPrint.focus();
-                    WinPrint.print();
-                    WinPrint.close();
-                </script>
-            """
-            st.components.v1.html(js_print, height=0)
-
-        if st.button("🗑️ Apagar Rodízio Atual"):
-            supabase.table("calendario").delete().eq("id", data_sel_str).execute()
-            st.rerun()
+                st.components.v1.html(js_print, height=0)
+    
+            if st.button("🗑️ Apagar Rodízio Atual"):
+                supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                st.rerun()
             
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
