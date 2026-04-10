@@ -923,43 +923,43 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
     # No seu loop principal, dentro da tab_config:
        # --- ABA DE CONFIGURAÇÃO (ONDE DAVA O ERRO) ---
-       with tab_config:
-        st.subheader("⚙️ Gerenciar Biblioteca de Métodos")
-        
-        # Busca os dados (Certifique-se que a função existe no topo do arquivo)
-        df_metodos_db = db_get_metodos_cadastrados()
+with tab_config:
+st.subheader("⚙️ Gerenciar Biblioteca de Métodos")
 
-        df_editado = st.data_editor(
-            df_metodos_db,
-            column_config={
-                "nome": st.column_config.TextColumn(
-                    "Nome do Método", 
-                    help="Ex: Kohler, Burgmüller, MSA",
-                    required=True
-                ),
-                "categoria": st.column_config.SelectboxColumn(
-                    "Área", 
-                    options=["Prática", "Teoria", "Solfejo"], 
-                    required=True
-                )
-            },
-            num_rows="dynamic",
-            use_container_width=True,
-            key="editor_metodos_v55"
+# Busca os dados (Certifique-se que a função existe no topo do arquivo)
+df_metodos_db = db_get_metodos_cadastrados()
+
+df_editado = st.data_editor(
+    df_metodos_db,
+    column_config={
+        "nome": st.column_config.TextColumn(
+            "Nome do Método", 
+            help="Ex: Kohler, Burgmüller, MSA",
+            required=True
+        ),
+        "categoria": st.column_config.SelectboxColumn(
+            "Área", 
+            options=["Prática", "Teoria", "Solfejo"], 
+            required=True
         )
+    },
+    num_rows="dynamic",
+    use_container_width=True,
+    key="editor_metodos_v55"
+)
 
-        if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary"):
-            try:
-                novos_dados = df_editado.to_dict('records')
-                # Deleta e reinsere para manter a base limpa
-                supabase.table("config_metodos").delete().neq("nome", "---").execute()
-                if novos_dados:
-                    supabase.table("config_metodos").insert(novos_dados).execute()
-                
-                st.success("✅ Biblioteca atualizada!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao salvar: {e}")
+if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary"):
+    try:
+        novos_dados = df_editado.to_dict('records')
+        # Deleta e reinsere para manter a base limpa
+        supabase.table("config_metodos").delete().neq("nome", "---").execute()
+        if novos_dados:
+            supabase.table("config_metodos").insert(novos_dados).execute()
+        
+        st.success("✅ Biblioteca atualizada!")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Erro ao salvar: {e}")
                 
     # ============================================================
     # DICA PARA O REGISTRO DE AULA
