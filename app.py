@@ -926,50 +926,41 @@ elif menu == "👩‍🏫 Minhas Aulas":
        with tab_config:
         st.subheader("⚙️ Gerenciar Biblioteca de Métodos")
         
-        # Busca os métodos do banco (Certifique-se que a função db_get_metodos_cadastrados está no topo)
+        # Busca os dados (Certifique-se que a função existe no topo do arquivo)
         df_metodos_db = db_get_metodos_cadastrados()
-    
-        # EDITOR DE DADOS CORRIGIDO (Removido 'placeholder' que causa o TypeError)
+
         df_editado = st.data_editor(
             df_metodos_db,
             column_config={
                 "nome": st.column_config.TextColumn(
                     "Nome do Método", 
-                    help="Digite o nome do livro ou método (Ex: Kohler, MSA)",
+                    help="Ex: Kohler, Burgmüller, MSA",
                     required=True
                 ),
                 "categoria": st.column_config.SelectboxColumn(
                     "Área", 
                     options=["Prática", "Teoria", "Solfejo"], 
-                    required=True,
-                    help="Selecione onde este material será usado"
+                    required=True
                 )
             },
             num_rows="dynamic",
             use_container_width=True,
-            key="editor_metodos_v54"
+            key="editor_metodos_v55"
         )
-    
-        # Botão de Salvamento
+
         if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary"):
             try:
-                # Converte o DataFrame editado para lista de dicionários
                 novos_dados = df_editado.to_dict('records')
-                
-                # 1. Limpa os dados antigos (Garante que a lista seja substituída pela nova)
-                # O filtro neq("nome", "---") é apenas um truque para deletar tudo
+                # Deleta e reinsere para manter a base limpa
                 supabase.table("config_metodos").delete().neq("nome", "---").execute()
-                
-                # 2. Insere os novos dados se a lista não estiver vazia
                 if novos_dados:
                     supabase.table("config_metodos").insert(novos_dados).execute()
                 
-                st.success("✅ Biblioteca de métodos atualizada com sucesso!")
+                st.success("✅ Biblioteca atualizada!")
                 st.rerun()
-                
             except Exception as e:
-                st.error(f"Erro técnico ao salvar: {e}")
-    
+                st.error(f"Erro ao salvar: {e}")
+                
     # ============================================================
     # DICA PARA O REGISTRO DE AULA
     # ============================================================
