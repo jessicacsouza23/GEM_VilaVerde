@@ -924,28 +924,28 @@ elif menu == "👩‍🏫 Minhas Aulas":
     # No seu loop principal, dentro da tab_config:
        # --- ABA DE CONFIGURAÇÃO (ONDE DAVA O ERRO) ---
 with tab_config:
-st.subheader("⚙️ Gerenciar Biblioteca de Métodos")
-
-# Busca os dados (Certifique-se que a função existe no topo do arquivo)
-df_metodos_db = db_get_metodos_cadastrados()
-
-df_editado = st.data_editor(
-    df_metodos_db,
-    column_config={
-        "nome": st.column_config.TextColumn(
-            "Nome do Método", 
-            help="Ex: Kohler, Burgmüller, MSA",
-            required=True
-        ),
-        "categoria": st.column_config.SelectboxColumn(
-            "Área", 
-            options=["Prática", "Teoria", "Solfejo"], 
-            required=True
-        )
-    },
-    num_rows="dynamic",
-    use_container_width=True,
-    key="editor_metodos_v55"
+    st.subheader("⚙️ Gerenciar Biblioteca de Métodos")
+    
+    # Busca os dados (Certifique-se que a função existe no topo do arquivo)
+    df_metodos_db = db_get_metodos_cadastrados()
+    
+    df_editado = st.data_editor(
+        df_metodos_db,
+        column_config={
+            "nome": st.column_config.TextColumn(
+                "Nome do Método", 
+                help="Ex: Kohler, Burgmüller, MSA",
+                required=True
+            ),
+            "categoria": st.column_config.SelectboxColumn(
+                "Área", 
+                options=["Prática", "Teoria", "Solfejo"], 
+                required=True
+            )
+        },
+        num_rows="dynamic",
+        use_container_width=True,
+        key="editor_metodos_v55"
 )
 
 if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary"):
