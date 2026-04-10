@@ -1050,7 +1050,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     
                     # Lista de materiais baseada no banco de dados + fixos
                     if tipo_aula == "Prática":
-                        m_list = ["Selecione...", "Apostila", "Hino"] + metodos_filtrados
+                        m_list = ["Selecione...", "Apostila"] + metodos_filtrados
                     else:
                         m_list = ["Selecione...", "MSA", "Folha Extra"] + metodos_filtrados
 
