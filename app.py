@@ -986,15 +986,30 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         
                         aulas_listagem.append({"label": label, "id": id_unica, "h": h, "tipo": tipo, "al": reg.get("Aluna"), "tr": reg.get("Turma"), "loc": sala})
 
+        # --- LÓGICA DE EXIBIÇÃO DE FOLGA ---
         if not aulas_listagem:
-            st.balloons()
+            # 1. Primeiro disparar a animação
+            st.balloons() 
+            
+            # 2. Depois mostrar a interface visual
             st.markdown(f"""
-                <div style="text-align: center; padding: 40px; background-color: #f8f9fa; border-radius: 20px; border: 2px dashed #d1d5db;">
-                    <h1 style="font-size: 50px;">🎈</h1>
-                    <h2 style="color: #2c3e50;">Dia de Descanso!</h2>
-                    <p style="color: #7f8c8d;">Olá, <b>{instr_sel}</b>! Nenhuma aula agendada para {dt_str}.</p>
+                <div style="text-align: center; padding: 40px; background-color: #f8f9fa; border-radius: 20px; border: 2px dashed #d1d5db; margin-top: 20px;">
+                    <h1 style="font-size: 60px; margin-bottom: 0;">🎈</h1>
+                    <h1 style="color: #2c3e50; margin-top: 10px;">Dia de Descanso!</h1>
+                    <p style="color: #7f8c8d; font-size: 18px;">Olá, <b>{instr_sel}</b>!</p>
+                    <p style="color: #7f8c8d;">Não encontramos aulas agendadas para você em <b>{dt_str}</b>.</p>
+                    <div style="display: inline-block; padding: 5px 15px; background-color: #e9ecef; border-radius: 15px; color: #495057; font-weight: bold; margin-top: 15px;">
+                        📅 {dt_str}
+                    </div>
+                    <p style="margin-top: 30px; color: #95a5a6; font-style: italic; font-size: 14px;">
+                        "O descanso é o tempero que torna o trabalho mais saboroso."
+                    </p>
                 </div>
             """, unsafe_allow_html=True)
+            
+            # 3. Aviso complementar do Streamlit
+            st.info("Sua agenda está livre para esta data.")
+            
         else:
             aulas_ordenadas = sorted(aulas_listagem, key=lambda x: x['h'])
             sel_lbl = st.radio("Selecione a Aula:", [x["label"] for x in aulas_ordenadas], key="rd_v58")
