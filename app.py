@@ -914,62 +914,49 @@ if menu == "🏠 Secretaria":
   
                         
 # ============================================================
-# MÓDULO PROFESSORA - V52 (CAMPOS DE PRÁTICA EXPOSTOS)
+# MÓDULO PROFESSORA - V58 (INTEGRADO E CORRIGIDO)
 # ============================================================
 elif menu == "👩‍🏫 Minhas Aulas":
     st.header(f"👩‍🏫 Painel da Professora: {st.session_state.nome_logado}")
     
+    # Definição das Tabs
     tab_aula, tab_config = st.tabs(["📝 Registro de Aula", "⚙️ Configurar Métodos"])
 
-    # No seu loop principal, dentro da tab_config:
-       # --- ABA DE CONFIGURAÇÃO (ONDE DAVA O ERRO) ---
-with tab_config:
-    st.subheader("⚙️ Gerenciar Biblioteca de Métodos")
-    
-    # Busca os dados (Certifique-se que a função existe no topo do arquivo)
+    # 1. BUSCA MÉTODOS PARA AMBAS AS ABAS
     df_metodos_db = db_get_metodos_cadastrados()
-    
-    df_editado = st.data_editor(
-        df_metodos_db,
-        column_config={
-            "nome": st.column_config.TextColumn(
-                "Nome do Método", 
-                help="Ex: Kohler, Burgmüller, MSA",
-                required=True
-            ),
-            "categoria": st.column_config.SelectboxColumn(
-                "Área", 
-                options=["Prática", "Teoria", "Solfejo"], 
-                required=True
-            )
-        },
-        num_rows="dynamic",
-        use_container_width=True,
-        key="editor_metodos_v55"
-)
 
-if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary"):
-    try:
-        novos_dados = df_editado.to_dict('records')
-        # Deleta e reinsere para manter a base limpa
-        supabase.table("config_metodos").delete().neq("nome", "---").execute()
-        if novos_dados:
-            supabase.table("config_metodos").insert(novos_dados).execute()
+    # --- ABA DE CONFIGURAÇÃO ---
+    with tab_config:
+        st.subheader("⚙️ Gerenciar Biblioteca de Métodos")
+        st.caption("Cadastre aqui os livros e métodos que aparecerão nos registros de aula.")
         
-        st.success("✅ Biblioteca atualizada!")
-        st.rerun()
-    except Exception as e:
-        st.error(f"Erro ao salvar: {e}")
+        df_editado = st.data_editor(
+            df_metodos_db,
+            column_config={
+                "nome": st.column_config.TextColumn("Nome do Método", help="Ex: Kohler, Burgmüller, MSA", required=True),
+                "categoria": st.column_config.SelectboxColumn("Área", options=["Prática", "Teoria", "Solfejo"], required=True)
+            },
+            num_rows="dynamic",
+            use_container_width=True,
+            key="editor_metodos_v58"
+        )
+
+        if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary"):
+            try:
+                novos_dados = df_editado.to_dict('records')
+                # Limpeza e inserção no Supabase
+                supabase.table("config_metodos").delete().neq("nome", "---").execute()
+                if novos_dados:
+                    supabase.table("config_metodos").insert(novos_dados).execute()
+                st.success("✅ Biblioteca atualizada!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao salvar: {e}")
                 
-    # ============================================================
-    # DICA PARA O REGISTRO DE AULA
-    # ============================================================
-    # Quando for carregar os métodos no selectbox da aula, use:
-    # m_list = ["Selecione..."] + df_metodos_db['nome'].tolist()
-                
+    # --- ABA DE REGISTRO DE AULA ---
     with tab_aula:
         instr_sel = st.session_state.get('nome_logado', 'Selecione...')
-        dt_input = st.date_input("Data da Aula:", datetime.now(), key="dt_v52")
+        dt_input = st.date_input("Data da Aula:", datetime.now(), key="dt_v58")
         dt_str = dt_input.strftime("%d/%m/%Y")
 
         cal_db = db_get_calendario()
@@ -999,34 +986,23 @@ if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary")
                         
                         aulas_listagem.append({"label": label, "id": id_unica, "h": h, "tipo": tipo, "al": reg.get("Aluna"), "tr": reg.get("Turma"), "loc": sala})
 
-        # --- TELA DE FOLGA BONITINHA ---
         if not aulas_listagem:
-            st.balloons() # Animação de bexigas subindo
-            
+            st.balloons()
             st.markdown(f"""
-                <div class="folga-container">
-                    <div class="folga-icon">🎈</div>
-                    <h1 class="folga-titulo">Dia de Descanso!</h1>
-                    <p class="folga-sub">Olá, <b>{instr_sel}</b>! Não encontramos aulas agendadas para você hoje.</p>
-                    <div class="badge-folga">
-                        📅 {dt_str}
-                    </div>
-                    <p style="margin-top: 30px; color: #7F8C8D; font-style: italic;">
-                        "O descanso é o tempero que torna o trabalho mais saboroso."
-                    </p>
+                <div style="text-align: center; padding: 40px; background-color: #f8f9fa; border-radius: 20px; border: 2px dashed #d1d5db;">
+                    <h1 style="font-size: 50px;">🎈</h1>
+                    <h2 style="color: #2c3e50;">Dia de Descanso!</h2>
+                    <p style="color: #7f8c8d;">Olá, <b>{instr_sel}</b>! Nenhuma aula agendada para {dt_str}.</p>
                 </div>
             """, unsafe_allow_html=True)
-            
-        if not aulas_listagem:
-            st.warning("Nenhuma aula encontrada para hoje.")
         else:
             aulas_ordenadas = sorted(aulas_listagem, key=lambda x: x['h'])
-            sel_lbl = st.radio("Selecione a Aula:", [x["label"] for x in aulas_ordenadas], key="rd_v52")
+            sel_lbl = st.radio("Selecione a Aula:", [x["label"] for x in aulas_ordenadas], key="rd_v58")
             d_sel = next(x for x in aulas_listagem if x["label"] == sel_lbl)
             
             st.divider()
             
-            # --- CHAMADA E PENDÊNCIAS ---
+            # Chamada e Pendências
             als_ref = TURMAS.get(d_sel["tr"], [d_sel["al"]]) if d_sel["tipo"] != "Prática" else [d_sel["al"]]
             als_selecionadas = []
             df_hist_local = pd.DataFrame(db_get_historico())
@@ -1043,7 +1019,6 @@ if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary")
                                 for _, p in pends.iterrows(): st.caption(f"• {p['Licao_Casa']}")
 
             if als_selecionadas:
-                # Busca dados salvos hoje para persistência/limpeza
                 dados_hoje = {}
                 if not df_hist_local.empty:
                     f_ex = df_hist_local[(df_hist_local['Aluna'] == als_selecionadas[0]) & 
@@ -1051,17 +1026,18 @@ if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary")
                                          (df_hist_local['Tipo'] == f"Analise_{d_sel['tipo']}")]
                     if not f_ex.empty: dados_hoje = f_ex.iloc[-1].to_dict()
 
-                # FORMULÁRIO (Key dinâmica garante o reset total ao trocar de aula)
-                with st.form(key=f"form_v52_{d_sel['id']}"):
+                with st.form(key=f"form_v58_{d_sel['id']}"):
                     st.subheader(f"📝 Registro: {d_sel['tipo']}")
                     
-                    # 1. Material usado em sala
-                    if d_sel["tipo"] == "Prática":
-                        m_list = ["Selecione...", "Apostila", "Hino"] + (df_metodos['nome'].tolist() if not df_metodos.empty else [])
-                    elif d_sel["tipo"] == "Teoria":
-                        m_list = ["Selecione...", "MSA (Preto)", "Folha Extra"]
+                    # FILTRO DINÂMICO DE MÉTODOS POR CATEGORIA
+                    tipo_aula = d_sel["tipo"]
+                    metodos_filtrados = df_metodos_db[df_metodos_db['categoria'] == tipo_aula]['nome'].tolist() if not df_metodos_db.empty else []
+                    
+                    # Lista de materiais baseada no banco de dados + fixos
+                    if tipo_aula == "Prática":
+                        m_list = ["Selecione...", "Apostila", "Hino"] + metodos_filtrados
                     else:
-                        m_list = ["Selecione...", "MSA (Verde)", "Folha Extra"]
+                        m_list = ["Selecione...", "MSA", "Folha Extra"] + metodos_filtrados
 
                     mat_db = dados_hoje.get('Licao_Atual', "").split(":")[0] if dados_hoje else "Selecione..."
                     idx_mat = m_list.index(mat_db) if mat_db in m_list else 0
@@ -1070,17 +1046,17 @@ if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary")
                     lic_db = dados_hoje.get('Licao_Atual', "").split(":")[-1].strip() if ":" in dados_hoje.get('Licao_Atual', "") else ""
                     lic_hoje = st.text_input("Página/Lição trabalhada:", value=lic_db)
 
-                    # 2. Dificuldades
+                    # Dificuldades (Usa as constantes globais)
                     st.markdown("**Dificuldades:**")
-                    lista_difs = DIF_TEORIA if d_sel["tipo"] == "Teoria" else DIF_SOLFEJO if d_sel["tipo"] == "Solfejo" else DIF_PRATICA
+                    lista_difs = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
                     difs_db = dados_hoje.get('Dificuldades', [])
                     cols_d = st.columns(3)
-                    difs_sel = [d for i, d in enumerate(lista_difs) if cols_d[i%3].checkbox(d, value=(d in difs_db), key=f"d_v52_{i}_{d_sel['id']}")]
+                    difs_sel = [d for i, d in enumerate(lista_difs) if cols_d[i%3].checkbox(d, value=(d in difs_db), key=f"d_v58_{i}_{d_sel['id']}")]
 
                     st.divider()
                     st.subheader("🏠 Lição de Casa")
                     
-                    def get_c_v52(m):
+                    def get_c_v58(m):
                         if not df_hist_local.empty:
                             c = df_hist_local[(df_hist_local['Aluna'] == als_selecionadas[0]) & 
                                               (df_hist_local['Data'] == dt_str) & 
@@ -1090,19 +1066,14 @@ if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary")
 
                     tarefas_casa = {}
                     col_c1, col_c2 = st.columns(2)
+                    
+                    # Define labels das lições de casa
+                    m1_label = "Apostila" if tipo_aula == "Prática" else "Principal"
+                    m2_label = "Método/Hino" if tipo_aula == "Prática" else "Extra"
+                    
+                    tarefas_casa[m1_label] = col_c1.text_input(f"🏠 {m1_label}:", value=get_c_v58(m1_label))
+                    tarefas_casa[m2_label] = col_c2.text_input(f"🏠 {m2_label}:", value=get_c_v58(m2_label))
 
-                    # EXIBIÇÃO IGUAL PARA TODOS (Dois campos fixos)
-                    if d_sel["tipo"] == "Prática":
-                        # Na Prática, mostramos Apostila e o Método principal (ou Hino)
-                        m1, m2 = "Apostila", "Método/Hino"
-                        tarefas_casa["Apostila"] = col_c1.text_input(f"🏠 {m1}:", value=get_c_v52("Apostila"))
-                        tarefas_casa["Metodo"] = col_c2.text_input(f"🏠 {m2}:", value=get_c_v52("Metodo"))
-                    else:
-                        m1, m2 = m_list[1], m_list[2] # MSA e Folha
-                        tarefas_casa[m1] = col_c1.text_input(f"🏠 {m1}:", value=get_c_v52(m1))
-                        tarefas_casa[m2] = col_c2.text_input(f"🏠 {m2}:", value=get_c_v52(m2))
-
-                    # 4. Observações
                     obs_db = dados_hoje.get('Observacao', "")
                     obs_geral = st.text_area("Observações Pedagógicas:", value=obs_db)
 
@@ -1111,15 +1082,15 @@ if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary")
                             st.error("Selecione o material da aula antes de salvar.")
                         else:
                             for al_f in als_selecionadas:
-                                # Salva Registro de Aula
+                                # Registro Principal
                                 db_save_historico({
                                     "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
-                                    "Tipo": f"Analise_{d_sel['tipo']}",
+                                    "Tipo": f"Analise_{tipo_aula}",
                                     "Licao_Atual": f"{mat_focado}: {lic_hoje}",
                                     "Licao_Casa": "---", "Dificuldades": difs_sel,
                                     "Observacao": obs_geral, "Status": "Realizada"
                                 })
-                                # Salva Lições de Casa Separadamente (Pendentes)
+                                # Lições de Casa
                                 for mat_nome, conteudo in tarefas_casa.items():
                                     if conteudo:
                                         db_save_historico({
@@ -1128,9 +1099,8 @@ if st.button("💾 Salvar Biblioteca", use_container_width=True, type="primary")
                                             "Licao_Atual": "Definido", "Licao_Casa": conteudo,
                                             "Dificuldades": [], "Observacao": obs_geral, "Status": "Pendente"
                                         })
-                            st.success("Registro concluído com sucesso!")
-                            time.sleep(1);
-                            
+                            st.success("✅ Registro concluído com sucesso!")
+                            time.sleep(1)
                             st.rerun()
 
 # ============================================================
