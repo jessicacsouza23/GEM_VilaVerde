@@ -505,36 +505,41 @@ if menu == "🏠 Secretaria":
                     
                     profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                     
-                    # --- NOVIDADE: FIXAR SALAS DAS PROFESSORAS DE PRÁTICA ---
-                    # Pegamos as professoras que NÃO estão escaladas fixas na Teoria/Solfejo (S8 e S9)
-                    # e damos a elas uma "casa" (Sala 1 a 7) para o dia inteiro.
-                    profs_para_salas = [p for p in profs_base]
-                    salas_individuais = list(range(1, 8)) # Salas 1 a 7
+                    # --- AJUSTE DAS SALAS (1 a 7 para Prática) ---
+                    # Criamos a lista com as 7 salas de prática disponíveis
+                    salas_individuais = [1, 2, 3, 4, 5, 6, 7] 
                     random.shuffle(salas_individuais)
                     
-                    # Dicionário que liga Prof -> Sala (Ex: {'Ana': 3, 'Maria': 5})
-                    dict_salas_fixas = {prof: salas_individuais.pop(0) for prof in profs_para_salas if salas_individuais}
+                    # Dicionário para travar a Prof na mesma sala o dia todo
+                    # Se houver mais profs que salas (raro), as extras ficam na Secretaria
+                    dict_salas_fixas = {}
+                    profs_para_sorteio = profs_base.copy()
+                    random.shuffle(profs_para_sorteio)
+
+                    for p in profs_para_sorteio:
+                        if salas_individuais:
+                            dict_salas_fixas[p] = salas_individuais.pop(0)
+                        else:
+                            dict_salas_fixas[p] = "Secretaria" # Caso acabem as salas físicas
 
                     for i, h in enumerate(HORARIOS[1:]):
                         prof_t, prof_s = pt[i], ps[i]
                         
-                        # RODÍZIO DE TURMAS: Garante que a turma não repita disciplina
+                        # RODÍZIO DE TURMAS (Garante exclusividade de disciplina)
                         turmas_list = list(TURMAS.keys())
                         t_teo = turmas_list[i % 3]
                         t_sol = turmas_list[(i + 1) % 3]
                         t_pra = turmas_list[(i + 2) % 3]
 
-                        # Atribuição Coletiva (Teoria e Solfejo)
-                        for a in TURMAS[t_teo]: mapa[a][h] = f"Sala 8 | {prof_t}"
-                        for a in TURMAS[t_sol]: mapa[a][h] = f"Sala 9 | {prof_s}"
+                        # 8 para Teoria e 9 para Solfejo
+                        for a in TURMAS[t_teo]: mapa[a][h] = f"SALA 8 | {prof_t}"
+                        for a in TURMAS[t_sol]: mapa[a][h] = f"SALA 9 | {prof_s}"
                         
-                        # Atribuição Individual (Prática)
-                        # Apenas professoras que não estão dando Teoria ou Solfejo NESTE horário
+                        # Prática Individual (Salas 1 a 7)
                         disponiveis_p = [p for p in profs_base if p not in [prof_t, prof_s]]
                         random.shuffle(disponiveis_p)
                         
                         for a in TURMAS[t_pra]:
-                            # 1. Tenta a professora fixa da aluna
                             fixa = next((row['Prof'] for _, row in df_fixas_editado.iterrows() if row['Aluna'] == a), None)
                             
                             p_final = None
@@ -542,18 +547,17 @@ if menu == "🏠 Secretaria":
                                 p_final = fixa
                                 disponiveis_p.remove(fixa)
                             elif disponiveis_p:
-                                # 2. Se não tem fixa ou ela está ocupada, pega a próxima disponível
                                 p_final = disponiveis_p.pop(0)
                             
                             if p_final:
-                                # Recupera a sala que essa professora "ganhou" lá no início
-                                s_n = dict_salas_fixas.get(p_final, "X")
-                                mapa[a][h] = f"Sala {s_n} | {p_final}"
+                                s_n = dict_salas_fixas.get(p_final, "Secretaria")
+                                # Se for um número, coloca "SALA", se for "Secretaria" deixa o texto
+                                prefixo = "SALA " if isinstance(s_n, int) else ""
+                                mapa[a][h] = f"{prefixo}{s_n} | {p_final}"
                             else:
-                                # 3. Se não houver professora livre, vai para a secretaria
-                                mapa[a][h] = "Secretaria | Atividade Autônoma"
+                                mapa[a][h] = "SECRETARIA | Atividade Autônoma"
 
-                    # Salva no Supabase
+                    # Salva e Reinicia
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
     
