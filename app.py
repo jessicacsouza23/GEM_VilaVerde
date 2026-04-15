@@ -500,18 +500,18 @@ if menu == "🏠 Secretaria":
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
                     mapa = {aluna: {"Aluna": aluna} for t in TURMAS.values() for aluna in t}
                     
-                    # 1. Horário 0: Reunião Geral
+                    # 1. Horário 0: Geral
                     for a in mapa: mapa[a][HORARIOS[0]] = "Roberta | Todas as alunas"
                     
                     profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                     
-                    # --- AJUSTE DAS SALAS (1 a 7 para Prática) ---
-                    # Criamos a lista com as 7 salas de prática disponíveis
-                    salas_individuais = [1, 2, 3, 4, 5, 6, 7] 
-                    random.shuffle(salas_individuais)
+                    # --- BUSCA HISTÓRICO PARA ROTATIVIDADE ---
+                    # Tentamos pegar os últimos registros para evitar repetir Prof/Aluna
+                    historico_df = pd.DataFrame(db_get_historico())
                     
-                    # Dicionário para travar a Prof na mesma sala o dia todo
-                    # Se houver mais profs que salas (raro), as extras ficam na Secretaria
+                    # --- FIXAR SALAS (1 a 7) ---
+                    salas_individuais = [1, 2, 3, 4, 5, 6, 7]
+                    random.shuffle(salas_individuais)
                     dict_salas_fixas = {}
                     profs_para_sorteio = profs_base.copy()
                     random.shuffle(profs_para_sorteio)
@@ -520,44 +520,60 @@ if menu == "🏠 Secretaria":
                         if salas_individuais:
                             dict_salas_fixas[p] = salas_individuais.pop(0)
                         else:
-                            dict_salas_fixas[p] = "Secretaria" # Caso acabem as salas físicas
+                            dict_salas_fixas[p] = "SECRETARIA"
 
+                    # --- LOOP DE HORÁRIOS ---
                     for i, h in enumerate(HORARIOS[1:]):
                         prof_t, prof_s = pt[i], ps[i]
                         
-                        # RODÍZIO DE TURMAS (Garante exclusividade de disciplina)
                         turmas_list = list(TURMAS.keys())
                         t_teo = turmas_list[i % 3]
                         t_sol = turmas_list[(i + 1) % 3]
                         t_pra = turmas_list[(i + 2) % 3]
 
-                        # 8 para Teoria e 9 para Solfejo
+                        # Coletivo: Sala 8 (Teoria) e 9 (Solfejo)
                         for a in TURMAS[t_teo]: mapa[a][h] = f"SALA 8 | {prof_t}"
                         for a in TURMAS[t_sol]: mapa[a][h] = f"SALA 9 | {prof_s}"
                         
-                        # Prática Individual (Salas 1 a 7)
+                        # --- PRÁTICA INDIVIDUAL COM FILTRO DE HISTÓRICO ---
                         disponiveis_p = [p for p in profs_base if p not in [prof_t, prof_s]]
-                        random.shuffle(disponiveis_p)
-                        
-                        for a in TURMAS[t_pra]:
+                        alunas_pratica = list(TURMAS[t_pra])
+                        random.shuffle(alunas_pratica) # Aleatoriedade para não privilegiar sempre as mesmas
+
+                        for a in alunas_pratica:
+                            # 1. Prioridade: Professora Fixa
                             fixa = next((row['Prof'] for _, row in df_fixas_editado.iterrows() if row['Aluna'] == a), None)
                             
-                            p_final = None
+                            p_escolhida = None
+                            
                             if fixa and fixa in disponiveis_p:
-                                p_final = fixa
+                                p_escolhida = fixa
                                 disponiveis_p.remove(fixa)
                             elif disponiveis_p:
-                                p_final = disponiveis_p.pop(0)
+                                # 2. Lógica Rotacional: Evitar quem deu aula para ela recentemente
+                                last_profs = []
+                                if not historico_df.empty:
+                                    last_profs = historico_df[historico_df['Aluna'] == a]['Instrutora'].tail(3).tolist()
+                                
+                                # Tenta pegar uma prof que não está no histórico recente
+                                candidatas = [p for p in disponiveis_p if p not in last_profs]
+                                
+                                if candidatas:
+                                    p_escolhida = random.choice(candidatas)
+                                else:
+                                    p_escolhida = random.choice(disponiveis_p) # Se todas já deram aula, repete a mais antiga
+                                
+                                disponiveis_p.remove(p_escolhida)
                             
-                            if p_final:
-                                s_n = dict_salas_fixas.get(p_final, "Secretaria")
-                                # Se for um número, coloca "SALA", se for "Secretaria" deixa o texto
+                            if p_escolhida:
+                                s_n = dict_salas_fixas.get(p_escolhida, "SECRETARIA")
                                 prefixo = "SALA " if isinstance(s_n, int) else ""
-                                mapa[a][h] = f"{prefixo}{s_n} | {p_final}"
+                                mapa[a][h] = f"{prefixo}{s_n} | {p_escolhida}"
                             else:
+                                # Se não houver professora para esta aluna neste horário
                                 mapa[a][h] = "SECRETARIA | Atividade Autônoma"
 
-                    # Salva e Reinicia
+                    # Salva no Supabase
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
     
