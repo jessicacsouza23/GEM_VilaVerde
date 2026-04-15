@@ -497,11 +497,17 @@ if menu == "🏠 Secretaria":
                 folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA)
     
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
-                    # Preparação do dicionário de fixas para busca rápida e sem erros de texto
-                    # Removemos linhas vazias e espaços em branco
-                    df_limpo = df_fixas_editado.dropna().copy()
-                    dict_fixas = {str(row['Aluna']).strip(): str(row['Prof']).strip() for _, row in df_limpo.iterrows()}
+                    # 1. CAPTURA E LIMPEZA RIGOROSA DAS FIXAS
+                    # Criamos um dicionário onde a chave é o nome da aluna em MINÚSCULO e SEM ESPAÇOS
+                    # Isso evita que "Jessica " seja diferente de "jessica"
+                    dict_fixas = {}
+                    if not df_fixas_editado.empty:
+                        for _, row in df_fixas_editado.iterrows():
+                            if pd.notna(row['Aluna']) and pd.notna(row['Prof']):
+                                aluna_key = str(row['Aluna']).strip().lower()
+                                dict_fixas[aluna_key] = str(row['Prof']).strip()
 
+                    # 2. MAPEAMENTO INICIAL
                     mapa_final = {}
                     for nome_t, lista_m in TURMAS.items():
                         for aluna_nome in lista_m:
@@ -517,9 +523,10 @@ if menu == "🏠 Secretaria":
                     except:
                         historico_df = pd.DataFrame()
 
-                    # Controle de salas
+                    # Registro para manter a professora na mesma sala
                     registro_salas_profs = {} 
 
+                    # 3. LOOP DE HORÁRIOS (H1, H2, H3, H4)
                     for i, h in enumerate(HORARIOS[1:]):
                         p_teoria = pt[i]
                         p_solfejo = ps[i]
@@ -541,37 +548,34 @@ if menu == "🏠 Secretaria":
                         
                         salas_pratica_total = ["SALA 1", "SALA 2", "SALA 3", "SALA 4", "SALA 5", "SALA 6", "SALA 7"]
                         
-                        # Libera sala de quem foi para teoria/solfejo
+                        # Gerenciamento de Salas (Mantém a prof na sala se ela continuar na prática)
                         registro_salas_profs = {p: s for p, s in registro_salas_profs.items() if p in disponiveis_agora}
-                        
-                        # Atribui salas para quem chegou na prática agora
-                        salas_em_uso = list(registro_salas_profs.values())
-                        salas_vazias = [s for s in salas_pratica_total if s not in salas_em_uso]
+                        salas_vazias = [s for s in salas_pratica_total if s not in registro_salas_profs.values()]
                         random.shuffle(salas_vazias)
                         
                         for p in disponiveis_agora:
-                            if p not in registro_salas_profs:
-                                if salas_vazias:
-                                    registro_salas_profs[p] = salas_vazias.pop(0)
+                            if p not in registro_salas_profs and salas_vazias:
+                                registro_salas_profs[p] = salas_vazias.pop(0)
 
-                        # PASSO 1: ALUNAS FIXAS (Uso do dicionário limpo)
+                        # --- PASSO 1: ALUNAS FIXAS (AQUI ESTAVA O ERRO) ---
                         alunas_restantes = []
                         for a in alunas_na_pratica:
-                            nome_aluna_limpo = str(a).strip()
-                            p_fixa = dict_fixas.get(nome_aluna_limpo)
+                            # Compara usando a chave "normalizada" (minúsculo e sem espaços)
+                            aluna_normalizada = str(a).strip().lower()
+                            p_fixa_nome = dict_fixas.get(aluna_normalizada)
                             
-                            if p_fixa and p_fixa in disponiveis_agora:
-                                sala = registro_salas_profs.get(p_fixa)
-                                mapa_final[a][h] = f"{sala} | {p_fixa}"
-                                # Removemos apenas da lista de quem pode pegar aluna de rodízio agora
-                                disponiveis_agora = [p for p in disponiveis_agora if p != p_fixa]
-                            elif p_fixa:
-                                # Se a fixa dela está ocupada na teoria, ela aguarda
+                            if p_fixa_nome and p_fixa_nome in disponiveis_agora:
+                                sala_f = registro_salas_profs.get(p_fixa_nome)
+                                mapa_final[a][h] = f"{sala_f} | {p_fixa_nome}"
+                                # Remove essa professora para ela não pegar outra aluna de rodízio agora
+                                disponiveis_agora.remove(p_fixa_nome)
+                            elif p_fixa_nome:
+                                # Se a prof fixa existe mas está na teoria/solfejo
                                 mapa_final[a][h] = f"SECRETARIA | {a}"
                             else:
                                 alunas_restantes.append(a)
 
-                        # PASSO 2: RODÍZIO
+                        # --- PASSO 2: RODÍZIO DAS NÃO-FIXAS ---
                         random.shuffle(alunas_restantes)
                         for a in alunas_restantes:
                             if disponiveis_agora:
@@ -580,14 +584,15 @@ if menu == "🏠 Secretaria":
                                     passadas = historico_df[historico_df['Aluna'] == a]['Instrutora'].unique().tolist()
                                 
                                 candidatas = [p for p in disponiveis_agora if p not in passadas]
-                                p_escolhida = random.choice(candidatas) if candidatas else random.choice(disponiveis_agora)
+                                p_esc = random.choice(candidatas) if candidatas else random.choice(disponiveis_agora)
                                 
-                                sala = registro_salas_profs.get(p_escolhida)
-                                mapa_final[a][h] = f"{sala} | {p_escolhida}"
-                                disponiveis_agora.remove(p_escolhida)
+                                sala_e = registro_salas_profs.get(p_esc)
+                                mapa_final[a][h] = f"{sala_e} | {p_esc}"
+                                disponiveis_agora.remove(p_esc)
                             else:
                                 mapa_final[a][h] = f"SECRETARIA | {a}"
 
+                    # 4. SALVAR
                     lista_final = list(mapa_final.values())
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_final}).execute()
                     st.rerun()
