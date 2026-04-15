@@ -505,15 +505,16 @@ if menu == "🏠 Secretaria":
                     
                     profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                     
-                    # --- BUSCA HISTÓRICO PARA ROTATIVIDADE DAS ALUNAS SEM FIXA ---
+                    # --- BUSCA HISTÓRICO PARA ROTATIVIDADE ---
                     historico_df = pd.DataFrame(db_get_historico())
                     
-                    # --- FIXAR SALAS (1 a 7) PARA AS PROFESSORAS ---
-                    # Regra: Sala X pertence à Professora Y o dia todo.
+                    # --- FIXAR SALAS (1 a 7) APENAS PARA PRÁTICA ---
+                    # Salas 8 e 9 NÃO entram aqui pois são fixas da Teoria/Solfejo
                     salas_pratica = [1, 2, 3, 4, 5, 6, 7]
                     random.shuffle(salas_pratica)
                     dict_salas_fixas = {}
                     
+                    # Sorteamos salas 1-7 para as professoras
                     profs_para_salas = profs_base.copy()
                     random.shuffle(profs_para_salas)
                     
@@ -521,7 +522,6 @@ if menu == "🏠 Secretaria":
                         if salas_pratica:
                             dict_salas_fixas[p] = f"SALA {salas_pratica.pop(0)}"
                         else:
-                            # Se houver mais profs que salas, ficam sem sala fixa (Secretaria/Apoio)
                             dict_salas_fixas[p] = "SECRETARIA"
 
                     # --- LOOP DE HORÁRIOS ---
@@ -533,31 +533,30 @@ if menu == "🏠 Secretaria":
                         t_sol = turmas_list[(i + 1) % 3]
                         t_pra = turmas_list[(i + 2) % 3]
 
-                        # 2. Teoria (SALA 8) e Solfejo (SALA 9)
+                        # --- REGRA: SALA 8 (TEORIA) E SALA 9 (SOLFEJO) ---
                         for a in TURMAS[t_teo]: mapa[a][h] = f"SALA 8 | {prof_t}"
                         for a in TURMAS[t_sol]: mapa[a][h] = f"SALA 9 | {prof_s}"
                         
-                        # 3. Prática Individual
+                        # --- PRÁTICA INDIVIDUAL (SALAS 1-7) ---
                         disponiveis_p = [p for p in profs_base if p not in [prof_t, prof_s]]
                         alunas_pratica = list(TURMAS[t_pra])
                         random.shuffle(alunas_pratica) 
 
                         for a in alunas_pratica:
-                            # CONSULTA SE A ALUNA TEM PROFESSORA FIXA
+                            # Verifica se tem professora fixa
                             fixa = next((row['Prof'] for _, row in df_fixas_editado.iterrows() if row['Aluna'] == a), None)
                             
                             p_escolhida = None
                             
-                            # REGRA 1: Se tem fixa, SÓ pode ser com ela
+                            # REGRA FIXA: Se tem fixa, não aceita outra
                             if fixa:
                                 if fixa in disponiveis_p:
                                     p_escolhida = fixa
                                     disponiveis_p.remove(fixa)
                                 else:
-                                    # Se a fixa está ocupada, a aluna VAI para a secretaria (não troca de prof!)
-                                    p_escolhida = None 
+                                    p_escolhida = None # Vai para secretaria se a fixa estiver em S8 ou S9
                             
-                            # REGRA 2: Se NÃO tem fixa, busca uma rotativa
+                            # REGRA ROTATIVA: Para quem não tem fixa
                             elif disponiveis_p:
                                 last_profs = []
                                 if not historico_df.empty and 'Aluna' in historico_df.columns:
@@ -567,12 +566,13 @@ if menu == "🏠 Secretaria":
                                 p_escolhida = random.choice(candidatas if candidatas else disponiveis_p)
                                 disponiveis_p.remove(p_escolhida)
                             
-                            # ATRIBUIÇÃO NO MAPA
+                            # ATRIBUIÇÃO FINAL NO MAPA
                             if p_escolhida:
+                                # A professora de prática sempre usa a sala dela (1-7)
                                 sala_da_prof = dict_salas_fixas.get(p_escolhida, "SECRETARIA")
                                 mapa[a][h] = f"{sala_da_prof} | {p_escolhida}"
                             else:
-                                # REGRA 3: Nome da aluna na secretaria se estiver sem aula
+                                # Se sobrar, a aluna vai pelo nome para a secretaria
                                 mapa[a][h] = "SECRETARIA | Atividade Autônoma"
 
                     # Salva e Reinicia
