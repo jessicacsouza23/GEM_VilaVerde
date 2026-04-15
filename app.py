@@ -505,17 +505,15 @@ if menu == "🏠 Secretaria":
                     
                     profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                     
-                    # --- BUSCA HISTÓRICO PARA ROTATIVIDADE ---
+                    # --- BUSCA HISTÓRICO PARA ROTATIVIDADE DAS ALUNAS SEM FIXA ---
                     historico_df = pd.DataFrame(db_get_historico())
                     
                     # --- FIXAR SALAS (1 a 7) PARA AS PROFESSORAS ---
-                    # Criamos exatamente as 7 salas de prática
+                    # Regra: Sala X pertence à Professora Y o dia todo.
                     salas_pratica = [1, 2, 3, 4, 5, 6, 7]
                     random.shuffle(salas_pratica)
                     dict_salas_fixas = {}
                     
-                    # Sorteamos as salas para as professoras. Se houver mais de 7, 
-                    # as excedentes ficam como apoio (SALA 1, SALA 2... repetidas ou conforme sua estrutura)
                     profs_para_salas = profs_base.copy()
                     random.shuffle(profs_para_salas)
                     
@@ -523,11 +521,10 @@ if menu == "🏠 Secretaria":
                         if salas_pratica:
                             dict_salas_fixas[p] = f"SALA {salas_pratica.pop(0)}"
                         else:
-                            # Se acabarem as salas 1-7, usamos salas de apoio ou repetimos conforme necessidade
-                            # Aqui vou definir como SALA 1 (Apoio) para não gerar "Extra"
-                            dict_salas_fixas[p] = "SALA 1"
+                            # Se houver mais profs que salas, ficam sem sala fixa (Secretaria/Apoio)
+                            dict_salas_fixas[p] = "SECRETARIA"
 
-                    # --- LOOP DE HORÁRIOS (H1, H2, H3...) ---
+                    # --- LOOP DE HORÁRIOS ---
                     for i, h in enumerate(HORARIOS[1:]):
                         prof_t, prof_s = pt[i], ps[i]
                         
@@ -536,24 +533,31 @@ if menu == "🏠 Secretaria":
                         t_sol = turmas_list[(i + 1) % 3]
                         t_pra = turmas_list[(i + 2) % 3]
 
-                        # 2. Atribuição Teoria (SALA 8) e Solfejo (SALA 9)
+                        # 2. Teoria (SALA 8) e Solfejo (SALA 9)
                         for a in TURMAS[t_teo]: mapa[a][h] = f"SALA 8 | {prof_t}"
                         for a in TURMAS[t_sol]: mapa[a][h] = f"SALA 9 | {prof_s}"
                         
-                        # 3. Atribuição Prática Individual
+                        # 3. Prática Individual
                         disponiveis_p = [p for p in profs_base if p not in [prof_t, prof_s]]
                         alunas_pratica = list(TURMAS[t_pra])
                         random.shuffle(alunas_pratica) 
 
                         for a in alunas_pratica:
+                            # CONSULTA SE A ALUNA TEM PROFESSORA FIXA
                             fixa = next((row['Prof'] for _, row in df_fixas_editado.iterrows() if row['Aluna'] == a), None)
                             
                             p_escolhida = None
-                            # Tenta fixa primeiro
-                            if fixa and fixa in disponiveis_p:
-                                p_escolhida = fixa
-                                disponiveis_p.remove(fixa)
-                            # Se não, tenta rotacional pelo histórico
+                            
+                            # REGRA 1: Se tem fixa, SÓ pode ser com ela
+                            if fixa:
+                                if fixa in disponiveis_p:
+                                    p_escolhida = fixa
+                                    disponiveis_p.remove(fixa)
+                                else:
+                                    # Se a fixa está ocupada, a aluna VAI para a secretaria (não troca de prof!)
+                                    p_escolhida = None 
+                            
+                            # REGRA 2: Se NÃO tem fixa, busca uma rotativa
                             elif disponiveis_p:
                                 last_profs = []
                                 if not historico_df.empty and 'Aluna' in historico_df.columns:
@@ -563,11 +567,12 @@ if menu == "🏠 Secretaria":
                                 p_escolhida = random.choice(candidatas if candidatas else disponiveis_p)
                                 disponiveis_p.remove(p_escolhida)
                             
+                            # ATRIBUIÇÃO NO MAPA
                             if p_escolhida:
-                                sala_da_prof = dict_salas_fixas.get(p_escolhida, "SALA 1")
+                                sala_da_prof = dict_salas_fixas.get(p_escolhida, "SECRETARIA")
                                 mapa[a][h] = f"{sala_da_prof} | {p_escolhida}"
                             else:
-                                # Se sobrar aluna sem prof, ela aparece INDIVIDUALMENTE na secretaria
+                                # REGRA 3: Nome da aluna na secretaria se estiver sem aula
                                 mapa[a][h] = "SECRETARIA | Atividade Autônoma"
 
                     # Salva e Reinicia
