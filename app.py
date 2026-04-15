@@ -499,33 +499,61 @@ if menu == "🏠 Secretaria":
     
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
                     mapa = {aluna: {"Aluna": aluna} for t in TURMAS.values() for aluna in t}
+                    
+                    # 1. Horário 0: Reunião Geral
                     for a in mapa: mapa[a][HORARIOS[0]] = "Roberta | Todas as alunas"
                     
                     profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                     
+                    # --- NOVIDADE: FIXAR SALAS DAS PROFESSORAS DE PRÁTICA ---
+                    # Pegamos as professoras que NÃO estão escaladas fixas na Teoria/Solfejo (S8 e S9)
+                    # e damos a elas uma "casa" (Sala 1 a 7) para o dia inteiro.
+                    profs_para_salas = [p for p in profs_base]
+                    salas_individuais = list(range(1, 8)) # Salas 1 a 7
+                    random.shuffle(salas_individuais)
+                    
+                    # Dicionário que liga Prof -> Sala (Ex: {'Ana': 3, 'Maria': 5})
+                    dict_salas_fixas = {prof: salas_individuais.pop(0) for prof in profs_para_salas if salas_individuais}
+
                     for i, h in enumerate(HORARIOS[1:]):
                         prof_t, prof_s = pt[i], ps[i]
+                        
+                        # RODÍZIO DE TURMAS: Garante que a turma não repita disciplina
                         turmas_list = list(TURMAS.keys())
-                        t_teo, t_sol, t_pra = turmas_list[i%3], turmas_list[(i+1)%3], turmas_list[(i+2)%3]
-    
+                        t_teo = turmas_list[i % 3]
+                        t_sol = turmas_list[(i + 1) % 3]
+                        t_pra = turmas_list[(i + 2) % 3]
+
+                        # Atribuição Coletiva (Teoria e Solfejo)
                         for a in TURMAS[t_teo]: mapa[a][h] = f"Sala 8 | {prof_t}"
                         for a in TURMAS[t_sol]: mapa[a][h] = f"Sala 9 | {prof_s}"
                         
+                        # Atribuição Individual (Prática)
+                        # Apenas professoras que não estão dando Teoria ou Solfejo NESTE horário
                         disponiveis_p = [p for p in profs_base if p not in [prof_t, prof_s]]
                         random.shuffle(disponiveis_p)
-                        vagas_salas = list(range(1, 8))
-                        random.shuffle(vagas_salas)
-    
+                        
                         for a in TURMAS[t_pra]:
+                            # 1. Tenta a professora fixa da aluna
                             fixa = next((row['Prof'] for _, row in df_fixas_editado.iterrows() if row['Aluna'] == a), None)
-                            p_final = fixa if (fixa and fixa in disponiveis_p) else (disponiveis_p.pop(0) if disponiveis_p else None)
+                            
+                            p_final = None
+                            if fixa and fixa in disponiveis_p:
+                                p_final = fixa
+                                disponiveis_p.remove(fixa)
+                            elif disponiveis_p:
+                                # 2. Se não tem fixa ou ela está ocupada, pega a próxima disponível
+                                p_final = disponiveis_p.pop(0)
                             
                             if p_final:
-                                s_n = vagas_salas.pop(0) if vagas_salas else "X"
+                                # Recupera a sala que essa professora "ganhou" lá no início
+                                s_n = dict_salas_fixas.get(p_final, "X")
                                 mapa[a][h] = f"Sala {s_n} | {p_final}"
                             else:
-                                mapa[a][h] = "Atividade Autônoma | Secretaria"
-    
+                                # 3. Se não houver professora livre, vai para a secretaria
+                                mapa[a][h] = "Secretaria | Atividade Autônoma"
+
+                    # Salva no Supabase
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": list(mapa.values())}).execute()
                     st.rerun()
     
