@@ -507,10 +507,14 @@ if menu == "🏠 Secretaria":
                         mapa[a][HORARIOS[0]] = "Roberta | Todas as alunas"
                     
                     profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
-                    historico_df = pd.DataFrame(db_get_historico())
+                    
+                    # Tenta carregar histórico para rotatividade
+                    try:
+                        historico_df = pd.DataFrame(db_get_historico())
+                    except:
+                        historico_df = pd.DataFrame()
                     
                     # --- FIXAR SALAS (1 a 7) - EXCLUSIVIDADE DA PROFESSORA ---
-                    # Nenhuma professora de prática troca de sala e nenhuma sala se repete.
                     salas_pratica = [1, 2, 3, 4, 5, 6, 7]
                     random.shuffle(salas_pratica)
                     dict_salas_fixas = {}
@@ -521,21 +525,20 @@ if menu == "🏠 Secretaria":
                         if salas_pratica:
                             dict_salas_fixas[p] = f"SALA {salas_pratica.pop(0)}"
                         else:
-                            dict_salas_fixas[p] = None # Sem sala física disponível
+                            dict_salas_fixas[p] = None
 
                     # --- LOOP DE HORÁRIOS (H1, H2, H3, H4) ---
                     for i, h in enumerate(HORARIOS[1:]):
                         p_teoria = pt[i]
                         p_solfejo = ps[i]
                         
-                        # Rodízio Rígido de Turmas
-                        turmas_id = list(TURMAS.keys()) # ['Turma 1', 'Turma 2', 'Turma 3']
+                        # Rodízio Rígido de Turmas (Sempre Teoria com Turma 1, 2, 3...)
+                        turmas_id = list(TURMAS.keys())
                         t_teo = turmas_id[i % 3]
                         t_sol = turmas_id[(i + 1) % 3]
                         t_pra = turmas_id[(i + 2) % 3]
 
                         # --- A. COLETIVAS (SALA 8 E 9) ---
-                        # Aqui garantimos que a aluna individual receba a marcação da sala
                         for a in TURMAS[t_teo]: 
                             mapa[a][h] = f"SALA 8 | {p_teoria}"
                         for a in TURMAS[t_sol]: 
@@ -548,18 +551,16 @@ if menu == "🏠 Secretaria":
                         # PASSO 1: ATRIBUIR ALUNAS FIXAS (Prioridade Absoluta)
                         alunas_para_rodizio = []
                         for a in alunas_na_pratica:
-                            # Procura se a aluna tem prof fixa no cadastro
                             fixa_check = df_fixas_editado[df_fixas_editado['Aluna'] == a]
                             p_fixa = fixa_check['Prof'].values[0] if not fixa_check.empty else None
                             
                             if p_fixa:
-                                # Se a fixa está disponível e tem sala de 1-7
                                 if p_fixa in disponiveis_p and dict_salas_fixas.get(p_fixa):
                                     sala = dict_salas_fixas[p_fixa]
                                     mapa[a][h] = f"{sala} | {p_fixa}"
                                     disponiveis_p.remove(p_fixa)
                                 else:
-                                    # Se a fixa está na teoria/solfejo, a aluna vai para a secretaria com seu nome
+                                    # Aluna fixa sem a sua prof (ocupada na S8/S9) -> Secretaria
                                     mapa[a][h] = "SECRETARIA | Atividade Autônoma"
                             else:
                                 alunas_para_rodizio.append(a)
@@ -568,20 +569,16 @@ if menu == "🏠 Secretaria":
                         random.shuffle(alunas_para_rodizio)
                         for a in alunas_para_rodizio:
                             p_escolhida = None
-                            
                             if disponiveis_p:
-                                # Histórico: quem já deu aula para essa aluna?
                                 passadas = []
                                 if not historico_df.empty and 'Aluna' in historico_df.columns:
                                     passadas = historico_df[historico_df['Aluna'] == a]['Instrutora'].unique().tolist()
                                 
-                                # Tenta alguém novo com sala física disponível
                                 candidatas = [p for p in disponiveis_p if p not in passadas and dict_salas_fixas.get(p)]
                                 
                                 if candidatas:
                                     p_escolhida = random.choice(candidatas)
                                 else:
-                                    # Se todas disponíveis já deram aula, pega qualquer uma que tenha sala 1-7
                                     com_sala = [p for p in disponiveis_p if dict_salas_fixas.get(p)]
                                     p_escolhida = random.choice(com_sala) if com_sala else None
 
@@ -590,12 +587,13 @@ if menu == "🏠 Secretaria":
                                 mapa[a][h] = f"{sala} | {p_escolhida}"
                                 disponiveis_p.remove(p_escolhida)
                             else:
-                                # Se não houver professora ou sala livre para esta aluna específica
+                                # Nome da aluna na secretaria se não houver vaga
                                 mapa[a][h] = "SECRETARIA | Atividade Autônoma"
 
-                    # --- FINALIZAÇÃO E ENVIO ---
-                    escala_pronta = list(mapa.values())
-                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": escala_final}).execute()
+                    # --- FINALIZAÇÃO ---
+                    # Corrigido: Variável agora bate com a definição acima
+                    escala_final_lista = list(mapa.values())
+                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": escala_final_lista}).execute()
                     st.rerun()
                     
            # --- ABA 2: PLANEJAMENTO (V106 - BOTÃO MÁGICO COM CAPTURA FIEL DA TELA) ---
