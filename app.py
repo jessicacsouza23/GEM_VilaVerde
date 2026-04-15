@@ -498,7 +498,7 @@ if menu == "🏠 Secretaria":
                 folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA)
     
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
-                    # 1. MAPEAMENTO ABSOLUTO (Garante as 21 alunas: 8 T1, 6 T2, 7 T3)
+                    # 1. GARANTIA DE 21 ALUNAS (Mapeamento Inicial)
                     mapa_final = {}
                     for nome_t, lista_m in TURMAS.items():
                         for aluna_nome in lista_m:
@@ -508,7 +508,6 @@ if menu == "🏠 Secretaria":
                     for aluna in mapa_final:
                         mapa_final[aluna][HORARIOS[0]] = "Roberta | Todas as alunas"
                     
-                    # Filtra professoras disponíveis (removendo quem está de folga)
                     profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                     
                     try:
@@ -517,88 +516,79 @@ if menu == "🏠 Secretaria":
                         historico_df = pd.DataFrame()
                     
                     # --- CONFIGURAÇÃO DE SALAS FIXAS (1 a 7) ---
-                    # Sorteamos as 6 professoras de prática entre as salas 1 a 7.
-                    salas_pratica = [1, 2, 3, 4, 5, 6, 7]
-                    random.shuffle(salas_pratica)
+                    salas_disponiveis = ["SALA 1", "SALA 2", "SALA 3", "SALA 4", "SALA 5", "SALA 6", "SALA 7"]
+                    random.shuffle(salas_disponiveis)
                     dict_salas_fixas = {}
                     
-                    # Embaralhamos as professoras para que a distribuição de salas seja justa
-                    profs_para_salas = profs_base.copy()
-                    random.shuffle(profs_para_salas)
-                    
-                    for p in profs_para_salas:
-                        if salas_pratica:
-                            dict_salas_fixas[p] = f"SALA {salas_pratica.pop(0)}"
+                    # Distribuir as salas entre as professoras disponíveis
+                    profs_para_sorteio = profs_base.copy()
+                    random.shuffle(profs_para_sorteio)
+                    for p in profs_para_sorteio:
+                        if salas_disponiveis:
+                            dict_salas_fixas[p] = salas_disponiveis.pop(0)
                         else:
-                            dict_salas_fixas[p] = None # Caso extremo
+                            dict_salas_fixas[p] = "SALA INDEFINIDA"
 
                     # --- LOOP DE HORÁRIOS (H1, H2, H3, H4) ---
                     for i, h in enumerate(HORARIOS[1:]):
                         p_teoria = pt[i]
                         p_solfejo = ps[i]
                         
-                        # Rodízio Rígido de Turmas
                         turmas_lista = list(TURMAS.keys())
                         t_teo = turmas_lista[i % 3]
                         t_sol = turmas_lista[(i + 1) % 3]
                         t_pra = turmas_lista[(i + 2) % 3]
 
-                        # --- A. COLETIVAS (S8 E S9) ---
-                        for a in TURMAS[t_teo]: 
+                        # --- A. SALAS COLETIVAS (8 E 9) ---
+                        # Atribui individualmente para cada aluna da turma
+                        for a in TURMAS[t_teo]:
                             mapa_final[a][h] = f"SALA 8 | {p_teoria}"
-                        for a in TURMAS[t_sol]: 
+                        for a in TURMAS[t_sol]:
                             mapa_final[a][h] = f"SALA 9 | {p_solfejo}"
                         
-                        # --- B. PRÁTICA INDIVIDUAL (SALAS 1-7) ---
-                        # Disponíveis para prática = as 6 que não estão na S8 ou S9
+                        # --- B. PRÁTICA INDIVIDUAL ---
+                        # Professoras livres para prática (as 6 que sobraram)
                         disponiveis_p = [p for p in profs_base if p not in [p_teoria, p_solfejo]]
                         alunas_na_pratica = list(TURMAS[t_pra])
                         
-                        # PASSO 1: ALUNAS FIXAS (TRAVA TOTAL)
+                        # 1. TRAVAR ALUNAS FIXAS PRIMEIRO
                         alunas_restantes = []
                         for a in alunas_na_pratica:
                             fixa_check = df_fixas_editado[df_fixas_editado['Aluna'] == a]
                             p_fixa = fixa_check['Prof'].values[0] if not fixa_check.empty else None
                             
                             if p_fixa:
+                                # Se a prof fixa está livre para dar aula de prática
                                 if p_fixa in disponiveis_p:
-                                    sala = dict_salas_fixas.get(p_fixa)
-                                    mapa_final[a][h] = f"{sala} | {p_fixa}"
+                                    sala_p = dict_salas_fixas.get(p_fixa, "SALA PRÁTICA")
+                                    mapa_final[a][h] = f"{sala_p} | {p_fixa}"
                                     disponiveis_p.remove(p_fixa)
                                 else:
-                                    # Se a prof fixa está na teoria/solfejo, a aluna vai nominalmente para a secretaria
-                                    mapa_final[a][h] = "SECRETARIA | Atividade Autônoma"
+                                    # Se a prof fixa está ocupada na S8 ou S9, aluna vai para secretaria
+                                    mapa_final[a][h] = f"SECRETARIA | {a} (Atividade)"
                             else:
                                 alunas_restantes.append(a)
 
-                        # PASSO 2: PREENCHIMENTO TOTAL DAS PROFESSORAS RESTANTES
+                        # 2. RODÍZIO DAS NÃO-FIXAS (Preenchimento Total)
                         random.shuffle(alunas_restantes)
                         for a in alunas_restantes:
-                            p_escolhida = None
-                            
                             if disponiveis_p:
-                                # Tenta buscar no histórico para rodar
+                                # Tenta rodar histórico
                                 passadas = []
                                 if not historico_df.empty and 'Aluna' in historico_df.columns:
                                     passadas = historico_df[historico_df['Aluna'] == a]['Instrutora'].unique().tolist()
                                 
-                                candidatas_novas = [p for p in disponiveis_p if p not in passadas]
+                                candidatas = [p for p in disponiveis_p if p not in passadas]
+                                p_escolhida = random.choice(candidatas) if candidatas else random.choice(disponiveis_p)
                                 
-                                if candidatas_novas:
-                                    p_escolhida = random.choice(candidatas_novas)
-                                else:
-                                    # Se todas já deram aula para ela, pega qualquer uma disponível
-                                    p_escolhida = random.choice(disponiveis_p)
-                                
-                                # Atribui a sala da professora
-                                sala = dict_salas_fixas.get(p_escolhida)
-                                mapa_final[a][h] = f"{sala} | {p_escolhida}"
+                                sala_p = dict_salas_fixas.get(p_escolhida, "SALA PRÁTICA")
+                                mapa_final[a][h] = f"{sala_p} | {p_escolhida}"
                                 disponiveis_p.remove(p_escolhida)
                             else:
-                                # Só vai para a secretaria se as 6 professoras já estiverem ocupadas
-                                mapa_final[a][h] = "SECRETARIA | Atividade Autônoma"
+                                # Se acabaram as 6 professoras, vai para secretaria com nome da aluna
+                                mapa_final[a][h] = f"SECRETARIA | {a} (Atividade)"
 
-                    # --- SALVAR E RECARREGAR ---
+                    # --- SALVAR NO BANCO ---
                     lista_final = list(mapa_final.values())
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_final}).execute()
                     st.rerun()
