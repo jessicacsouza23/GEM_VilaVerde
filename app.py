@@ -505,7 +505,7 @@ if menu == "🏠 Secretaria":
                     
                     profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                     
-                    # --- BUSCA HISTÓRICO PARA ROTATIVIDADE DAS NÃO-FIXAS ---
+                    # --- BUSCA HISTÓRICO PARA ROTATIVIDADE ---
                     historico_df = pd.DataFrame(db_get_historico())
                     
                     # --- FIXAR SALAS (1 a 7) - UMA PROFESSORA POR SALA ---
@@ -538,25 +538,33 @@ if menu == "🏠 Secretaria":
                         # 3. PRÁTICA INDIVIDUAL (SALAS 1-7)
                         disponiveis_p = [p for p in profs_base if p not in [prof_t, prof_s]]
                         alunas_pratica = list(TURMAS[t_pra])
-                        random.shuffle(alunas_pratica) 
-
+                        
+                        # --- PASSO A: ATRIBUIR ALUNAS FIXAS PRIMEIRO ---
+                        alunas_restantes = []
                         for a in alunas_pratica:
-                            # CONSULTA SE A ALUNA É FIXA DE ALGUÉM
+                            # Busca se essa aluna específica tem professora fixa no dataframe
                             fixa = next((row['Prof'] for _, row in df_fixas_editado.iterrows() if row['Aluna'] == a), None)
                             
-                            p_escolhida = None
-                            
                             if fixa:
-                                # REGRA ALUNA FIXA: Só aceita a própria prof se ela estiver livre
                                 if fixa in disponiveis_p:
-                                    p_escolhida = fixa
-                                    disponiveis_p.remove(fixa)
+                                    sala_da_prof = dict_salas_fixas.get(fixa)
+                                    if sala_da_prof:
+                                        mapa[a][h] = f"{sala_da_prof} | {fixa}"
+                                        disponiveis_p.remove(fixa)
+                                    else:
+                                        mapa[a][h] = "SECRETARIA | Atividade Autônoma"
                                 else:
-                                    # Se a prof fixa está na S8 ou S9, a aluna vai para a SECRETARIA
-                                    p_escolhida = None
-                            
-                            elif disponiveis_p:
-                                # REGRA ROTATIVA (Só para alunas que NÃO são fixas)
+                                    # Se a fixa está ocupada na S8 ou S9, a aluna vai para a secretaria
+                                    mapa[a][h] = "SECRETARIA | Atividade Autônoma"
+                            else:
+                                # Se não é fixa, entra na lista para o rodízio rotacional
+                                alunas_restantes.append(a)
+
+                        # --- PASSO B: RODÍZIO ROTACIONAL (ALUNAS NÃO FIXAS) ---
+                        random.shuffle(alunas_restantes)
+                        for a in alunas_restantes:
+                            p_escolhida = None
+                            if disponiveis_p:
                                 p_passado = []
                                 if not historico_df.empty and 'Aluna' in historico_df.columns:
                                     p_passado = historico_df[historico_df['Aluna'] == a]['Instrutora'].unique().tolist()
@@ -571,13 +579,14 @@ if menu == "🏠 Secretaria":
                                 
                                 disponiveis_p.remove(p_escolhida)
                             
-                            # ATRIBUIÇÃO FINAL
-                            sala_da_prof = dict_salas_fixas.get(p_escolhida) if p_escolhida else None
-                            
-                            if p_escolhida and sala_da_prof:
-                                mapa[a][h] = f"{sala_da_prof} | {p_escolhida}"
+                            # Atribuição Final das Rotativas
+                            if p_escolhida:
+                                sala_da_prof = dict_salas_fixas.get(p_escolhida)
+                                if sala_da_prof:
+                                    mapa[a][h] = f"{sala_da_prof} | {p_escolhida}"
+                                else:
+                                    mapa[a][h] = "SECRETARIA | Atividade Autônoma"
                             else:
-                                # Aluna sem professora (ou aguardando a fixa) fica na Secretaria
                                 mapa[a][h] = "SECRETARIA | Atividade Autônoma"
 
                     # Grava no Supabase e recarrega
