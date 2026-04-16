@@ -498,19 +498,25 @@ if menu == "🏠 Secretaria":
     
                 # --- BOTÃO DE GERAÇÃO COM NOME DA TABELA CORRIGIDO ---
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
-                    # 1. MAPEAMENTO DE FIXAS
+                    # 1. MAPEAMENTO DE FIXAS (LIMPEZA TOTAL)
                     dict_fixas = {}
                     if not df_fixas_editado.empty:
                         for _, row in df_fixas_editado.iterrows():
                             if pd.notna(row['Aluna']) and pd.notna(row['Prof']):
                                 dict_fixas[str(row['Aluna']).strip().lower()] = str(row['Prof']).strip()
 
-                    # 2. BUSCA NO HISTÓRICO (TABELA: historico_geral)
+                    # 2. BUSCA NO HISTÓRICO E LIMPEZA DE "SUJEIRA" (Símbolos, Salas, etc)
                     try:
                         res_hist = supabase.table("historico_geral").select("Aluna, Instrutora").execute()
                         df_historico = pd.DataFrame(res_hist.data)
-                    except Exception as e:
-                        df_historico = pd.DataFrame(columns=['Aluna', 'Instrutora'])
+                        if not df_historico.empty:
+                            # Limpamos o histórico: removemos "SALA X |", emojis e espaços
+                            df_historico['Aluna_Clean'] = df_historico['Aluna'].str.strip().str.lower()
+                            df_historico['Prof_Clean'] = df_historico['Instrutora'].apply(lambda x: str(x).split('|')[-1].strip() if '|' in str(x) else str(x).strip())
+                        else:
+                            df_historico = pd.DataFrame(columns=['Aluna_Clean', 'Prof_Clean'])
+                    except:
+                        df_historico = pd.DataFrame(columns=['Aluna_Clean', 'Prof_Clean'])
 
                     # 3. MAPEAMENTO INICIAL
                     mapa_final = {a: {"Aluna": a} for turma in TURMAS.values() for a in turma}
@@ -520,7 +526,7 @@ if menu == "🏠 Secretaria":
                     profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                     registro_salas_profs = {} 
 
-                    # 4. LOOP DE HORÁRIOS
+                    # 4. LOOP DE HORÁRIOS (H1 a H4)
                     for i, h in enumerate(HORARIOS[1:]):
                         p_teoria = pt[i]
                         p_solfejo = ps[i]
@@ -532,7 +538,7 @@ if menu == "🏠 Secretaria":
                         for a in TURMAS[t_teo]: mapa_final[a][h] = f"SALA 8 | {p_teoria}"
                         for a in TURMAS[t_sol]: mapa_final[a][h] = f"SALA 9 | {p_solfejo}"
                         
-                        # --- B. PRÁTICA INDIVIDUAL ---
+                        # --- B. PRÁTICA INDIVIDUAL (S1 A S7) ---
                         disponiveis_agora = [p for p in profs_base if p not in [p_teoria, p_solfejo]]
                         alunas_na_pratica = list(TURMAS[t_pra])
                         
@@ -563,51 +569,45 @@ if menu == "🏠 Secretaria":
                             else:
                                 alunas_rodizio.append(a)
 
-                        # --- PASSO 2: RODÍZIO COM BLOQUEIO DE REPETIÇÃO ---
+                        # --- PASSO 2: RODÍZIO COM EXCLUSÃO REAL ---
                         random.shuffle(alunas_rodizio)
                         for a in alunas_rodizio:
                             if profs_disponiveis:
-                                # Pegar quem já deu aula para esta aluna
-                                ja_deram_aula = []
+                                # Quem já deu aula para ela?
+                                ja_deram = []
                                 if not df_historico.empty:
-                                    # Filtro rigoroso: remove espaços e ignora maiúsculas/minúsculas
-                                    ja_deram_aula = df_historico[
-                                        df_historico['Aluna'].str.strip().str.lower() == a.strip().lower()
-                                    ]['Instrutora'].unique().tolist()
+                                    a_clean = a.strip().lower()
+                                    ja_deram = df_historico[df_historico['Aluna_Clean'] == a_clean]['Prof_Clean'].unique().tolist()
                                 
-                                # Candidatas = Professoras que NUNCA deram aula para ela
-                                candidatas = [p for p in profs_disponiveis if p not in ja_deram_aula]
+                                # Candidatas que não estão no histórico (Compara só o nome puro)
+                                candidatas = [p for p in profs_disponiveis if p.strip() not in ja_deram]
                                 
-                                # Se todas já deram aula, o sistema escolhe a que deu aula há MAIS TEMPO (ou qualquer uma livre)
-                                if not candidatas:
-                                    p_escolhida = random.choice(profs_disponiveis)
-                                else:
-                                    p_escolhida = random.choice(candidatas)
+                                p_esc = random.choice(candidatas) if candidatas else random.choice(profs_disponiveis)
                                 
-                                s_e = registro_salas_profs.get(p_escolhida)
-                                mapa_final[a][h] = f"{s_e} | {p_escolhida}"
-                                profs_disponiveis.remove(p_escolhida)
+                                s_e = registro_salas_profs.get(p_esc)
+                                mapa_final[a][h] = f"{s_e} | {p_esc}"
+                                profs_disponiveis.remove(p_esc)
                             else:
                                 mapa_final[a][h] = f"SECRETARIA | {a}"
 
-                    # 5. SALVAMENTO E ATUALIZAÇÃO DO HISTÓRICO
+                    # 5. SALVAMENTO LIMPO (MUITO IMPORTANTE)
                     try:
                         lista_final = list(mapa_final.values())
                         supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_final}).execute()
                         
                         novos_h = []
-                        for aluna_nome, dados in mapa_final.items():
+                        for a_n, dados in mapa_final.items():
                             for hor, valor in dados.items():
-                                # Só salva no histórico se for aula PRÁTICA (S1 a S7) e não for SECRETARIA
-                                val_str = str(valor)
-                                if "|" in val_str and any(f"SALA {n}" in val_str for n in range(1, 8)):
-                                    p_nome = val_str.split("|")[1].strip()
-                                    novos_h.append({"Aluna": aluna_nome, "Instrutora": p_nome})
+                                v_str = str(valor)
+                                # SALVA APENAS O NOME DA PROFESSORA, SEM SALA, SEM PIANO, SEM NADA
+                                if "|" in v_str and "SALA 8" not in v_str and "SALA 9" not in v_str:
+                                    prof_pura = v_str.split("|")[-1].strip()
+                                    novos_h.append({"Aluna": a_n, "Instrutora": prof_pura})
                         
                         if novos_h:
                             supabase.table("historico_geral").insert(novos_h).execute()
                             
-                        st.success("Rodízio gerado com sucesso! Professoras repetidas foram bloqueadas.")
+                        st.success("Rodízio inteligente gerado! Nomes limpos para o histórico.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
