@@ -445,147 +445,250 @@ if menu == "🏠 Secretaria":
     
     # --- ABA 2: PLANEJAMENTO (V107 - CORREÇÃO FIXAS E SALAS) ---
     # --- ABA 2: PLANEJAMENTO (V108 - MOTOR DE RODÍZIO INTELIGENTE) ---
-with tab_plan:
-    st.markdown("### 🗓️ Planejamento e Mural")
+    with tab_plan:
+        st.markdown("### 🗓️ Planejamento e Mural")
+        
+        # 1. GERENCIAMENTO DE ALUNAS FIXAS
+        st.subheader("📌 Configurar Alunas Fixas")
+        todas_alunas = sorted([aluna for turma in TURMAS.values() for aluna in turma])
+        lista_professoras = sorted(PROFESSORAS_LISTA)
     
-    # 1. GERENCIAMENTO DE ALUNAS FIXAS
-    st.subheader("📌 Configurar Alunas Fixas")
-    todas_alunas = sorted([aluna for turma in TURMAS.values() for aluna in turma])
-    lista_professoras = sorted(PROFESSORAS_LISTA)
-
-    if 'df_fixas' not in st.session_state:
-        st.session_state.df_fixas = pd.DataFrame(columns=["Aluna", "Prof"])
-
-    config_colunas = {
-        "Aluna": st.column_config.SelectboxColumn("Nome da Aluna", options=todas_alunas, required=True),
-        "Prof": st.column_config.SelectboxColumn("Professora Fixa", options=lista_professoras, required=True)
-    }
-
-    df_fixas_editado = st.data_editor(
-        st.session_state.df_fixas,
-        column_config=config_colunas,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="editor_fixas_v108"
-    )
-    st.session_state.df_fixas = df_fixas_editado
-    st.divider()
-
-    # 2. SELEÇÃO DE DATA E GERAÇÃO
-    c1, c2 = st.columns(2)
-    mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
-    ano = c2.selectbox("Ano:", [2026, 2027])
+        if 'df_fixas' not in st.session_state:
+            st.session_state.df_fixas = pd.DataFrame(columns=["Aluna", "Prof"])
     
-    sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
-               for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
+        config_colunas = {
+            "Aluna": st.column_config.SelectboxColumn("Nome da Aluna", options=todas_alunas, required=True),
+            "Prof": st.column_config.SelectboxColumn("Professora Fixa", options=lista_professoras, required=True)
+        }
     
-    if sabados:
-        data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
-        calendario_db = db_get_calendario()
-
-        if data_sel_str not in calendario_db:
-            st.info(f"Escala pendente para {data_sel_str}.")
-            col_t, col_s = st.columns(2)
-            with col_t:
-                st.write("**📚 Teoria (Sala 8)**")
-                pt = [st.selectbox(f"Prof {h}", PROFESSORAS_LISTA, index=i, key=f"pt{i}") for i, h in enumerate(HORARIOS[1:])]
-            with col_s:
-                st.write("**🔊 Solfejo (Sala 9)**")
-                ps = [st.selectbox(f"Prof {h}", PROFESSORAS_LISTA, index=i+3, key=f"ps{i}") for i, h in enumerate(HORARIOS[1:])]
-            
-            folga_ativa = st.multiselect("Folgas:", PROFESSORAS_LISTA)
-
-            if st.button("🚀 GERAR RODÍZIO INTELIGENTE", use_container_width=True, type="primary"):
-                # --- PASSO 1: LIMPEZA E DICIONÁRIOS ---
-                dict_fixas = {str(r['Aluna']).strip().lower(): str(r['Prof']).strip() 
-                             for _, r in df_fixas_editado.iterrows() if pd.notna(r['Aluna'])}
-
-                try:
-                    res_hist = supabase.table("historico_geral").select("Aluna, Instrutora").execute()
-                    df_h = pd.DataFrame(res_hist.data)
-                    if not df_h.empty:
-                        df_h['A_Clean'] = df_h['Aluna'].str.strip().lower()
-                        df_h['P_Clean'] = df_h['Instrutora'].str.strip().lower()
-                    else:
-                        df_h = pd.DataFrame(columns=['A_Clean', 'P_Clean'])
-                except:
-                    df_h = pd.DataFrame(columns=['A_Clean', 'P_Clean'])
-
-                mapa_final = {a: {"Aluna": a} for turma in TURMAS.values() for a in turma}
-                profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
+        df_fixas_editado = st.data_editor(
+            st.session_state.df_fixas,
+            column_config=config_colunas,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="editor_fixas_v108"
+        )
+        st.session_state.df_fixas = df_fixas_editado
+        st.divider()
+    
+        # 2. SELEÇÃO DE DATA E GERAÇÃO
+        c1, c2 = st.columns(2)
+        mes = c1.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1)
+        ano = c2.selectbox("Ano:", [2026, 2027])
+        
+        sabados = [dia for semana in calendar.Calendar().monthdatescalendar(ano, mes) 
+                   for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes]
+        
+        if sabados:
+            data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
+            calendario_db = db_get_calendario()
+    
+            if data_sel_str not in calendario_db:
+                st.info(f"Escala pendente para {data_sel_str}.")
+                col_t, col_s = st.columns(2)
+                with col_t:
+                    st.write("**📚 Teoria (Sala 8)**")
+                    pt = [st.selectbox(f"Prof {h}", PROFESSORAS_LISTA, index=i, key=f"pt{i}") for i, h in enumerate(HORARIOS[1:])]
+                with col_s:
+                    st.write("**🔊 Solfejo (Sala 9)**")
+                    ps = [st.selectbox(f"Prof {h}", PROFESSORAS_LISTA, index=i+3, key=f"ps{i}") for i, h in enumerate(HORARIOS[1:])]
                 
-                # --- PASSO 2: LOOP DE HORÁRIOS ---
-                for i, h in enumerate(HORARIOS[1:]):
-                    p_teo, p_sol = pt[i], ps[i]
-                    t_list = list(TURMAS.keys())
-                    t_teo, t_sol, t_pra = t_list[i%3], t_list[(i+1)%3], t_list[(i+2)%3]
-
-                    # Coletivas
-                    for a in TURMAS[t_teo]: mapa_final[a][h] = f"SALA 8 | {p_teo}"
-                    for a in TURMAS[t_sol]: mapa_final[a][h] = f"SALA 9 | {p_sol}"
+                folga_ativa = st.multiselect("Folgas:", PROFESSORAS_LISTA)
+    
+                if st.button("🚀 GERAR RODÍZIO INTELIGENTE", use_container_width=True, type="primary"):
+                    # --- PASSO 1: LIMPEZA E DICIONÁRIOS ---
+                    dict_fixas = {str(r['Aluna']).strip().lower(): str(r['Prof']).strip() 
+                                 for _, r in df_fixas_editado.iterrows() if pd.notna(r['Aluna'])}
+    
+                    try:
+                        res_hist = supabase.table("historico_geral").select("Aluna, Instrutora").execute()
+                        df_h = pd.DataFrame(res_hist.data)
+                        if not df_h.empty:
+                            df_h['A_Clean'] = df_h['Aluna'].str.strip().lower()
+                            df_h['P_Clean'] = df_h['Instrutora'].str.strip().lower()
+                        else:
+                            df_h = pd.DataFrame(columns=['A_Clean', 'P_Clean'])
+                    except:
+                        df_h = pd.DataFrame(columns=['A_Clean', 'P_Clean'])
+    
+                    mapa_final = {a: {"Aluna": a} for turma in TURMAS.values() for a in turma}
+                    profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                     
-                    # Prática Individual
-                    disponiveis = [p for p in profs_base if p not in [p_teo, p_sol]]
-                    alunas_pratica = list(TURMAS[t_pra])
-                    
-                    # Definir Salas (Fixas por Horário para as Profs)
-                    salas = [f"SALA {s}" for s in range(1, 8)]
-                    random.shuffle(salas)
-                    relacao_sala_prof = {p: salas[idx] for idx, p in enumerate(disponiveis)}
-
-                    # --- MOTOR DE DECISÃO (O PULO DO GATO) ---
-                    # 1. Alocar Fixas primeiro
-                    alunas_restantes = []
-                    profs_livres = list(disponiveis)
-
-                    for a in alunas_pratica:
-                        p_fixa = dict_fixas.get(a.lower())
-                        if p_fixa in profs_livres:
-                            mapa_final[a][h] = f"{relacao_sala_prof[p_fixa]} | {p_fixa}"
-                            profs_livres.remove(p_fixa)
-                        elif p_fixa: mapa_final[a][h] = f"SECRETARIA | {a}"
-                        else: alunas_restantes.append(a)
-
-                    # 2. Rodízio Inteligente (Quem tem menos opção vai primeiro)
-                    def calcular_opcoes(aluna_nome):
-                        a_c = aluna_nome.lower()
-                        hist_recente = df_h[df_h['A_Clean'] == a_c].tail(5)['P_Clean'].tolist()
-                        return len([p for p in profs_livres if p.lower() not in hist_recente])
-
-                    alunas_restantes.sort(key=calcular_opcoes)
-
-                    for a in alunas_restantes:
-                        if not profs_livres:
-                            mapa_final[a][h] = f"SECRETARIA | {a}"
-                            continue
+                    # --- PASSO 2: LOOP DE HORÁRIOS ---
+                    for i, h in enumerate(HORARIOS[1:]):
+                        p_teo, p_sol = pt[i], ps[i]
+                        t_list = list(TURMAS.keys())
+                        t_teo, t_sol, t_pra = t_list[i%3], t_list[(i+1)%3], t_list[(i+2)%3]
+    
+                        # Coletivas
+                        for a in TURMAS[t_teo]: mapa_final[a][h] = f"SALA 8 | {p_teo}"
+                        for a in TURMAS[t_sol]: mapa_final[a][h] = f"SALA 9 | {p_sol}"
                         
-                        a_c = a.lower()
-                        # Pega as últimas 5 professoras para evitar repetição recente
-                        ja_deram = df_h[df_h['A_Clean'] == a_c].tail(5)['P_Clean'].tolist()
-                        candidatas = [p for p in profs_livres if p.lower() not in ja_deram]
+                        # Prática Individual
+                        disponiveis = [p for p in profs_base if p not in [p_teo, p_sol]]
+                        alunas_pratica = list(TURMAS[t_pra])
                         
-                        p_esc = random.choice(candidatas) if candidatas else random.choice(profs_livres)
-                        mapa_final[a][h] = f"{relacao_sala_prof[p_esc]} | {p_esc}"
-                        profs_livres.remove(p_esc)
+                        # Definir Salas (Fixas por Horário para as Profs)
+                        salas = [f"SALA {s}" for s in range(1, 8)]
+                        random.shuffle(salas)
+                        relacao_sala_prof = {p: salas[idx] for idx, p in enumerate(disponiveis)}
+    
+                        # --- MOTOR DE DECISÃO (O PULO DO GATO) ---
+                        # 1. Alocar Fixas primeiro
+                        alunas_restantes = []
+                        profs_livres = list(disponiveis)
+    
+                        for a in alunas_pratica:
+                            p_fixa = dict_fixas.get(a.lower())
+                            if p_fixa in profs_livres:
+                                mapa_final[a][h] = f"{relacao_sala_prof[p_fixa]} | {p_fixa}"
+                                profs_livres.remove(p_fixa)
+                            elif p_fixa: mapa_final[a][h] = f"SECRETARIA | {a}"
+                            else: alunas_restantes.append(a)
+    
+                        # 2. Rodízio Inteligente (Quem tem menos opção vai primeiro)
+                        def calcular_opcoes(aluna_nome):
+                            a_c = aluna_nome.lower()
+                            hist_recente = df_h[df_h['A_Clean'] == a_c].tail(5)['P_Clean'].tolist()
+                            return len([p for p in profs_livres if p.lower() not in hist_recente])
+    
+                        alunas_restantes.sort(key=calcular_opcoes)
+    
+                        for a in alunas_restantes:
+                            if not profs_livres:
+                                mapa_final[a][h] = f"SECRETARIA | {a}"
+                                continue
+                            
+                            a_c = a.lower()
+                            # Pega as últimas 5 professoras para evitar repetição recente
+                            ja_deram = df_h[df_h['A_Clean'] == a_c].tail(5)['P_Clean'].tolist()
+                            candidatas = [p for p in profs_livres if p.lower() not in ja_deram]
+                            
+                            p_esc = random.choice(candidatas) if candidatas else random.choice(profs_livres)
+                            mapa_final[a][h] = f"{relacao_sala_prof[p_esc]} | {p_esc}"
+                            profs_livres.remove(p_esc)
+    
+                    # --- PASSO 3: SALVAMENTO ---
+                    try:
+                        lista_salvar = list(mapa_final.values())
+                        supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_salvar}).execute()
+                        
+                        # Histórico limpo (apenas prática individual)
+                        novos_h = []
+                        for a, dados in mapa_final.items():
+                            for hor, val in dados.items():
+                                if "|" in str(val) and "SALA 8" not in str(val) and "SALA 9" not in str(val):
+                                    p_nome = str(val).split("|")[-1].strip()
+                                    novos_h.append({"Aluna": a, "Instrutora": p_nome})
+                        if novos_h: supabase.table("historico_geral").insert(novos_h).execute()
+                        
+                        st.success("Rodízio Gerado com Sucesso!")
+                        st.rerun()
+                    except Exception as e: st.error(f"Erro: {e}")
 
-                # --- PASSO 3: SALVAMENTO ---
-                try:
-                    lista_salvar = list(mapa_final.values())
-                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_salvar}).execute()
-                    
-                    # Histórico limpo (apenas prática individual)
-                    novos_h = []
-                    for a, dados in mapa_final.items():
-                        for hor, val in dados.items():
-                            if "|" in str(val) and "SALA 8" not in str(val) and "SALA 9" not in str(val):
-                                p_nome = str(val).split("|")[-1].strip()
-                                novos_h.append({"Aluna": a, "Instrutora": p_nome})
-                    if novos_h: supabase.table("historico_geral").insert(novos_h).execute()
-                    
-                    st.success("Rodízio Gerado com Sucesso!")
-                    st.rerun()
-                except Exception as e: st.error(f"Erro: {e}")
-                       
+# --- ABA 2: MURAL PARA PRINT (ESTILIZADO) ---
+            else:
+                df_escala = pd.DataFrame(calendario_db[data_sel_str])
+                
+                st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
+                
+                # JavaScript para capturar as colunas individualmente com alta resolução
+                js_master = f"""
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+                <script>
+                async function baixarTudoEstilizado() {{
+                    const numColunas = {len(HORARIOS)};
+                    for (let i = 0; i < numColunas; i++) {{
+                        const divId = 'mural_export_' + i;
+                        const container = window.parent.document.getElementById(divId);
+                        
+                        if (container) {{
+                            const canvas = await html2canvas(container, {{ 
+                                scale: 2, 
+                                backgroundColor: "#ffffff",
+                                logging: false
+                            }});
+                            
+                            const link = window.parent.document.createElement('a');
+                            const hNome = container.querySelector('.horario-titulo').innerText.trim().replace(':', 'h');
+                            link.download = 'Mural_' + hNome + '.png';
+                            link.href = canvas.toDataURL("image/png");
+                            link.click();
+                            
+                            await new Promise(r => setTimeout(r, 500));
+                        }}
+                    }}
+                }}
+                </script>
+                <button onclick="baixarTudoEstilizado()" style="width:100%; background: linear-gradient(90deg, #4CAF50, #2E7D32); color:white; border:none; padding:18px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:20px; margin-bottom:25px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+                    📸 Gerar e Baixar Todas as Imagens (Fiel à Tela)
+                </button>
+                """
+                st.components.v1.html(js_master, height=100)
+    
+                # --- MONTAGEM VISUAL DOS CARDS ---
+                cores = {
+                    "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", 
+                    "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", 
+                    "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", 
+                    "SECRETARIA": "#fef3c7"
+                }
+    
+                cols_mural = st.columns(len(HORARIOS))
+    
+                for idx, h_col in enumerate(HORARIOS):
+                    with cols_mural[idx]:
+                        div_id = f"mural_export_{idx}"
+                        html_cards = ""
+                        
+                        # Agrupar alunas por professor/sala para criar os cards
+                        grupos = {}
+                        for _, r in df_escala.iterrows():
+                            info = str(r[h_col])
+                            if info not in grupos: grupos[info] = []
+                            grupos[info].append(r['Aluna'])
+                        
+                        # Ordenação: Salas de Prática -> Teoria -> Solfejo
+                        chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
+                            0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
+                            1 if "SALA 8" in x.upper() else 
+                            2 if "SALA 9" in x.upper() else 3, x
+                        ))
+                        
+                        for local_prof in chaves_ordenadas:
+                            local_up = local_prof.upper()
+                            
+                            # Identificar matéria para exibir no card
+                            label_extra = ""
+                            if "SALA 8" in local_up: label_extra = " (Teoria)"
+                            elif "SALA 9" in local_up: label_extra = " (Solfejo)"
+    
+                            # Definir cor de fundo baseada na sala
+                            bg = "#ffffff"
+                            for sala, cor in cores.items():
+                                if sala in local_up: bg = cor; break
+                            
+                            alunas_gp = grupos[local_prof]
+                            text_alunas = " + ".join(sorted(alunas_gp)) if len(alunas_gp) > 1 else alunas_gp[0]
+                            if h_col == HORARIOS[0]: text_alunas = "Todas as alunas"
+    
+                            # Gerar o HTML do Card
+                            html_cards += f"""
+                            <div style="background-color:{bg}; border:2px solid #000; padding:10px; margin-bottom:10px; border-radius:10px; font-family:sans-serif;">
+                                <b style="font-size:18px; color:#000; display:block; line-height:1.2;">{local_prof}{label_extra}</b>
+                                <span style="font-size:16px; color:#1a1a1a; font-weight:800;">{text_alunas}</span>
+                            </div>
+                            """
+    
+                        # Container final que será "fotografado"
+                        st.write(f"""
+                        <div id="{div_id}" style="background:white; padding:15px; border:4px solid #000; border-radius:15px; width:100%;">
+                            <div class="horario-titulo" style="background:#262730; color:white; padding:10px; border-radius:8px; text-align:center; font-size:24px; font-weight:bold; margin-bottom:15px; font-family:sans-serif;">
+                                {h_col}
+                            </div>
+                            {html_cards}
+                        </div>
+                        """, unsafe_allow_html=True)
                     
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
