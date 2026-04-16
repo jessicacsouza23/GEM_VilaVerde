@@ -496,7 +496,7 @@ if menu == "🏠 Secretaria":
                 
                 folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA)
     
-                # --- BOTÃO DE GERAÇÃO COM LÓGICA ANTI-REPETIÇÃO ---
+                # --- BOTÃO DE GERAÇÃO COM NOME DA TABELA CORRIGIDO ---
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
                     # 1. MAPEAMENTO DE FIXAS
                     dict_fixas = {}
@@ -505,15 +505,16 @@ if menu == "🏠 Secretaria":
                             if pd.notna(row['Aluna']) and pd.notna(row['Prof']):
                                 dict_fixas[str(row['Aluna']).strip().lower()] = str(row['Prof']).strip()
 
-                    # 2. BUSCA E NORMALIZAÇÃO DO HISTÓRICO
+                    # 2. BUSCA NO HISTÓRICO (AGORA NA TABELA CORRETA: historico_geral)
                     try:
-                        res_hist = supabase.table("historico").select("Aluna, Instrutora").execute()
+                        res_hist = supabase.table("historico_geral").select("Aluna, Instrutora").execute()
                         df_historico = pd.DataFrame(res_hist.data)
                         if not df_historico.empty:
                             df_historico['Aluna_Clean'] = df_historico['Aluna'].str.strip().str.lower()
                         else:
                             df_historico = pd.DataFrame(columns=['Aluna', 'Instrutora', 'Aluna_Clean'])
-                    except:
+                    except Exception as e:
+                        st.warning(f"Histórico ainda vazio ou inacessível: {e}")
                         df_historico = pd.DataFrame(columns=['Aluna', 'Instrutora', 'Aluna_Clean'])
 
                     # 3. MAPEAMENTO INICIAL
@@ -576,10 +577,9 @@ if menu == "🏠 Secretaria":
                                     a_clean = a.strip().lower()
                                     ja_deram_aula = df_historico[df_historico['Aluna_Clean'] == a_clean]['Instrutora'].unique().tolist()
                                 
-                                # Candidatas que nunca deram aula para esta aluna
+                                # Filtra professoras que não estão no histórico da aluna
                                 candidatas = [p for p in profs_disponiveis if p not in ja_deram_aula]
                                 
-                                # Se não houver candidatas "virgens", sorteia entre as disponíveis (reinicia ciclo)
                                 p_esc = random.choice(candidatas) if candidatas else random.choice(profs_disponiveis)
                                 
                                 s_e = registro_salas_profs.get(p_esc)
@@ -588,7 +588,7 @@ if menu == "🏠 Secretaria":
                             else:
                                 mapa_final[a][h] = f"SECRETARIA | {a}"
 
-                    # 5. SALVAMENTO E ATUALIZAÇÃO DO HISTÓRICO
+                    # 5. SALVAMENTO (TABELAS calendario E historico_geral)
                     try:
                         lista_final = list(mapa_final.values())
                         supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_final}).execute()
@@ -601,9 +601,9 @@ if menu == "🏠 Secretaria":
                                     novos_h.append({"Aluna": a_n, "Instrutora": instrutora})
                         
                         if novos_h:
-                            supabase.table("historico").insert(novos_h).execute()
+                            supabase.table("historico_geral").insert(novos_h).execute()
                             
-                        st.success("Escala gerada!")
+                        st.success("Rodízio gerado e salvo em 'historico_geral'!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
