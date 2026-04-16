@@ -497,19 +497,18 @@ if menu == "🏠 Secretaria":
                 folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA)
     
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
-                    # 1. MAPEAMENTO DE FIXAS (Normalização rigorosa)
+                    # 1. MAPEAMENTO DE FIXAS
                     dict_fixas = {}
                     if not df_fixas_editado.empty:
                         for _, row in df_fixas_editado.iterrows():
                             if pd.notna(row['Aluna']) and pd.notna(row['Prof']):
                                 dict_fixas[str(row['Aluna']).strip().lower()] = str(row['Prof']).strip()
 
-                    # 2. BUSCA DO HISTÓRICO COMPLETO (Todas as semanas anteriores)
+                    # 2. BUSCA DO HISTÓRICO (Com segurança)
                     try:
-                        # Puxa todos os registros da tabela 'historico' do Supabase
                         res_hist = supabase.table("historico").select("Aluna, Instrutora").execute()
                         historico_total = pd.DataFrame(res_hist.data)
-                    except:
+                    except Exception as e:
                         historico_total = pd.DataFrame(columns=['Aluna', 'Instrutora'])
 
                     # 3. MAPEAMENTO INICIAL
@@ -525,13 +524,14 @@ if menu == "🏠 Secretaria":
                         p_teoria = pt[i]
                         p_solfejo = ps[i]
                         
-                        t_teo, t_sol, t_pra = list(TURMAS.keys())[i%3], list(TURMAS.keys())[(i+1)%3], list(TURMAS.keys())[(i+2)%3]
+                        t_list = list(TURMAS.keys())
+                        t_teo, t_sol, t_pra = t_list[i%3], t_list[(i+1)%3], t_list[(i+2)%3]
 
-                        # --- A. SALAS COLETIVAS (S8 e S9) ---
+                        # --- A. SALAS COLETIVAS ---
                         for a in TURMAS[t_teo]: mapa_final[a][h] = f"SALA 8 | {p_teoria}"
                         for a in TURMAS[t_sol]: mapa_final[a][h] = f"SALA 9 | {p_solfejo}"
                         
-                        # --- B. PRÁTICA INDIVIDUAL (S1 A S7) ---
+                        # --- B. PRÁTICA INDIVIDUAL ---
                         disponiveis_agora = [p for p in profs_base if p not in [p_teoria, p_solfejo]]
                         alunas_na_pratica = list(TURMAS[t_pra])
                         
@@ -541,10 +541,10 @@ if menu == "🏠 Secretaria":
                         
                         for p in disponiveis_agora:
                             if p not in registro_salas_profs:
-                                salas_livres = [s for s in salas_total if s not in registro_salas_profs.values()]
-                                if salas_livres:
-                                    random.shuffle(salas_livres)
-                                    registro_salas_profs[p] = salas_livres[0]
+                                s_livres = [s for s in salas_total if s not in registro_salas_profs.values()]
+                                if s_livres:
+                                    random.shuffle(s_livres)
+                                    registro_salas_profs[p] = s_livres[0]
 
                         # --- PASSO 1: ALOCAR FIXAS ---
                         alunas_rodizio = []
@@ -563,23 +563,15 @@ if menu == "🏠 Secretaria":
                             else:
                                 alunas_rodizio.append(a)
 
-                        # --- PASSO 2: RODÍZIO ANTI-REPETIÇÃO ---
+                        # --- PASSO 2: RODÍZIO SEM REPETIR ---
                         random.shuffle(alunas_rodizio)
                         for a in alunas_rodizio:
                             if profs_com_sala:
-                                # 1. Identificar quem já deu aula para esta aluna no passado
+                                ja_teve = []
                                 if not historico_total.empty:
-                                    # Filtra no histórico o nome da aluna (case-insensitive)
-                                    ja_teve_aula_com = historico_total[
-                                        historico_total['Aluna'].str.strip().str.lower() == a.strip().lower()
-                                    ]['Instrutora'].unique().tolist()
-                                else:
-                                    ja_teve_aula_com = []
-
-                                # 2. Tentar escolher alguém que NÃO está no histórico
-                                candidatas = [p for p in profs_com_sala if p not in ja_teve_aula_com]
+                                    ja_teve = historico_total[historico_total['Aluna'].str.lower() == a.lower()]['Instrutora'].tolist()
                                 
-                                # 3. Se todas as disponíveis já deram aula, reinicia o ciclo (usa qualquer uma)
+                                candidatas = [p for p in profs_com_sala if p not in ja_teve]
                                 p_esc = random.choice(candidatas) if candidatas else random.choice(profs_com_sala)
                                 
                                 s_e = registro_salas_profs.get(p_esc)
@@ -588,23 +580,28 @@ if menu == "🏠 Secretaria":
                             else:
                                 mapa_final[a][h] = f"SECRETARIA | {a}"
 
-                    # 5. SALVAR ESCALA E ATUALIZAR HISTÓRICO
-                    lista_final = list(mapa_final.values())
-                    supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_final}).execute()
-                    
-                    # LOGICA IMPORTANTE: Salva este novo rodízio na tabela de histórico para as próximas semanas
-                    novos_registros_hist = []
-                    for aluna_nome, dados in mapa_final.items():
-                        for hor, local_prof in dados.items():
-                            if "|" in str(local_prof) and "SALA 8" not in local_prof and "SALA 9" not in local_prof:
-                                prof_nome = local_prof.split("|")[1].strip()
-                                novos_registros_hist.append({"Aluna": aluna_nome, "Instrutora": prof_nome, "Data": data_sel_str})
-                    
-                    if novos_registros_hist:
-                        supabase.table("historico").insert(novos_registros_hist).execute()
-
-                    st.rerun()
-                    
+                    # 5. SALVAMENTO FINAL
+                    try:
+                        lista_final = list(mapa_final.values())
+                        # Salva a escala principal
+                        supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_final}).execute()
+                        
+                        # Tenta atualizar o histórico (em bloco separado para não travar)
+                        novos_h = []
+                        for a_nome, dados in mapa_final.items():
+                            for hor, valor in dados.items():
+                                if "|" in str(valor) and "SALA 8" not in str(valor) and "SALA 9" not in str(valor) and "SECRETARIA" not in str(valor):
+                                    p_nome = str(valor).split("|")[1].strip()
+                                    novos_h.append({"Aluna": a_nome, "Instrutora": p_nome})
+                        
+                        if novos_h:
+                            supabase.table("historico").insert(novos_h).execute()
+                        
+                        st.success("Rodízio gerado com sucesso!")
+                        st.rerun()
+                    except Exception as error_db:
+                        st.error(f"Erro ao salvar no banco: {error_db}")
+                        
             # --- MURAL E EDITOR FINAL CONTINUAM ABAIXO... ---
                     
            # --- ABA 2: PLANEJAMENTO (V106 - BOTÃO MÁGICO COM CAPTURA FIEL DA TELA) ---
