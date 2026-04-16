@@ -153,7 +153,7 @@ TURMAS = {
     "Turma 3": ["Heloísa R - Vila Verde", "Ana Marcela S - Vila Verde", "Vitória Bella - Vila Verde", 
                 "Júlia S - Vila Verde", "Micaelle S - Vila Verde", "Raquel L - Vila Verde", "Júlia C - União de Vila Nova"]
 }
-HORARIOS = ["08h00 (Igreja)", "08h45(H2)", "09h20(H3)", "09h55(H4)"]
+HORARIOS = ["08h45 (Igreja)", "09h35(H2)", "10h10(H3)", "10h45(H4)"]
 OPCOES_LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
 
 # ==========================================
