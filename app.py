@@ -137,7 +137,7 @@ ALUNAS_LISTA = sorted([
     "Gabrielly V - Vila Verde", "Heloísa R - Vila Verde", "Ingrid M - Pq do Carmo II", 
     "Júlia C - União de Vila Nova", "Júlia S. - Vila Verde", "Julya O - Vila Curuçá Velha", 
     "Mariana - Vila Araguaia", "Mellina S - Jardim Lígia", "Micaelle S - Vila Verde", "Raquel L - Vila Verde", 
-    "Rebeca R - Vila Ré", "Rebecca A - Vila Verde", "Rebeka S - Jardim Lígia", 
+    "Rebeca R - Vila Ré", "Rebecca A - Vila Verde", 
     "Sarah S - Vila Verde", "Vitória A - Vila Verde", "Vitória Bella - Vila Verde"
 ])
 
@@ -147,7 +147,7 @@ STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refaz
 TURMAS = {
     "Turma 1": ["Annie - Vila Verde", "Caroline C - Vila Ré", "Ingrid M - Pq do Carmo II",
                 "Mariana - Vila Araguaia", "Mellina S - Jardim Lígia", "Rebecca A - Vila Verde", 
-                "Rebeca R - Vila Ré", "Rebeka S - Jardim Lígia"],
+                "Rebeca R - Vila Ré"],
     "Turma 2": ["Vitória A - Vila Verde", "Elisa F - Vila Verde", "Sarah S - Vila Verde", "Gabrielly V - Vila Verde", 
                 "Emilly O - Vila Curuçá Velha", "Julya O - Vila Curuçá Velha"],
     "Turma 3": ["Heloísa R - Vila Verde", "Ana Marcela S - Vila Verde", "Vitória Bella - Vila Verde", 
