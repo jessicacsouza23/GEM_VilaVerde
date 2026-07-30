@@ -205,6 +205,87 @@ def db_save_historico(dados):
         st.error(f"Erro ao salvar no banco: {e}")
         return None
 
+# ==========================================
+# FUNÇÕES DE BANCO - RODÍZIO EM CÍRCULO (NOVO)
+# ==========================================
+def db_get_rodizio_ciclo():
+    """Retorna dict {professora: {'alunas_dadas': [...], 'ciclo_num': int}}"""
+    try:
+        res = supabase.table("rodizio_ciclo").select("*").execute()
+        return {r["professora"]: {"alunas_dadas": r.get("alunas_dadas") or [],
+                                   "ciclo_num": r.get("ciclo_num") or 1} for r in (res.data or [])}
+    except Exception:
+        return {}
+
+def db_salvar_rodizio_ciclo(estado_ciclo):
+    """Persiste o estado do ciclo (fila) de cada professora"""
+    try:
+        linhas = [{"professora": p, "alunas_dadas": d["alunas_dadas"], "ciclo_num": d["ciclo_num"]}
+                  for p, d in estado_ciclo.items()]
+        if linhas:
+            supabase.table("rodizio_ciclo").upsert(linhas, on_conflict="professora").execute()
+    except Exception as e:
+        st.error(f"Erro ao salvar estado do rodízio: {e}")
+
+def db_get_ultima_alocacao():
+    """Retorna dict {aluna: {'professora':..., 'sala':..., 'data':...}} da última alocação de cada aluna"""
+    try:
+        res = supabase.table("ultima_alocacao").select("*").execute()
+        return {r["aluna"]: {"professora": r.get("professora"), "sala": r.get("sala"), "data": r.get("data")}
+                for r in (res.data or [])}
+    except Exception:
+        return {}
+
+def db_salvar_ultima_alocacao(mapa_ultima):
+    try:
+        linhas = [{"aluna": a, "professora": d["professora"], "sala": d["sala"], "data": d["data"]}
+                  for a, d in mapa_ultima.items()]
+        if linhas:
+            supabase.table("ultima_alocacao").upsert(linhas, on_conflict="aluna").execute()
+    except Exception as e:
+        st.error(f"Erro ao salvar última alocação: {e}")
+
+# ==========================================
+# FUNÇÕES DE BANCO - MENSAGENS (MURAL + DIRETAS)
+# ==========================================
+def db_get_mensagens():
+    try:
+        res = supabase.table("mensagens").select("*").order("id", desc=False).execute()
+        return res.data or []
+    except Exception:
+        return []
+
+def db_enviar_mensagem(de, para, texto):
+    try:
+        supabase.table("mensagens").insert({"de": de, "para": para, "texto": texto}).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao enviar mensagem: {e}")
+        return False
+
+# ==========================================
+# FUNÇÕES DE BANCO - OBJETIVOS PEDAGÓGICOS (PRÓXIMA AULA)
+# ==========================================
+def db_get_objetivo(aluna):
+    try:
+        res = supabase.table("objetivos_pedagogicos").select("*").eq("aluna", aluna).execute()
+        if res.data:
+            return res.data[0].get("texto", ""), res.data[0].get("professora", "")
+        return "", ""
+    except Exception:
+        return "", ""
+
+def db_salvar_objetivo(aluna, texto, professora):
+    try:
+        supabase.table("objetivos_pedagogicos").upsert(
+            {"aluna": aluna, "texto": texto, "professora": professora},
+            on_conflict="aluna"
+        ).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar objetivos: {e}")
+        return False
+
 # Inicialização de Variáveis de Segurança
 historico_geral = db_get_historico()
 calendario_db = db_get_calendario()
@@ -346,9 +427,9 @@ calendario_db = {item.get('id'): item.get('escala', []) for item in calendario_r
 # --- 5. INTERFACE E NAVEGAÇÃO ---
 st.sidebar.title(f"👋 {st.session_state.nome_logado}")
 if st.session_state.perfil == "Secretaria":
-    menu = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "📊 Analítico IA"])
+    menu = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "📊 Analítico IA", "💬 Mensagens"])
 else:
-    menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📊 Analítico IA"])
+    menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📊 Analítico IA", "💬 Mensagens"])
     
     
 if st.sidebar.button("Sair"):
@@ -496,7 +577,7 @@ if menu == "🏠 Secretaria":
                 
                 folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA)
     
-                # --- BOTÃO DE GERAÇÃO COM NOME DA TABELA CORRIGIDO ---
+                # --- BOTÃO DE GERAÇÃO — RODÍZIO EM CÍRCULO REAL (V2) ---
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
                     # 1. MAPEAMENTO DE FIXAS (LIMPEZA TOTAL)
                     dict_fixas = {}
@@ -505,109 +586,148 @@ if menu == "🏠 Secretaria":
                             if pd.notna(row['Aluna']) and pd.notna(row['Prof']):
                                 dict_fixas[str(row['Aluna']).strip().lower()] = str(row['Prof']).strip()
 
-                    # 2. BUSCA NO HISTÓRICO E LIMPEZA DE "SUJEIRA" (Símbolos, Salas, etc)
-                    try:
-                        res_hist = supabase.table("historico_geral").select("Aluna, Instrutora").execute()
-                        df_historico = pd.DataFrame(res_hist.data)
-                        if not df_historico.empty:
-                            # Limpamos o histórico: removemos "SALA X |", emojis e espaços
-                            df_historico['Aluna_Clean'] = df_historico['Aluna'].str.strip().str.lower()
-                            df_historico['Prof_Clean'] = df_historico['Instrutora'].apply(lambda x: str(x).split('|')[-1].strip() if '|' in str(x) else str(x).strip())
-                        else:
-                            df_historico = pd.DataFrame(columns=['Aluna_Clean', 'Prof_Clean'])
-                    except:
-                        df_historico = pd.DataFrame(columns=['Aluna_Clean', 'Prof_Clean'])
+                    # 2. UNIVERSO DE ALUNAS QUE ENTRAM NO RODÍZIO (todas menos as fixas)
+                    todas_alunas_sistema = [a for turma in TURMAS.values() for a in turma]
+                    universo_rodizio = sorted([a for a in todas_alunas_sistema
+                                                if str(a).strip().lower() not in dict_fixas])
 
-                    # 3. MAPEAMENTO INICIAL
+                    # 3. ESTADO DO CICLO (fila por professora) E ÚLTIMA ALOCAÇÃO (por aluna)
+                    estado_ciclo = db_get_rodizio_ciclo()
+                    ultima_alocacao = db_get_ultima_alocacao()
+
+                    def garantir_professora(p):
+                        if p not in estado_ciclo:
+                            estado_ciclo[p] = {"alunas_dadas": [], "ciclo_num": 1}
+
+                    def escolher_professora_para_aluna(aluna, candidatos):
+                        """Escolhe, entre os candidatos disponíveis, uma professora que ainda
+                        não deu aula para 'aluna' no ciclo atual dela. Se TODAS as candidatas já
+                        deram aula pra essa aluna neste ciclo, reinicia o ciclo só das que
+                        completaram a volta (deram aula pra todo o universo)."""
+                        for p in candidatos:
+                            garantir_professora(p)
+                            # se essa professora já completou o círculo (deu aula pra todas), reinicia o ciclo dela
+                            if set(estado_ciclo[p]["alunas_dadas"]) >= set(universo_rodizio):
+                                estado_ciclo[p]["alunas_dadas"] = []
+                                estado_ciclo[p]["ciclo_num"] += 1
+
+                        # prioridade 1: professoras que nunca deram aula pra essa aluna neste ciclo
+                        cand_1 = [p for p in candidatos if aluna not in estado_ciclo[p]["alunas_dadas"]]
+                        # prioridade 2: dentre essas, evita repetir a MESMA professora do sábado passado dessa aluna
+                        prof_sabado_passado = ultima_alocacao.get(aluna, {}).get("professora")
+                        cand_2 = [p for p in cand_1 if p != prof_sabado_passado]
+
+                        pool_final = cand_2 if cand_2 else (cand_1 if cand_1 else candidatos)
+                        return random.choice(pool_final)
+
+                    # 4. MAPEAMENTO INICIAL
                     mapa_final = {a: {"Aluna": a} for turma in TURMAS.values() for a in turma}
                     for aluna in mapa_final:
                         mapa_final[aluna][HORARIOS[0]] = "Roberta | Todas as alunas"
-                    
-                    profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
-                    registro_salas_profs = {} 
 
-                    # 4. LOOP DE HORÁRIOS (H1 a H4)
+                    profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
+                    registro_salas_profs = {}
+                    novas_ultimas_alocacoes = {}
+
+                    # 5. LOOP DE HORÁRIOS (H1 a H4)
                     for i, h in enumerate(HORARIOS[1:]):
                         p_teoria = pt[i]
                         p_solfejo = ps[i]
-                        
+
                         t_list = list(TURMAS.keys())
-                        t_teo, t_sol, t_pra = t_list[i%3], t_list[(i+1)%3], t_list[(i+2)%3]
+                        t_teo, t_sol, t_pra = t_list[i % 3], t_list[(i + 1) % 3], t_list[(i + 2) % 3]
 
                         # --- A. SALAS COLETIVAS ---
                         for a in TURMAS[t_teo]: mapa_final[a][h] = f"SALA 8 | {p_teoria}"
                         for a in TURMAS[t_sol]: mapa_final[a][h] = f"SALA 9 | {p_solfejo}"
-                        
+
                         # --- B. PRÁTICA INDIVIDUAL (S1 A S7) ---
                         disponiveis_agora = [p for p in profs_base if p not in [p_teoria, p_solfejo]]
                         alunas_na_pratica = list(TURMAS[t_pra])
-                        
+
                         salas_total = [f"SALA {s}" for s in range(1, 8)]
                         registro_salas_profs = {p: s for p, s in registro_salas_profs.items() if p in disponiveis_agora}
-                        
+
                         for p in disponiveis_agora:
                             if p not in registro_salas_profs:
+                                # tenta não repetir a sala que essa professora usou no sábado passado
+                                sala_passada = None
+                                for al_ant, dados_ant in ultima_alocacao.items():
+                                    if dados_ant.get("professora") == p:
+                                        sala_passada = dados_ant.get("sala")
+                                        break
                                 s_livres = [s for s in salas_total if s not in registro_salas_profs.values()]
-                                if s_livres:
-                                    random.shuffle(s_livres)
-                                    registro_salas_profs[p] = s_livres[0]
+                                s_livres_pref = [s for s in s_livres if s != sala_passada] or s_livres
+                                if s_livres_pref:
+                                    random.shuffle(s_livres_pref)
+                                    registro_salas_profs[p] = s_livres_pref[0]
 
                         # --- PASSO 1: ALOCAR FIXAS ---
                         alunas_rodizio = []
                         profs_disponiveis = [p for p in disponiveis_agora if p in registro_salas_profs]
-                        
+
                         for a in alunas_na_pratica:
                             a_key = str(a).strip().lower()
                             p_fixa = dict_fixas.get(a_key)
-                            
+
                             if p_fixa and p_fixa in profs_disponiveis:
                                 s_f = registro_salas_profs.get(p_fixa)
                                 mapa_final[a][h] = f"{s_f} | {p_fixa}"
                                 profs_disponiveis.remove(p_fixa)
+                                novas_ultimas_alocacoes[a] = {"professora": p_fixa, "sala": s_f, "data": data_sel_str}
                             elif p_fixa:
-                                mapa_final[a][h] = f"SECRETARIA | {a}"
+                                # professora fixa indisponível hoje: entra no rodízio normal em vez de ir pra secretaria
+                                alunas_rodizio.append(a)
                             else:
                                 alunas_rodizio.append(a)
 
-                        # --- PASSO 2: RODÍZIO COM EXCLUSÃO REAL ---
+                        # --- PASSO 2: RODÍZIO EM CÍRCULO (não repete até dar aula pra todas) ---
                         random.shuffle(alunas_rodizio)
                         for a in alunas_rodizio:
                             if profs_disponiveis:
-                                # Quem já deu aula para ela?
-                                ja_deram = []
-                                if not df_historico.empty:
-                                    a_clean = a.strip().lower()
-                                    ja_deram = df_historico[df_historico['Aluna_Clean'] == a_clean]['Prof_Clean'].unique().tolist()
-                                
-                                # Candidatas que não estão no histórico (Compara só o nome puro)
-                                candidatas = [p for p in profs_disponiveis if p.strip() not in ja_deram]
-                                
-                                p_esc = random.choice(candidatas) if candidatas else random.choice(profs_disponiveis)
-                                
+                                p_esc = escolher_professora_para_aluna(a, profs_disponiveis)
                                 s_e = registro_salas_profs.get(p_esc)
                                 mapa_final[a][h] = f"{s_e} | {p_esc}"
                                 profs_disponiveis.remove(p_esc)
+
+                                garantir_professora(p_esc)
+                                if a not in estado_ciclo[p_esc]["alunas_dadas"]:
+                                    estado_ciclo[p_esc]["alunas_dadas"].append(a)
+                                novas_ultimas_alocacoes[a] = {"professora": p_esc, "sala": s_e, "data": data_sel_str}
                             else:
                                 mapa_final[a][h] = f"SECRETARIA | {a}"
 
-                    # 5. SALVAMENTO LIMPO (MUITO IMPORTANTE)
+                    # 6. SALVAMENTO
                     try:
                         lista_final = list(mapa_final.values())
                         supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_final}).execute()
-                        
+
+                        # Verifica quais alunas já têm registro de histórico nessa data (evita duplicar ao regerar)
+                        try:
+                            ja_existe_res = supabase.table("historico_geral").select("Aluna").eq("Data", data_sel_str).execute()
+                            alunas_ja_registradas = {r["Aluna"] for r in (ja_existe_res.data or [])}
+                        except Exception:
+                            alunas_ja_registradas = set()
+
                         novos_h = []
                         for a_n, dados in mapa_final.items():
+                            if a_n in alunas_ja_registradas:
+                                continue
                             for hor, valor in dados.items():
                                 v_str = str(valor)
                                 # SALVA APENAS O NOME DA PROFESSORA, SEM SALA, SEM PIANO, SEM NADA
                                 if "|" in v_str and "SALA 8" not in v_str and "SALA 9" not in v_str:
                                     prof_pura = v_str.split("|")[-1].strip()
-                                    novos_h.append({"Aluna": a_n, "Instrutora": prof_pura})
-                        
+                                    novos_h.append({"Aluna": a_n, "Instrutora": prof_pura, "Data": data_sel_str})
+
                         if novos_h:
                             supabase.table("historico_geral").insert(novos_h).execute()
-                            
-                        st.success("Rodízio inteligente gerado! Nomes limpos para o histórico.")
+
+                        # Persiste o estado do rodízio em círculo e a última alocação de cada aluna
+                        db_salvar_rodizio_ciclo(estado_ciclo)
+                        db_salvar_ultima_alocacao(novas_ultimas_alocacoes)
+
+                        st.success("Rodízio em círculo gerado! Nenhuma professora repete aluna até dar aula pra todas.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
@@ -1319,6 +1439,64 @@ elif menu == "📊 Analítico IA":
                         st.write(f"📅 **{r['Data']} - {r['Tipo']}**")
                         st.info(f"📌 {r.get('Observacao', 'Sem observações')}")
 
+            # --- 4.5 EVOLUÇÃO DAS DIFICULDADES AO LONGO DO TEMPO (NOVO) ---
+            st.divider()
+            st.markdown("### 📉 Evolução das Dificuldades")
+            linhas_evolucao = []
+            for _, row in df_aluna.iterrows():
+                mes_ano = row['dt_obj'].strftime("%Y-%m")
+                lista_dif = row.get('Dificuldades')
+                if isinstance(lista_dif, list):
+                    for d_item in lista_dif:
+                        linhas_evolucao.append({"Mês": mes_ano, "Dificuldade": d_item})
+
+            if linhas_evolucao:
+                df_evol = pd.DataFrame(linhas_evolucao)
+                df_evol = df_evol[~df_evol['Dificuldade'].str.contains("Não apresentou dificuldades|Não participou", case=False, na=False)]
+                if not df_evol.empty:
+                    contagem = df_evol.groupby(['Mês', 'Dificuldade']).size().reset_index(name='Ocorrências')
+                    fig_evol = px.bar(contagem, x="Mês", y="Ocorrências", color="Dificuldade",
+                                       title="Frequência de cada dificuldade por mês")
+                    st.plotly_chart(fig_evol, use_container_width=True)
+
+                    # Comparação simples: primeira metade do período vs segunda metade
+                    meses_ordenados = sorted(df_evol['Mês'].unique())
+                    if len(meses_ordenados) >= 2:
+                        metade = len(meses_ordenados) // 2
+                        meses_antes = set(meses_ordenados[:metade]) if metade > 0 else set()
+                        meses_depois = set(meses_ordenados[metade:])
+                        cont_antes = df_evol[df_evol['Mês'].isin(meses_antes)]['Dificuldade'].value_counts()
+                        cont_depois = df_evol[df_evol['Mês'].isin(meses_depois)]['Dificuldade'].value_counts()
+                        melhorou = [d for d in cont_antes.index if cont_depois.get(d, 0) < cont_antes.get(d, 0)]
+                        piorou = [d for d in cont_depois.index if cont_depois.get(d, 0) > cont_antes.get(d, 0)]
+                        col_m, col_p = st.columns(2)
+                        with col_m:
+                            st.success("📈 **Melhorou:** " + (", ".join(melhorou) if melhorou else "Sem melhora clara ainda."))
+                        with col_p:
+                            st.warning("📌 **Precisa de atenção:** " + (", ".join(piorou) if piorou else "Nenhuma piora identificada."))
+                else:
+                    st.success("✅ Sem dificuldades registradas para gerar histórico de evolução.")
+            else:
+                st.info("ℹ️ Ainda não há dificuldades registradas nesse período para montar o gráfico de evolução.")
+
+            # --- 4.6 PRÓXIMOS OBJETIVOS (NOVO) ---
+            st.divider()
+            st.markdown("### 🎯 Próximos Objetivos Pedagógicos")
+            objetivo_atual, quem_definiu = db_get_objetivo(aluna_sel)
+            with st.form(f"form_objetivos_{aluna_sel}"):
+                novo_objetivo = st.text_area(
+                    "O que a aluna deve focar nas próximas aulas:",
+                    value=objetivo_atual,
+                    height=100,
+                    help="Visível para a secretaria e para as professoras que derem aula a essa aluna."
+                )
+                if quem_definiu:
+                    st.caption(f"Última atualização por: {quem_definiu}")
+                if st.form_submit_button("💾 Salvar Objetivos"):
+                    if db_salvar_objetivo(aluna_sel, novo_objetivo, st.session_state.nome_logado):
+                        st.success("✅ Objetivos salvos!")
+                        st.rerun()
+
             # --- 5. RESUMO FINAL E DICAS ---
             st.divider()
             st.info(f"💡 **Dicas para Próxima Aula:** Foque em resolver as dificuldades de " + 
@@ -1329,3 +1507,60 @@ elif menu == "📊 Analítico IA":
 
         else:
             st.warning("Selecione uma aluna ou mude o filtro para ver os registros.")
+
+# ============================================================
+# MÓDULO MENSAGENS - MURAL GERAL + DIRETAS (NOVO)
+# ============================================================
+elif menu == "💬 Mensagens":
+    st.markdown("<h1 style='text-align: center; color: #2E4053;'>💬 Mensagens</h1>", unsafe_allow_html=True)
+
+    eh_secretaria = st.session_state.perfil == "Secretaria"
+    meu_nome = st.session_state.nome_logado
+
+    tab_mural, tab_direto = st.tabs(["📢 Mural Geral", "✉️ Conversa Direta"])
+
+    todas_mensagens = db_get_mensagens()
+
+    # --- MURAL GERAL (visível para todos, só secretaria posta) ---
+    with tab_mural:
+        st.caption("Avisos gerais da secretaria para todas as professoras.")
+        msgs_mural = [m for m in todas_mensagens if m.get("para") == "TODOS"]
+        if eh_secretaria:
+            with st.form("form_mural", clear_on_submit=True):
+                texto_mural = st.text_area("Novo aviso para todas:")
+                if st.form_submit_button("📢 Publicar no Mural") and texto_mural.strip():
+                    db_enviar_mensagem(meu_nome, "TODOS", texto_mural.strip())
+                    st.rerun()
+        if msgs_mural:
+            for m in reversed(msgs_mural):
+                with st.container(border=True):
+                    st.write(f"**{m.get('de')}** — {m.get('created_at', '')}")
+                    st.write(m.get("texto"))
+        else:
+            st.info("Nenhum aviso publicado ainda.")
+
+    # --- CONVERSA DIRETA (secretaria <-> professora) ---
+    with tab_direto:
+        if eh_secretaria:
+            contato = st.selectbox("Conversar com:", PROFESSORAS_LISTA)
+        else:
+            contato = "Secretaria"
+            st.caption("Conversando com a Secretaria.")
+
+        def eh_dessa_conversa(m):
+            return (m.get("de") == meu_nome and m.get("para") == contato) or \
+                   (m.get("de") == contato and m.get("para") == meu_nome)
+
+        msgs_conversa = [m for m in todas_mensagens if eh_dessa_conversa(m)]
+
+        for m in msgs_conversa:
+            alinhamento = "🟢 Você" if m.get("de") == meu_nome else f"🔵 {m.get('de')}"
+            with st.container(border=True):
+                st.write(f"**{alinhamento}** — {m.get('created_at', '')}")
+                st.write(m.get("texto"))
+
+        with st.form("form_direto", clear_on_submit=True):
+            texto_direto = st.text_area(f"Mensagem para {contato}:")
+            if st.form_submit_button("✉️ Enviar") and texto_direto.strip():
+                db_enviar_mensagem(meu_nome, contato, texto_direto.strip())
+                st.rerun()
