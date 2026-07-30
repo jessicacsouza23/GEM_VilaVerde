@@ -1301,6 +1301,9 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         if mat_focado == "Selecione...":
                             st.error("Selecione o material da aula antes de salvar.")
                         else:
+                            # Status reflete se houve dificuldade real (não apenas se o registro foi criado)
+                            difs_reais = [d for d in difs_sel if d != "Não apresentou dificuldades"]
+                            status_analise = "Realizada - com dificuldades" if difs_reais else "Realizada - sem pendência"
                             for al_f in als_selecionadas:
                                 # Registro Principal
                                 db_save_historico({
@@ -1308,7 +1311,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     "Tipo": f"Analise_{tipo_aula}",
                                     "Licao_Atual": f"{mat_focado}: {lic_hoje}",
                                     "Licao_Casa": "---", "Dificuldades": difs_sel,
-                                    "Observacao": obs_geral, "Status": "Realizada"
+                                    "Observacao": obs_geral, "Status": status_analise
                                 })
                                 # Lições de Casa
                                 for mat_nome, conteudo in tarefas_casa.items():
@@ -1359,11 +1362,20 @@ elif menu == "📊 Analítico IA":
         df_aluna = df_base[mask].copy()
 
         if not df_aluna.empty:
-            # --- CÁLCULO DE APROVEITAMENTO (DEFINIDO NO TOPO PARA EVITAR ERRO) ---
-            pedag_rows = df_aluna[df_aluna['Tipo'].str.contains("Prática|Teoria|Solfejo", case=False, na=False)]
-            realizadas = len(pedag_rows[pedag_rows['Status'].str.contains("Realizada", na=False)])
+            # --- CÁLCULO DE APROVEITAMENTO (CORRIGIDO: agora reflete dificuldades reais) ---
+            pedag_rows = df_aluna[df_aluna['Tipo'].str.contains("Prática|Teoria|Solfejo", case=False, na=False)].copy()
+
+            def _tem_dificuldade_real(valor_difs):
+                if isinstance(valor_difs, list):
+                    return any(d for d in valor_difs if d and d != "Não apresentou dificuldades")
+                if isinstance(valor_difs, str) and valor_difs.strip():
+                    return valor_difs.strip() != "Não apresentou dificuldades"
+                return False
+
+            pedag_rows['tem_dificuldade'] = pedag_rows['Dificuldades'].apply(_tem_dificuldade_real)
             total_pedag = len(pedag_rows)
-            aprov_valor = int((realizadas / total_pedag * 100)) if total_pedag > 0 else 0
+            sem_dificuldade = int((~pedag_rows['tem_dificuldade']).sum())
+            aprov_valor = int((sem_dificuldade / total_pedag * 100)) if total_pedag > 0 else 0
 
             # --- PROCESSAMENTO DE STATUS E FREQUÊNCIA ---
             def identificar_v72(row):
@@ -1516,6 +1528,22 @@ elif menu == "💬 Mensagens":
 
     eh_secretaria = st.session_state.perfil == "Secretaria"
     meu_nome = st.session_state.nome_logado
+    # ID usado para enviar/filtrar mensagens: a secretaria usa sempre "Secretaria",
+    # independente do nome de exibição do login (ex: "Coordenação"), pra bater
+    # com o destinatário que as professoras selecionam.
+    meu_id_msg = "Secretaria" if eh_secretaria else meu_nome
+
+    # Checagem: avisa claramente se a tabela ainda não foi criada no Supabase
+    try:
+        supabase.table("mensagens").select("id").limit(1).execute()
+        tabela_ok = True
+    except Exception:
+        tabela_ok = False
+
+    if not tabela_ok:
+        st.error("⚠️ A tabela 'mensagens' ainda não existe (ou não está acessível) no Supabase. "
+                  "Rode o script `sql_novas_tabelas.sql` no SQL Editor do Supabase e recarregue a página.")
+        st.stop()
 
     tab_mural, tab_direto = st.tabs(["📢 Mural Geral", "✉️ Conversa Direta"])
 
@@ -1529,7 +1557,7 @@ elif menu == "💬 Mensagens":
             with st.form("form_mural", clear_on_submit=True):
                 texto_mural = st.text_area("Novo aviso para todas:")
                 if st.form_submit_button("📢 Publicar no Mural") and texto_mural.strip():
-                    db_enviar_mensagem(meu_nome, "TODOS", texto_mural.strip())
+                    db_enviar_mensagem(meu_id_msg, "TODOS", texto_mural.strip())
                     st.rerun()
         if msgs_mural:
             for m in reversed(msgs_mural):
@@ -1548,13 +1576,13 @@ elif menu == "💬 Mensagens":
             st.caption("Conversando com a Secretaria.")
 
         def eh_dessa_conversa(m):
-            return (m.get("de") == meu_nome and m.get("para") == contato) or \
-                   (m.get("de") == contato and m.get("para") == meu_nome)
+            return (m.get("de") == meu_id_msg and m.get("para") == contato) or \
+                   (m.get("de") == contato and m.get("para") == meu_id_msg)
 
         msgs_conversa = [m for m in todas_mensagens if eh_dessa_conversa(m)]
 
         for m in msgs_conversa:
-            alinhamento = "🟢 Você" if m.get("de") == meu_nome else f"🔵 {m.get('de')}"
+            alinhamento = "🟢 Você" if m.get("de") == meu_id_msg else f"🔵 {m.get('de')}"
             with st.container(border=True):
                 st.write(f"**{alinhamento}** — {m.get('created_at', '')}")
                 st.write(m.get("texto"))
@@ -1562,5 +1590,5 @@ elif menu == "💬 Mensagens":
         with st.form("form_direto", clear_on_submit=True):
             texto_direto = st.text_area(f"Mensagem para {contato}:")
             if st.form_submit_button("✉️ Enviar") and texto_direto.strip():
-                db_enviar_mensagem(meu_nome, contato, texto_direto.strip())
+                db_enviar_mensagem(meu_id_msg, contato, texto_direto.strip())
                 st.rerun()
