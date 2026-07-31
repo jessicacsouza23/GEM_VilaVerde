@@ -50,6 +50,27 @@ def db_get_metodos_cadastrados():
         # Se a tabela não existir ou houver erro de conexão, retorna vazio para não travar o app
         return pd.DataFrame(columns=["nome", "categoria"])
 
+# ==========================================
+# FUNÇÕES DE BANCO - PROFESSORAS E ALUNAS (CADASTRO DINÂMICO)
+# ==========================================
+@st.cache_data(ttl=30)
+def db_get_professoras_todas():
+    """Todas as professoras cadastradas (inclusive inativas) — login já checa aqui"""
+    try:
+        res = supabase.table("professoras").select("*").execute()
+        return res.data or []
+    except Exception:
+        return []
+
+@st.cache_data(ttl=30)
+def db_get_alunas_todas():
+    """Todas as alunas cadastradas (inclusive inativas)"""
+    try:
+        res = supabase.table("alunas").select("*").execute()
+        return res.data or []
+    except Exception:
+        return []
+
 # --- 2. CONEXÃO IA COM ECONOMIA DE QUOTA (CACHE) ---
 @st.cache_resource(show_spinner=False)
 def inicializar_ia_economica():
@@ -76,25 +97,10 @@ except Exception as e:
     st.stop()
 
 # --- 3. SISTEMA DE USUÁRIOS E PERMISSÕES ---
-# Adicione aqui todas as professoras conforme sua lista
-USUARIOS = {
-    "secretaria": {"senha": "123", "perfil": "Secretaria", "nome_real": "Coordenação"},
-    "cassia": {"senha": "456", "perfil": "Cassia", "nome_real": "Cassia"},
-    "teta": {"senha": "456", "perfil": "Téta", "nome_real": "Téta"},
-    "roberta": {"senha": "456", "perfil": "Roberta", "nome_real": "Roberta"},
-    "ester": {"senha": "456", "perfil": "Ester", "nome_real": "Ester"},
-    "elaine": {"senha": "456", "perfil": "Elaine", "nome_real": "Elaine"},
-    "vanessa": {"senha": "456", "perfil": "Vanessa", "nome_real": "Vanessa"},
-    "luciene": {"senha": "456", "perfil": "Luciene", "nome_real": "Luciene"},
-    "patricia": {"senha": "456", "perfil": "Patricia", "nome_real": "Patricia"},
-    "flavia": {"senha": "456", "perfil": "Flavia", "nome_real": "Flavia"},
-    "kamyla": {"senha": "456", "perfil": "Kamila", "nome_real": "Kamyla"},
-    "renata": {"senha": "456", "perfil": "Renata", "nome_real": "Renata"},
-    # ... adicione as demais seguindo o padrão: "login": {"senha": "...", "perfil": "Professora", "nome_real": "Nome Exato na Lista"}
-}
+# A secretaria continua fixa por segurança. As professoras agora são
+# cadastradas na tabela "professoras" (aba "👥 Turmas e Pessoas").
+SENHA_SECRETARIA = "123"
 
-
-    
 def login_sistema():
     if "autenticado" not in st.session_state:
         st.session_state.autenticado = False
@@ -105,13 +111,22 @@ def login_sistema():
             u = st.text_input("Usuário").lower().strip()
             s = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar"):
-                if u in USUARIOS and USUARIOS[u]["senha"] == s:
+                if u == "secretaria" and s == SENHA_SECRETARIA:
                     st.session_state.autenticado = True
-                    st.session_state.perfil = USUARIOS[u]["perfil"]
-                    st.session_state.nome_logado = USUARIOS[u]["nome_real"]
+                    st.session_state.perfil = "Secretaria"
+                    st.session_state.nome_logado = "Coordenação"
                     st.rerun()
                 else:
-                    st.error("❌ Usuário ou senha inválidos.")
+                    profs = db_get_professoras_todas()
+                    match = next((p for p in profs if p.get("login", "").lower().strip() == u
+                                  and p.get("senha") == s and p.get("ativo", True)), None)
+                    if match:
+                        st.session_state.autenticado = True
+                        st.session_state.perfil = match["nome"]
+                        st.session_state.nome_logado = match["nome"]
+                        st.rerun()
+                    else:
+                        st.error("❌ Usuário ou senha inválidos.")
         st.stop()
 
 login_sistema()
@@ -128,18 +143,26 @@ def carregar_dados_globais():
         
 
 
-# --- 2. DADOS MESTRE ---
-PROFESSORAS_LISTA = ["Cassia", "Elaine", "Ester", "Luciene", "Patricia", "Roberta", "Téta", "Vanessa", "Flávia", "Kamyla", "Renata"]
+# --- 2. DADOS MESTRE (dinâmico — cadastrado pela secretaria em "👥 Turmas e Pessoas") ---
+def carregar_professoras_alunas_turmas():
+    profs_raw = db_get_professoras_todas()
+    alunas_raw = db_get_alunas_todas()
+
+    profs_lista = sorted([p["nome"] for p in profs_raw if p.get("ativo", True)])
+    alunas_ativas = [a for a in alunas_raw if a.get("ativo", True)]
+    alunas_lista = sorted([a["nome"] for a in alunas_ativas])
+
+    turmas = {}
+    for a in alunas_ativas:
+        t = a.get("turma") or "Sem Turma"
+        turmas.setdefault(t, []).append(a["nome"])
+    for t in turmas:
+        turmas[t] = sorted(turmas[t])
+
+    return profs_lista, alunas_lista, turmas
+
+PROFESSORAS_LISTA, ALUNAS_LISTA, TURMAS = carregar_professoras_alunas_turmas()
 SECRETARIAS_LISTA = ["Esther", "Jéssica", "Larissa", "Lurdes", "Natasha", "Roseli"]
-ALUNAS_LISTA = sorted([
-    "Annie - Vila Verde", "Ana Marcela S - Vila Verde", 
-    "Caroline C - Vila Ré", "Elisa F - Vila Verde", "Emilly O - Vila Curuçá Velha", 
-    "Gabrielly V - Vila Verde", "Heloísa R - Vila Verde", "Ingrid M - Pq do Carmo II", 
-    "Júlia C - União de Vila Nova", "Júlia S. - Vila Verde", "Julya O - Vila Curuçá Velha", 
-    "Mariana - Vila Araguaia", "Mellina S - Jardim Lígia", "Micaelle S - Vila Verde", "Raquel L - Vila Verde", 
-    "Rebeca R - Vila Ré", "Rebecca A - Vila Verde", 
-    "Sarah S - Vila Verde", "Vitória A - Vila Verde", "Vitória Bella - Vila Verde"
-])
 
 CATEGORIAS_LICAO = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila", "Folhas avulsas (teoria)"]
 STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refazer", "Não realizada"]
@@ -149,15 +172,6 @@ STATUS_OK_LICAO = ["Realizada", "Realizadas - sem pendência", "Realizada - sem 
 # lição de casa de Solfejo NUNCA entram aqui — quem acompanha é a professora.
 TIPOS_CORRECAO_SECRETARIA = ["Casa_Apostila", "Casa_Teoria"]
 
-TURMAS = {
-    "Turma 1": ["Annie - Vila Verde", "Caroline C - Vila Ré", "Ingrid M - Pq do Carmo II",
-                "Mariana - Vila Araguaia", "Mellina S - Jardim Lígia", "Rebecca A - Vila Verde", 
-                "Rebeca R - Vila Ré"],
-    "Turma 2": ["Vitória A - Vila Verde", "Elisa F - Vila Verde", "Sarah S - Vila Verde", "Gabrielly V - Vila Verde", 
-                "Emilly O - Vila Curuçá Velha", "Julya O - Vila Curuçá Velha"],
-    "Turma 3": ["Heloísa R - Vila Verde", "Ana Marcela S - Vila Verde", "Vitória Bella - Vila Verde", 
-                "Júlia S - Vila Verde", "Micaelle S - Vila Verde", "Raquel L - Vila Verde", "Júlia C - União de Vila Nova"]
-}
 HORARIOS = ["08h45 (Igreja)", "09h35(H2)", "10h10(H3)", "10h45(H4)"]
 OPCOES_LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
 
@@ -453,8 +467,8 @@ if menu == "🏠 Secretaria":
     if not df_historico.empty:
         df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
 
-    tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes = st.tabs([
-        "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros"
+    tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes, tab_pessoas = st.tabs([
+        "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros", "👥 Turmas e Pessoas"
     ])
 
     # --- ABA 1: VISÃO GERAL DIÁRIA (TOTALIZADA) ---
@@ -1138,8 +1152,107 @@ if menu == "🏠 Secretaria":
                                 st.error(f"Erro ao apagar: {e}")
                     else:
                         st.info(f"Nenhum dado encontrado para {al_aj}.")
-  
-                        
+
+            # --- ABA 6: TURMAS E PESSOAS (CADASTRO) ---
+            with tab_pessoas:
+                sub_alunas, sub_profs = st.tabs(["🎀 Alunas e Turmas", "👩‍🏫 Professoras"])
+
+                # --- ALUNAS E TURMAS ---
+                with sub_alunas:
+                    st.caption("As turmas mudam de semestre em semestre — edite a turma de cada aluna aqui quando precisar.")
+                    alunas_raw = db_get_alunas_todas()
+                    turmas_existentes = sorted(set([a.get("turma") for a in alunas_raw if a.get("turma")])) or ["Turma 1"]
+
+                    st.markdown("#### ➕ Adicionar Aluna")
+                    with st.form("form_add_aluna", clear_on_submit=True):
+                        c1, c2 = st.columns(2)
+                        nome_nova_aluna = c1.text_input("Nome completo (igual ao usado nos registros):", placeholder="Ex: Maria S - Vila Verde")
+                        turma_op = c2.selectbox("Turma:", turmas_existentes + ["+ Nova turma..."])
+                        nova_turma_nome = c2.text_input("Nome da nova turma:") if turma_op == "+ Nova turma..." else None
+                        if st.form_submit_button("Adicionar Aluna", use_container_width=True):
+                            turma_final = nova_turma_nome.strip() if turma_op == "+ Nova turma..." and nova_turma_nome else turma_op
+                            if not nome_nova_aluna.strip():
+                                st.error("Informe o nome da aluna.")
+                            else:
+                                try:
+                                    supabase.table("alunas").insert({
+                                        "nome": nome_nova_aluna.strip(), "turma": turma_final, "ativo": True
+                                    }).execute()
+                                    st.success(f"✅ {nome_nova_aluna} adicionada em {turma_final}!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao adicionar (nome já existe?): {e}")
+
+                    st.divider()
+                    st.markdown("#### ✏️ Editar Turma / Ativar-Desativar")
+                    if alunas_raw:
+                        for a in sorted(alunas_raw, key=lambda x: (x.get("turma") or "Sem Turma", x["nome"])):
+                            with st.container(border=True):
+                                c1, c2, c3 = st.columns([2, 2, 1])
+                                c1.write(("🟢 " if a.get("ativo", True) else "⚪ ") + a["nome"])
+                                lista_opcoes_turma = turmas_existentes + ["+ Nova turma..."]
+                                idx_t = lista_opcoes_turma.index(a.get("turma")) if a.get("turma") in lista_opcoes_turma else 0
+                                nova_turma_sel = c2.selectbox("Turma", lista_opcoes_turma, index=idx_t, key=f"turma_{a['nome']}", label_visibility="collapsed")
+                                if nova_turma_sel == "+ Nova turma...":
+                                    nova_turma_sel = c2.text_input("Nome da turma:", key=f"nt_{a['nome']}")
+                                if c3.button("💾", key=f"sv_{a['nome']}", help="Salvar turma"):
+                                    supabase.table("alunas").update({"turma": nova_turma_sel}).eq("nome", a["nome"]).execute()
+                                    st.cache_data.clear(); st.rerun()
+                                acao = "Desativar" if a.get("ativo", True) else "Reativar"
+                                if c3.button(acao, key=f"tg_{a['nome']}"):
+                                    supabase.table("alunas").update({"ativo": not a.get("ativo", True)}).eq("nome", a["nome"]).execute()
+                                    st.cache_data.clear(); st.rerun()
+                    else:
+                        st.info("Nenhuma aluna cadastrada ainda.")
+
+                # --- PROFESSORAS ---
+                with sub_profs:
+                    st.caption("Cada professora precisa de um login e senha próprios pra entrar no sistema.")
+                    profs_raw = db_get_professoras_todas()
+
+                    st.markdown("#### ➕ Adicionar Professora")
+                    with st.form("form_add_prof", clear_on_submit=True):
+                        c1, c2, c3 = st.columns(3)
+                        nome_nova_prof = c1.text_input("Nome:", placeholder="Ex: Juliana")
+                        login_nova_prof = c2.text_input("Login:", placeholder="Ex: juliana")
+                        senha_nova_prof = c3.text_input("Senha:", value="456")
+                        if st.form_submit_button("Adicionar Professora", use_container_width=True):
+                            if not nome_nova_prof.strip() or not login_nova_prof.strip():
+                                st.error("Informe nome e login.")
+                            else:
+                                try:
+                                    supabase.table("professoras").insert({
+                                        "nome": nome_nova_prof.strip(), "login": login_nova_prof.strip().lower(),
+                                        "senha": senha_nova_prof, "ativo": True
+                                    }).execute()
+                                    st.success(f"✅ {nome_nova_prof} adicionada!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao adicionar (nome ou login já existe?): {e}")
+
+                    st.divider()
+                    st.markdown("#### ✏️ Editar / Ativar-Desativar")
+                    if profs_raw:
+                        for p in sorted(profs_raw, key=lambda x: x["nome"]):
+                            with st.container(border=True):
+                                c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+                                c1.write(("🟢 " if p.get("ativo", True) else "⚪ ") + p["nome"])
+                                c2.caption(f"Login: {p.get('login', '---')}")
+                                nova_senha = c3.text_input("Nova senha:", key=f"sen_{p['nome']}", placeholder="deixe em branco p/ manter")
+                                if c4.button("💾", key=f"svp_{p['nome']}", help="Salvar nova senha"):
+                                    if nova_senha:
+                                        supabase.table("professoras").update({"senha": nova_senha}).eq("nome", p["nome"]).execute()
+                                        st.success("Senha atualizada!")
+                                        st.cache_data.clear(); st.rerun()
+                                acao = "Desativar" if p.get("ativo", True) else "Reativar"
+                                if c4.button(acao, key=f"tgp_{p['nome']}"):
+                                    supabase.table("professoras").update({"ativo": not p.get("ativo", True)}).eq("nome", p["nome"]).execute()
+                                    st.cache_data.clear(); st.rerun()
+                    else:
+                        st.info("Nenhuma professora cadastrada ainda.")
+
 # ============================================================
 # MÓDULO PROFESSORA - V58 (INTEGRADO E CORRIGIDO)
 # ============================================================
