@@ -1200,7 +1200,11 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
         cal_db = db_get_calendario()
         n_bus = limpar_texto(instr_sel).lower().strip()
-        
+
+        # O calendário só guarda o nome da aluna, nunca a turma dela — descobrimos
+        # a turma a partir do mapa TURMAS (aluna -> nome da turma).
+        aluna_para_turma = {a: t for t, lst in TURMAS.items() for a in lst}
+
         aulas_listagem = []
         vistos_turma = set()
 
@@ -1211,19 +1215,20 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     if cont and n_bus in limpar_texto(cont).lower():
                         tipo = "Teoria" if "SALA 8" in cont.upper() else "Solfejo" if "SALA 9" in cont.upper() else "Prática"
                         sala = cont.split('|')[0].strip()
+                        turma_aluna = aluna_para_turma.get(reg.get("Aluna"))
                         
                         if tipo == "Prática":
                             label = f"🎹 {h} | {reg.get('Aluna')} ({sala})"
                             id_unica = f"{h}_P_{reg.get('Aluna')}"
                         else:
-                            id_turma = f"{h}_{tipo}_{reg.get('Turma')}"
+                            id_turma = f"{h}_{tipo}_{turma_aluna}"
                             if id_turma not in vistos_turma:
-                                label = f"📚 {h} | {tipo} - {reg.get('Turma')} ({sala})"
+                                label = f"📚 {h} | {tipo} - {turma_aluna} ({sala})"
                                 id_unica = id_turma
                                 vistos_turma.add(id_turma)
                             else: continue
                         
-                        aulas_listagem.append({"label": label, "id": id_unica, "h": h, "tipo": tipo, "al": reg.get("Aluna"), "tr": reg.get("Turma"), "loc": sala})
+                        aulas_listagem.append({"label": label, "id": id_unica, "h": h, "tipo": tipo, "al": reg.get("Aluna"), "tr": turma_aluna, "loc": sala})
 
         # --- LÓGICA DE EXIBIÇÃO DE FOLGA ---
         if not aulas_listagem:
