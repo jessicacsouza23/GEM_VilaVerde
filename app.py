@@ -1003,32 +1003,25 @@ if menu == "🏠 Secretaria":
             st.divider()
         
             # --- FORMULÁRIO PARA NOVAS ATIVIDADES (Estilo "Congelar e Salvar") ---
-            # Verifica se já existe algo lançado hoje para editar ou criar novo
+            opcoes_cat = ["Apostila", "Teoria"]
+            cat_sel = st.radio("Material a corrigir:", opcoes_cat, horizontal=True, key="cat_corr_sec")
+
+            # Verifica se já existe algo lançado hoje PARA ESSA CATEGORIA ESPECÍFICA
+            # (nunca mistura com o registro de Método, que é separado e não é corrigido aqui)
             registro_previo = None
             if not df_historico.empty:
                 condicao = ((df_historico['Aluna'] == aluna) &
                            (df_historico['Data'] == data_corr_str) &
-                           (df_historico['Tipo'].str.contains("Casa_")))
+                           (df_historico['Tipo'] == f"Casa_{cat_sel}"))
                 match = df_historico[condicao]
                 if not match.empty:
                     registro_previo = match.iloc[-1].to_dict()
-                    st.warning(f"⚠️ Editando registro existente de hoje ({data_corr_str}).")
+                    st.warning(f"⚠️ Editando registro existente de hoje ({data_corr_str}) — {cat_sel}.")
         
             with st.form("f_nova_atividade_v10", clear_on_submit=False):
-                st.markdown("### ✍️ Registrar Nova Atividade / Meta")
+                st.markdown(f"### ✍️ Registrar/Corrigir: {cat_sel}")
                 
-                c_cat, c_det = st.columns([1, 2])
-                
-                # Define as categorias conforme sua lista padrão
-                opcoes_cat = ["Apostila", "Teoria"]
-                idx_cat = 0
-                if registro_previo:
-                    tipo_limpo = registro_previo['Tipo'].replace('Casa_', '')
-                    if tipo_limpo in opcoes_cat:
-                        idx_cat = opcoes_cat.index(tipo_limpo)
-                
-                cat_sel = c_cat.radio("Material:", opcoes_cat, index=idx_cat)
-                det_lic = c_det.text_input("Lição / Página Target:", 
+                det_lic = st.text_input("Lição / Página Target:", 
                                              value=registro_previo.get('Licao_Casa', "") if registro_previo else "",
                                              placeholder="Ex: Lição 05, pág 12")
                 
@@ -1482,13 +1475,32 @@ elif menu == "📊 Analítico IA":
                 else: st.success("✅ Sem dificuldades reportadas.")
 
             with c2:
-                st.markdown("### 📚 Lições Pendentes")
-                pendencias = df_aluna[(~df_aluna['Status'].str.contains("Realizada", na=False)) & 
-                                      (df_aluna['Tipo'].str.contains("Teoria|Solfejo|Prática", case=False, na=False))]
+                st.markdown("### 📚 Lições Pendentes (correção da secretaria)")
+                # Só entra aqui o que a secretaria de fato corrige: apostila da prática e folhas de teoria
+                pendencias = df_aluna[(df_aluna['Tipo'].isin(["Casa_Apostila", "Casa_Teoria"])) &
+                                      (~df_aluna['Status'].str.contains("Realizada", na=False))]
                 if not pendencias.empty:
                     for _, p in pendencias.iterrows():
-                        st.warning(f"📖 **{p['Tipo']}**: {p['Licao_Casa'] if p.get('Licao_Casa') else p.get('Licao_Atual')}")
-                else: st.success("✅ Lições em dia.")
+                        rotulo = p['Tipo'].replace('Casa_', '')
+                        st.warning(f"📖 **{rotulo}**: {p.get('Licao_Casa', '---')} (Status: {p.get('Status', '---')})")
+                else:
+                    st.success("✅ Apostila e Teoria em dia.")
+
+            # --- 3.5 TODAS AS LIÇÕES DE CASA (apostila, método, teoria) — NOVO ---
+            st.divider()
+            st.markdown("### 🏠 Todas as Lições de Casa do Período")
+            casa_rows = df_aluna[df_aluna['Tipo'].str.startswith("Casa_", na=False)].sort_values('dt_obj', ascending=False)
+            if not casa_rows.empty:
+                for _, c in casa_rows.iterrows():
+                    rotulo = c['Tipo'].replace("Casa_Metodo_", "Método: ").replace("Casa_", "")
+                    corrigida_pela_secretaria = c['Tipo'] in ["Casa_Apostila", "Casa_Teoria"]
+                    icone = "🏢" if corrigida_pela_secretaria else "👩‍🏫"
+                    with st.container(border=True):
+                        st.write(f"{icone} **{rotulo}** ({c['Data']}) — {c.get('Licao_Casa', '---')}")
+                        if corrigida_pela_secretaria:
+                            st.caption(f"Status da correção: {c.get('Status', '---')}")
+            else:
+                st.info("Nenhuma lição de casa registrada nesse período.")
 
             # --- 4. FEEDBACK DETALHADO (PROFESSORAS E SECRETARIA) ---
             st.divider()
