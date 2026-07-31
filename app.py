@@ -1273,43 +1273,55 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 for _, p in pends.iterrows(): st.caption(f"• {p['Licao_Casa']}")
 
             if als_selecionadas:
+                tipo_aula = d_sel["tipo"]
+
+                # FILTRO DINÂMICO DE MÉTODOS POR CATEGORIA (fora do form, pra poder reagir na hora)
+                metodos_filtrados = df_metodos_db[df_metodos_db['categoria'] == tipo_aula]['nome'].tolist() if not df_metodos_db.empty else []
+                if tipo_aula == "Prática":
+                    m_list = ["Selecione...", "Apostila"] + metodos_filtrados
+                else:
+                    m_list = ["Selecione...", "MSA", "Folha Extra"] + metodos_filtrados
+
+                st.markdown(f"### 📝 Registro: {tipo_aula}")
+                mat_focado = st.selectbox("Material usado hoje:", m_list, key=f"mat_{d_sel['id']}")
+
+                # Busca registro já lançado hoje PARA ESSE MÉTODO ESPECÍFICO (não mistura com outro método)
                 dados_hoje = {}
-                if not df_hist_local.empty:
-                    f_ex = df_hist_local[(df_hist_local['Aluna'] == als_selecionadas[0]) & 
-                                         (df_hist_local['Data'] == dt_str) & 
-                                         (df_hist_local['Tipo'] == f"Analise_{d_sel['tipo']}")]
+                if not df_hist_local.empty and mat_focado != "Selecione...":
+                    f_ex = df_hist_local[(df_hist_local['Aluna'] == als_selecionadas[0]) &
+                                         (df_hist_local['Data'] == dt_str) &
+                                         (df_hist_local['Tipo'] == f"Analise_{tipo_aula}") &
+                                         (df_hist_local['Licao_Atual'].str.startswith(f"{mat_focado}:", na=False))]
                     if not f_ex.empty: dados_hoje = f_ex.iloc[-1].to_dict()
 
-                with st.form(key=f"form_v58_{d_sel['id']}"):
-                    st.subheader(f"📝 Registro: {d_sel['tipo']}")
-                    
-                    # FILTRO DINÂMICO DE MÉTODOS POR CATEGORIA
-                    tipo_aula = d_sel["tipo"]
-                    metodos_filtrados = df_metodos_db[df_metodos_db['categoria'] == tipo_aula]['nome'].tolist() if not df_metodos_db.empty else []
-                    
-                    # Lista de materiais baseada no banco de dados + fixos
-                    if tipo_aula == "Prática":
-                        m_list = ["Selecione...", "Apostila"] + metodos_filtrados
-                    else:
-                        m_list = ["Selecione...", "MSA", "Folha Extra"] + metodos_filtrados
-
-                    mat_db = dados_hoje.get('Licao_Atual', "").split(":")[0] if dados_hoje else "Selecione..."
-                    idx_mat = m_list.index(mat_db) if mat_db in m_list else 0
-                    mat_focado = st.selectbox("Material usado hoje:", m_list, index=idx_mat)
-                    
+                with st.form(key=f"form_v58_{d_sel['id']}_{mat_focado}"):
                     lic_db = dados_hoje.get('Licao_Atual', "").split(":")[-1].strip() if ":" in dados_hoje.get('Licao_Atual', "") else ""
                     lic_hoje = st.text_input("Página/Lição trabalhada:", value=lic_db)
 
-                    # Dificuldades (Usa as constantes globais)
-                    st.markdown("**Dificuldades:**")
+                    # Dificuldades — INDIVIDUAIS por aluna (aula de turma não pode ter uma
+                    # lista única aplicada igual pra todas: cada menina tem sua própria situação)
+                    st.markdown("**Dificuldades (individual por aluna):**")
                     lista_difs = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
-                    difs_db = dados_hoje.get('Dificuldades', [])
-                    cols_d = st.columns(3)
-                    difs_sel = [d for i, d in enumerate(lista_difs) if cols_d[i%3].checkbox(d, value=(d in difs_db), key=f"d_v58_{i}_{d_sel['id']}")]
+                    difs_por_aluna = {}
+                    for al_d in als_selecionadas:
+                        difs_db_al = []
+                        if not df_hist_local.empty and mat_focado != "Selecione...":
+                            f_al = df_hist_local[(df_hist_local['Aluna'] == al_d) &
+                                                 (df_hist_local['Data'] == dt_str) &
+                                                 (df_hist_local['Tipo'] == f"Analise_{tipo_aula}") &
+                                                 (df_hist_local['Licao_Atual'].str.startswith(f"{mat_focado}:", na=False))]
+                            if not f_al.empty:
+                                difs_db_al = f_al.iloc[-1].get('Dificuldades', []) or []
+                        with st.expander(f"👤 {al_d}", expanded=(len(als_selecionadas) == 1)):
+                            cols_d = st.columns(3)
+                            difs_por_aluna[al_d] = [
+                                d for i, d in enumerate(lista_difs)
+                                if cols_d[i % 3].checkbox(d, value=(d in difs_db_al), key=f"d_v58_{i}_{d_sel['id']}_{mat_focado}_{al_d}")
+                            ]
 
                     st.divider()
                     st.subheader("🏠 Lição de Casa")
-                    
+
                     def get_c_v58(m):
                         if not df_hist_local.empty:
                             c = df_hist_local[(df_hist_local['Aluna'] == als_selecionadas[0]) & 
@@ -1320,13 +1332,23 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
                     tarefas_casa = {}
                     col_c1, col_c2 = st.columns(2)
-                    
-                    # Define labels das lições de casa (bate com o que a secretaria corrige)
-                    m1_label = "Apostila" if tipo_aula == "Prática" else tipo_aula  # "Teoria" ou "Solfejo"
-                    m2_label = "Método/Hino" if tipo_aula == "Prática" else "Extra"
-                    
-                    tarefas_casa[m1_label] = col_c1.text_input(f"🏠 {m1_label}:", value=get_c_v58(m1_label))
-                    tarefas_casa[m2_label] = col_c2.text_input(f"🏠 {m2_label}:", value=get_c_v58(m2_label))
+
+                    # Campo principal — o que a secretaria corrige (Apostila na prática / Teoria e Solfejo nas coletivas)
+                    label_principal = "Apostila" if tipo_aula == "Prática" else tipo_aula
+                    tarefas_casa[label_principal] = col_c1.text_input(f"🏠 {label_principal}:", value=get_c_v58(label_principal))
+
+                    # Campo de Método — biblioteca cadastrada em "⚙️ Configurar Métodos".
+                    # NÃO entra na correção da secretaria (método é diferente de apostila/folha de teoria).
+                    opcoes_metodo_casa = ["Nenhum"] + metodos_filtrados
+                    metodo_casa_sel = col_c2.selectbox("🏠 Método (opcional):", opcoes_metodo_casa, key=f"met_casa_{d_sel['id']}")
+                    if metodo_casa_sel != "Nenhum":
+                        metodo_casa_pag = col_c2.text_input(
+                            "Página/lição do método:",
+                            value=get_c_v58(f"Metodo_{metodo_casa_sel}"),
+                            key=f"met_pag_{d_sel['id']}"
+                        )
+                        if metodo_casa_pag:
+                            tarefas_casa[f"Metodo_{metodo_casa_sel}"] = metodo_casa_pag
 
                     obs_db = dados_hoje.get('Observacao', "")
                     obs_geral = st.text_area("Observações Pedagógicas:", value=obs_db)
@@ -1335,11 +1357,11 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         if mat_focado == "Selecione...":
                             st.error("Selecione o material da aula antes de salvar.")
                         else:
-                            # Status reflete se houve dificuldade real (não apenas se o registro foi criado)
-                            difs_reais = [d for d in difs_sel if d != "Não apresentou dificuldades"]
-                            status_analise = "Realizada - com dificuldades" if difs_reais else "Realizada - sem pendência"
                             for al_f in als_selecionadas:
-                                # Registro Principal
+                                difs_sel = difs_por_aluna.get(al_f, [])
+                                difs_reais = [d for d in difs_sel if d != "Não apresentou dificuldades"]
+                                status_analise = "Realizada - com dificuldades" if difs_reais else "Realizada - sem pendência"
+                                # Registro Principal (dificuldades individuais dessa aluna)
                                 db_save_historico({
                                     "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                     "Tipo": f"Analise_{tipo_aula}",
@@ -1347,7 +1369,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     "Licao_Casa": "---", "Dificuldades": difs_sel,
                                     "Observacao": obs_geral, "Status": status_analise
                                 })
-                                # Lições de Casa
+                                # Lições de Casa (compartilhada pra toda a turma/aluna selecionada)
                                 for mat_nome, conteudo in tarefas_casa.items():
                                     if conteudo:
                                         db_save_historico({
