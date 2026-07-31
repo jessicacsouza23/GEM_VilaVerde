@@ -1304,8 +1304,10 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     lic_hoje = st.text_input("Página/Lição trabalhada:", value=lic_db)
 
                     # Dificuldades — INDIVIDUAIS por aluna (aula de turma não pode ter uma
-                    # lista única aplicada igual pra todas: cada menina tem sua própria situação)
-                    st.markdown("**Dificuldades (individual por aluna):**")
+                    # lista única aplicada igual pra todas: cada menina tem sua própria situação).
+                    # A única seleção de quem participa é a Chamada acima — aqui só mostramos
+                    # o checklist de cada uma que já foi marcada lá.
+                    st.markdown("**Dificuldades (por aluna):**")
                     lista_difs = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO if tipo_aula == "Solfejo" else DIF_PRATICA
                     difs_por_aluna = {}
                     for al_d in als_selecionadas:
@@ -1317,12 +1319,15 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                                  (df_hist_local['Licao_Atual'].str.startswith(f"{mat_focado}:", na=False))]
                             if not f_al.empty:
                                 difs_db_al = f_al.iloc[-1].get('Dificuldades', []) or []
-                        with st.expander(f"👤 {al_d}", expanded=(len(als_selecionadas) == 1)):
-                            cols_d = st.columns(3)
-                            difs_por_aluna[al_d] = [
-                                d for i, d in enumerate(lista_difs)
-                                if cols_d[i % 3].checkbox(d, value=(d in difs_db_al), key=f"d_v58_{i}_{d_sel['id']}_{mat_focado}_{al_d}")
-                            ]
+                        if len(als_selecionadas) > 1:
+                            st.markdown(f"👤 **{al_d}**")
+                        cols_d = st.columns(3)
+                        difs_por_aluna[al_d] = [
+                            d for i, d in enumerate(lista_difs)
+                            if cols_d[i % 3].checkbox(d, value=(d in difs_db_al), key=f"d_v58_{i}_{d_sel['id']}_{mat_focado}_{dt_str}_{al_d}")
+                        ]
+                        if len(als_selecionadas) > 1:
+                            st.divider()
 
                     st.divider()
                     st.subheader("🏠 Lição de Casa")
