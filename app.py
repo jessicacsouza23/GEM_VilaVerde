@@ -985,8 +985,10 @@ if menu == "🏠 Secretaria":
                     with st.container(border=True):
                         col_info, col_acao = st.columns([2, 1])
                         with col_info:
-                            tipo_p = p['Tipo'].replace('Casa_', '').upper()
-                            st.markdown(f"📖 **{tipo_p}** | {p['Licao_Casa']}")
+                            tipo_bruto_p = p['Tipo'].replace('Casa_', '')
+                            icone_p = "📖" if "Apostila" in tipo_bruto_p else "📄"
+                            tipo_p = tipo_bruto_p.replace('Teoria', 'Folha Avulsa (Teoria)').upper()
+                            st.markdown(f"{icone_p} **{tipo_p}** | {p['Licao_Casa']}")
                             st.caption(f"📅 Lançado em: {p['Data']} | Status Atual: {p['Status']}")
                             if p.get('Observacao'):
                                 st.info(f"💬 Nota: {p['Observacao']}")
@@ -1388,8 +1390,9 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 # além da apostila. Cada método é conferido separadamente.
                 # ============================================================
                 if tipo_aula == "Prática":
+                    st.caption("👀 Conferência de hoje: o que a aluna trouxe pronto (ou não) pra essa aula. A lição de casa pra próxima aula fica mais abaixo.")
                     opcoes_materiais = ["Apostila"] + metodos_filtrados
-                    materiais_hoje = st.multiselect("Métodos/Apostila trabalhados hoje:", opcoes_materiais, key=f"mm_{d_sel['id']}")
+                    materiais_hoje = st.multiselect("Métodos/Apostila conferidos hoje:", opcoes_materiais, key=f"mm_{d_sel['id']}")
 
                     if not materiais_hoje:
                         st.info("Selecione ao menos um método ou a apostila trabalhada hoje.")
@@ -1419,8 +1422,9 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 st.divider()
 
                             st.subheader("🏠 Lição de Casa para a próxima aula")
-                            apostila_casa = st.text_input("🏠 Apostila (página/lição):", key=f"aph_{d_sel['id']}")
-                            metodos_casa_sel = st.multiselect("🏠 Método(s) (opcional):", metodos_filtrados, key=f"mch_{d_sel['id']}")
+                            st.caption("📬 O que marcar com 📖 vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método).")
+                            apostila_casa = st.text_input("📖 Apostila (página/lição — vai para a secretaria):", key=f"aph_{d_sel['id']}")
+                            metodos_casa_sel = st.multiselect("🎼 Método(s) (opcional, sem correção da secretaria):", metodos_filtrados, key=f"mch_{d_sel['id']}")
                             paginas_metodo_casa = {mc: st.text_input(f"Página/lição do método — {mc}:", key=f"mcp_{mc}_{d_sel['id']}") for mc in metodos_casa_sel}
 
                             obs_geral = st.text_area("Observações Pedagógicas:", key=f"obs_{d_sel['id']}")
@@ -1489,25 +1493,26 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
                         st.divider()
                         st.subheader("🏠 Lição de Casa")
+                        st.caption("📬 O que marcar com 📖 abaixo vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método) e não vai para a secretaria.")
                         tarefas_casa = {}
 
                         if tipo_aula == "Teoria":
-                            tipo_casa_sel = st.radio("Tipo de lição de casa:", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
+                            tipo_casa_sel = st.radio("📖 Tipo de lição de casa (vai para a secretaria):", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
                             conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", key=f"cc_{d_sel['id']}")
-                            if tipo_casa_sel == "Folha Avulsa":
-                                quem_corrige = st.radio("Quem corrige essa folha:", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
-                                sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
-                                if conteudo_casa: tarefas_casa[f"Teoria{sufixo}"] = conteudo_casa
-                            else:
-                                st.caption("ℹ️ Apostila alternativa: acompanhamento é só da professora, não entra na correção da secretaria.")
-                                if conteudo_casa: tarefas_casa["ApostilaTeoria"] = conteudo_casa
+                            quem_corrige = st.radio("Quem corrige:", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
+                            sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
+                            # Apostila é sempre apostila (mesmo tipo usado na Prática) — Folha
+                            # Avulsa vira Casa_Teoria. Os dois entram na fila da secretaria,
+                            # a não ser que a professora marque "Eu mesma" (aí ganha o sufixo _Prof).
+                            base_tipo_casa = "Apostila" if tipo_casa_sel == "Apostila" else "Teoria"
+                            if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
                         else:  # Solfejo
-                            conteudo_casa = st.text_input("🏠 MSA (lição de casa):", key=f"cc_{d_sel['id']}")
+                            conteudo_casa = st.text_input("🎼 MSA (lição de casa, sem correção da secretaria):", key=f"cc_{d_sel['id']}")
                             if conteudo_casa: tarefas_casa["MSA"] = conteudo_casa
 
                         # Método opcional (para as duas) — nunca entra na correção da secretaria
                         opcoes_metodo_casa = ["Nenhum"] + metodos_filtrados
-                        metodo_casa_sel = st.selectbox("🏠 Método (opcional):", opcoes_metodo_casa, key=f"met_casa_{d_sel['id']}")
+                        metodo_casa_sel = st.selectbox("🎼 Método (opcional, sem correção da secretaria):", opcoes_metodo_casa, key=f"met_casa_{d_sel['id']}")
                         if metodo_casa_sel != "Nenhum":
                             metodo_casa_pag = st.text_input("Página/lição do método:", key=f"met_pag_{d_sel['id']}")
                             if metodo_casa_pag: tarefas_casa[f"Metodo_{metodo_casa_sel}"] = metodo_casa_pag
@@ -1658,8 +1663,11 @@ elif menu == "📊 Analítico IA":
             if not casa_rows.empty:
                 for _, c in casa_rows.iterrows():
                     rotulo = (c['Tipo'].replace("Casa_Metodo_", "Método: ")
-                              .replace("Casa_ApostilaTeoria", "Apostila (Teoria)")
+                              .replace("Casa_Apostila_Prof", "Apostila (corrigida pela professora)")
                               .replace("Casa_Teoria_Prof", "Folha Avulsa (corrigida pela professora)")
+                              .replace("Casa_Teoria", "Folha Avulsa (Teoria)")
+                              .replace("Casa_Apostila", "Apostila")
+                              .replace("Casa_MSA", "MSA")
                               .replace("Casa_", ""))
                     corrigida_pela_secretaria = c['Tipo'] in TIPOS_CORRECAO_SECRETARIA
                     icone = "🏢" if corrigida_pela_secretaria else "👩‍🏫"
