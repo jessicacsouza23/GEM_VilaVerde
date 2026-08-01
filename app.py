@@ -1422,42 +1422,56 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 st.divider()
 
                             st.subheader("🏠 Lição de Casa para a próxima aula")
-                            st.caption("📬 O que marcar com 📖 vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método).")
+                            st.caption("📬 O que marcar com 📖 vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método) — mas precisa preencher, não é opcional.")
                             apostila_casa = st.text_input("📖 Apostila (página/lição — vai para a secretaria):", key=f"aph_{d_sel['id']}")
-                            metodos_casa_sel = st.multiselect("🎼 Método(s) (opcional, sem correção da secretaria):", metodos_filtrados, key=f"mch_{d_sel['id']}")
-                            paginas_metodo_casa = {mc: st.text_input(f"Página/lição do método — {mc}:", key=f"mcp_{mc}_{d_sel['id']}") for mc in metodos_casa_sel}
+
+                            metodos_do_dia = [m for m in materiais_hoje if m != "Apostila"]
+                            paginas_metodo_casa = {}
+                            for mc in metodos_do_dia:
+                                paginas_metodo_casa[mc] = st.text_input(f"🎼 Lição de casa — {mc}:", key=f"mcp_{mc}_{d_sel['id']}")
+
+                            metodos_extra = st.multiselect(
+                                "🎼 Outro(s) método(s) pra passar lição (além dos conferidos hoje):",
+                                [m for m in metodos_filtrados if m not in metodos_do_dia], key=f"mch_{d_sel['id']}"
+                            )
+                            for mc in metodos_extra:
+                                paginas_metodo_casa[mc] = st.text_input(f"🎼 Lição de casa — {mc}:", key=f"mcpx_{mc}_{d_sel['id']}")
 
                             obs_geral = st.text_area("Observações Pedagógicas:", key=f"obs_{d_sel['id']}")
 
                             if st.form_submit_button("💾 SALVAR E CONGELAR ANÁLISE", use_container_width=True):
-                                for al_f in als_selecionadas:
-                                    for mat, dados in registros_material.items():
-                                        difs_reais = [d for d in dados["difs"] if d != "Não apresentou dificuldades"]
-                                        status_analise = "Realizada - com dificuldades" if difs_reais else "Realizada - sem pendência"
-                                        db_save_historico({
-                                            "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
-                                            "Tipo": "Analise_Prática",
-                                            "Licao_Atual": f"{mat}: {dados['pagina']}",
-                                            "Licao_Casa": f"Fez a lição de casa: {dados['fez']}",
-                                            "Dificuldades": dados["difs"], "Observacao": obs_geral,
-                                            "Status": status_analise
-                                        })
-                                    if apostila_casa:
-                                        db_save_historico({
-                                            "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
-                                            "Tipo": "Casa_Apostila", "Licao_Atual": "Definido", "Licao_Casa": apostila_casa,
-                                            "Dificuldades": [], "Observacao": obs_geral, "Status": "Pendente"
-                                        })
-                                    for mc, pag in paginas_metodo_casa.items():
-                                        if pag:
+                                faltando = [mc for mc in metodos_do_dia if not paginas_metodo_casa.get(mc, "").strip()]
+                                if faltando:
+                                    st.error(f"⚠️ Preencha a lição de casa do(s) método(s): {', '.join(faltando)}. Não é opcional.")
+                                else:
+                                    for al_f in als_selecionadas:
+                                        for mat, dados in registros_material.items():
+                                            difs_reais = [d for d in dados["difs"] if d != "Não apresentou dificuldades"]
+                                            status_analise = "Realizada - com dificuldades" if difs_reais else "Realizada - sem pendência"
                                             db_save_historico({
                                                 "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
-                                                "Tipo": f"Casa_Metodo_{mc}", "Licao_Atual": "Definido", "Licao_Casa": pag,
+                                                "Tipo": "Analise_Prática",
+                                                "Licao_Atual": f"{mat}: {dados['pagina']}",
+                                                "Licao_Casa": f"Fez a lição de casa: {dados['fez']}",
+                                                "Dificuldades": dados["difs"], "Observacao": obs_geral,
+                                                "Status": status_analise
+                                            })
+                                        if apostila_casa:
+                                            db_save_historico({
+                                                "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
+                                                "Tipo": "Casa_Apostila", "Licao_Atual": "Definido", "Licao_Casa": apostila_casa,
                                                 "Dificuldades": [], "Observacao": obs_geral, "Status": "Pendente"
                                             })
-                                st.success("✅ Registro concluído com sucesso!")
-                                time.sleep(1)
-                                st.rerun()
+                                        for mc, pag in paginas_metodo_casa.items():
+                                            if pag:
+                                                db_save_historico({
+                                                    "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
+                                                    "Tipo": f"Casa_Metodo_{mc}", "Licao_Atual": "Definido", "Licao_Casa": pag,
+                                                    "Dificuldades": [], "Observacao": obs_geral, "Status": "Pendente"
+                                                })
+                                    st.success("✅ Registro concluído com sucesso!")
+                                    time.sleep(1)
+                                    st.rerun()
 
                 # ============================================================
                 # TEORIA e SOLFEJO — aula de turma, dificuldade compartilhada.
@@ -1510,12 +1524,14 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             conteudo_casa = st.text_input("🎼 MSA (lição de casa, sem correção da secretaria):", key=f"cc_{d_sel['id']}")
                             if conteudo_casa: tarefas_casa["MSA"] = conteudo_casa
 
-                        # Método opcional (para as duas) — nunca entra na correção da secretaria
-                        opcoes_metodo_casa = ["Nenhum"] + metodos_filtrados
-                        metodo_casa_sel = st.selectbox("🎼 Método (opcional, sem correção da secretaria):", opcoes_metodo_casa, key=f"met_casa_{d_sel['id']}")
-                        if metodo_casa_sel != "Nenhum":
-                            metodo_casa_pag = st.text_input("Página/lição do método:", key=f"met_pag_{d_sel['id']}")
-                            if metodo_casa_pag: tarefas_casa[f"Metodo_{metodo_casa_sel}"] = metodo_casa_pag
+                        # Método — sempre precisa informar a lição de casa (não é opcional),
+                        # só não entra na correção da secretaria.
+                        if metodos_filtrados:
+                            metodo_casa_sel = st.selectbox("🎼 Método:", metodos_filtrados, key=f"met_casa_{d_sel['id']}")
+                            metodo_casa_pag = st.text_input(f"🎼 Lição de casa — {metodo_casa_sel}:", key=f"met_pag_{d_sel['id']}")
+                        else:
+                            metodo_casa_sel, metodo_casa_pag = None, ""
+                            st.info("ℹ️ Nenhum método cadastrado pra essa categoria ainda (cadastre em ⚙️ Configurar Métodos).")
 
                         obs_db = dados_hoje.get('Observacao', "")
                         obs_geral = st.text_area("Observações Pedagógicas:", value=obs_db)
@@ -1523,7 +1539,11 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         if st.form_submit_button("💾 SALVAR E CONGELAR ANÁLISE", use_container_width=True):
                             if mat_focado == "Selecione...":
                                 st.error("Selecione o material da aula antes de salvar.")
+                            elif metodos_filtrados and not metodo_casa_pag.strip():
+                                st.error(f"⚠️ Preencha a lição de casa do método ({metodo_casa_sel}). Não é opcional.")
                             else:
+                                if metodo_casa_sel and metodo_casa_pag:
+                                    tarefas_casa[f"Metodo_{metodo_casa_sel}"] = metodo_casa_pag
                                 difs_reais = [d for d in difs_sel if d != "Não apresentou dificuldades"]
                                 status_analise = "Realizada - com dificuldades" if difs_reais else "Realizada - sem pendência"
                                 for al_f in als_selecionadas:
