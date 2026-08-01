@@ -1013,42 +1013,29 @@ if menu == "🏠 Secretaria":
         
             st.divider()
         
-            # --- FORMULÁRIO PARA NOVAS ATIVIDADES (Estilo "Congelar e Salvar") ---
+            # --- FORMULÁRIO PARA ATIVIDADE NOVA (que a professora não lançou) ---
+            # A correção do que já existe fica só na lista de pendências acima —
+            # aqui é exclusivamente pra cadastrar algo que ainda não foi lançado.
+            st.markdown("### ➕ Registrar Atividade Nova")
+            st.caption("Use isso só para lançar uma lição que a professora não informou no sistema. Para corrigir o que já existe, use a lista de pendências acima.")
             opcoes_cat = ["Apostila", "Teoria"]
-            cat_sel = st.radio("Material a corrigir:", opcoes_cat, horizontal=True, key="cat_corr_sec")
+            cat_sel = st.radio("Material:", opcoes_cat, horizontal=True, key="cat_corr_sec")
 
-            # Verifica se já existe algo lançado hoje PARA ESSA CATEGORIA ESPECÍFICA
-            # (nunca mistura com o registro de Método, que é separado e não é corrigido aqui)
-            registro_previo = None
-            if not df_historico.empty:
-                condicao = ((df_historico['Aluna'] == aluna) &
-                           (df_historico['Data'] == data_corr_str) &
-                           (df_historico['Tipo'] == f"Casa_{cat_sel}"))
-                match = df_historico[condicao]
-                if not match.empty:
-                    registro_previo = match.iloc[-1].to_dict()
-                    st.warning(f"⚠️ Editando registro existente de hoje ({data_corr_str}) — {cat_sel}.")
-        
-            with st.form("f_nova_atividade_v10", clear_on_submit=False):
-                st.markdown(f"### ✍️ Registrar/Corrigir: {cat_sel}")
+            with st.form("f_nova_atividade_v10", clear_on_submit=True):
+                st.markdown(f"#### ✍️ Nova atividade: {cat_sel}")
                 
-                det_lic = st.text_input("Lição / Página Target:", 
-                                             value=registro_previo.get('Licao_Casa', "") if registro_previo else "",
-                                             placeholder="Ex: Lição 05, pág 12")
+                det_lic = st.text_input("Lição / Página:", placeholder="Ex: Lição 05, pág 12")
                 
                 st.divider()
                 
                 status_sel = st.radio("Status Inicial:", ["Pendente", "Em Treinamento", "Realizada"], horizontal=True)
-                obs_hoje = st.text_area("Observações Técnicas / Dicas:", 
-                                       value=registro_previo.get('Observacao', "") if registro_previo else "")
+                obs_hoje = st.text_area("Observações Técnicas / Dicas:")
                 
-                btn_label = "🔄 ATUALIZAR REGISTRO" if registro_previo else "❄️ CONGELAR E SALVAR"
-                
-                if st.form_submit_button(btn_label, use_container_width=True, type="primary"):
+                if st.form_submit_button("❄️ CONGELAR E SALVAR", use_container_width=True, type="primary"):
                     if not det_lic:
                         st.error("⚠️ Informe a Lição/Página!")
                     else:
-                        dados_save = {
+                        supabase.table("historico_geral").insert({
                             "Aluna": aluna, 
                             "Tipo": f"Casa_{cat_sel}", 
                             "Data": data_corr_str,
@@ -1056,14 +1043,9 @@ if menu == "🏠 Secretaria":
                             "Licao_Casa": det_lic,
                             "Status": status_sel, 
                             "Observacao": obs_hoje
-                        }
+                        }).execute()
                         
-                        if registro_previo:
-                            supabase.table("historico_geral").update(dados_save).eq("id", registro_previo['id']).execute()
-                        else:
-                            supabase.table("historico_geral").insert(dados_save).execute()
-                        
-                        st.success("✅ Registro processado com sucesso!")
+                        st.success("✅ Atividade nova registrada com sucesso!")
                         st.cache_data.clear()
                         st.rerun()
         
