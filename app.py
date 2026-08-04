@@ -655,13 +655,20 @@ if menu == "🏠 Secretaria":
     
             if data_sel_str not in calendario_db:
                 st.info(f"Nenhuma escala encontrada para {data_sel_str}. Configure e gere abaixo.")
+                lista_turmas_ord = list(TURMAS.keys())
                 col_t, col_s = st.columns(2)
+                pt_por_turma, ps_por_turma = {}, {}
                 with col_t:
                     st.write("**📚 Teoria (Sala 8)**")
-                    pt = [st.selectbox(f"Prof {h}", PROFESSORAS_LISTA, index=i, key=f"pt{i}") for i, h in enumerate(HORARIOS[1:])]
+                    for idx_t, turma_nome in enumerate(lista_turmas_ord):
+                        idx_default = idx_t % len(PROFESSORAS_LISTA) if PROFESSORAS_LISTA else 0
+                        pt_por_turma[turma_nome] = st.selectbox(f"Prof Teoria — {turma_nome}", PROFESSORAS_LISTA, index=idx_default, key=f"pt_{turma_nome}")
                 with col_s:
                     st.write("**🔊 Solfejo (Sala 9)**")
-                    ps = [st.selectbox(f"Prof {h}", PROFESSORAS_LISTA, index=i+3, key=f"ps{i}") for i, h in enumerate(HORARIOS[1:])]
+                    for idx_t, turma_nome in enumerate(lista_turmas_ord):
+                        idx_default = (idx_t + 3) % len(PROFESSORAS_LISTA) if PROFESSORAS_LISTA else 0
+                        ps_por_turma[turma_nome] = st.selectbox(f"Prof Solfejo — {turma_nome}", PROFESSORAS_LISTA, index=idx_default, key=f"ps_{turma_nome}")
+                st.caption("A professora acompanha a turma dela onde quer que ela caia no rodízio — mesmo se o horário mudar por causa de uma aula fixa.")
                 
                 folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA)
     
@@ -727,8 +734,13 @@ if menu == "🏠 Secretaria":
                             conflitos = 0
                             for i in range(3):
                                 t_teo_i, t_sol_i, t_pra_i = arranjo[i]
+                                prof_teo_i = pt_por_turma[t_teo_i]
+                                prof_sol_i = ps_por_turma[t_sol_i]
+                                # a mesma professora não pode dar Teoria e Solfejo ao mesmo tempo
+                                if prof_teo_i == prof_sol_i:
+                                    conflitos += 1
                                 alunas_pratica_i = set(str(a).strip().lower() for a in TURMAS[t_pra_i])
-                                for prof_ocupada in (pt[i], ps[i]):
+                                for prof_ocupada in (prof_teo_i, prof_sol_i):
                                     for a_fixa_lower, p_fixa_nome in dict_fixas.items():
                                         if p_fixa_nome == prof_ocupada and a_fixa_lower in alunas_pratica_i:
                                             conflitos += 1
@@ -751,13 +763,13 @@ if menu == "🏠 Secretaria":
 
                     # 5. LOOP DE HORÁRIOS (H1 a H4)
                     for i, h in enumerate(HORARIOS[1:]):
-                        p_teoria = pt[i]
-                        p_solfejo = ps[i]
-
                         if melhor_arranjo:
                             t_teo, t_sol, t_pra = melhor_arranjo[i]
                         else:
                             t_teo, t_sol, t_pra = t_list[i % 3], t_list[(i + 1) % 3], t_list[(i + 2) % 3]
+
+                        p_teoria = pt_por_turma[t_teo]
+                        p_solfejo = ps_por_turma[t_sol]
 
                         # --- A. SALAS COLETIVAS ---
                         for a in TURMAS[t_teo]: mapa_final[a][h] = f"SALA 8 | {p_teoria}"
