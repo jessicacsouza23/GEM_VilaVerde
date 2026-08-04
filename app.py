@@ -264,6 +264,46 @@ def db_salvar_ultima_alocacao(mapa_ultima):
     except Exception as e:
         st.error(f"Erro ao salvar última alocação: {e}")
 
+def sincronizar_ciclo_e_alocacao_da_escala(lista_escala, data_str):
+    """Lê a escala como ela REALMENTE ficou salva (depois de qualquer edição
+    manual) e atualiza rodizio_ciclo + ultima_alocacao a partir disso — assim
+    um ajuste manual não fica "esquecido" e não se repete errado no sábado
+    seguinte."""
+    estado_ciclo = db_get_rodizio_ciclo()
+    novas_alocacoes = {}
+
+    for linha in lista_escala:
+        aluna = linha.get("Aluna")
+        if not aluna:
+            continue
+        for chave, valor in linha.items():
+            if chave == "Aluna":
+                continue
+            v_str = str(valor)
+            # Só conta como prática individual: tem "SALA" + número (1-7) + professora.
+            # Ignora SALA 8/9 (coletivas), SECRETARIA e o horário inicial (Roberta | Todas).
+            if "|" not in v_str:
+                continue
+            sala_parte = v_str.split("|")[0].strip().upper()
+            if sala_parte in ("SALA 8", "SALA 9") or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper():
+                continue
+            if not sala_parte.startswith("SALA"):
+                continue
+            professora = v_str.split("|")[-1].strip()
+            if not professora or professora.upper() == aluna.upper():
+                continue
+
+            novas_alocacoes[aluna] = {"professora": professora, "sala": sala_parte, "data": data_str}
+
+            if professora not in estado_ciclo:
+                estado_ciclo[professora] = {"alunas_dadas": [], "ciclo_num": 1}
+            if aluna not in estado_ciclo[professora]["alunas_dadas"]:
+                estado_ciclo[professora]["alunas_dadas"].append(aluna)
+
+    if novas_alocacoes:
+        db_salvar_rodizio_ciclo(estado_ciclo)
+        db_salvar_ultima_alocacao(novas_alocacoes)
+
 # ==========================================
 # FUNÇÕES DE BANCO - MENSAGENS (MURAL + DIRETAS)
 # ==========================================
@@ -899,11 +939,16 @@ if menu == "🏠 Secretaria":
                 if c_save1.button("💾 Salvar Alterações", use_container_width=True):
                     lista_ajustada = df_editado_final.to_dict('records')
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_ajustada}).execute()
-                    st.success("Escala atualizada!")
+                    # Sincroniza a memória do rodízio com o que ficou salvo de verdade,
+                    # pra ajuste manual não se perder e não repetir errado no próximo sábado.
+                    sincronizar_ciclo_e_alocacao_da_escala(lista_ajustada, data_sel_str)
+                    st.success("Escala atualizada! Rodízio (memória de professora/sala) sincronizado.")
                     st.rerun()
     
                 if c_save2.button("🗑️ Apagar e Reiniciar", use_container_width=True):
                     supabase.table("calendario").delete().eq("id", data_sel_str).execute()
+                    st.warning("⚠️ Escala apagada. A memória do rodízio (quem já deu aula pra quem) NÃO volta atrás — "
+                               "se você gerar de novo, ela continua de onde estava. Se precisar mesmo desfazer, avise que eu ajusto manualmente.")
                     st.rerun()
                     
     # --- ABA 3: CHAMADA GERAL ---
@@ -1554,218 +1599,265 @@ elif menu == "👩‍🏫 Minhas Aulas":
 elif menu == "📊 Analítico IA":
     st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico Master</h1>", unsafe_allow_html=True)
     
-    historico_raw = db_get_historico()
-    df_base = pd.DataFrame(historico_raw)
+    tab_aluna, tab_quadro = st.tabs(["👤 Prontuário Individual", "🏆 Quadro de Desempenho"])
 
-    if df_base.empty:
-        st.info("ℹ️ O banco de dados está vazio.")
-    else:
-        # 1. TRATAMENTO DE DATAS
-        df_base['dt_obj'] = pd.to_datetime(df_base['Data'], format="%d/%m/%Y", errors='coerce')
-        df_base = df_base.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
+    with tab_aluna:
+        historico_raw = db_get_historico()
+        df_base = pd.DataFrame(historico_raw)
 
-        with st.sidebar:
-            st.header("🔍 Filtros de Auditoria")
-            aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v72")
-            tipo_p = st.selectbox("📅 Período:", ["Tudo", "Mensal", "Bimestral", "Semestral", "Por Dia Específico", "Personalizado"])
-            
-            hoje = datetime.now().date()
-            if tipo_p == "Por Dia Específico": data_ini = data_fim = st.date_input("Dia da Aula:", hoje)
-            elif tipo_p == "Mensal": data_ini, data_fim = hoje - timedelta(days=30), hoje
-            elif tipo_p == "Bimestral": data_ini, data_fim = hoje - timedelta(days=60), hoje
-            elif tipo_p == "Semestral": data_ini, data_fim = hoje - timedelta(days=180), hoje
-            elif tipo_p == "Personalizado":
-                data_ini = st.date_input("De:", hoje - timedelta(days=30))
-                data_fim = st.date_input("Até:", hoje)
-            else: data_ini, data_fim = datetime(2024, 1, 1).date(), hoje + timedelta(days=1)
-
-        # Filtragem Base
-        mask = (df_base['Aluna'] == aluna_sel) & (df_base['dt_obj'].dt.date >= data_ini) & (df_base['dt_obj'].dt.date <= data_fim)
-        df_aluna = df_base[mask].copy()
-
-        if not df_aluna.empty:
-            # --- CÁLCULO DE APROVEITAMENTO (CORRIGIDO: agora reflete dificuldades reais) ---
-            pedag_rows = df_aluna[df_aluna['Tipo'].str.contains("Prática|Teoria|Solfejo", case=False, na=False)].copy()
-
-            def _tem_dificuldade_real(valor_difs):
-                if isinstance(valor_difs, list):
-                    return any(d for d in valor_difs if d and d != "Não apresentou dificuldades")
-                if isinstance(valor_difs, str) and valor_difs.strip():
-                    return valor_difs.strip() != "Não apresentou dificuldades"
-                return False
-
-            pedag_rows['tem_dificuldade'] = pedag_rows['Dificuldades'].apply(_tem_dificuldade_real)
-            total_pedag = len(pedag_rows)
-            sem_dificuldade = int((~pedag_rows['tem_dificuldade']).sum())
-            aprov_valor = int((sem_dificuldade / total_pedag * 100)) if total_pedag > 0 else 0
-
-            # --- PROCESSAMENTO DE STATUS E FREQUÊNCIA ---
-            def identificar_v72(row):
-                s, t = str(row.get('Status','')).upper(), str(row.get('Tipo','')).upper()
-                if 'AUSENTE' in s or 'FALTA' in s: return 'F'
-                if 'JUSTIFICADA' in s: return 'J'
-                return 'P'
-
-            df_aluna['st_calc'] = df_aluna.apply(identificar_v72, axis=1)
-            resumo_dias = df_aluna.groupby('Data')['st_calc'].first()
-            v_pres, v_falt, v_just = (resumo_dias=='P').sum(), (resumo_dias=='F').sum(), (resumo_dias=='J').sum()
-
-            # --- 1. RESUMO DE DESEMPENHO (DASHBOARD) ---
-            st.subheader(f"📈 Resumo de Desempenho - {aluna_sel}")
-            k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Frequência", f"{int((v_pres+v_just)/len(resumo_dias)*100) if len(resumo_dias)>0 else 0}%")
-            k2.metric("Aulas/Chamadas", len(resumo_dias))
-            k3.metric("Faltas (N/J)", f"{v_falt} / {v_just}")
-            k4.metric("Aproveitamento", f"{aprov_valor}%")
-
-            # --- 2. GRÁFICOS (RESTAURADOS) ---
-            st.divider()
-            col_g1, col_g2 = st.columns([2, 1])
-            with col_g1:
-                st.write("**Linha do Tempo de Assiduidade**")
-                chart_ts = pd.DataFrame({'Data': resumo_dias.index, 'Nivel': resumo_dias.map({'P':1, 'J':0.5, 'F':0}).values})
-                st.line_chart(chart_ts, x='Data', y='Nivel', color="#2E4053")
-            
-            with col_g2:
-                st.write("**Status de Frequência**")
-                chart_bar = pd.DataFrame({'Status': ['Presença', 'Falta', 'Justificada'], 'Qtd': [v_pres, v_falt, v_just]})
-                st.bar_chart(chart_bar, x='Status', y='Qtd', color="#27AE60")
-
-            # --- 3. DIFICULDADES E PENDÊNCIAS ---
-            st.divider()
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("### ⚠️ Dificuldades Técnicas")
-                difs = []
-                for d in df_aluna['Dificuldades'].dropna():
-                    if isinstance(d, list): difs.extend(d)
-                    else: difs.append(str(d))
-                
-                if difs:
-                    for d_u in sorted(list(set(difs))):
-                        st.error(f"❌ {d_u}")
-                else: st.success("✅ Sem dificuldades reportadas.")
-
-            with c2:
-                st.markdown("### 📚 Lições Pendentes (correção da secretaria)")
-                # Só entra aqui o que a secretaria de fato corrige: apostila da prática e folhas de teoria
-                pendencias = df_aluna[(df_aluna['Tipo'].isin(TIPOS_CORRECAO_SECRETARIA)) &
-                                      (~df_aluna['Status'].str.contains("Realizada", na=False))]
-                if not pendencias.empty:
-                    for _, p in pendencias.iterrows():
-                        rotulo = p['Tipo'].replace('Casa_', '')
-                        st.warning(f"📖 **{rotulo}**: {p.get('Licao_Casa', '---')} (Status: {p.get('Status', '---')})")
-                else:
-                    st.success("✅ Apostila e Teoria em dia.")
-
-            # --- 3.5 TODAS AS LIÇÕES DE CASA (apostila, método, teoria) — NOVO ---
-            st.divider()
-            st.markdown("### 🏠 Todas as Lições de Casa do Período")
-            casa_rows = df_aluna[df_aluna['Tipo'].str.startswith("Casa_", na=False)].sort_values('dt_obj', ascending=False)
-            if not casa_rows.empty:
-                for _, c in casa_rows.iterrows():
-                    rotulo = (c['Tipo'].replace("Casa_Metodo_", "Método: ")
-                              .replace("Casa_Apostila_Prof", "Apostila (corrigida pela professora)")
-                              .replace("Casa_Teoria_Prof", "Folha Avulsa (corrigida pela professora)")
-                              .replace("Casa_Teoria", "Folha Avulsa (Teoria)")
-                              .replace("Casa_Apostila", "Apostila")
-                              .replace("Casa_MSA", "MSA")
-                              .replace("Casa_", ""))
-                    corrigida_pela_secretaria = c['Tipo'] in TIPOS_CORRECAO_SECRETARIA
-                    icone = "🏢" if corrigida_pela_secretaria else "👩‍🏫"
-                    with st.container(border=True):
-                        st.write(f"{icone} **{rotulo}** ({c['Data']}) — {c.get('Licao_Casa', '---')}")
-                        if corrigida_pela_secretaria:
-                            st.caption(f"Status da correção: {c.get('Status', '---')}")
-            else:
-                st.info("Nenhuma lição de casa registrada nesse período.")
-
-            # --- 4. FEEDBACK DETALHADO (PROFESSORAS E SECRETARIA) ---
-            st.divider()
-            tab_p, tab_s = st.tabs(["👩‍🏫 Feedback Pedagógico", "🏢 Notas da Secretaria"])
-            
-            with tab_p:
-                aulas = df_aluna[df_aluna['Tipo'].str.contains("Prática|Teoria|Solfejo", case=False, na=False)]
-                for _, r in aulas.iterrows():
-                    with st.container(border=True):
-                        st.write(f"📅 **{r['Data']} - {r['Tipo']}**")
-                        st.write(f"📝 {r.get('Observacao', 'Sem notas')}")
-            
-            with tab_s:
-                sec = df_aluna[df_aluna['Tipo'].str.contains("Chamada|Correção", case=False, na=False)]
-                for _, r in sec.iterrows():
-                    with st.container(border=True):
-                        st.write(f"📅 **{r['Data']} - {r['Tipo']}**")
-                        st.info(f"📌 {r.get('Observacao', 'Sem observações')}")
-
-            # --- 4.5 EVOLUÇÃO DAS DIFICULDADES AO LONGO DO TEMPO (NOVO) ---
-            st.divider()
-            st.markdown("### 📉 Evolução das Dificuldades")
-            linhas_evolucao = []
-            for _, row in df_aluna.iterrows():
-                mes_ano = row['dt_obj'].strftime("%Y-%m")
-                lista_dif = row.get('Dificuldades')
-                if isinstance(lista_dif, list):
-                    for d_item in lista_dif:
-                        linhas_evolucao.append({"Mês": mes_ano, "Dificuldade": d_item})
-
-            if linhas_evolucao:
-                df_evol = pd.DataFrame(linhas_evolucao)
-                df_evol = df_evol[~df_evol['Dificuldade'].str.contains("Não apresentou dificuldades|Não participou", case=False, na=False)]
-                if not df_evol.empty:
-                    contagem = df_evol.groupby(['Mês', 'Dificuldade']).size().reset_index(name='Ocorrências')
-                    fig_evol = px.bar(contagem, x="Mês", y="Ocorrências", color="Dificuldade",
-                                       title="Frequência de cada dificuldade por mês")
-                    st.plotly_chart(fig_evol, use_container_width=True)
-
-                    # Comparação simples: primeira metade do período vs segunda metade
-                    meses_ordenados = sorted(df_evol['Mês'].unique())
-                    if len(meses_ordenados) >= 2:
-                        metade = len(meses_ordenados) // 2
-                        meses_antes = set(meses_ordenados[:metade]) if metade > 0 else set()
-                        meses_depois = set(meses_ordenados[metade:])
-                        cont_antes = df_evol[df_evol['Mês'].isin(meses_antes)]['Dificuldade'].value_counts()
-                        cont_depois = df_evol[df_evol['Mês'].isin(meses_depois)]['Dificuldade'].value_counts()
-                        melhorou = [d for d in cont_antes.index if cont_depois.get(d, 0) < cont_antes.get(d, 0)]
-                        piorou = [d for d in cont_depois.index if cont_depois.get(d, 0) > cont_antes.get(d, 0)]
-                        col_m, col_p = st.columns(2)
-                        with col_m:
-                            st.success("📈 **Melhorou:** " + (", ".join(melhorou) if melhorou else "Sem melhora clara ainda."))
-                        with col_p:
-                            st.warning("📌 **Precisa de atenção:** " + (", ".join(piorou) if piorou else "Nenhuma piora identificada."))
-                else:
-                    st.success("✅ Sem dificuldades registradas para gerar histórico de evolução.")
-            else:
-                st.info("ℹ️ Ainda não há dificuldades registradas nesse período para montar o gráfico de evolução.")
-
-            # --- 4.6 PRÓXIMOS OBJETIVOS (NOVO) ---
-            st.divider()
-            st.markdown("### 🎯 Próximos Objetivos Pedagógicos")
-            objetivo_atual, quem_definiu = db_get_objetivo(aluna_sel)
-            with st.form(f"form_objetivos_{aluna_sel}"):
-                novo_objetivo = st.text_area(
-                    "O que a aluna deve focar nas próximas aulas:",
-                    value=objetivo_atual,
-                    height=100,
-                    help="Visível para a secretaria e para as professoras que derem aula a essa aluna."
-                )
-                if quem_definiu:
-                    st.caption(f"Última atualização por: {quem_definiu}")
-                if st.form_submit_button("💾 Salvar Objetivos"):
-                    if db_salvar_objetivo(aluna_sel, novo_objetivo, st.session_state.nome_logado):
-                        st.success("✅ Objetivos salvos!")
-                        st.rerun()
-
-            # --- 5. RESUMO FINAL E DICAS ---
-            st.divider()
-            st.info(f"💡 **Dicas para Próxima Aula:** Foque em resolver as dificuldades de " + 
-                    (", ".join(list(set(difs))[:2]) if difs else "técnica e postura") + ".")
-            
-            status_aluna = "Ótimo desempenho!" if aprov_valor > 80 else "Atenção necessária às lições."
-            st.success(f"📌 **Como a aluna está indo:** {status_aluna} (Aproveitamento: {aprov_valor}%)")
-
+        if df_base.empty:
+            st.info("ℹ️ O banco de dados está vazio.")
         else:
-            st.warning("Selecione uma aluna ou mude o filtro para ver os registros.")
+            # 1. TRATAMENTO DE DATAS
+            df_base['dt_obj'] = pd.to_datetime(df_base['Data'], format="%d/%m/%Y", errors='coerce')
+            df_base = df_base.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
+
+            with st.sidebar:
+                st.header("🔍 Filtros de Auditoria")
+                aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v72")
+                tipo_p = st.selectbox("📅 Período:", ["Tudo", "Mensal", "Bimestral", "Semestral", "Por Dia Específico", "Personalizado"])
+            
+                hoje = datetime.now().date()
+                if tipo_p == "Por Dia Específico": data_ini = data_fim = st.date_input("Dia da Aula:", hoje)
+                elif tipo_p == "Mensal": data_ini, data_fim = hoje - timedelta(days=30), hoje
+                elif tipo_p == "Bimestral": data_ini, data_fim = hoje - timedelta(days=60), hoje
+                elif tipo_p == "Semestral": data_ini, data_fim = hoje - timedelta(days=180), hoje
+                elif tipo_p == "Personalizado":
+                    data_ini = st.date_input("De:", hoje - timedelta(days=30))
+                    data_fim = st.date_input("Até:", hoje)
+                else: data_ini, data_fim = datetime(2024, 1, 1).date(), hoje + timedelta(days=1)
+
+            # Filtragem Base
+            mask = (df_base['Aluna'] == aluna_sel) & (df_base['dt_obj'].dt.date >= data_ini) & (df_base['dt_obj'].dt.date <= data_fim)
+            df_aluna = df_base[mask].copy()
+
+            if not df_aluna.empty:
+                # --- CÁLCULO DE APROVEITAMENTO (CORRIGIDO: agora reflete dificuldades reais) ---
+                pedag_rows = df_aluna[df_aluna['Tipo'].str.contains("Prática|Teoria|Solfejo", case=False, na=False)].copy()
+
+                def _tem_dificuldade_real(valor_difs):
+                    if isinstance(valor_difs, list):
+                        return any(d for d in valor_difs if d and d != "Não apresentou dificuldades")
+                    if isinstance(valor_difs, str) and valor_difs.strip():
+                        return valor_difs.strip() != "Não apresentou dificuldades"
+                    return False
+
+                pedag_rows['tem_dificuldade'] = pedag_rows['Dificuldades'].apply(_tem_dificuldade_real)
+                total_pedag = len(pedag_rows)
+                sem_dificuldade = int((~pedag_rows['tem_dificuldade']).sum())
+                aprov_valor = int((sem_dificuldade / total_pedag * 100)) if total_pedag > 0 else 0
+
+                # --- PROCESSAMENTO DE STATUS E FREQUÊNCIA ---
+                def identificar_v72(row):
+                    s, t = str(row.get('Status','')).upper(), str(row.get('Tipo','')).upper()
+                    if 'AUSENTE' in s or 'FALTA' in s: return 'F'
+                    if 'JUSTIFICADA' in s: return 'J'
+                    return 'P'
+
+                df_aluna['st_calc'] = df_aluna.apply(identificar_v72, axis=1)
+                resumo_dias = df_aluna.groupby('Data')['st_calc'].first()
+                v_pres, v_falt, v_just = (resumo_dias=='P').sum(), (resumo_dias=='F').sum(), (resumo_dias=='J').sum()
+
+                # --- 1. RESUMO DE DESEMPENHO (DASHBOARD) ---
+                st.subheader(f"📈 Resumo de Desempenho - {aluna_sel}")
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Frequência", f"{int((v_pres+v_just)/len(resumo_dias)*100) if len(resumo_dias)>0 else 0}%")
+                k2.metric("Aulas/Chamadas", len(resumo_dias))
+                k3.metric("Faltas (N/J)", f"{v_falt} / {v_just}")
+                k4.metric("Aproveitamento", f"{aprov_valor}%")
+
+                # --- 2. GRÁFICOS (RESTAURADOS) ---
+                st.divider()
+                col_g1, col_g2 = st.columns([2, 1])
+                with col_g1:
+                    st.write("**Linha do Tempo de Assiduidade**")
+                    chart_ts = pd.DataFrame({'Data': resumo_dias.index, 'Nivel': resumo_dias.map({'P':1, 'J':0.5, 'F':0}).values})
+                    st.line_chart(chart_ts, x='Data', y='Nivel', color="#2E4053")
+            
+                with col_g2:
+                    st.write("**Status de Frequência**")
+                    chart_bar = pd.DataFrame({'Status': ['Presença', 'Falta', 'Justificada'], 'Qtd': [v_pres, v_falt, v_just]})
+                    st.bar_chart(chart_bar, x='Status', y='Qtd', color="#27AE60")
+
+                # --- 3. DIFICULDADES E PENDÊNCIAS ---
+                st.divider()
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("### ⚠️ Dificuldades Técnicas")
+                    difs = []
+                    for d in df_aluna['Dificuldades'].dropna():
+                        if isinstance(d, list): difs.extend(d)
+                        else: difs.append(str(d))
+                
+                    if difs:
+                        for d_u in sorted(list(set(difs))):
+                            st.error(f"❌ {d_u}")
+                    else: st.success("✅ Sem dificuldades reportadas.")
+
+                with c2:
+                    st.markdown("### 📚 Lições Pendentes (correção da secretaria)")
+                    # Só entra aqui o que a secretaria de fato corrige: apostila da prática e folhas de teoria
+                    pendencias = df_aluna[(df_aluna['Tipo'].isin(TIPOS_CORRECAO_SECRETARIA)) &
+                                          (~df_aluna['Status'].str.contains("Realizada", na=False))]
+                    if not pendencias.empty:
+                        for _, p in pendencias.iterrows():
+                            rotulo = p['Tipo'].replace('Casa_', '')
+                            st.warning(f"📖 **{rotulo}**: {p.get('Licao_Casa', '---')} (Status: {p.get('Status', '---')})")
+                    else:
+                        st.success("✅ Apostila e Teoria em dia.")
+
+                # --- 3.5 TODAS AS LIÇÕES DE CASA (apostila, método, teoria) — NOVO ---
+                st.divider()
+                st.markdown("### 🏠 Todas as Lições de Casa do Período")
+                casa_rows = df_aluna[df_aluna['Tipo'].str.startswith("Casa_", na=False)].sort_values('dt_obj', ascending=False)
+                if not casa_rows.empty:
+                    for _, c in casa_rows.iterrows():
+                        rotulo = (c['Tipo'].replace("Casa_Metodo_", "Método: ")
+                                  .replace("Casa_Apostila_Prof", "Apostila (corrigida pela professora)")
+                                  .replace("Casa_Teoria_Prof", "Folha Avulsa (corrigida pela professora)")
+                                  .replace("Casa_Teoria", "Folha Avulsa (Teoria)")
+                                  .replace("Casa_Apostila", "Apostila")
+                                  .replace("Casa_MSA", "MSA")
+                                  .replace("Casa_", ""))
+                        corrigida_pela_secretaria = c['Tipo'] in TIPOS_CORRECAO_SECRETARIA
+                        icone = "🏢" if corrigida_pela_secretaria else "👩‍🏫"
+                        with st.container(border=True):
+                            st.write(f"{icone} **{rotulo}** ({c['Data']}) — {c.get('Licao_Casa', '---')}")
+                            if corrigida_pela_secretaria:
+                                st.caption(f"Status da correção: {c.get('Status', '---')}")
+                else:
+                    st.info("Nenhuma lição de casa registrada nesse período.")
+
+                # --- 4. FEEDBACK DETALHADO (PROFESSORAS E SECRETARIA) ---
+                st.divider()
+                tab_p, tab_s = st.tabs(["👩‍🏫 Feedback Pedagógico", "🏢 Notas da Secretaria"])
+            
+                with tab_p:
+                    aulas = df_aluna[df_aluna['Tipo'].str.contains("Prática|Teoria|Solfejo", case=False, na=False)]
+                    for _, r in aulas.iterrows():
+                        with st.container(border=True):
+                            st.write(f"📅 **{r['Data']} - {r['Tipo']}**")
+                            st.write(f"📝 {r.get('Observacao', 'Sem notas')}")
+            
+                with tab_s:
+                    sec = df_aluna[df_aluna['Tipo'].str.contains("Chamada|Correção", case=False, na=False)]
+                    for _, r in sec.iterrows():
+                        with st.container(border=True):
+                            st.write(f"📅 **{r['Data']} - {r['Tipo']}**")
+                            st.info(f"📌 {r.get('Observacao', 'Sem observações')}")
+
+                # --- 4.5 EVOLUÇÃO DAS DIFICULDADES AO LONGO DO TEMPO (NOVO) ---
+                st.divider()
+                st.markdown("### 📉 Evolução das Dificuldades")
+                linhas_evolucao = []
+                for _, row in df_aluna.iterrows():
+                    mes_ano = row['dt_obj'].strftime("%Y-%m")
+                    lista_dif = row.get('Dificuldades')
+                    if isinstance(lista_dif, list):
+                        for d_item in lista_dif:
+                            linhas_evolucao.append({"Mês": mes_ano, "Dificuldade": d_item})
+
+                if linhas_evolucao:
+                    df_evol = pd.DataFrame(linhas_evolucao)
+                    df_evol = df_evol[~df_evol['Dificuldade'].str.contains("Não apresentou dificuldades|Não participou", case=False, na=False)]
+                    if not df_evol.empty:
+                        contagem = df_evol.groupby(['Mês', 'Dificuldade']).size().reset_index(name='Ocorrências')
+                        fig_evol = px.bar(contagem, x="Mês", y="Ocorrências", color="Dificuldade",
+                                           title="Frequência de cada dificuldade por mês")
+                        st.plotly_chart(fig_evol, use_container_width=True)
+
+                        # Comparação simples: primeira metade do período vs segunda metade
+                        meses_ordenados = sorted(df_evol['Mês'].unique())
+                        if len(meses_ordenados) >= 2:
+                            metade = len(meses_ordenados) // 2
+                            meses_antes = set(meses_ordenados[:metade]) if metade > 0 else set()
+                            meses_depois = set(meses_ordenados[metade:])
+                            cont_antes = df_evol[df_evol['Mês'].isin(meses_antes)]['Dificuldade'].value_counts()
+                            cont_depois = df_evol[df_evol['Mês'].isin(meses_depois)]['Dificuldade'].value_counts()
+                            melhorou = [d for d in cont_antes.index if cont_depois.get(d, 0) < cont_antes.get(d, 0)]
+                            piorou = [d for d in cont_depois.index if cont_depois.get(d, 0) > cont_antes.get(d, 0)]
+                            col_m, col_p = st.columns(2)
+                            with col_m:
+                                st.success("📈 **Melhorou:** " + (", ".join(melhorou) if melhorou else "Sem melhora clara ainda."))
+                            with col_p:
+                                st.warning("📌 **Precisa de atenção:** " + (", ".join(piorou) if piorou else "Nenhuma piora identificada."))
+                    else:
+                        st.success("✅ Sem dificuldades registradas para gerar histórico de evolução.")
+                else:
+                    st.info("ℹ️ Ainda não há dificuldades registradas nesse período para montar o gráfico de evolução.")
+
+                # --- 4.6 PRÓXIMOS OBJETIVOS (NOVO) ---
+                st.divider()
+                st.markdown("### 🎯 Próximos Objetivos Pedagógicos")
+                objetivo_atual, quem_definiu = db_get_objetivo(aluna_sel)
+                with st.form(f"form_objetivos_{aluna_sel}"):
+                    novo_objetivo = st.text_area(
+                        "O que a aluna deve focar nas próximas aulas:",
+                        value=objetivo_atual,
+                        height=100,
+                        help="Visível para a secretaria e para as professoras que derem aula a essa aluna."
+                    )
+                    if quem_definiu:
+                        st.caption(f"Última atualização por: {quem_definiu}")
+                    if st.form_submit_button("💾 Salvar Objetivos"):
+                        if db_salvar_objetivo(aluna_sel, novo_objetivo, st.session_state.nome_logado):
+                            st.success("✅ Objetivos salvos!")
+                            st.rerun()
+
+                # --- 5. RESUMO FINAL E DICAS ---
+                st.divider()
+                st.info(f"💡 **Dicas para Próxima Aula:** Foque em resolver as dificuldades de " + 
+                        (", ".join(list(set(difs))[:2]) if difs else "técnica e postura") + ".")
+            
+                status_aluna = "Ótimo desempenho!" if aprov_valor > 80 else "Atenção necessária às lições."
+                st.success(f"📌 **Como a aluna está indo:** {status_aluna} (Aproveitamento: {aprov_valor}%)")
+
+            else:
+                st.warning("Selecione uma aluna ou mude o filtro para ver os registros.")
+
+    # --- ABA 2: QUADRO DE DESEMPENHO (TODAS AS ALUNAS, POR MATÉRIA) ---
+    with tab_quadro:
+        st.markdown("### 🏆 Quadro de Desempenho — Todas as Alunas")
+        st.caption("🥇 Ouro: indo muito bem | 🥈 Prata: indo bem | 🥉 Bronze: precisa de atenção (ou ainda sem registros — toda aluna recebe uma medalha)")
+
+        c_q1, c_q2 = st.columns(2)
+        data_ini_q = c_q1.date_input("De:", datetime.now().date() - timedelta(days=30), key="quadro_ini")
+        data_fim_q = c_q2.date_input("Até:", datetime.now().date(), key="quadro_fim")
+
+        df_periodo_q = df_base[(df_base['dt_obj'].dt.date >= data_ini_q) & (df_base['dt_obj'].dt.date <= data_fim_q)]
+
+        def calcular_medalha(score, tem_dados):
+            if not tem_dados:
+                return "🥉", "Bronze", 0
+            if score >= 80:
+                return "🥇", "Ouro", score
+            elif score >= 50:
+                return "🥈", "Prata", score
+            else:
+                return "🥉", "Bronze", score
+
+        linhas_quadro = []
+        for al in ALUNAS_LISTA:
+            linha = {"Aluna": al}
+            for materia in ["Prática", "Teoria", "Solfejo"]:
+                regs = df_periodo_q[(df_periodo_q['Aluna'] == al) & (df_periodo_q['Tipo'] == f"Analise_{materia}")]
+                total = len(regs)
+                if total > 0:
+                    sem_dificuldade = (regs['Status'] == "Realizada - sem pendência").sum()
+                    score = round((sem_dificuldade / total) * 100)
+                else:
+                    score = 0
+                icone, nome_medalha, score_final = calcular_medalha(score, total > 0)
+                linha[materia] = f"{icone} {nome_medalha}" + (f" ({score_final}%)" if total > 0 else " (sem registros)")
+            linhas_quadro.append(linha)
+
+        df_quadro = pd.DataFrame(linhas_quadro)
+        if not df_quadro.empty:
+            st.dataframe(df_quadro, use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhuma aluna cadastrada ainda.")
+
+        st.caption(f"📅 Período analisado: {data_ini_q.strftime('%d/%m/%Y')} até {data_fim_q.strftime('%d/%m/%Y')}. A medalha é calculada pela % de aulas sem dificuldade registrada em cada matéria, dentro do período escolhido.")
 
 # ============================================================
 # MÓDULO MENSAGENS - MURAL GERAL + DIRETAS (NOVO)
