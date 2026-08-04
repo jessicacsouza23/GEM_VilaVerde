@@ -13,6 +13,7 @@ import unicodedata
 import json
 import time # <--- ESSENCIAL PARA O SLEEP FUNCIONAR
 import random
+import itertools
 import streamlit.components.v1 as components
 from streamlit_pills import pills # NOVO: Precisa instalar (pip install streamlit-pills)
 
@@ -716,13 +717,47 @@ if menu == "🏠 Secretaria":
                     registro_salas_profs = {}
                     novas_ultimas_alocacoes = {}
 
+                    # --- PRIORIDADE DA AULA FIXA: escolhe qual turma faz Teoria/Solfejo/Prática
+                    # em cada horário de forma que a professora fixa NUNCA esteja dando aula
+                    # coletiva no exato horário em que a turma da sua aluna fixa está na prática.
+                    t_list = list(TURMAS.keys())
+                    melhor_arranjo = None
+                    if len(t_list) == 3:
+                        def _contar_conflitos_fixa(arranjo):
+                            conflitos = 0
+                            for i in range(3):
+                                t_teo_i, t_sol_i, t_pra_i = arranjo[i]
+                                alunas_pratica_i = set(str(a).strip().lower() for a in TURMAS[t_pra_i])
+                                for prof_ocupada in (pt[i], ps[i]):
+                                    for a_fixa_lower, p_fixa_nome in dict_fixas.items():
+                                        if p_fixa_nome == prof_ocupada and a_fixa_lower in alunas_pratica_i:
+                                            conflitos += 1
+                            return conflitos
+
+                        candidatos_arranjo = []
+                        for linha0 in itertools.permutations(t_list):
+                            for linha1 in itertools.permutations(t_list):
+                                if any(linha1[c] == linha0[c] for c in range(3)):
+                                    continue
+                                for linha2 in itertools.permutations(t_list):
+                                    if any(linha2[c] == linha0[c] or linha2[c] == linha1[c] for c in range(3)):
+                                        continue
+                                    candidatos_arranjo.append([linha0, linha1, linha2])
+
+                        melhor_arranjo = min(candidatos_arranjo, key=_contar_conflitos_fixa)
+                        conflitos_restantes = _contar_conflitos_fixa(melhor_arranjo)
+                        if conflitos_restantes > 0:
+                            st.warning(f"⚠️ Não foi possível eliminar {conflitos_restantes} conflito(s) de aula fixa só trocando as turmas — a professora fixa dá aula coletiva bem no horário da aluna dela em todo arranjo possível. Essas alunas vão pro rodízio normal nesse horário específico.")
+
                     # 5. LOOP DE HORÁRIOS (H1 a H4)
                     for i, h in enumerate(HORARIOS[1:]):
                         p_teoria = pt[i]
                         p_solfejo = ps[i]
 
-                        t_list = list(TURMAS.keys())
-                        t_teo, t_sol, t_pra = t_list[i % 3], t_list[(i + 1) % 3], t_list[(i + 2) % 3]
+                        if melhor_arranjo:
+                            t_teo, t_sol, t_pra = melhor_arranjo[i]
+                        else:
+                            t_teo, t_sol, t_pra = t_list[i % 3], t_list[(i + 1) % 3], t_list[(i + 2) % 3]
 
                         # --- A. SALAS COLETIVAS ---
                         for a in TURMAS[t_teo]: mapa_final[a][h] = f"SALA 8 | {p_teoria}"
