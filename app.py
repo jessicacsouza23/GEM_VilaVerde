@@ -1182,6 +1182,122 @@ if menu == "🏠 Secretaria":
                     else:
                         st.info(f"Nenhum dado encontrado para {al_aj}.")
 
+                st.divider()
+                st.markdown("### 🔍 Verificar Consistência do Rodízio")
+                st.caption("Compara o que está de fato salvo nas escalas (calendário) com o que o sistema 'acha' que aconteceu (rodizio_ciclo e ultima_alocacao). Ajustes manuais na escala que não passaram pela sincronização automática aparecem aqui.")
+
+                if st.button("🔎 Rodar verificação", use_container_width=True):
+                    cal_raw = supabase.table("calendario").select("*").execute().data or []
+
+                    def _extrair_alocacoes(escala_lista):
+                        """De uma escala (lista de linhas), extrai {aluna: {professora, sala}} só das práticas individuais."""
+                        out = {}
+                        for linha in escala_lista:
+                            aluna = linha.get("Aluna")
+                            if not aluna:
+                                continue
+                            for chave, valor in linha.items():
+                                if chave == "Aluna":
+                                    continue
+                                v_str = str(valor)
+                                if "|" not in v_str:
+                                    continue
+                                sala_parte = v_str.split("|")[0].strip().upper()
+                                if sala_parte in ("SALA 8", "SALA 9") or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper():
+                                    continue
+                                if not sala_parte.startswith("SALA"):
+                                    continue
+                                professora = v_str.split("|")[-1].strip()
+                                if not professora:
+                                    continue
+                                out[aluna] = {"professora": professora, "sala": sala_parte}
+                        return out
+
+                    # 1. Última alocação REAL: percorre todas as escalas em ordem de data e
+                    # vai sobrescrevendo — no final, sobra a mais recente de cada aluna.
+                    itens_com_data = []
+                    for item in cal_raw:
+                        try:
+                            d_obj = datetime.strptime(str(item.get("id", "")).strip(), "%d/%m/%Y")
+                            itens_com_data.append((d_obj, item.get("id"), item.get("escala", [])))
+                        except Exception:
+                            continue
+                    itens_com_data.sort(key=lambda x: x[0])
+
+                    ultima_real = {}
+                    for d_obj, data_str, escala in itens_com_data:
+                        for aluna, dados in _extrair_alocacoes(escala).items():
+                            ultima_real[aluna] = {"data": data_str, **dados}
+
+                    # 2. Compara com o que está salvo em ultima_alocacao hoje
+                    alocacao_atual = db_get_ultima_alocacao()
+                    divergencias = []
+                    for aluna, real in ultima_real.items():
+                        registrado = alocacao_atual.get(aluna, {})
+                        if registrado.get("professora") != real["professora"] or registrado.get("sala") != real["sala"]:
+                            divergencias.append({
+                                "Aluna": aluna,
+                                "Real (última escala salva)": f"{real['professora']} — {real['sala']} ({real['data']})",
+                                "Na memória do sistema": (f"{registrado.get('professora')} — {registrado.get('sala')}"
+                                                           if registrado else "Sem registro nenhum")
+                            })
+
+                    st.session_state["_diag_divergencias"] = divergencias
+                    st.session_state["_diag_itens_com_data"] = itens_com_data
+
+                if "_diag_divergencias" in st.session_state:
+                    divergencias = st.session_state["_diag_divergencias"]
+                    if divergencias:
+                        st.warning(f"⚠️ {len(divergencias)} divergência(s) encontrada(s):")
+                        st.dataframe(pd.DataFrame(divergencias), use_container_width=True, hide_index=True)
+
+                        if st.button("🔧 Corrigir automaticamente (reconstruir a partir das escalas reais)", type="primary", use_container_width=True):
+                            itens_com_data = st.session_state["_diag_itens_com_data"]
+                            estado_ciclo_novo = {}
+                            ultima_alocacao_nova = {}
+                            todas_alunas_sistema = sorted([a for turma in TURMAS.values() for a in turma])
+
+                            for d_obj, data_str, escala in itens_com_data:
+                                for linha in escala:
+                                    aluna = linha.get("Aluna")
+                                    if not aluna:
+                                        continue
+                                    for chave, valor in linha.items():
+                                        if chave == "Aluna":
+                                            continue
+                                        v_str = str(valor)
+                                        if "|" not in v_str:
+                                            continue
+                                        sala_parte = v_str.split("|")[0].strip().upper()
+                                        if sala_parte in ("SALA 8", "SALA 9") or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper():
+                                            continue
+                                        if not sala_parte.startswith("SALA"):
+                                            continue
+                                        professora = v_str.split("|")[-1].strip()
+                                        if not professora:
+                                            continue
+
+                                        if professora not in estado_ciclo_novo:
+                                            estado_ciclo_novo[professora] = {"alunas_dadas": [], "ciclo_num": 1}
+                                        # Reconstitui o mesmo comportamento do gerador: se ela já
+                                        # tinha dado aula pra todo mundo, reinicia o ciclo antes de somar essa.
+                                        if set(estado_ciclo_novo[professora]["alunas_dadas"]) >= set(todas_alunas_sistema):
+                                            estado_ciclo_novo[professora]["alunas_dadas"] = []
+                                            estado_ciclo_novo[professora]["ciclo_num"] += 1
+                                        if aluna not in estado_ciclo_novo[professora]["alunas_dadas"]:
+                                            estado_ciclo_novo[professora]["alunas_dadas"].append(aluna)
+
+                                        ultima_alocacao_nova[aluna] = {"professora": professora, "sala": sala_parte, "data": data_str}
+
+                            db_salvar_rodizio_ciclo(estado_ciclo_novo)
+                            db_salvar_ultima_alocacao(ultima_alocacao_nova)
+                            st.success("✅ Reconstruído com sucesso a partir de todas as escalas salvas!")
+                            del st.session_state["_diag_divergencias"]
+                            st.cache_data.clear()
+                            st.rerun()
+                    else:
+                        st.success("✅ Tudo consistente! A memória do rodízio bate com a última escala salva de cada aluna.")
+
             # --- ABA 6: TURMAS E PESSOAS (CADASTRO) ---
             with tab_pessoas:
                 sub_alunas, sub_profs = st.tabs(["🎀 Alunas e Turmas", "👩‍🏫 Professoras"])
