@@ -16,187 +16,75 @@ import random
 import itertools
 import streamlit.components.v1 as components
 from streamlit_pills import pills # NOVO: Precisa instalar (pip install streamlit-pills)
+
 # ============================================================
-# MURAL ÚNICO DO RODÍZIO — exporta toda a escala em um PNG
+# MURAL DO RODÍZIO — layout fixo igual ao cartaz de referência
 # ============================================================
-"""Mural único para a escala do GEM.
-
-Use esta função no lugar do bloco de mural que começa em
-``# --- ABA 2: PLANEJAMENTO (V106 ...``. Ela não grava no Supabase: a escala
-continua sendo salva pelo botão ``Salvar Alterações`` do aplicativo principal.
-"""
-
-from html import escape
-
-import streamlit.components.v1 as components
-
-
-CORES_SALA = {
-    "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3",
-    "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1",
-    "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff",
-    "SECRETARIA": "#fef3c7",
-}
-
-
-def _cabecalho(indice, horario):
-    """Converte os códigos internos dos horários nos textos do cartaz."""
-    textos = [
-        "1ª aula solfejo melódico<br>início: 8:55h &nbsp; Fim: 9:35",
-        "2ª aula: 9:40 às 10:10",
-        "3ª aula: 10:15 às 10:45",
-        "4ª aula: 10:50 às 11:20",
-    ]
-    return textos[indice] if indice < len(textos) else escape(str(horario))
-
-
-def _sala_ordenacao(valor):
-    texto = str(valor).upper()
-    if "SALA" in texto:
-        for numero in range(1, 10):
-            if f"SALA {numero}" in texto:
-                return numero
-    if "SECRETARIA" in texto:
-        return 20
-    return 30
-
-
-def _titulo_e_cor(local_prof):
-    texto = str(local_prof)
-    superior = texto.upper()
-    titulo = texto
-    if "SALA 8" in superior:
-        titulo += " (Teoria)"
-    elif "SALA 9" in superior:
-        titulo += " (Solfejo)"
-    cor = next((cor for sala, cor in CORES_SALA.items() if sala in superior), "#ffffff")
-    return escape(titulo), cor
-
-
-def _fonte_mural(tamanho, negrito=False):
-    """Escolhe uma fonte legível no Windows ou em servidores Linux."""
+def _fonte_cartaz(tamanho, negrito=True):
     from PIL import ImageFont
     candidatos = (
-        ["C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/Arial.ttf"]
+        ["C:/Windows/Fonts/arialbd.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
         if negrito else
-        ["C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/Arial.ttf"]
-    )
-    candidatos += (
-        ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
-        if negrito else
-        ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
+        ["C:/Windows/Fonts/arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
     )
     for caminho in candidatos:
         try:
             return ImageFont.truetype(caminho, tamanho)
         except OSError:
-            pass
+            continue
     return ImageFont.load_default()
 
 
-def _texto_turma(turma):
-    """Ex.: 'Vila Verde - Turma 2' vira 'Turma 2'."""
-    partes = str(turma).split(" - ")
-    return next((parte for parte in partes if parte.upper().startswith("TURMA")), str(turma))
+def _encurtar_cartaz(desenho, texto, fonte, limite):
+    texto = str(texto)
+    if desenho.textbbox((0, 0), texto, font=fonte)[2] <= limite:
+        return texto
+    while texto and desenho.textbbox((0, 0), texto + "…", font=fonte)[2] > limite:
+        texto = texto[:-1]
+    return texto.rstrip() + "…"
 
 
-def _local_da_aluna(turma):
-    """Ex.: 'Vila Verde - Turma 2' vira 'Vila Verde'."""
-    partes = [parte for parte in str(turma).split(" - ") if not parte.upper().startswith("TURMA")]
-    return " - ".join(partes) or str(turma)
-
-
-def _dados_cartoes(df_escala, horarios, turma_por_aluna, folgas):
-    colunas = []
-    for indice, horario in enumerate(horarios):
-        grupos = {}
-        for _, registro in df_escala.iterrows():
-            local = str(registro.get(horario, ""))
-            aluna = str(registro.get("Aluna", ""))
-            if local and local.lower() != "nan":
-                grupos.setdefault(local, []).append(aluna)
-
-        cartoes = []
-        for local_prof in sorted(grupos, key=lambda item: (_sala_ordenacao(item), item)):
-            superior = local_prof.upper()
-            if any(x in superior for x in ("FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO")):
-                continue
-            titulo, cor = _titulo_e_cor(local_prof)
-            titulo = titulo.replace("&amp;", "&")
-            alunas = grupos[local_prof]
-
-            if indice == 0 and "TODAS" in superior:
-                texto = "Todas as alunas"
-            elif "SALA 8" in superior or "SALA 9" in superior:
-                # Coletivas: somente Turma 1, Turma 2 ou Turma 3.
-                texto = " + ".join(sorted({_texto_turma(turma_por_aluna.get(a, "Sem turma")) for a in alunas}))
-            else:
-                # Individuais: aluna e local, sem repetir o código da turma.
-                texto = "\n".join(f"{a} - {_local_da_aluna(turma_por_aluna.get(a, 'Sem turma'))}" for a in alunas)
-            cartoes.append((titulo, texto, cor))
-
-        if indice == 0 and folgas:
-            cartoes.append(("Folgas", ", ".join(folgas), "#ffffff"))
-        colunas.append(cartoes)
-    return colunas
-
-
-def renderizar_mural_unico(df_escala, data_selecionada, horarios, turmas, folgas=None):
-    """Cartaz PNG fiel ao modelo enviado, com download nativo do Streamlit."""
-    import io
-    import streamlit as st
+def renderizar_mural_referencia(df_escala, data_selecionada, horarios, turmas, folgas=None):
+    """Gera um PNG com as posições, cores e proporção do cartaz de referência."""
     from PIL import Image, ImageDraw
+    import io
 
-    turma_por_aluna = {str(a): t for t, alunas in turmas.items() for a in alunas}
-    colunas = _dados_cartoes(df_escala, horarios, turma_por_aluna, folgas or [])
+    cores = {
+        "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3",
+        "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1",
+        "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff",
+        "SECRETARIA": "#fef3c7",
+    }
+    turma_por_aluna = {str(a): str(t) for t, alunas in turmas.items() for a in alunas}
 
-    # Proporção da referência. A largura da coluna é calculada para a quarta
-    # nunca ultrapassar a borda direita da imagem.
-    LARGURA, MARGEM, ESPACO = 1280, 10, 14
-    LARG_COL = (LARGURA - (2 * MARGEM) - (3 * ESPACO)) // 4
-    Y_COLUNA = 116
-    fonte_titulo = _fonte_mural(42, True)
-    fonte_data = _fonte_mural(31, True)
-    fonte_horario = _fonte_mural(18, True)
-    fonte_card_titulo = _fonte_mural(14, True)
-    fonte_card_texto = _fonte_mural(14, True)
+    def turma_curta(valor):
+        partes = str(valor).split(" - ")
+        return next((p for p in partes if p.upper().startswith("TURMA")), str(valor))
 
-    # Mede as linhas antes de criar a imagem. Assim nenhum cartão, inclusive
-    # os que têm nomes/localizações longos, vaza das próprias bordas.
-    desenho_teste = ImageDraw.Draw(Image.new("RGB", (1, 1), "white"))
-    dados_desenho = []
-    maior_y = Y_COLUNA + 70
-    for coluna in colunas:
-        y_teste = Y_COLUNA + 70
-        coluna_pronta = []
-        for titulo, texto, cor in coluna:
-            linhas = []
-            for linha_original in str(texto).split("\n"):
-                palavras, atual = linha_original.split(), ""
-                for palavra in palavras:
-                    candidata = f"{atual} {palavra}".strip()
-                    if atual and desenho_teste.textbbox((0, 0), candidata, font=fonte_card_texto)[2] > LARG_COL - 48:
-                        linhas.append(atual)
-                        atual = palavra
-                    else:
-                        atual = candidata
-                if atual:
-                    linhas.append(atual)
-            linhas = linhas or [""]
-            altura_cartao = max(56, 30 + len(linhas) * 18 + 9)
-            coluna_pronta.append((titulo, linhas, cor, altura_cartao))
-            y_teste += altura_cartao + 7
-        dados_desenho.append(coluna_pronta)
-        maior_y = max(maior_y, y_teste)
+    def local_curto(valor):
+        return " - ".join(p for p in str(valor).split(" - ") if not p.upper().startswith("TURMA"))
 
-    ALTURA = max(755, maior_y + 20)
-    BASE_COLUNA = ALTURA - 20
-    imagem = Image.new("RGB", (LARGURA, ALTURA), "white")
+    def ordem(local):
+        superior = local.upper()
+        for numero in range(1, 10):
+            if f"SALA {numero}" in superior:
+                return numero
+        return 20
+
+    # 1280 × 730, exatamente a proporção do modelo enviado.
+    largura, altura = 1280, 730
+    imagem = Image.new("RGB", (largura, altura), "white")
     d = ImageDraw.Draw(imagem)
+    ft = _fonte_cartaz(36)
+    fd = _fonte_cartaz(27)
+    fh = _fonte_cartaz(17)
+    fc = _fonte_cartaz(14)
 
-    d.text((LARGURA // 2, 17), "Rodízio Geral das aulas- GEM Vila Verde", font=fonte_titulo, fill="#111", anchor="ma")
-    d.text((LARGURA // 2, 69), f"Data: {data_selecionada}", font=fonte_data, fill="#111", anchor="ma")
+    d.text((640, 17), "Rodízio Geral das aulas- GEM Vila Verde", font=ft, fill="#111111", anchor="ma")
+    d.text((640, 57), f"Data: {data_selecionada}", font=fd, fill="#111111", anchor="ma")
 
+    xs = [10, 333, 650, 967]
+    larguras = [310, 302, 302, 303]
     cabecalhos = [
         "1ª aula solfejo melódico\ninicio: 8:55h Fim: 9:35",
         "2ª aula: 9:40 às 10:10",
@@ -204,35 +92,57 @@ def renderizar_mural_unico(df_escala, data_selecionada, horarios, turmas, folgas
         "4ª aula: 10:50 às 11:20",
     ]
 
-    for i in range(4):
-        x1 = MARGEM + i * (LARG_COL + ESPACO)
-        x2 = x1 + LARG_COL
-        d.rounded_rectangle((x1, Y_COLUNA, x2, BASE_COLUNA), radius=12, outline="#111", width=3, fill="white")
-        d.rounded_rectangle((x1 + 13, Y_COLUNA + 12, x2 - 13, Y_COLUNA + 63), radius=7, fill="#101116")
-        cab = cabecalhos[i] if i < len(cabecalhos) else str(horarios[i])
-        d.multiline_text(((x1 + x2) // 2, Y_COLUNA + 17), cab, font=fonte_horario, fill="white", anchor="ma", align="center", spacing=0)
+    for indice, horario in enumerate(horarios[:4]):
+        x, largura_coluna = xs[indice], larguras[indice]
+        direita = x + largura_coluna
+        d.rounded_rectangle((x, 88, direita, 708), radius=12, fill="white", outline="#111111", width=3)
+        d.rounded_rectangle((x + 14, 100, direita - 14, 144), radius=7, fill="#111217")
+        d.multiline_text(((x + direita) // 2, 105), cabecalhos[indice], font=fh, fill="white", anchor="ma", align="center", spacing=0)
 
-        y = Y_COLUNA + 76
-        for titulo, linhas, cor, altura_card in (dados_desenho[i] if i < len(dados_desenho) else []):
-            d.rounded_rectangle((x1 + 13, y, x2 - 13, y + altura_card), radius=8, fill=cor, outline="#111", width=2)
-            d.text((x1 + 24, y + 9), str(titulo), font=fonte_card_titulo, fill="#111")
-            d.multiline_text((x1 + 24, y + 27), "\n".join(linhas), font=fonte_card_texto, fill="#111", spacing=1)
-            y += altura_card + 7
+        grupos = {}
+        for _, registro in df_escala.iterrows():
+            local = str(registro.get(horario, ""))
+            aluna = str(registro.get("Aluna", ""))
+            if local and local.lower() != "nan":
+                grupos.setdefault(local, []).append(aluna)
+
+        y = 158
+        for local in sorted(grupos, key=lambda valor: (ordem(valor), valor)):
+            superior = local.upper()
+            if any(t in superior for t in ("FALTA", "AUSENTE", "VAZIO", "NINGUÉM")):
+                continue
+            alunas = grupos[local]
+            cor = next((valor for sala, valor in cores.items() if sala in superior), "#ffffff")
+            titulo = local
+            if "SALA 8" in superior:
+                titulo += " (Teoria)"
+                corpo = " + ".join(sorted({turma_curta(turma_por_aluna.get(a, "Sem turma")) for a in alunas}))
+            elif "SALA 9" in superior:
+                titulo += " (Solfejo)"
+                corpo = " + ".join(sorted({turma_curta(turma_por_aluna.get(a, "Sem turma")) for a in alunas}))
+            elif indice == 0 and "TODAS" in superior:
+                corpo = "Todas as alunas"
+            else:
+                corpo = " + ".join(f"{a} - {local_curto(turma_por_aluna.get(a, ''))}" for a in alunas)
+
+            # Cartões fixos de 55px, como na referência; texto longo é reduzido,
+            # nunca ultrapassa as bordas.
+            d.rounded_rectangle((x + 14, y, direita - 14, y + 55), radius=8, fill=cor, outline="#111111", width=2)
+            d.text((x + 24, y + 9), _encurtar_cartaz(d, titulo, fc, largura_coluna - 48), font=fc, fill="#111111")
+            d.text((x + 24, y + 28), _encurtar_cartaz(d, corpo, fc, largura_coluna - 48), font=fc, fill="#111111")
+            y += 61
+
+        if indice == 0 and folgas:
+            d.rounded_rectangle((x + 14, y, direita - 14, y + 40), radius=8, fill="white", outline="#111111", width=2)
+            d.text((x + 24, y + 12), _encurtar_cartaz(d, "Folgas: " + ", ".join(folgas), fc, largura_coluna - 48), font=fc, fill="#111111")
 
     buffer = io.BytesIO()
     imagem.save(buffer, format="PNG", optimize=True)
     png = buffer.getvalue()
-
     st.image(png, use_container_width=True)
-    st.download_button(
-        "📸 Baixar mural completo em PNG",
-        data=png,
-        file_name=f"Rodizio_GEM_{str(data_selecionada).replace('/', '-')}.png",
-        mime="image/png",
-        use_container_width=True,
-        type="primary",
-    )
-
+    st.download_button("📸 Baixar mural completo em PNG", png,
+                       file_name=f"Rodizio_GEM_{str(data_selecionada).replace('/', '-')}.png",
+                       mime="image/png", use_container_width=True, type="primary")
 
 
 # Verificação de Segurança
@@ -888,9 +798,7 @@ if menu == "🏠 Secretaria":
                         ps_por_turma[turma_nome] = st.selectbox(f"Prof Solfejo — {turma_nome}", PROFESSORAS_LISTA, index=idx_default, key=f"ps_{turma_nome}")
                 st.caption("A professora acompanha a turma dela onde quer que ela caia no rodízio — mesmo se o horário mudar por causa de uma aula fixa.")
                 
-                folga_ativa = st.multiselect(
-                    "Folgas (Professoras Ausentes):", PROFESSORAS_LISTA, key="folga_ativa"
-                )
+                folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA, key="folga_ativa")
     
                 # --- BOTÃO DE GERAÇÃO — RODÍZIO EM CÍRCULO REAL (V2) ---
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
@@ -1093,9 +1001,7 @@ if menu == "🏠 Secretaria":
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
                 st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
-
-                # Um único cartaz, no padrão visual solicitado, com download em PNG.
-                renderizar_mural_unico(
+                renderizar_mural_referencia(
                     df_escala=df_escala,
                     data_selecionada=data_sel_str,
                     horarios=HORARIOS,
