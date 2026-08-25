@@ -154,6 +154,7 @@ def renderizar_mural_unico(df_escala, data_selecionada, horarios, turmas, folgas
     </style>'''
 
     # O botão fica em um componente separado, mas captura o mural no documento pai.
+    # Mural e botão no mesmo componente: evita que o Streamlit exiba o HTML como texto.
     botao = '''
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <button id="baixar-mural" style="width:100%;background:#075fb8;color:#fff;border:0;border-radius:10px;
@@ -161,6 +162,7 @@ def renderizar_mural_unico(df_escala, data_selecionada, horarios, turmas, folgas
     <script>
       document.getElementById('baixar-mural').addEventListener('click', async () => {
         const mural = window.parent.document.getElementById('mural-rodizio-unico');
+        const mural = document.getElementById('mural-rodizio-unico');
         if (!mural) { alert('O mural ainda não foi encontrado. Atualize a página e tente novamente.'); return; }
         const canvas = await html2canvas(mural, {scale: 2, backgroundColor: '#ffffff', logging: false});
         const link = document.createElement('a');
@@ -174,6 +176,7 @@ def renderizar_mural_unico(df_escala, data_selecionada, horarios, turmas, folgas
     import streamlit as st
     st.markdown(estilo + mural_html, unsafe_allow_html=True)
     components.html(botao, height=65)
+    components.html(estilo + mural_html + botao, height=950, scrolling=True)
 
 # Verificação de Segurança
 try:
