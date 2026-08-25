@@ -22,6 +22,7 @@ from streamlit_pills import pills # NOVO: Precisa instalar (pip install streamli
 # ============================================================
 def _fonte_cartaz(tamanho, negrito=True):
     from PIL import ImageFont
+    from pathlib import Path
     candidatos = (
         [
             "C:/Windows/Fonts/arialbd.ttf",
@@ -46,6 +47,35 @@ def _fonte_cartaz(tamanho, negrito=True):
             return ImageFont.truetype(caminho, tamanho)
         except OSError:
             continue
+    # Em alguns servidores Streamlit a fonte existe, mas em outro diretório.
+    # Procura uma fonte TrueType Unicode antes de usar a fonte bitmap do Pillow.
+    termos = ("noto", "dejavu", "liberation", "roboto", "arial", "sans")
+    for raiz in ("/usr/share/fonts", "/usr/local/share/fonts", "/opt/fonts"):
+        pasta = Path(raiz)
+        if not pasta.exists():
+            continue
+        for caminho in pasta.rglob("*.ttf"):
+            nome = caminho.name.lower()
+            if not any(termo in nome for termo in termos):
+                continue
+            if negrito and not any(termo in nome for termo in ("bold", "black", "semibold")):
+                continue
+            try:
+                return ImageFont.truetype(str(caminho), tamanho)
+            except OSError:
+                continue
+    # Mesmo uma fonte regular Unicode é preferível à fonte bitmap sem acentos.
+    for raiz in ("/usr/share/fonts", "/usr/local/share/fonts", "/opt/fonts"):
+        pasta = Path(raiz)
+        if not pasta.exists():
+            continue
+        for caminho in pasta.rglob("*.ttf"):
+            if not any(termo in caminho.name.lower() for termo in termos):
+                continue
+            try:
+                return ImageFont.truetype(str(caminho), tamanho)
+            except OSError:
+                continue
     # Pillow atual permite dimensionar a fonte de reserva; assim ela nunca
     # volta ao minúsculo padrão de aproximadamente 10 px em servidores cloud.
     try:
