@@ -16,6 +16,164 @@ import random
 import itertools
 import streamlit.components.v1 as components
 from streamlit_pills import pills # NOVO: Precisa instalar (pip install streamlit-pills)
+# ============================================================
+# MURAL ÚNICO DO RODÍZIO — exporta toda a escala em um PNG
+# ============================================================
+"""Mural único para a escala do GEM.
+
+Use esta função no lugar do bloco de mural que começa em
+``# --- ABA 2: PLANEJAMENTO (V106 ...``. Ela não grava no Supabase: a escala
+continua sendo salva pelo botão ``Salvar Alterações`` do aplicativo principal.
+"""
+
+from html import escape
+
+import streamlit.components.v1 as components
+
+
+CORES_SALA = {
+    "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3",
+    "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1",
+    "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff",
+    "SECRETARIA": "#fef3c7",
+}
+
+
+def _cabecalho(indice, horario):
+    """Converte os códigos internos dos horários nos textos do cartaz."""
+    textos = [
+        "1ª aula solfejo melódico<br>início: 8:55h &nbsp; Fim: 9:35",
+        "2ª aula: 9:40 às 10:10",
+        "3ª aula: 10:15 às 10:45",
+        "4ª aula: 10:50 às 11:20",
+    ]
+    return textos[indice] if indice < len(textos) else escape(str(horario))
+
+
+def _sala_ordenacao(valor):
+    texto = str(valor).upper()
+    if "SALA" in texto:
+        for numero in range(1, 10):
+            if f"SALA {numero}" in texto:
+                return numero
+    if "SECRETARIA" in texto:
+        return 20
+    return 30
+
+
+def _titulo_e_cor(local_prof):
+    texto = str(local_prof)
+    superior = texto.upper()
+    titulo = texto
+    if "SALA 8" in superior:
+        titulo += " (Teoria)"
+    elif "SALA 9" in superior:
+        titulo += " (Solfejo)"
+    cor = next((cor for sala, cor in CORES_SALA.items() if sala in superior), "#ffffff")
+    return escape(titulo), cor
+
+
+def renderizar_mural_unico(df_escala, data_selecionada, horarios, turmas, folgas=None):
+    """Exibe o mural completo e um botão que baixa UM PNG.
+
+    Args:
+        df_escala: DataFrame salvo na coluna ``escala`` do Supabase.
+        data_selecionada: data no formato DD/MM/AAAA.
+        horarios: a lista ``HORARIOS`` do app.
+        turmas: dicionário ``{nome_da_turma: [alunas...]}``.
+        folgas: lista opcional de professoras ausentes.
+    """
+    folgas = folgas or []
+    turma_por_aluna = {
+        str(aluna): turma for turma, alunas in turmas.items() for aluna in alunas
+    }
+    colunas = []
+
+    for indice, horario in enumerate(horarios):
+        grupos = {}
+        for _, registro in df_escala.iterrows():
+            local = str(registro.get(horario, ""))
+            aluna = str(registro.get("Aluna", ""))
+            if local and local.lower() != "nan":
+                grupos.setdefault(local, []).append(aluna)
+
+        cards = []
+        for local_prof in sorted(grupos, key=lambda item: (_sala_ordenacao(item), item)):
+            local_superior = local_prof.upper()
+            if any(x in local_superior for x in ("FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO")):
+                continue
+            titulo, cor = _titulo_e_cor(local_prof)
+            alunas = grupos[local_prof]
+            if indice == 0 and "TODAS" in local_superior:
+                conteudo = "Todas as alunas"
+            else:
+                conteudo = "<br>".join(
+                    f"{escape(nome)} - {escape(str(turma_por_aluna.get(nome, 'Sem turma')))}"
+                    for nome in alunas
+                )
+            cards.append(
+                f'<div class="gem-card" style="background:{cor}">'
+                f'<div class="gem-card-title">{titulo}</div>'
+                f'<div class="gem-card-content">{conteudo}</div></div>'
+            )
+
+        if indice == 0 and folgas:
+            cards.append(
+                '<div class="gem-card" style="background:#ffffff">'
+                '<div class="gem-card-title">Folgas</div>'
+                f'<div class="gem-card-content">{escape(", ".join(folgas))}</div></div>'
+            )
+
+        cards_html = "".join(cards) or '<div class="gem-vazio">Sem alocação</div>'
+        colunas.append(
+            '<section class="gem-coluna">'
+            f'<div class="gem-horario">{_cabecalho(indice, horario)}</div>'
+            f'{cards_html}'
+            '</section>'
+        )
+
+    mural_html = f'''<div id="mural-rodizio-unico" class="gem-mural">
+      <div class="gem-titulo">Rodízio Geral das aulas - GEM Vila Verde</div>
+      <div class="gem-data">Data: {escape(str(data_selecionada))}</div>
+      <div class="gem-grade">{"".join(colunas)}</div>
+    </div>'''
+
+    estilo = '''<style>
+      .gem-mural { background:#fff; color:#111; padding:18px; font-family:Arial,sans-serif; }
+      .gem-titulo { text-align:center; font-size:30px; font-weight:800; }
+      .gem-data { text-align:center; font-size:23px; font-weight:800; margin:2px 0 14px; }
+      .gem-grade { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:16px; }
+      .gem-coluna { border:3px solid #111; border-radius:12px; padding:10px; min-width:0; }
+      .gem-horario { background:#111217; color:#fff; border-radius:7px; padding:9px 7px;
+                      margin-bottom:10px; text-align:center; font-size:17px; font-weight:800; line-height:1.15; }
+      .gem-card { border:1.8px solid #111; border-radius:8px; padding:8px; margin:7px 0; min-height:38px; }
+      .gem-card-title { font-size:14px; font-weight:800; line-height:1.2; }
+      .gem-card-content { font-size:14px; font-weight:700; line-height:1.35; margin-top:3px; }
+      .gem-vazio { color:#555; font-size:14px; padding:8px; }
+      @media (max-width:900px) { .gem-grade { grid-template-columns:repeat(2, 1fr); } }
+    </style>'''
+
+    # O botão fica em um componente separado, mas captura o mural no documento pai.
+    botao = '''
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <button id="baixar-mural" style="width:100%;background:#075fb8;color:#fff;border:0;border-radius:10px;
+      padding:14px;font-size:18px;font-weight:700;cursor:pointer">📸 Baixar mural completo em PNG</button>
+    <script>
+      document.getElementById('baixar-mural').addEventListener('click', async () => {
+        const mural = window.parent.document.getElementById('mural-rodizio-unico');
+        if (!mural) { alert('O mural ainda não foi encontrado. Atualize a página e tente novamente.'); return; }
+        const canvas = await html2canvas(mural, {scale: 2, backgroundColor: '#ffffff', logging: false});
+        const link = document.createElement('a');
+        link.download = 'Rodizio_GEM_' + new Date().toISOString().slice(0,10) + '.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      });
+    </script>'''
+
+    # Primeiro o mural, depois o botão: garante que a captura pegue toda a grade.
+    import streamlit as st
+    st.markdown(estilo + mural_html, unsafe_allow_html=True)
+    components.html(botao, height=65)
 
 # Verificação de Segurança
 try:
@@ -670,7 +828,9 @@ if menu == "🏠 Secretaria":
                         ps_por_turma[turma_nome] = st.selectbox(f"Prof Solfejo — {turma_nome}", PROFESSORAS_LISTA, index=idx_default, key=f"ps_{turma_nome}")
                 st.caption("A professora acompanha a turma dela onde quer que ela caia no rodízio — mesmo se o horário mudar por causa de uma aula fixa.")
                 
-                folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA)
+                folga_ativa = st.multiselect(
+                    "Folgas (Professoras Ausentes):", PROFESSORAS_LISTA, key="folga_ativa"
+                )
     
                 # --- BOTÃO DE GERAÇÃO — RODÍZIO EM CÍRCULO REAL (V2) ---
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
@@ -873,103 +1033,15 @@ if menu == "🏠 Secretaria":
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
                 st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
-                
-                # --- 1. BOTÃO ÚNICO DE ALTA PERFORMANCE ---
-                # Este bloco cria o botão que "enxerga" o que você vê na tela e transforma em foto
-                js_master = f"""
-                <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-                <script>
-                async function baixarTudoEstilizado() {{
-                    const numColunas = {len(HORARIOS)};
-                    for (let i = 0; i < numColunas; i++) {{
-                        const divId = 'mural_export_' + i;
-                        const container = window.parent.document.getElementById(divId);
-                        
-                        if (container) {{
-                            // Captura exatamente o que está na tela com o dobro de nitidez
-                            const canvas = await html2canvas(container, {{ 
-                                scale: 2, 
-                                backgroundColor: "#ffffff",
-                                logging: false
-                            }});
-                            
-                            const link = window.parent.document.createElement('a');
-                            const hNome = container.querySelector('.horario-titulo').innerText.trim().replace(':', 'h');
-                            link.download = 'Mural_' + hNome + '.png';
-                            link.href = canvas.toDataURL("image/png");
-                            link.click();
-                            
-                            // Espera meio segundo para o navegador processar o próximo "print"
-                            await new Promise(r => setTimeout(r, 500));
-                        }}
-                    }}
-                }}
-                </script>
-                <button onclick="baixarTudoEstilizado()" style="width:100%; background: linear-gradient(90deg, #0078d4, #005a9e); color:white; border:none; padding:18px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:20px; margin-bottom:25px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
-                    📸 Gerar e Baixar Todas as Imagens (Fiel à Tela)
-                </button>
-                """
-                st.components.v1.html(js_master, height=100)
-    
-                # --- 2. MONTAGEM DAS COLUNAS (O QUE APARECE NA TELA) ---
-                termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
-                cores = {"SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"}
-    
-                cols_mural = st.columns(len(HORARIOS))
-    
-                for idx, h_col in enumerate(HORARIOS):
-                    with cols_mural[idx]:
-                        div_id = f"mural_export_{idx}"
-                        
-                        html_cards = ""
-                        grupos = {}
-                        for _, r in df_escala.iterrows():
-                            info = str(r[h_col])
-                            if info not in grupos: grupos[info] = []
-                            grupos[info].append(r['Aluna'])
-                        
-                        chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
-                            0 if "SALA" in x.upper() and any(i in x for i in "1234567") else 
-                            1 if "SALA 8" in x.upper() else 
-                            2 if "SALA 9" in x.upper() else 3, 
-                            x
-                        ))
-                        
-                        for local_prof in chaves_ordenadas:
-                            local_up = local_prof.upper()
-                            if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up: continue
-    
-                            # Adiciona a matéria conforme sua solicitação
-                            local_exibicao = local_prof
-                            if "SALA 8" in local_up: local_exibicao = f"{local_prof} (Teoria)"
-                            elif "SALA 9" in local_up: local_exibicao = f"{local_prof} (Solfejo)"
-    
-                            bg = "#ffffff"
-                            for sala, cor in cores.items():
-                                if sala in local_up: bg = cor; break
-                            
-                            alunas_gp = grupos[local_prof]
-                            if h_col == HORARIOS[0]: text_alunas = "Todas as alunas"
-                            else:
-                                presentes = [t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)]
-                                text_alunas = " + ".join(sorted(presentes)) if len(alunas_gp) > 1 else alunas_gp[0]
-    
-                            # Construção do card fiel ao print
-                            html_cards += f'<div style="background-color:{bg}; border:2px solid #000; padding:10px; margin-bottom:10px; border-radius:10px; font-family:sans-serif;">'
-                            html_cards += f'<b style="font-size:18px; color:#000; display:block; line-height:1.2;">{local_exibicao}</b>'
-                            html_cards += f'<span style="font-size:16px; color:#1a1a1a; font-weight:800;">{text_alunas}</span>'
-                            html_cards += '</div>'
-    
-                        # O container que o botão vai "fotografar"
-                        mural_visual = f"""
-                        <div id="{div_id}" style="background:white; padding:15px; border:4px solid #000; border-radius:15px; width:100%;">
-                            <div class="horario-titulo" style="background:#262730; color:white; padding:10px; border-radius:8px; text-align:center; font-size:24px; font-weight:bold; margin-bottom:15px; font-family:sans-serif;">
-                                {h_col}
-                            </div>
-                            {html_cards}
-                        </div>
-                        """
-                        st.write(mural_visual, unsafe_allow_html=True)
+
+                # Um único cartaz, no padrão visual solicitado, com download em PNG.
+                renderizar_mural_unico(
+                    df_escala=df_escala,
+                    data_selecionada=data_sel_str,
+                    horarios=HORARIOS,
+                    turmas=TURMAS,
+                    folgas=st.session_state.get("folga_ativa", []),
+                )
     
                 st.divider()
                 
