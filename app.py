@@ -93,6 +93,51 @@ def _encurtar_cartaz(desenho, texto, fonte, limite):
     return texto.rstrip() + "…"
 
 
+def _texto_base_cartaz(texto):
+    """Remove somente as marcas de acento; elas são redesenhadas separadamente."""
+    especiais = {"ª": "a", "º": "o", "…": "..."}
+    texto = "".join(especiais.get(c, c) for c in str(texto))
+    return "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn")
+
+
+def _desenhar_texto_cartaz(desenho, xy, texto, fonte, preenchimento="#111111"):
+    """Desenha português inclusive em servidores cuja fonte não contém acentos."""
+    x, y = xy
+    tamanho = getattr(fonte, "size", 14)
+    for caractere in str(texto):
+        if caractere == "\n":
+            x = xy[0]
+            y += tamanho + 2
+            continue
+        decomposicao = unicodedata.normalize("NFD", caractere)
+        base = _texto_base_cartaz(decomposicao[0]) or " "
+        largura = desenho.textbbox((0, 0), base, font=fonte)[2]
+        desenho.text((x, y), base, font=fonte, fill=preenchimento)
+        for marca in decomposicao[1:]:
+            meio = x + max(2, largura // 2)
+            if marca == "\u0301":       # agudo: á é í ó ú
+                desenho.line((meio, y + 3, meio + 4, y), fill=preenchimento, width=1)
+            elif marca == "\u0300":     # grave: à
+                desenho.line((meio, y, meio + 4, y + 3), fill=preenchimento, width=1)
+            elif marca == "\u0302":     # circunflexo: â ê ô
+                desenho.line((meio - 3, y + 3, meio, y), fill=preenchimento, width=1)
+                desenho.line((meio, y, meio + 3, y + 3), fill=preenchimento, width=1)
+            elif marca == "\u0303":     # til: ã õ
+                desenho.arc((meio - 4, y, meio + 4, y + 4), 180, 360, fill=preenchimento, width=1)
+            elif marca == "\u0308":     # trema: ü
+                desenho.ellipse((meio - 3, y + 1, meio - 2, y + 2), fill=preenchimento)
+                desenho.ellipse((meio + 2, y + 1, meio + 3, y + 2), fill=preenchimento)
+            elif marca == "\u0327":     # cedilha: ç
+                desenho.arc((meio - 1, y + tamanho - 4, meio + 3, y + tamanho + 2), 0, 180, fill=preenchimento, width=1)
+        x += largura
+
+
+def _desenhar_centralizado_cartaz(desenho, y, texto, fonte, centro=640, preenchimento="#111111"):
+    base = _texto_base_cartaz(texto)
+    largura = desenho.textbbox((0, 0), base, font=fonte)[2]
+    _desenhar_texto_cartaz(desenho, (centro - largura // 2, y), texto, fonte, preenchimento)
+
+
 def renderizar_mural_referencia(df_escala, data_selecionada, horarios, turmas, folgas=None):
     """Gera um PNG com as posições, cores e proporção do cartaz de referência."""
     from PIL import Image, ImageDraw
