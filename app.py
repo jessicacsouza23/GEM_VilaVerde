@@ -23,16 +23,35 @@ from streamlit_pills import pills # NOVO: Precisa instalar (pip install streamli
 def _fonte_cartaz(tamanho, negrito=True):
     from PIL import ImageFont
     candidatos = (
-        ["C:/Windows/Fonts/arialbd.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
+        [
+            "C:/Windows/Fonts/arialbd.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+            "DejaVuSans-Bold.ttf",
+        ]
         if negrito else
-        ["C:/Windows/Fonts/arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
+        [
+            "C:/Windows/Fonts/arial.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+            "DejaVuSans.ttf",
+        ]
     )
     for caminho in candidatos:
         try:
             return ImageFont.truetype(caminho, tamanho)
         except OSError:
             continue
-    return ImageFont.load_default()
+    # Pillow atual permite dimensionar a fonte de reserva; assim ela nunca
+    # volta ao minúsculo padrão de aproximadamente 10 px em servidores cloud.
+    try:
+        return ImageFont.load_default(size=tamanho)
+    except TypeError:
+        return ImageFont.load_default()
 
 
 def _encurtar_cartaz(desenho, texto, fonte, limite):
