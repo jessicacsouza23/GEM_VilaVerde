@@ -94,21 +94,20 @@ def _fonte_mural(tamanho, negrito=False):
     return ImageFont.load_default()
 
 
-def _linhas_mural(desenho, texto, fonte, largura):
-    palavras = str(texto).split()
-    linhas, atual = [], ""
-    for palavra in palavras:
-        teste = f"{atual} {palavra}".strip()
-        if atual and desenho.textbbox((0, 0), teste, font=fonte)[2] > largura:
-            linhas.append(atual)
-            atual = palavra
-        else:
-            atual = teste
-    return linhas + ([atual] if atual else [])
+def _texto_turma(turma):
+    """Ex.: 'Vila Verde - Turma 2' vira 'Turma 2'."""
+    partes = str(turma).split(" - ")
+    return next((parte for parte in partes if parte.upper().startswith("TURMA")), str(turma))
 
 
-def _cartoes_mural(df_escala, horarios, turma_por_aluna, folgas):
-    resultado = []
+def _local_da_aluna(turma):
+    """Ex.: 'Vila Verde - Turma 2' vira 'Vila Verde'."""
+    partes = [parte for parte in str(turma).split(" - ") if not parte.upper().startswith("TURMA")]
+    return " - ".join(partes) or str(turma)
+
+
+def _dados_cartoes(df_escala, horarios, turma_por_aluna, folgas):
+    colunas = []
     for indice, horario in enumerate(horarios):
         grupos = {}
         for _, registro in df_escala.iterrows():
@@ -129,81 +128,68 @@ def _cartoes_mural(df_escala, horarios, turma_por_aluna, folgas):
             if indice == 0 and "TODAS" in superior:
                 texto = "Todas as alunas"
             elif "SALA 8" in superior or "SALA 9" in superior:
-                # Aulas coletivas: mostra somente a turma, nunca a lista de alunas.
-                turmas_do_cartao = sorted({turma_por_aluna.get(nome, "Sem turma") for nome in alunas})
-                texto = " + ".join(turmas_do_cartao)
+                # Coletivas: somente Turma 1, Turma 2 ou Turma 3.
+                texto = " + ".join(sorted({_texto_turma(turma_por_aluna.get(a, "Sem turma")) for a in alunas}))
             else:
-                texto = "\n".join(
-                    f"{nome} - {turma_por_aluna.get(nome, 'Sem turma')}" for nome in alunas
-                )
+                # Individuais: aluna e local, sem repetir o código da turma.
+                texto = "\n".join(f"{a} - {_local_da_aluna(turma_por_aluna.get(a, 'Sem turma'))}" for a in alunas)
             cartoes.append((titulo, texto, cor))
 
         if indice == 0 and folgas:
             cartoes.append(("Folgas", ", ".join(folgas), "#ffffff"))
-        resultado.append(cartoes)
-    return resultado
+        colunas.append(cartoes)
+    return colunas
 
 
 def renderizar_mural_unico(df_escala, data_selecionada, horarios, turmas, folgas=None):
-    """Exibe e disponibiliza o mural como PNG gerado no servidor.
-
-    A imagem é gerada em Python, portanto o botão de download não depende de
-    JavaScript, pop-up ou bloqueador do navegador.
-    """
+    """Cartaz PNG fiel ao modelo enviado, com download nativo do Streamlit."""
     import io
     import streamlit as st
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw
 
-    folgas = folgas or []
-    turma_por_aluna = {
-        str(aluna): turma for turma, alunas in turmas.items() for aluna in alunas
-    }
-    cartoes = _cartoes_mural(df_escala, horarios, turma_por_aluna, folgas)
+    turma_por_aluna = {str(a): t for t, alunas in turmas.items() for a in alunas}
+    colunas = _dados_cartoes(df_escala, horarios, turma_por_aluna, folgas or [])
 
-    fonte_titulo = _fonte_mural(47, negrito=True)
-    fonte_data = _fonte_mural(34, negrito=True)
-    fonte_horario = _fonte_mural(26, negrito=True)
-    fonte_card = _fonte_mural(22, negrito=True)
-    fonte_texto = _fonte_mural(20, negrito=True)
+    # Proporção e medidas calculadas a partir da imagem de referência (1280 × 730).
+    LARGURA, ALTURA = 1280, 730
+    MARGEM, ESPACO, LARG_COL = 10, 14, 308
+    Y_COLUNA, BASE_COLUNA = 88, 708
+    fonte_titulo = _fonte_mural(36, True)
+    fonte_data = _fonte_mural(27, True)
+    fonte_horario = _fonte_mural(17, True)
+    fonte_card_titulo = _fonte_mural(14, True)
+    fonte_card_texto = _fonte_mural(14, True)
 
-    largura, margem, espaco = 2400, 35, 24
-    largura_coluna = (largura - (2 * margem) - (3 * espaco)) // 4
-    cabecalhos = [_cabecalho(i, h).replace("<br>", "\n").replace("&nbsp;", " ") for i, h in enumerate(horarios)]
+    imagem = Image.new("RGB", (LARGURA, ALTURA), "white")
+    d = ImageDraw.Draw(imagem)
 
-    # Cada card coletivo ficou curto; ainda assim a altura acompanha o conteúdo.
-    desenho_teste = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    altura_colunas = []
-    for indice, coluna in enumerate(cartoes):
-        altura = 95
-        for titulo, texto, _ in coluna:
-            linhas = _linhas_mural(desenho_teste, texto, fonte_texto, largura_coluna - 34)
-            altura += 60 + max(1, len(linhas)) * 30 + 18
-        altura_colunas.append(altura)
+    d.text((LARGURA // 2, 16), "Rodízio Geral das aulas- GEM Vila Verde", font=fonte_titulo, fill="#111", anchor="ma")
+    d.text((LARGURA // 2, 57), f"Data: {data_selecionada}", font=fonte_data, fill="#111", anchor="ma")
 
-    altura = max(730, 190 + max(altura_colunas) + 45)
-    imagem = Image.new("RGB", (largura, altura), "white")
-    desenho = ImageDraw.Draw(imagem)
+    cabecalhos = [
+        "1ª aula solfejo melódico\ninicio: 8:55h Fim: 9:35",
+        "2ª aula: 9:40 às 10:10",
+        "3ª aula: 10:15 às 10:45",
+        "4ª aula: 10:50 às 11:20",
+    ]
 
-    desenho.text((largura // 2, 27), "Rodízio Geral das aulas - GEM Vila Verde", font=fonte_titulo, fill="#111", anchor="ma")
-    desenho.text((largura // 2, 88), f"Data: {data_selecionada}", font=fonte_data, fill="#111", anchor="ma")
+    for i in range(4):
+        x1 = MARGEM + i * (LARG_COL + ESPACO)
+        x2 = x1 + LARG_COL
+        d.rounded_rectangle((x1, Y_COLUNA, x2, BASE_COLUNA), radius=12, outline="#111", width=3, fill="white")
+        d.rounded_rectangle((x1 + 13, 100, x2 - 13, 144), radius=7, fill="#101116")
+        cab = cabecalhos[i] if i < len(cabecalhos) else str(horarios[i])
+        d.multiline_text(((x1 + x2) // 2, 105), cab, font=fonte_horario, fill="white", anchor="ma", align="center", spacing=0)
 
-    for indice, coluna in enumerate(cartoes):
-        x1 = margem + indice * (largura_coluna + espaco)
-        x2 = x1 + largura_coluna
-        y = 155
-        desenho.rounded_rectangle((x1, y, x2, altura - 25), radius=18, outline="#111", width=5, fill="white")
-        cabecalho = cabecalhos[indice] if indice < len(cabecalhos) else str(horarios[indice])
-        desenho.rounded_rectangle((x1 + 15, y + 15, x2 - 15, y + 92), radius=10, fill="#111217")
-        desenho.multiline_text(((x1 + x2) // 2, y + 27), cabecalho, font=fonte_horario, fill="white", anchor="ma", align="center", spacing=2)
-        y += 108
-
-        for titulo, texto, cor in coluna:
-            linhas = _linhas_mural(desenho, texto, fonte_texto, largura_coluna - 34)
-            altura_cartao = 58 + max(1, len(linhas)) * 30 + 18
-            desenho.rounded_rectangle((x1 + 15, y, x2 - 15, y + altura_cartao), radius=10, fill=cor, outline="#111", width=2)
-            desenho.text((x1 + 28, y + 12), titulo, font=fonte_card, fill="#111")
-            desenho.multiline_text((x1 + 28, y + 43), "\n".join(linhas), font=fonte_texto, fill="#111", spacing=3)
-            y += altura_cartao + 13
+        y = 158
+        for titulo, texto, cor in (colunas[i] if i < len(colunas) else []):
+            linhas = str(texto).split("\n")
+            # O layout da referência usa cartões iguais; cresce apenas se houver texto excepcionalmente longo.
+            altura_card = max(55, 18 + len(linhas) * 18 + 10)
+            d.rounded_rectangle((x1 + 13, y, x2 - 13, y + altura_card), radius=8, fill=cor, outline="#111", width=2)
+            d.text((x1 + 24, y + 9), str(titulo), font=fonte_card_titulo, fill="#111")
+            d.multiline_text((x1 + 24, y + 27), str(texto), font=fonte_card_texto, fill="#111", spacing=1)
+            y += altura_card + 7
 
     buffer = io.BytesIO()
     imagem.save(buffer, format="PNG", optimize=True)
