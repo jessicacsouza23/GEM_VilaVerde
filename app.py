@@ -150,21 +150,52 @@ def renderizar_mural_unico(df_escala, data_selecionada, horarios, turmas, folgas
     turma_por_aluna = {str(a): t for t, alunas in turmas.items() for a in alunas}
     colunas = _dados_cartoes(df_escala, horarios, turma_por_aluna, folgas or [])
 
-    # Proporção e medidas calculadas a partir da imagem de referência (1280 × 730).
-    LARGURA, ALTURA = 1280, 730
-    MARGEM, ESPACO, LARG_COL = 10, 14, 308
-    Y_COLUNA, BASE_COLUNA = 88, 708
-    fonte_titulo = _fonte_mural(36, True)
-    fonte_data = _fonte_mural(27, True)
-    fonte_horario = _fonte_mural(17, True)
+    # Proporção da referência. A largura da coluna é calculada para a quarta
+    # nunca ultrapassar a borda direita da imagem.
+    LARGURA, MARGEM, ESPACO = 1280, 10, 14
+    LARG_COL = (LARGURA - (2 * MARGEM) - (3 * ESPACO)) // 4
+    Y_COLUNA = 116
+    fonte_titulo = _fonte_mural(42, True)
+    fonte_data = _fonte_mural(31, True)
+    fonte_horario = _fonte_mural(18, True)
     fonte_card_titulo = _fonte_mural(14, True)
     fonte_card_texto = _fonte_mural(14, True)
 
+    # Mede as linhas antes de criar a imagem. Assim nenhum cartão, inclusive
+    # os que têm nomes/localizações longos, vaza das próprias bordas.
+    desenho_teste = ImageDraw.Draw(Image.new("RGB", (1, 1), "white"))
+    dados_desenho = []
+    maior_y = Y_COLUNA + 70
+    for coluna in colunas:
+        y_teste = Y_COLUNA + 70
+        coluna_pronta = []
+        for titulo, texto, cor in coluna:
+            linhas = []
+            for linha_original in str(texto).split("\n"):
+                palavras, atual = linha_original.split(), ""
+                for palavra in palavras:
+                    candidata = f"{atual} {palavra}".strip()
+                    if atual and desenho_teste.textbbox((0, 0), candidata, font=fonte_card_texto)[2] > LARG_COL - 48:
+                        linhas.append(atual)
+                        atual = palavra
+                    else:
+                        atual = candidata
+                if atual:
+                    linhas.append(atual)
+            linhas = linhas or [""]
+            altura_cartao = max(56, 30 + len(linhas) * 18 + 9)
+            coluna_pronta.append((titulo, linhas, cor, altura_cartao))
+            y_teste += altura_cartao + 7
+        dados_desenho.append(coluna_pronta)
+        maior_y = max(maior_y, y_teste)
+
+    ALTURA = max(755, maior_y + 20)
+    BASE_COLUNA = ALTURA - 20
     imagem = Image.new("RGB", (LARGURA, ALTURA), "white")
     d = ImageDraw.Draw(imagem)
 
-    d.text((LARGURA // 2, 16), "Rodízio Geral das aulas- GEM Vila Verde", font=fonte_titulo, fill="#111", anchor="ma")
-    d.text((LARGURA // 2, 57), f"Data: {data_selecionada}", font=fonte_data, fill="#111", anchor="ma")
+    d.text((LARGURA // 2, 17), "Rodízio Geral das aulas- GEM Vila Verde", font=fonte_titulo, fill="#111", anchor="ma")
+    d.text((LARGURA // 2, 69), f"Data: {data_selecionada}", font=fonte_data, fill="#111", anchor="ma")
 
     cabecalhos = [
         "1ª aula solfejo melódico\ninicio: 8:55h Fim: 9:35",
@@ -177,18 +208,15 @@ def renderizar_mural_unico(df_escala, data_selecionada, horarios, turmas, folgas
         x1 = MARGEM + i * (LARG_COL + ESPACO)
         x2 = x1 + LARG_COL
         d.rounded_rectangle((x1, Y_COLUNA, x2, BASE_COLUNA), radius=12, outline="#111", width=3, fill="white")
-        d.rounded_rectangle((x1 + 13, 100, x2 - 13, 144), radius=7, fill="#101116")
+        d.rounded_rectangle((x1 + 13, Y_COLUNA + 12, x2 - 13, Y_COLUNA + 63), radius=7, fill="#101116")
         cab = cabecalhos[i] if i < len(cabecalhos) else str(horarios[i])
-        d.multiline_text(((x1 + x2) // 2, 105), cab, font=fonte_horario, fill="white", anchor="ma", align="center", spacing=0)
+        d.multiline_text(((x1 + x2) // 2, Y_COLUNA + 17), cab, font=fonte_horario, fill="white", anchor="ma", align="center", spacing=0)
 
-        y = 158
-        for titulo, texto, cor in (colunas[i] if i < len(colunas) else []):
-            linhas = str(texto).split("\n")
-            # O layout da referência usa cartões iguais; cresce apenas se houver texto excepcionalmente longo.
-            altura_card = max(55, 18 + len(linhas) * 18 + 10)
+        y = Y_COLUNA + 76
+        for titulo, linhas, cor, altura_card in (dados_desenho[i] if i < len(dados_desenho) else []):
             d.rounded_rectangle((x1 + 13, y, x2 - 13, y + altura_card), radius=8, fill=cor, outline="#111", width=2)
             d.text((x1 + 24, y + 9), str(titulo), font=fonte_card_titulo, fill="#111")
-            d.multiline_text((x1 + 24, y + 27), str(texto), font=fonte_card_texto, fill="#111", spacing=1)
+            d.multiline_text((x1 + 24, y + 27), "\n".join(linhas), font=fonte_card_texto, fill="#111", spacing=1)
             y += altura_card + 7
 
     buffer = io.BytesIO()
