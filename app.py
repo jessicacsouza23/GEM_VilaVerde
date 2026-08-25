@@ -73,8 +73,6 @@ def _titulo_e_cor(local_prof):
     return escape(titulo), cor
 
 
-def renderizar_mural_unico(df_escala, data_selecionada, horarios, turmas, folgas=None):
-    """Exibe o mural completo e um botão que baixa UM PNG.
 def _fonte_mural(tamanho, negrito=False):
     """Escolhe uma fonte legível no Windows ou em servidores Linux."""
     from PIL import ImageFont
@@ -95,18 +93,6 @@ def _fonte_mural(tamanho, negrito=False):
             pass
     return ImageFont.load_default()
 
-    Args:
-        df_escala: DataFrame salvo na coluna ``escala`` do Supabase.
-        data_selecionada: data no formato DD/MM/AAAA.
-        horarios: a lista ``HORARIOS`` do app.
-        turmas: dicionário ``{nome_da_turma: [alunas...]}``.
-        folgas: lista opcional de professoras ausentes.
-    """
-    folgas = folgas or []
-    turma_por_aluna = {
-        str(aluna): turma for turma, alunas in turmas.items() for aluna in alunas
-    }
-    colunas = []
 
 def _linhas_mural(desenho, texto, fonte, largura):
     palavras = str(texto).split()
@@ -131,11 +117,8 @@ def _cartoes_mural(df_escala, horarios, turma_por_aluna, folgas):
             if local and local.lower() != "nan":
                 grupos.setdefault(local, []).append(aluna)
 
-        cards = []
         cartoes = []
         for local_prof in sorted(grupos, key=lambda item: (_sala_ordenacao(item), item)):
-            local_superior = local_prof.upper()
-            if any(x in local_superior for x in ("FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO")):
             superior = local_prof.upper()
             if any(x in superior for x in ("FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO")):
                 continue
@@ -143,8 +126,6 @@ def _cartoes_mural(df_escala, horarios, turma_por_aluna, folgas):
             titulo = titulo.replace("&amp;", "&")
             alunas = grupos[local_prof]
 
-            if indice == 0 and "TODAS" in local_superior:
-                conteudo = "Todas as alunas"
             if indice == 0 and "TODAS" in superior:
                 texto = "Todas as alunas"
             elif "SALA 8" in superior or "SALA 9" in superior:
@@ -152,59 +133,20 @@ def _cartoes_mural(df_escala, horarios, turma_por_aluna, folgas):
                 turmas_do_cartao = sorted({turma_por_aluna.get(nome, "Sem turma") for nome in alunas})
                 texto = " + ".join(turmas_do_cartao)
             else:
-                conteudo = "<br>".join(
-                    f"{escape(nome)} - {escape(str(turma_por_aluna.get(nome, 'Sem turma')))}"
-                    for nome in alunas
                 texto = "\n".join(
                     f"{nome} - {turma_por_aluna.get(nome, 'Sem turma')}" for nome in alunas
                 )
-            cards.append(
-                f'<div class="gem-card" style="background:{cor}">'
-                f'<div class="gem-card-title">{titulo}</div>'
-                f'<div class="gem-card-content">{conteudo}</div></div>'
-            )
             cartoes.append((titulo, texto, cor))
 
         if indice == 0 and folgas:
-            cards.append(
-                '<div class="gem-card" style="background:#ffffff">'
-                '<div class="gem-card-title">Folgas</div>'
-                f'<div class="gem-card-content">{escape(", ".join(folgas))}</div></div>'
-            )
             cartoes.append(("Folgas", ", ".join(folgas), "#ffffff"))
         resultado.append(cartoes)
     return resultado
 
-        cards_html = "".join(cards) or '<div class="gem-vazio">Sem alocação</div>'
-        colunas.append(
-            '<section class="gem-coluna">'
-            f'<div class="gem-horario">{_cabecalho(indice, horario)}</div>'
-            f'{cards_html}'
-            '</section>'
-        )
 
-    mural_html = f'''<div id="mural-rodizio-unico" class="gem-mural">
-      <div class="gem-titulo">Rodízio Geral das aulas - GEM Vila Verde</div>
-      <div class="gem-data">Data: {escape(str(data_selecionada))}</div>
-      <div class="gem-grade">{"".join(colunas)}</div>
-    </div>'''
 def renderizar_mural_unico(df_escala, data_selecionada, horarios, turmas, folgas=None):
     """Exibe e disponibiliza o mural como PNG gerado no servidor.
 
-    estilo = '''<style>
-      .gem-mural { background:#fff; color:#111; padding:18px; font-family:Arial,sans-serif; }
-      .gem-titulo { text-align:center; font-size:30px; font-weight:800; }
-      .gem-data { text-align:center; font-size:23px; font-weight:800; margin:2px 0 14px; }
-      .gem-grade { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:16px; }
-      .gem-coluna { border:3px solid #111; border-radius:12px; padding:10px; min-width:0; }
-      .gem-horario { background:#111217; color:#fff; border-radius:7px; padding:9px 7px;
-                      margin-bottom:10px; text-align:center; font-size:17px; font-weight:800; line-height:1.15; }
-      .gem-card { border:1.8px solid #111; border-radius:8px; padding:8px; margin:7px 0; min-height:38px; }
-      .gem-card-title { font-size:14px; font-weight:800; line-height:1.2; }
-      .gem-card-content { font-size:14px; font-weight:700; line-height:1.35; margin-top:3px; }
-      .gem-vazio { color:#555; font-size:14px; padding:8px; }
-      @media (max-width:900px) { .gem-grade { grid-template-columns:repeat(2, 1fr); } }
-    </style>'''
     A imagem é gerada em Python, portanto o botão de download não depende de
     JavaScript, pop-up ou bloqueador do navegador.
     """
@@ -212,32 +154,12 @@ def renderizar_mural_unico(df_escala, data_selecionada, horarios, turmas, folgas
     import streamlit as st
     from PIL import Image, ImageDraw, ImageFont
 
-    # O botão fica em um componente separado, mas captura o mural no documento pai.
-    botao = '''
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <button id="baixar-mural" style="width:100%;background:#075fb8;color:#fff;border:0;border-radius:10px;
-      padding:14px;font-size:18px;font-weight:700;cursor:pointer">📸 Baixar mural completo em PNG</button>
-    <script>
-      document.getElementById('baixar-mural').addEventListener('click', async () => {
-        const mural = window.parent.document.getElementById('mural-rodizio-unico');
-        if (!mural) { alert('O mural ainda não foi encontrado. Atualize a página e tente novamente.'); return; }
-        const canvas = await html2canvas(mural, {scale: 2, backgroundColor: '#ffffff', logging: false});
-        const link = document.createElement('a');
-        link.download = 'Rodizio_GEM_' + new Date().toISOString().slice(0,10) + '.png';
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-      });
-    </script>'''
     folgas = folgas or []
     turma_por_aluna = {
         str(aluna): turma for turma, alunas in turmas.items() for aluna in alunas
     }
     cartoes = _cartoes_mural(df_escala, horarios, turma_por_aluna, folgas)
 
-    # Primeiro o mural, depois o botão: garante que a captura pegue toda a grade.
-    import streamlit as st
-    st.markdown(estilo + mural_html, unsafe_allow_html=True)
-    components.html(botao, height=65)
     fonte_titulo = _fonte_mural(47, negrito=True)
     fonte_data = _fonte_mural(34, negrito=True)
     fonte_horario = _fonte_mural(26, negrito=True)
