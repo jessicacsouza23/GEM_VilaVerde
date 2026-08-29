@@ -17,228 +17,6 @@ import itertools
 import streamlit.components.v1 as components
 from streamlit_pills import pills # NOVO: Precisa instalar (pip install streamlit-pills)
 
-# ============================================================
-# MURAL DO RODÍZIO — layout fixo igual ao cartaz de referência
-# ============================================================
-def _fonte_cartaz(tamanho, negrito=True):
-    from PIL import ImageFont
-    from pathlib import Path
-    candidatos = (
-        [
-            "C:/Windows/Fonts/arialbd.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-            "DejaVuSans-Bold.ttf",
-        ]
-        if negrito else
-        [
-            "C:/Windows/Fonts/arial.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-            "DejaVuSans.ttf",
-        ]
-    )
-    for caminho in candidatos:
-        try:
-            return ImageFont.truetype(caminho, tamanho)
-        except OSError:
-            continue
-    # Em alguns servidores Streamlit a fonte existe, mas em outro diretório.
-    # Procura uma fonte TrueType Unicode antes de usar a fonte bitmap do Pillow.
-    termos = ("noto", "dejavu", "liberation", "roboto", "arial", "sans")
-    for raiz in ("/usr/share/fonts", "/usr/local/share/fonts", "/opt/fonts"):
-        pasta = Path(raiz)
-        if not pasta.exists():
-            continue
-        for caminho in pasta.rglob("*.ttf"):
-            nome = caminho.name.lower()
-            if not any(termo in nome for termo in termos):
-                continue
-            if negrito and not any(termo in nome for termo in ("bold", "black", "semibold")):
-                continue
-            try:
-                return ImageFont.truetype(str(caminho), tamanho)
-            except OSError:
-                continue
-    # Mesmo uma fonte regular Unicode é preferível à fonte bitmap sem acentos.
-    for raiz in ("/usr/share/fonts", "/usr/local/share/fonts", "/opt/fonts"):
-        pasta = Path(raiz)
-        if not pasta.exists():
-            continue
-        for caminho in pasta.rglob("*.ttf"):
-            if not any(termo in caminho.name.lower() for termo in termos):
-                continue
-            try:
-                return ImageFont.truetype(str(caminho), tamanho)
-            except OSError:
-                continue
-    # Pillow atual permite dimensionar a fonte de reserva; assim ela nunca
-    # volta ao minúsculo padrão de aproximadamente 10 px em servidores cloud.
-    try:
-        return ImageFont.load_default(size=tamanho)
-    except TypeError:
-        return ImageFont.load_default()
-
-
-def _encurtar_cartaz(desenho, texto, fonte, limite):
-    texto = str(texto)
-    if desenho.textbbox((0, 0), texto, font=fonte)[2] <= limite:
-        return texto
-    while texto and desenho.textbbox((0, 0), texto + "…", font=fonte)[2] > limite:
-        texto = texto[:-1]
-    return texto.rstrip() + "…"
-
-
-def _texto_base_cartaz(texto):
-    """Remove somente as marcas de acento; elas são redesenhadas separadamente."""
-    especiais = {"ª": "a", "º": "o", "…": "..."}
-    texto = "".join(especiais.get(c, c) for c in str(texto))
-    return "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn")
-
-
-def _desenhar_texto_cartaz(desenho, xy, texto, fonte, preenchimento="#111111"):
-    """Desenha português inclusive em servidores cuja fonte não contém acentos."""
-    x, y = xy
-    tamanho = getattr(fonte, "size", 14)
-    for caractere in str(texto):
-        if caractere == "\n":
-            x = xy[0]
-            y += tamanho + 2
-            continue
-        decomposicao = unicodedata.normalize("NFD", caractere)
-        base = _texto_base_cartaz(decomposicao[0]) or " "
-        largura = desenho.textbbox((0, 0), base, font=fonte)[2]
-        desenho.text((x, y), base, font=fonte, fill=preenchimento)
-        for marca in decomposicao[1:]:
-            meio = x + max(2, largura // 2)
-            if marca == "\u0301":       # agudo: á é í ó ú
-                desenho.line((meio, y + 3, meio + 4, y), fill=preenchimento, width=1)
-            elif marca == "\u0300":     # grave: à
-                desenho.line((meio, y, meio + 4, y + 3), fill=preenchimento, width=1)
-            elif marca == "\u0302":     # circunflexo: â ê ô
-                desenho.line((meio - 3, y + 3, meio, y), fill=preenchimento, width=1)
-                desenho.line((meio, y, meio + 3, y + 3), fill=preenchimento, width=1)
-            elif marca == "\u0303":     # til: ã õ
-                desenho.arc((meio - 4, y, meio + 4, y + 4), 180, 360, fill=preenchimento, width=1)
-            elif marca == "\u0308":     # trema: ü
-                desenho.ellipse((meio - 3, y + 1, meio - 2, y + 2), fill=preenchimento)
-                desenho.ellipse((meio + 2, y + 1, meio + 3, y + 2), fill=preenchimento)
-            elif marca == "\u0327":     # cedilha: ç
-                desenho.arc((meio - 1, y + tamanho - 4, meio + 3, y + tamanho + 2), 0, 180, fill=preenchimento, width=1)
-        x += largura
-
-
-def _desenhar_centralizado_cartaz(desenho, y, texto, fonte, centro=640, preenchimento="#111111"):
-    base = _texto_base_cartaz(texto)
-    largura = desenho.textbbox((0, 0), base, font=fonte)[2]
-    _desenhar_texto_cartaz(desenho, (centro - largura // 2, y), texto, fonte, preenchimento)
-
-
-def renderizar_mural_referencia(df_escala, data_selecionada, horarios, turmas, folgas=None):
-    """Gera um PNG com as posições, cores e proporção do cartaz de referência."""
-    from PIL import Image, ImageDraw
-    import io
-
-    cores = {
-        "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3",
-        "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1",
-        "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff",
-        "SECRETARIA": "#fef3c7",
-    }
-    turma_por_aluna = {str(a): str(t) for t, alunas in turmas.items() for a in alunas}
-
-    def turma_curta(valor):
-        partes = str(valor).split(" - ")
-        return next((p for p in partes if p.upper().startswith("TURMA")), str(valor))
-
-    def local_curto(valor):
-        return " - ".join(p for p in str(valor).split(" - ") if not p.upper().startswith("TURMA"))
-
-    def ordem(local):
-        superior = local.upper()
-        for numero in range(1, 10):
-            if f"SALA {numero}" in superior:
-                return numero
-        return 20
-
-    # 1280 × 730, exatamente a proporção do modelo enviado.
-    largura, altura = 1280, 730
-    imagem = Image.new("RGB", (largura, altura), "white")
-    d = ImageDraw.Draw(imagem)
-    ft = _fonte_cartaz(36)
-    fd = _fonte_cartaz(27)
-    fh = _fonte_cartaz(17)
-    fc = _fonte_cartaz(14)
-
-    d.text((640, 17), "Rodízio Geral das aulas- GEM Vila Verde", font=ft, fill="#111111", anchor="ma")
-    d.text((640, 57), f"Data: {data_selecionada}", font=fd, fill="#111111", anchor="ma")
-
-    xs = [10, 333, 650, 967]
-    larguras = [310, 302, 302, 303]
-    cabecalhos = [
-        "1ª aula solfejo melódico\ninicio: 8:55h Fim: 9:35",
-        "2ª aula: 9:40 às 10:10",
-        "3ª aula: 10:15 às 10:45",
-        "4ª aula: 10:50 às 11:20",
-    ]
-
-    for indice, horario in enumerate(horarios[:4]):
-        x, largura_coluna = xs[indice], larguras[indice]
-        direita = x + largura_coluna
-        d.rounded_rectangle((x, 88, direita, 708), radius=12, fill="white", outline="#111111", width=3)
-        d.rounded_rectangle((x + 14, 100, direita - 14, 144), radius=7, fill="#111217")
-        d.multiline_text(((x + direita) // 2, 105), cabecalhos[indice], font=fh, fill="white", anchor="ma", align="center", spacing=0)
-
-        grupos = {}
-        for _, registro in df_escala.iterrows():
-            local = str(registro.get(horario, ""))
-            aluna = str(registro.get("Aluna", ""))
-            if local and local.lower() != "nan":
-                grupos.setdefault(local, []).append(aluna)
-
-        y = 158
-        for local in sorted(grupos, key=lambda valor: (ordem(valor), valor)):
-            superior = local.upper()
-            if any(t in superior for t in ("FALTA", "AUSENTE", "VAZIO", "NINGUÉM")):
-                continue
-            alunas = grupos[local]
-            cor = next((valor for sala, valor in cores.items() if sala in superior), "#ffffff")
-            titulo = local
-            if "SALA 8" in superior:
-                titulo += " (Teoria)"
-                corpo = " + ".join(sorted({turma_curta(turma_por_aluna.get(a, "Sem turma")) for a in alunas}))
-            elif "SALA 9" in superior:
-                titulo += " (Solfejo)"
-                corpo = " + ".join(sorted({turma_curta(turma_por_aluna.get(a, "Sem turma")) for a in alunas}))
-            elif indice == 0 and "TODAS" in superior:
-                corpo = "Todas as alunas"
-            else:
-                corpo = " + ".join(f"{a} - {local_curto(turma_por_aluna.get(a, ''))}" for a in alunas)
-
-            # Cartões fixos de 55px, como na referência; texto longo é reduzido,
-            # nunca ultrapassa as bordas.
-            d.rounded_rectangle((x + 14, y, direita - 14, y + 55), radius=8, fill=cor, outline="#111111", width=2)
-            d.text((x + 24, y + 9), _encurtar_cartaz(d, titulo, fc, largura_coluna - 48), font=fc, fill="#111111")
-            d.text((x + 24, y + 28), _encurtar_cartaz(d, corpo, fc, largura_coluna - 48), font=fc, fill="#111111")
-            y += 61
-
-        if indice == 0 and folgas:
-            d.rounded_rectangle((x + 14, y, direita - 14, y + 40), radius=8, fill="white", outline="#111111", width=2)
-            d.text((x + 24, y + 12), _encurtar_cartaz(d, "Folgas: " + ", ".join(folgas), fc, largura_coluna - 48), font=fc, fill="#111111")
-
-    buffer = io.BytesIO()
-    imagem.save(buffer, format="PNG", optimize=True)
-    png = buffer.getvalue()
-    st.image(png, use_container_width=True)
-    st.download_button("📸 Baixar mural completo em PNG", png,
-                       file_name=f"Rodizio_GEM_{str(data_selecionada).replace('/', '-')}.png",
-                       mime="image/png", use_container_width=True, type="primary")
-
-
 # Verificação de Segurança
 try:
     url = st.secrets["SUPABASE_URL"]
@@ -892,7 +670,7 @@ if menu == "🏠 Secretaria":
                         ps_por_turma[turma_nome] = st.selectbox(f"Prof Solfejo — {turma_nome}", PROFESSORAS_LISTA, index=idx_default, key=f"ps_{turma_nome}")
                 st.caption("A professora acompanha a turma dela onde quer que ela caia no rodízio — mesmo se o horário mudar por causa de uma aula fixa.")
                 
-                folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA, key="folga_ativa")
+                folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA)
     
                 # --- BOTÃO DE GERAÇÃO — RODÍZIO EM CÍRCULO REAL (V2) ---
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
@@ -1090,19 +868,128 @@ if menu == "🏠 Secretaria":
                     
             # --- MURAL E EDITOR FINAL CONTINUAM ABAIXO... ---
                     
-           # --- ABA 2: PLANEJAMENTO (V106 - BOTÃO MÁGICO COM CAPTURA FIEL DA TELA) ---
+           # --- ABA 2: PLANEJAMENTO (V108 - EXPORTAÇÃO EM IMAGEM ÚNICA) ---
             else:
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 
                 st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
-                renderizar_mural_referencia(
-                    df_escala=df_escala,
-                    data_selecionada=data_sel_str,
-                    horarios=HORARIOS,
-                    turmas=TURMAS,
-                    folgas=st.session_state.get("folga_ativa", []),
-                )
-    
+
+                termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
+                cores = {"SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", "SALA 4": "#fee2e2",
+                         "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5",
+                         "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"}
+
+                colunas_html = ""
+                for idx, h_col in enumerate(HORARIOS):
+                    cards_html = ""
+                    grupos = {}
+                    for _, r in df_escala.iterrows():
+                        info = str(r[h_col])
+                        grupos.setdefault(info, []).append(r['Aluna'])
+
+                    chaves_ordenadas = sorted(grupos.keys(), key=lambda x: (
+                        0 if "SALA" in x.upper() and any(i in x for i in "1234567") else
+                        1 if "SALA 8" in x.upper() else
+                        2 if "SALA 9" in x.upper() else 3,
+                        x
+                    ))
+
+                    for local_prof in chaves_ordenadas:
+                        local_up = local_prof.upper()
+                        if any(t in local_up for t in termos_excluir) and "SECRETARIA" not in local_up:
+                            continue
+
+                        local_exibicao = local_prof
+                        if "SALA 8" in local_up: local_exibicao = f"{local_prof} (Teoria)"
+                        elif "SALA 9" in local_up: local_exibicao = f"{local_prof} (Solfejo)"
+
+                        bg = "#ffffff"
+                        for sala, cor in cores.items():
+                            if sala in local_up: bg = cor; break
+
+                        alunas_gp = grupos[local_prof]
+                        if h_col == HORARIOS[0]:
+                            text_alunas = "Todas as alunas"
+                        else:
+                            presentes = [t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)]
+                            text_alunas = " + ".join(sorted(presentes)) if len(alunas_gp) > 1 else alunas_gp[0]
+
+                        cards_html += f'''<div style="background-color:{bg}; border:2px solid #000; padding:10px; margin-bottom:10px; border-radius:10px;">
+                            <b style="font-size:16px; color:#000; display:block; line-height:1.2;">{local_exibicao}</b>
+                            <span style="font-size:14px; color:#1a1a1a; font-weight:800;">{text_alunas}</span>
+                        </div>'''
+
+                    colunas_html += f'''
+                    <div style="flex:1; min-width:180px; background:white; border:2px solid #000; border-radius:12px; padding:10px;">
+                        <div style="background:#262730; color:white; text-align:center; font-weight:bold; padding:8px; border-radius:8px; margin-bottom:10px; font-size:15px;">
+                            {h_col}
+                        </div>
+                        {cards_html}
+                    </div>'''
+
+                nome_arquivo = f"Rodizio_{data_sel_str.replace('/', '-')}.png"
+
+                # Fonte web (Noto Sans) carregada explicitamente: cobre acentuação e
+                # caracteres especiais do português. Sem isso, o html2canvas às vezes
+                # cai numa fonte padrão do sistema que "engole" acentos na hora do print.
+                html_completo = f"""
+                <meta charset="UTF-8">
+                <link rel="preconnect" href="https://fonts.googleapis.com">
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+                <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+                <div id="mural_wrapper" style="font-family: 'Noto Sans', Arial, sans-serif;">
+                    <div id="mural_completo" style="background:white; padding:20px; border-radius:15px; font-family: 'Noto Sans', Arial, sans-serif;">
+                        <div style="text-align:center; margin-bottom:18px;">
+                            <h1 style="margin:0; font-size:26px; color:#111; font-family: 'Noto Sans', Arial, sans-serif;">Rodízio Geral das aulas - GEM Vila Verde</h1>
+                            <h3 style="margin:6px 0 0 0; color:#555; font-weight:600; font-family: 'Noto Sans', Arial, sans-serif;">Data: {data_sel_str}</h3>
+                        </div>
+                        <div style="display:flex; gap:12px; align-items:flex-start;">
+                            {colunas_html}
+                        </div>
+                    </div>
+
+                    <button onclick="baixarImagemUnica()" style="width:100%; background: linear-gradient(90deg, #0078d4, #005a9e); color:white; border:none; padding:16px; border-radius:12px; font-weight:bold; cursor:pointer; font-size:18px; margin-top:20px; font-family: 'Noto Sans', Arial, sans-serif;">
+                        📸 Baixar Rodízio Completo (1 imagem única)
+                    </button>
+                </div>
+
+                <script>
+                function baixarImagemUnica() {{
+                    const btn = document.querySelector('#mural_wrapper button');
+                    if (btn) {{ btn.disabled = true; btn.innerText = "⏳ Preparando imagem..."; }}
+
+                    // Espera as fontes carregarem de verdade antes de tirar o print —
+                    // é essa espera que resolve acentos/caracteres especiais quebrados.
+                    document.fonts.ready.then(function() {{
+                        return document.fonts.load("600 16px 'Noto Sans'");
+                    }}).then(function() {{
+                        const el = document.getElementById('mural_completo');
+                        return html2canvas(el, {{
+                            scale: 2,
+                            backgroundColor: "#ffffff",
+                            useCORS: true,
+                            allowTaint: true,
+                            logging: false
+                        }});
+                    }}).then(function(canvas) {{
+                        const link = document.createElement('a');
+                        link.download = "{nome_arquivo}";
+                        link.href = canvas.toDataURL("image/png");
+                        link.click();
+                        if (btn) {{ btn.disabled = false; btn.innerText = "📸 Baixar Rodízio Completo (1 imagem única)"; }}
+                    }}).catch(function(err) {{
+                        console.error(err);
+                        if (btn) {{ btn.disabled = false; btn.innerText = "⚠️ Erro — tente novamente"; }}
+                    }});
+                }}
+                </script>
+                """
+
+                # Altura estimada — ajuste se cortar conteúdo
+                components.html(html_completo, height=850, scrolling=True)
+
                 st.divider()
                 
             # ... (Restante do código do editor de tabela continua igual)    
