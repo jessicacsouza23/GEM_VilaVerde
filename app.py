@@ -575,22 +575,16 @@ if menu == "🏠 Secretaria":
 
                         difs_do_dia = []       # todas as dificuldades reais da aluna nesse dia
                         proxima_semana = []     # o que ficou combinado pra próxima semana (lição de casa)
-                        sem_registro = []       # aulas que o rodízio agendou mas a professora não preencheu nada
 
                         # Processar cada registro daquela aluna no dia
                         for _, r in dados_aluna.iterrows():
                             tipo_bruto = _valor_ou_none(r.get('Tipo'))
 
                             # --- LINHA "CRUA" DO RODÍZIO: só tem Aluna/Instrutora/Data, sem
-                            # nenhum registro pedagógico ainda. Isso é o que antes aparecia
-                            # como "nan" na tela — agora vira um aviso claro pra secretaria.
+                            # nenhum registro pedagógico ainda (é o que antes aparecia como
+                            # "nan" na tela). Não tem conteúdo pedagógico pra mostrar, então
+                            # simplesmente pula — sem poluir o relatório com isso.
                             if tipo_bruto is None:
-                                instrutora_pendente = _valor_ou_none(r.get('Instrutora')) or "professora não identificada"
-                                with st.container(border=True):
-                                    st.warning(f"⚠️ Aula com **{instrutora_pendente}** agendada nesse dia — "
-                                               f"nenhum registro pedagógico enviado ainda pela professora.")
-                                sem_registro.append(instrutora_pendente)
-                                texto_whatsapp += f"⚠️ Aula com {instrutora_pendente}: SEM registro enviado pela professora\n"
                                 continue
 
                             tipo = tipo_bruto.replace("Analise_", "").replace("Aula_", "").replace("Casa_", "").replace("_", " ")
@@ -650,10 +644,6 @@ if menu == "🏠 Secretaria":
                                 if obs_prof:
                                     st.info(f"📝 **Observação da professora:** {obs_prof}")
                                     texto_whatsapp += f"   📝 Obs: {obs_prof}\n"
-
-                        # --- AVISO DE AULAS SEM REGISTRO NENHUM ---
-                        if sem_registro:
-                            st.markdown(f"<div style='background-color: #FEF9E7; padding: 10px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #D4AC0D;'><b>⚠️ Sem retorno da professora:</b> {', '.join(sem_registro)}</div>", unsafe_allow_html=True)
 
                         # --- RESUMO CLARO: DIFICULDADES DO DIA + PRÓXIMA SEMANA ---
                         if difs_do_dia:
