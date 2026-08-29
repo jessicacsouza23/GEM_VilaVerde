@@ -548,6 +548,21 @@ if menu == "🏠 Secretaria":
                 return [valor_difs.strip()]
             return []
 
+        def _valor_ou_none(v):
+            """Trata None/NaN/'nan'/'---'/string vazia como 'sem valor real',
+            pra nunca mostrar 'nan' cru na tela ou no texto do WhatsApp."""
+            if v is None:
+                return None
+            try:
+                if pd.isna(v):
+                    return None
+            except (TypeError, ValueError):
+                pass
+            v_str = str(v).strip()
+            if v_str == "" or v_str.lower() == "nan" or v_str == "---":
+                return None
+            return v_str
+
         if not df_historico.empty:
             df_dia = df_historico[df_historico['Data'] == data_visao]
             
@@ -560,33 +575,63 @@ if menu == "🏠 Secretaria":
 
                         difs_do_dia = []       # todas as dificuldades reais da aluna nesse dia
                         proxima_semana = []     # o que ficou combinado pra próxima semana (lição de casa)
+                        sem_registro = []       # aulas que o rodízio agendou mas a professora não preencheu nada
 
                         # Processar cada registro daquela aluna no dia
                         for _, r in dados_aluna.iterrows():
-                            tipo_bruto = str(r.get('Tipo', 'Aula'))
+                            tipo_bruto = _valor_ou_none(r.get('Tipo'))
+
+                            # --- LINHA "CRUA" DO RODÍZIO: só tem Aluna/Instrutora/Data, sem
+                            # nenhum registro pedagógico ainda. Isso é o que antes aparecia
+                            # como "nan" na tela — agora vira um aviso claro pra secretaria.
+                            if tipo_bruto is None:
+                                instrutora_pendente = _valor_ou_none(r.get('Instrutora')) or "professora não identificada"
+                                with st.container(border=True):
+                                    st.warning(f"⚠️ Aula com **{instrutora_pendente}** agendada nesse dia — "
+                                               f"nenhum registro pedagógico enviado ainda pela professora.")
+                                sem_registro.append(instrutora_pendente)
+                                texto_whatsapp += f"⚠️ Aula com {instrutora_pendente}: SEM registro enviado pela professora\n"
+                                continue
+
                             tipo = tipo_bruto.replace("Analise_", "").replace("Aula_", "").replace("Casa_", "").replace("_", " ")
 
                             if tipo_bruto == "Chamada":
-                                status = r.get('Status', '---')
+                                status = _valor_ou_none(r.get('Status')) or "não registrada"
                                 st.markdown(f"📍 **Presença:** {status}")
                                 texto_whatsapp += f"📍 Presença: {status}\n"
                                 continue
 
                             if tipo_bruto == "Controle_Licao" or tipo == "Controle Licao":
-                                cat = r.get('Categoria', 'Geral')
-                                det = r.get('Licao_Detalhe', '---')
-                                obs = r.get('Observacao', '---')
-                                st.markdown(f"📘 **{cat}:** {det}\n\n*Nota:* {obs}")
-                                texto_whatsapp += f"📘 *{cat}*: {det}\n   └─ {obs}\n"
+                                cat = _valor_ou_none(r.get('Categoria')) or "Geral"
+                                det = _valor_ou_none(r.get('Licao_Detalhe')) or "não especificado"
+                                obs_cl = _valor_ou_none(r.get('Observacao'))
+                                st.markdown(f"📘 **{cat}:** {det}" + (f"\n\n*Nota:* {obs_cl}" if obs_cl else ""))
+                                texto_whatsapp += f"📘 *{cat}*: {det}\n" + (f"   └─ {obs_cl}\n" if obs_cl else "")
                                 continue
 
-                            # DADOS DA PROFESSORA (Aula_/Analise_/Casa_): onde moram as dificuldades e a lição de casa
-                            lic_at = r.get('Licao_Atual', '---')
-                            lic_cs = r.get('Licao_Casa', '---')
+                            # --- LIÇÃO DE CASA (Casa_...): é uma tarefa combinada, não uma
+                            # aula de hoje — mostrada separada pra não confundir com o
+                            # "Lição de hoje" das aulas de fato.
+                            if tipo_bruto.startswith("Casa_"):
+                                lic_cs_casa = _valor_ou_none(r.get('Licao_Casa')) or "não especificada"
+                                status_casa = _valor_ou_none(r.get('Status')) or "sem status"
+                                with st.container(border=True):
+                                    st.markdown(f"🏠 **Lição de casa — {tipo}**")
+                                    st.write(f"**Conteúdo:** {lic_cs_casa}")
+                                    st.caption(f"Status da correção: {status_casa}")
+                                proxima_semana.append(f"{tipo}: {lic_cs_casa}")
+                                texto_whatsapp += f"🏠 Lição de casa ({tipo}): {lic_cs_casa} — status: {status_casa}\n"
+                                continue
+
+                            # --- DADOS DA PROFESSORA (Analise_...): onde moram as dificuldades,
+                            # as observações (que podem trazer melhorias) e a lição de casa.
+                            lic_at = _valor_ou_none(r.get('Licao_Atual')) or "não informada pela professora"
+                            lic_cs = _valor_ou_none(r.get('Licao_Casa'))
+                            obs_prof = _valor_ou_none(r.get('Observacao'))
                             difs_reg = _limpar_difs(r.get('Dificuldades'))
 
                             difs_do_dia.extend(difs_reg)
-                            if lic_cs and str(lic_cs).strip() not in ("---", "", "nan"):
+                            if lic_cs:
                                 proxima_semana.append(f"{tipo}: {lic_cs}")
 
                             with st.container(border=True):
@@ -599,6 +644,16 @@ if menu == "🏠 Secretaria":
                                 else:
                                     st.caption("✅ Sem dificuldades registradas nessa aula.")
                                     texto_whatsapp += f"• {tipo}: {lic_at}\n   ✅ Sem dificuldades\n"
+
+                                # Observação da professora — é aqui que costumam entrar as
+                                # melhorias e qualquer nota relevante pra próxima professora.
+                                if obs_prof:
+                                    st.info(f"📝 **Observação da professora:** {obs_prof}")
+                                    texto_whatsapp += f"   📝 Obs: {obs_prof}\n"
+
+                        # --- AVISO DE AULAS SEM REGISTRO NENHUM ---
+                        if sem_registro:
+                            st.markdown(f"<div style='background-color: #FEF9E7; padding: 10px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #D4AC0D;'><b>⚠️ Sem retorno da professora:</b> {', '.join(sem_registro)}</div>", unsafe_allow_html=True)
 
                         # --- RESUMO CLARO: DIFICULDADES DO DIA + PRÓXIMA SEMANA ---
                         if difs_do_dia:
