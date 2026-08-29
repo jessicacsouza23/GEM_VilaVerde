@@ -168,6 +168,17 @@ SECRETARIAS_LISTA = ["Esther", "Jéssica", "Larissa", "Lurdes", "Natasha", "Rose
 CATEGORIAS_LICAO = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila", "Folhas avulsas (teoria)"]
 STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refazer", "Não realizada"]
 STATUS_OK_LICAO = ["Realizada", "Realizadas - sem pendência", "Realizada - sem pendência"]
+
+# Critério ÚNICO de "aula sem dificuldade", usado tanto no Prontuário Individual
+# quanto no Quadro de Desempenho, pra os dois números do sistema baterem sempre.
+# Olha a lista real de Dificuldades marcada pela professora (fonte primária),
+# em vez do texto de Status (que é só uma cópia derivada dela).
+def _tem_dificuldade_real(valor_difs):
+    if isinstance(valor_difs, list):
+        return any(d for d in valor_difs if d and d != "Não apresentou dificuldades")
+    if isinstance(valor_difs, str) and valor_difs.strip():
+        return valor_difs.strip() != "Não apresentou dificuldades"
+    return False
 # Únicos tipos de lição de casa que entram na fila de correção da secretaria:
 # folha avulsa de Teoria e a apostila da Prática. Método (qualquer aula) e a
 # lição de casa de Solfejo NUNCA entram aqui — quem acompanha é a professora.
@@ -1817,13 +1828,6 @@ elif menu == "📊 Analítico IA":
                 # --- CÁLCULO DE APROVEITAMENTO (CORRIGIDO: agora reflete dificuldades reais) ---
                 pedag_rows = df_aluna[df_aluna['Tipo'].str.contains("Prática|Teoria|Solfejo", case=False, na=False)].copy()
 
-                def _tem_dificuldade_real(valor_difs):
-                    if isinstance(valor_difs, list):
-                        return any(d for d in valor_difs if d and d != "Não apresentou dificuldades")
-                    if isinstance(valor_difs, str) and valor_difs.strip():
-                        return valor_difs.strip() != "Não apresentou dificuldades"
-                    return False
-
                 pedag_rows['tem_dificuldade'] = pedag_rows['Dificuldades'].apply(_tem_dificuldade_real)
                 total_pedag = len(pedag_rows)
                 sem_dificuldade = int((~pedag_rows['tem_dificuldade']).sum())
@@ -1928,45 +1932,70 @@ elif menu == "📊 Analítico IA":
                             st.write(f"📅 **{r['Data']} - {r['Tipo']}**")
                             st.info(f"📌 {r.get('Observacao', 'Sem observações')}")
 
-                # --- 4.5 EVOLUÇÃO DAS DIFICULDADES AO LONGO DO TEMPO (NOVO) ---
+                # --- 4.5 EVOLUÇÃO DAS DIFICULDADES AO LONGO DO TEMPO ---
                 st.divider()
                 st.markdown("### 📉 Evolução das Dificuldades")
+                st.caption("Cada barra mostra a contagem real de uma dificuldade naquele mês — barras lado a lado, não empilhadas, pra não misturar o total de uma com o de outra.")
+
+                # Só conta a partir dos registros de aula de fato (Analise_Prática/Teoria/Solfejo).
+                # Registros de Casa_/Chamada nunca têm lista de Dificuldades preenchida, mas
+                # filtrar explicitamente deixa o dado de origem claro e evita qualquer contagem
+                # vinda de um lugar que não devia.
+                aulas_aluna = df_aluna[df_aluna['Tipo'].str.startswith("Analise_", na=False)]
+
                 linhas_evolucao = []
-                for _, row in df_aluna.iterrows():
+                for _, row in aulas_aluna.iterrows():
                     mes_ano = row['dt_obj'].strftime("%Y-%m")
                     lista_dif = row.get('Dificuldades')
                     if isinstance(lista_dif, list):
                         for d_item in lista_dif:
-                            linhas_evolucao.append({"Mês": mes_ano, "Dificuldade": d_item})
+                            if d_item and d_item != "Não apresentou dificuldades" and d_item != "Não participou da aula":
+                                linhas_evolucao.append({"Mês": mes_ano, "Dificuldade": d_item})
 
                 if linhas_evolucao:
                     df_evol = pd.DataFrame(linhas_evolucao)
-                    df_evol = df_evol[~df_evol['Dificuldade'].str.contains("Não apresentou dificuldades|Não participou", case=False, na=False)]
-                    if not df_evol.empty:
-                        contagem = df_evol.groupby(['Mês', 'Dificuldade']).size().reset_index(name='Ocorrências')
-                        fig_evol = px.bar(contagem, x="Mês", y="Ocorrências", color="Dificuldade",
-                                           title="Frequência de cada dificuldade por mês")
-                        st.plotly_chart(fig_evol, use_container_width=True)
+                    meses_ordenados = sorted(df_evol['Mês'].unique())
+                    contagem = df_evol.groupby(['Mês', 'Dificuldade']).size().reset_index(name='Ocorrências')
 
-                        # Comparação simples: primeira metade do período vs segunda metade
-                        meses_ordenados = sorted(df_evol['Mês'].unique())
-                        if len(meses_ordenados) >= 2:
-                            metade = len(meses_ordenados) // 2
-                            meses_antes = set(meses_ordenados[:metade]) if metade > 0 else set()
-                            meses_depois = set(meses_ordenados[metade:])
-                            cont_antes = df_evol[df_evol['Mês'].isin(meses_antes)]['Dificuldade'].value_counts()
-                            cont_depois = df_evol[df_evol['Mês'].isin(meses_depois)]['Dificuldade'].value_counts()
-                            melhorou = [d for d in cont_antes.index if cont_depois.get(d, 0) < cont_antes.get(d, 0)]
-                            piorou = [d for d in cont_depois.index if cont_depois.get(d, 0) > cont_antes.get(d, 0)]
-                            col_m, col_p = st.columns(2)
-                            with col_m:
-                                st.success("📈 **Melhorou:** " + (", ".join(melhorou) if melhorou else "Sem melhora clara ainda."))
-                            with col_p:
-                                st.warning("📌 **Precisa de atenção:** " + (", ".join(piorou) if piorou else "Nenhuma piora identificada."))
-                    else:
-                        st.success("✅ Sem dificuldades registradas para gerar histórico de evolução.")
+                    fig_evol = px.bar(
+                        contagem, x="Mês", y="Ocorrências", color="Dificuldade",
+                        barmode="group",  # barras lado a lado (verticais), não empilhadas
+                        category_orders={"Mês": meses_ordenados},
+                        title="Quantas vezes cada dificuldade apareceu, por mês"
+                    )
+                    fig_evol.update_layout(xaxis_title="Mês", yaxis_title="Nº de ocorrências", legend_title="Dificuldade")
+                    fig_evol.update_yaxes(dtick=1)  # eixo em números inteiros (são contagens, não %)
+                    st.plotly_chart(fig_evol, use_container_width=True)
+
+                    # Comparação real: primeira metade do período vs segunda metade
+                    if len(meses_ordenados) >= 2:
+                        metade = len(meses_ordenados) // 2
+                        meses_antes = set(meses_ordenados[:metade]) if metade > 0 else set()
+                        meses_depois = set(meses_ordenados[metade:])
+                        cont_antes = df_evol[df_evol['Mês'].isin(meses_antes)]['Dificuldade'].value_counts()
+                        cont_depois = df_evol[df_evol['Mês'].isin(meses_depois)]['Dificuldade'].value_counts()
+                        melhorou = [d for d in cont_antes.index if cont_depois.get(d, 0) < cont_antes.get(d, 0)]
+                        piorou = [d for d in cont_depois.index if cont_depois.get(d, 0) > cont_antes.get(d, 0)]
+                        col_m, col_p = st.columns(2)
+                        with col_m:
+                            st.success("📈 **Melhorou:** " + (", ".join(melhorou) if melhorou else "Sem melhora clara ainda."))
+                        with col_p:
+                            st.warning("📌 **Precisa de atenção:** " + (", ".join(piorou) if piorou else "Nenhuma piora identificada."))
+
+                    # --- Sugestão pra próxima aula, baseada só no que está registrado ---
+                    # Olha apenas o mês mais recente com registro — não é diagnóstico
+                    # novo, é o próprio dado já lançado pela professora, só destacado.
+                    mes_mais_recente = meses_ordenados[-1]
+                    difs_mes_recente = df_evol[df_evol['Mês'] == mes_mais_recente]['Dificuldade'].value_counts()
+                    if not difs_mes_recente.empty:
+                        dif_top = difs_mes_recente.index[0]
+                        qtd_top = int(difs_mes_recente.iloc[0])
+                        st.info(f"💡 **Sugestão para a próxima aula:** a dificuldade mais registrada em {mes_mais_recente} foi "
+                                f"**\"{dif_top}\"** ({qtd_top}x). Vale reforçar esse ponto especificamente na próxima aula, "
+                                f"antes de avançar de conteúdo.")
                 else:
                     st.info("ℹ️ Ainda não há dificuldades registradas nesse período para montar o gráfico de evolução.")
+
 
                 # --- 4.6 PRÓXIMOS OBJETIVOS (NOVO) ---
                 st.divider()
@@ -2022,10 +2051,11 @@ elif menu == "📊 Analítico IA":
         for al in ALUNAS_LISTA:
             linha = {"Aluna": al}
             for materia in ["Prática", "Teoria", "Solfejo"]:
-                regs = df_periodo_q[(df_periodo_q['Aluna'] == al) & (df_periodo_q['Tipo'] == f"Analise_{materia}")]
+                regs = df_periodo_q[(df_periodo_q['Aluna'] == al) & (df_periodo_q['Tipo'] == f"Analise_{materia}")].copy()
                 total = len(regs)
                 if total > 0:
-                    sem_dificuldade = (regs['Status'] == "Realizada - sem pendência").sum()
+                    regs['tem_dificuldade'] = regs['Dificuldades'].apply(_tem_dificuldade_real)
+                    sem_dificuldade = int((~regs['tem_dificuldade']).sum())
                     score = round((sem_dificuldade / total) * 100)
                 else:
                     score = 0
