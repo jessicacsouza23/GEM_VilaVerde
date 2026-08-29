@@ -537,6 +537,33 @@ if menu == "🏠 Secretaria":
         
         texto_whatsapp = f"🎼 *RELATÓRIO PEDAGÓGICO - {data_visao}*\n\n"
 
+        # Escala do dia (rodízio salvo) — usada pra conferir se quem registrou a
+        # aula é de fato quem estava escalada naquele horário/tipo pra essa aluna.
+        escala_do_dia_relatorio = db_get_calendario().get(data_visao, [])
+
+        def _prof_escalada_para(aluna, tipo_desejado):
+            """Procura na escala do dia quem foi escalada pra dar 'tipo_desejado'
+            (Prática/Teoria/Solfejo) pra 'aluna'. Retorna None se não achar."""
+            for reg in escala_do_dia_relatorio:
+                if reg.get("Aluna") != aluna:
+                    continue
+                for h in HORARIOS:
+                    cont = str(reg.get(h, ""))
+                    if "|" not in cont:
+                        continue
+                    cont_up = cont.upper()
+                    if "SALA 8" in cont_up:
+                        tipo_cont = "Teoria"
+                    elif "SALA 9" in cont_up:
+                        tipo_cont = "Solfejo"
+                    elif cont_up.startswith("SALA"):
+                        tipo_cont = "Prática"
+                    else:
+                        continue
+                    if tipo_cont == tipo_desejado:
+                        return cont.split("|")[-1].strip()
+            return None
+
         def _limpar_difs(valor_difs):
             """Normaliza Dificuldades pra sempre virar uma lista de strings reais,
             mesmo se vier None/NaN/string/lista do banco."""
@@ -653,6 +680,17 @@ if menu == "🏠 Secretaria":
                                 if obs_prof:
                                     st.info(f"📝 **Observação da professora:** {obs_prof}")
                                     texto_whatsapp += f"   📝 Obs: {obs_prof}\n"
+
+                                # --- CONFERÊNCIA: quem registrou é de fato quem estava
+                                # escalada no rodízio pra essa aluna, nesse tipo de aula?
+                                instrutora_registro = _valor_ou_none(r.get('Instrutora'))
+                                prof_escalada = _prof_escalada_para(aluna_v, tipo)
+                                if prof_escalada and instrutora_registro and \
+                                   prof_escalada.strip().lower() != instrutora_registro.strip().lower():
+                                    st.error(f"⚠️ **Divergência com o rodízio:** a escala do dia tinha "
+                                             f"**{prof_escalada}** pra essa aula, mas o registro foi feito "
+                                             f"por **{instrutora_registro}**.")
+                                    texto_whatsapp += f"   ⚠️ Divergência: escalada {prof_escalada}, registrado por {instrutora_registro}\n"
 
                         # --- FALTA DE REGISTRO DA PROFESSORA ---
                         if sem_registro:
@@ -1806,9 +1844,24 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             # a não ser que a professora marque "Eu mesma" (aí ganha o sufixo _Prof).
                             base_tipo_casa = "Apostila" if tipo_casa_sel == "Apostila" else "Teoria"
                             if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
+
+                            # Quando a professora corrige ela mesma em sala, ninguém mais vai
+                            # marcar o resultado depois — ela precisa dizer aqui como as
+                            # alunas foram, senão o registro fica pra sempre "Pendente" sem
+                            # nenhuma informação real. Os campos ficam sempre visíveis (não
+                            # dá pra escondê-los dinamicamente dentro de um st.form), mas só
+                            # são usados de fato se "Eu mesma" estiver marcado no envio.
+                            st.caption("👇 Preencha isso só se marcou **\"Eu mesma (em sala)\"** acima:")
+                            status_correcao_prof = st.radio(
+                                "Como as alunas foram nessa correção em sala?",
+                                ["Realizada - sem pendência", "Realizada - com dificuldades", "Não realizada"],
+                                horizontal=True, key=f"stcorr_{d_sel['id']}"
+                            )
+                            obs_correcao_prof = st.text_input("Observação da correção (opcional):", key=f"obscorr_{d_sel['id']}")
                         else:  # Solfejo
                             conteudo_casa = st.text_input("🎼 MSA (lição de casa, sem correção da secretaria):", key=f"cc_{d_sel['id']}")
                             if conteudo_casa: tarefas_casa["MSA"] = conteudo_casa
+                            quem_corrige, status_correcao_prof, obs_correcao_prof = None, None, ""
 
                         # Método — sempre precisa informar a lição de casa (não é opcional),
                         # só não entra na correção da secretaria.
@@ -1842,11 +1895,18 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     })
                                     for mat_nome, conteudo in tarefas_casa.items():
                                         if conteudo:
+                                            # Se essa tarefa é "_Prof" (professora corrige em sala),
+                                            # usa o status/observação reais que ela informou aqui em
+                                            # vez de deixar "Pendente" sem nenhuma informação.
+                                            eh_correcao_propria = mat_nome.endswith("_Prof") and quem_corrige == "Eu mesma (em sala)"
+                                            status_final = status_correcao_prof if eh_correcao_propria else "Pendente"
+                                            obs_final = (f"{obs_geral} | {obs_correcao_prof}".strip(" |") if eh_correcao_propria and obs_correcao_prof
+                                                         else obs_geral)
                                             db_save_historico({
                                                 "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                                 "Tipo": f"Casa_{mat_nome}",
                                                 "Licao_Atual": "Definido", "Licao_Casa": conteudo,
-                                                "Dificuldades": [], "Observacao": obs_geral, "Status": "Pendente"
+                                                "Dificuldades": [], "Observacao": obs_final, "Status": status_final
                                             })
                                 st.success("✅ Registro concluído com sucesso!")
                                 time.sleep(1)
