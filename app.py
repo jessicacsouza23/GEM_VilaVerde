@@ -543,9 +543,12 @@ if menu == "🏠 Secretaria":
 
         def _prof_escalada_para(aluna, tipo_desejado):
             """Procura na escala do dia quem foi escalada pra dar 'tipo_desejado'
-            (Prática/Teoria/Solfejo) pra 'aluna'. Retorna None se não achar."""
+            (Prática/Teoria/Solfejo) pra 'aluna'. Retorna None se não achar.
+            Compara nomes normalizados (sem acento/maiúscula) pra não falhar
+            por causa de acento ou espaço digitado diferente entre as telas."""
+            aluna_norm = limpar_texto(aluna)
             for reg in escala_do_dia_relatorio:
-                if reg.get("Aluna") != aluna:
+                if limpar_texto(reg.get("Aluna", "")) != aluna_norm:
                     continue
                 for h in HORARIOS:
                     cont = str(reg.get(h, ""))
@@ -665,15 +668,21 @@ if menu == "🏠 Secretaria":
                                 proxima_semana.append(f"{tipo}: {lic_cs}")
 
                             with st.container(border=True):
-                                st.markdown(f"🎹 **{tipo}**")
+                                instrutora_registro = _valor_ou_none(r.get('Instrutora'))
+                                prof_escalada = _prof_escalada_para(aluna_v, tipo)
+                                # Nome mostrado no cabeçalho é sempre o do rodízio (fonte
+                                # confiável do planejamento) — cai pro nome que registrou
+                                # só se essa aluna não for encontrada na escala do dia.
+                                prof_exibida = prof_escalada or instrutora_registro or "não identificada"
+                                st.markdown(f"🎹 **{tipo}** — Professora: **{prof_exibida}**")
                                 st.write(f"**Lição de hoje:** {lic_at}")
                                 if difs_reg:
                                     txt_difs = ", ".join(difs_reg)
                                     st.markdown(f"<div style='background-color: #FDEDEC; padding: 8px; border-radius: 5px; border-left: 4px solid #CB4335; color: #943126;'><b>⚠️ Dificuldades:</b> {txt_difs}</div>", unsafe_allow_html=True)
-                                    texto_whatsapp += f"• {tipo}: {lic_at}\n   ⚠️ *Dificuldades:* {txt_difs}\n"
+                                    texto_whatsapp += f"• {tipo} ({prof_exibida}): {lic_at}\n   ⚠️ *Dificuldades:* {txt_difs}\n"
                                 else:
                                     st.caption("✅ Sem dificuldades registradas nessa aula.")
-                                    texto_whatsapp += f"• {tipo}: {lic_at}\n   ✅ Sem dificuldades\n"
+                                    texto_whatsapp += f"• {tipo} ({prof_exibida}): {lic_at}\n   ✅ Sem dificuldades\n"
 
                                 # Observação da professora — é aqui que costumam entrar as
                                 # melhorias e qualquer nota relevante pra próxima professora.
@@ -683,10 +692,10 @@ if menu == "🏠 Secretaria":
 
                                 # --- CONFERÊNCIA: quem registrou é de fato quem estava
                                 # escalada no rodízio pra essa aluna, nesse tipo de aula?
-                                instrutora_registro = _valor_ou_none(r.get('Instrutora'))
-                                prof_escalada = _prof_escalada_para(aluna_v, tipo)
+                                # Comparação normalizada (sem acento/maiúscula) pra não
+                                # disparar falso alarme por causa de acento diferente.
                                 if prof_escalada and instrutora_registro and \
-                                   prof_escalada.strip().lower() != instrutora_registro.strip().lower():
+                                   limpar_texto(prof_escalada) != limpar_texto(instrutora_registro):
                                     st.error(f"⚠️ **Divergência com o rodízio:** a escala do dia tinha "
                                              f"**{prof_escalada}** pra essa aula, mas o registro foi feito "
                                              f"por **{instrutora_registro}**.")
@@ -1816,6 +1825,21 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                              (df_hist_local['Licao_Atual'].str.startswith(f"{mat_focado}:", na=False))]
                         if not f_ex.empty: dados_hoje = f_ex.iloc[-1].to_dict()
 
+                    # "Quem corrige" precisa ficar FORA do st.form: dentro de um form, o
+                    # Streamlit só reage aos widgets quando o botão de envio é clicado, então
+                    # o campo de "como as alunas foram" só apareceria depois de já ter
+                    # enviado uma vez. Aqui fora, a tela atualiza na hora ao marcar a opção.
+                    quem_corrige, status_correcao_prof, obs_correcao_prof = None, None, ""
+                    if tipo_aula == "Teoria":
+                        quem_corrige = st.radio("Quem corrige a lição de casa (Teoria)?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
+                        if quem_corrige == "Eu mesma (em sala)":
+                            status_correcao_prof = st.radio(
+                                "Como as alunas foram nessa correção em sala?",
+                                ["Realizada - sem pendência", "Realizada - com dificuldades", "Não realizada"],
+                                horizontal=True, key=f"stcorr_{d_sel['id']}"
+                            )
+                            obs_correcao_prof = st.text_input("Observação da correção (opcional):", key=f"obscorr_{d_sel['id']}")
+
                     with st.form(key=f"form_v58_{d_sel['id']}_{mat_focado}"):
                         lic_db = dados_hoje.get('Licao_Atual', "").split(":")[-1].strip() if ":" in dados_hoje.get('Licao_Atual', "") else ""
                         lic_hoje = st.text_input("Página/Lição trabalhada:", value=lic_db)
@@ -1837,31 +1861,15 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         if tipo_aula == "Teoria":
                             tipo_casa_sel = st.radio("📖 Tipo de lição de casa (vai para a secretaria):", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
                             conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", key=f"cc_{d_sel['id']}")
-                            quem_corrige = st.radio("Quem corrige:", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
                             sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
                             # Apostila é sempre apostila (mesmo tipo usado na Prática) — Folha
                             # Avulsa vira Casa_Teoria. Os dois entram na fila da secretaria,
                             # a não ser que a professora marque "Eu mesma" (aí ganha o sufixo _Prof).
                             base_tipo_casa = "Apostila" if tipo_casa_sel == "Apostila" else "Teoria"
                             if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
-
-                            # Quando a professora corrige ela mesma em sala, ninguém mais vai
-                            # marcar o resultado depois — ela precisa dizer aqui como as
-                            # alunas foram, senão o registro fica pra sempre "Pendente" sem
-                            # nenhuma informação real. Os campos ficam sempre visíveis (não
-                            # dá pra escondê-los dinamicamente dentro de um st.form), mas só
-                            # são usados de fato se "Eu mesma" estiver marcado no envio.
-                            st.caption("👇 Preencha isso só se marcou **\"Eu mesma (em sala)\"** acima:")
-                            status_correcao_prof = st.radio(
-                                "Como as alunas foram nessa correção em sala?",
-                                ["Realizada - sem pendência", "Realizada - com dificuldades", "Não realizada"],
-                                horizontal=True, key=f"stcorr_{d_sel['id']}"
-                            )
-                            obs_correcao_prof = st.text_input("Observação da correção (opcional):", key=f"obscorr_{d_sel['id']}")
                         else:  # Solfejo
                             conteudo_casa = st.text_input("🎼 MSA (lição de casa, sem correção da secretaria):", key=f"cc_{d_sel['id']}")
                             if conteudo_casa: tarefas_casa["MSA"] = conteudo_casa
-                            quem_corrige, status_correcao_prof, obs_correcao_prof = None, None, ""
 
                         # Método — sempre precisa informar a lição de casa (não é opcional),
                         # só não entra na correção da secretaria.
