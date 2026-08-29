@@ -575,16 +575,19 @@ if menu == "🏠 Secretaria":
 
                         difs_do_dia = []       # todas as dificuldades reais da aluna nesse dia
                         proxima_semana = []     # o que ficou combinado pra próxima semana (lição de casa)
+                        sem_registro = []       # professoras cuja aula do dia ainda não tem registro pedagógico
 
                         # Processar cada registro daquela aluna no dia
                         for _, r in dados_aluna.iterrows():
                             tipo_bruto = _valor_ou_none(r.get('Tipo'))
 
                             # --- LINHA "CRUA" DO RODÍZIO: só tem Aluna/Instrutora/Data, sem
-                            # nenhum registro pedagógico ainda (é o que antes aparecia como
-                            # "nan" na tela). Não tem conteúdo pedagógico pra mostrar, então
-                            # simplesmente pula — sem poluir o relatório com isso.
+                            # nenhum registro pedagógico ainda (a professora foi escalada mas
+                            # não preencheu o registro da aula na aba "Minhas Aulas").
                             if tipo_bruto is None:
+                                instrutora_pendente = _valor_ou_none(r.get('Instrutora'))
+                                if instrutora_pendente:
+                                    sem_registro.append(instrutora_pendente)
                                 continue
 
                             tipo = tipo_bruto.replace("Analise_", "").replace("Aula_", "").replace("Casa_", "").replace("_", " ")
@@ -605,14 +608,20 @@ if menu == "🏠 Secretaria":
 
                             # --- LIÇÃO DE CASA (Casa_...): é uma tarefa combinada, não uma
                             # aula de hoje — mostrada separada pra não confundir com o
-                            # "Lição de hoje" das aulas de fato.
+                            # "Lição de hoje" das aulas de fato. Se ainda não foi corrigida
+                            # pela secretaria, isso fica destacado (não é "sem dificuldade",
+                            # é simplesmente "ainda não corrigida").
                             if tipo_bruto.startswith("Casa_"):
                                 lic_cs_casa = _valor_ou_none(r.get('Licao_Casa')) or "não especificada"
                                 status_casa = _valor_ou_none(r.get('Status')) or "sem status"
+                                corrigida = status_casa in STATUS_OK_LICAO
                                 with st.container(border=True):
                                     st.markdown(f"🏠 **Lição de casa — {tipo}**")
                                     st.write(f"**Conteúdo:** {lic_cs_casa}")
-                                    st.caption(f"Status da correção: {status_casa}")
+                                    if corrigida:
+                                        st.caption(f"Status da correção: {status_casa}")
+                                    else:
+                                        st.warning(f"⏳ Ainda sem correção da secretaria (status atual: {status_casa})")
                                 proxima_semana.append(f"{tipo}: {lic_cs_casa}")
                                 texto_whatsapp += f"🏠 Lição de casa ({tipo}): {lic_cs_casa} — status: {status_casa}\n"
                                 continue
@@ -644,6 +653,12 @@ if menu == "🏠 Secretaria":
                                 if obs_prof:
                                     st.info(f"📝 **Observação da professora:** {obs_prof}")
                                     texto_whatsapp += f"   📝 Obs: {obs_prof}\n"
+
+                        # --- FALTA DE REGISTRO DA PROFESSORA ---
+                        if sem_registro:
+                            nomes_pendentes = ", ".join(sorted(set(sem_registro)))
+                            st.markdown(f"<div style='background-color: #FEF9E7; padding: 10px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #D4AC0D;'><b>⚠️ Faltando registro da professora:</b> {nomes_pendentes}</div>", unsafe_allow_html=True)
+                            texto_whatsapp += f"⚠️ *Faltando registro da professora:* {nomes_pendentes}\n"
 
                         # --- RESUMO CLARO: DIFICULDADES DO DIA + PRÓXIMA SEMANA ---
                         if difs_do_dia:
@@ -904,6 +919,12 @@ if menu == "🏠 Secretaria":
                             if a_n in alunas_ja_registradas:
                                 continue
                             for hor, valor in dados.items():
+                                if hor == HORARIOS[0]:
+                                    # Esse horário é o aula coletiva inicial ("Roberta | Todas as
+                                    # alunas") com todo mundo junto — não é uma aula individual
+                                    # que precise de registro pedagógico próprio, então não entra
+                                    # no histórico como pendência de professora.
+                                    continue
                                 v_str = str(valor)
                                 # SALVA APENAS O NOME DA PROFESSORA, SEM SALA, SEM PIANO, SEM NADA
                                 if "|" in v_str and "SALA 8" not in v_str and "SALA 9" not in v_str:
