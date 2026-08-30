@@ -1859,7 +1859,8 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         tarefas_casa = {}
 
                         if tipo_aula == "Teoria":
-                            tipo_casa_sel = st.radio("📖 Tipo de lição de casa (vai para a secretaria):", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
+                            destino_txt = "vai para a fila da secretaria" if quem_corrige == "Secretaria" else "você mesma vai corrigir em sala"
+                            tipo_casa_sel = st.radio(f"📖 Tipo de lição de casa ({destino_txt}):", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
                             conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", key=f"cc_{d_sel['id']}")
                             sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
                             # Apostila é sempre apostila (mesmo tipo usado na Prática) — Folha
