@@ -1842,13 +1842,21 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         if cols_d[i % 3].checkbox(d, value=(d in difs_db), key=f"d_v58_{i}_{d_sel['id']}_{mat_focado}_{dt_str}")
                     ]
 
-                    # --- CORREÇÃO DA LIÇÃO DE CASA: fica antes da seção "Lição de Casa"
-                    # em si, porque são coisas diferentes — aqui é só a decisão de quem
-                    # corrige (e, se for a própria professora, o resultado dessa correção).
+                    st.divider()
+                    st.subheader("🏠 Lição de Casa")
+                    st.caption("📬 O que marcar com 📖 abaixo vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método) e não vai para a secretaria.")
+                    tarefas_casa = {}
                     quem_corrige, status_correcao_prof, obs_correcao_prof = None, None, ""
+
                     if tipo_aula == "Teoria":
-                        st.divider()
-                        quem_corrige = st.radio("Quem corrige a lição de casa (Teoria)?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
+                        tipo_casa_sel = st.radio("📖 Tipo de lição de casa (vai para a secretaria):", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
+                        conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", key=f"cc_{d_sel['id']}")
+
+                        # Quem corrige fica junto da lição de casa (é sobre ela). Se a
+                        # secretaria corrige, a lição permanece "Pendente" na fila de
+                        # correção normal; se a professora corrige ela mesma, ela informa
+                        # aqui o resultado, e a lição nem entra nessa fila.
+                        quem_corrige = st.radio("Quem corrige essa lição de casa?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
                         if quem_corrige == "Eu mesma (em sala)":
                             status_correcao_prof = st.radio(
                                 "Como as alunas foram nessa atividade (folha/apostila) que você corrigiu?",
@@ -1857,14 +1865,6 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             )
                             obs_correcao_prof = st.text_input("Observação da correção (opcional):", key=f"obscorr_{d_sel['id']}")
 
-                    st.divider()
-                    st.subheader("🏠 Lição de Casa")
-                    st.caption("📬 O que marcar com 📖 abaixo vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método) e não vai para a secretaria.")
-                    tarefas_casa = {}
-
-                    if tipo_aula == "Teoria":
-                        tipo_casa_sel = st.radio("📖 Tipo de lição de casa (vai para a secretaria):", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
-                        conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", key=f"cc_{d_sel['id']}")
                         sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
                         # Apostila é sempre apostila (mesmo tipo usado na Prática) — Folha
                         # Avulsa vira Casa_Teoria. Os dois entram na fila da secretaria,
