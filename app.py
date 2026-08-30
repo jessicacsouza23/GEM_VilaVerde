@@ -1830,7 +1830,6 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     # depois do botão de envio ser clicado — então essa tela toda usa
                     # widgets normais, com um botão comum de salvar no final.
 
-                    st.markdown("### 📝 Aula de hoje")
                     lic_db = dados_hoje.get('Licao_Atual', "").split(":")[-1].strip() if ":" in dados_hoje.get('Licao_Atual', "") else ""
                     lic_hoje = st.text_input("Página/Lição trabalhada:", value=lic_db, key=f"lich_{d_sel['id']}")
 
@@ -1843,28 +1842,13 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         if cols_d[i % 3].checkbox(d, value=(d in difs_db), key=f"d_v58_{i}_{d_sel['id']}_{mat_focado}_{dt_str}")
                     ]
 
-                    st.divider()
-                    st.markdown("### 🏠 Lição de Casa")
-                    st.caption("📬 O que marcar com 📖 abaixo vai para a fila de correção da secretaria (a não ser que você marque \"Eu mesma\"). O que marcar com 🎼 é só acompanhamento seu (método) e não vai para a secretaria.")
-                    tarefas_casa = {}
+                    # --- CORREÇÃO DA LIÇÃO DE CASA: fica antes da seção "Lição de Casa"
+                    # em si, porque são coisas diferentes — aqui é só a decisão de quem
+                    # corrige (e, se for a própria professora, o resultado dessa correção).
                     quem_corrige, status_correcao_prof, obs_correcao_prof = None, None, ""
-
                     if tipo_aula == "Teoria":
+                        st.divider()
                         quem_corrige = st.radio("Quem corrige a lição de casa (Teoria)?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
-
-                        destino_txt = "vai para a fila da secretaria" if quem_corrige == "Secretaria" else "você mesma vai corrigir em sala"
-                        tipo_casa_sel = st.radio(f"📖 Tipo de lição de casa ({destino_txt}):", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
-                        conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", key=f"cc_{d_sel['id']}")
-                        sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
-                        # Apostila é sempre apostila (mesmo tipo usado na Prática) — Folha
-                        # Avulsa vira Casa_Teoria. Os dois entram na fila da secretaria,
-                        # a não ser que a professora marque "Eu mesma" (aí ganha o sufixo _Prof).
-                        base_tipo_casa = "Apostila" if tipo_casa_sel == "Apostila" else "Teoria"
-                        if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
-
-                        # Isso só importa (e só é salvo) se "Eu mesma" estiver marcado
-                        # acima — é sobre a atividade da folha/apostila em si, não sobre
-                        # como a turma foi na aula de hoje.
                         if quem_corrige == "Eu mesma (em sala)":
                             status_correcao_prof = st.radio(
                                 "Como as alunas foram nessa atividade (folha/apostila) que você corrigiu?",
@@ -1872,6 +1856,21 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 horizontal=True, key=f"stcorr_{d_sel['id']}"
                             )
                             obs_correcao_prof = st.text_input("Observação da correção (opcional):", key=f"obscorr_{d_sel['id']}")
+
+                    st.divider()
+                    st.subheader("🏠 Lição de Casa")
+                    st.caption("📬 O que marcar com 📖 abaixo vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método) e não vai para a secretaria.")
+                    tarefas_casa = {}
+
+                    if tipo_aula == "Teoria":
+                        tipo_casa_sel = st.radio("📖 Tipo de lição de casa (vai para a secretaria):", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
+                        conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", key=f"cc_{d_sel['id']}")
+                        sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
+                        # Apostila é sempre apostila (mesmo tipo usado na Prática) — Folha
+                        # Avulsa vira Casa_Teoria. Os dois entram na fila da secretaria,
+                        # a não ser que a professora marque "Eu mesma" (aí ganha o sufixo _Prof).
+                        base_tipo_casa = "Apostila" if tipo_casa_sel == "Apostila" else "Teoria"
+                        if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
                     else:  # Solfejo
                         conteudo_casa = st.text_input("🎼 MSA (lição de casa, sem correção da secretaria):", key=f"cc_{d_sel['id']}")
                         if conteudo_casa: tarefas_casa["MSA"] = conteudo_casa
