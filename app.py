@@ -1825,101 +1825,105 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                              (df_hist_local['Licao_Atual'].str.startswith(f"{mat_focado}:", na=False))]
                         if not f_ex.empty: dados_hoje = f_ex.iloc[-1].to_dict()
 
-                    # "Quem corrige" precisa ficar FORA do st.form: dentro de um form, o
-                    # Streamlit só reage aos widgets quando o botão de envio é clicado, então
-                    # o campo de "como as alunas foram" só apareceria depois de já ter
-                    # enviado uma vez. Aqui fora, a tela atualiza na hora ao marcar a opção.
+                    # Sem st.form aqui: "quem corrige a lição de casa" precisa aparecer/
+                    # sumir na hora conforme a professora marca, e um st.form só reage
+                    # depois do botão de envio ser clicado — então essa tela toda usa
+                    # widgets normais, com um botão comum de salvar no final.
+
+                    st.markdown("### 📝 Aula de hoje")
+                    lic_db = dados_hoje.get('Licao_Atual', "").split(":")[-1].strip() if ":" in dados_hoje.get('Licao_Atual', "") else ""
+                    lic_hoje = st.text_input("Página/Lição trabalhada:", value=lic_db, key=f"lich_{d_sel['id']}")
+
+                    st.markdown("**Dificuldades (compartilhada pra turma):**")
+                    lista_difs = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO
+                    difs_db = dados_hoje.get('Dificuldades', []) or []
+                    cols_d = st.columns(3)
+                    difs_sel = [
+                        d for i, d in enumerate(lista_difs)
+                        if cols_d[i % 3].checkbox(d, value=(d in difs_db), key=f"d_v58_{i}_{d_sel['id']}_{mat_focado}_{dt_str}")
+                    ]
+
+                    st.divider()
+                    st.markdown("### 🏠 Lição de Casa")
+                    st.caption("📬 O que marcar com 📖 abaixo vai para a fila de correção da secretaria (a não ser que você marque \"Eu mesma\"). O que marcar com 🎼 é só acompanhamento seu (método) e não vai para a secretaria.")
+                    tarefas_casa = {}
                     quem_corrige, status_correcao_prof, obs_correcao_prof = None, None, ""
+
                     if tipo_aula == "Teoria":
                         quem_corrige = st.radio("Quem corrige a lição de casa (Teoria)?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
+
+                        destino_txt = "vai para a fila da secretaria" if quem_corrige == "Secretaria" else "você mesma vai corrigir em sala"
+                        tipo_casa_sel = st.radio(f"📖 Tipo de lição de casa ({destino_txt}):", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
+                        conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", key=f"cc_{d_sel['id']}")
+                        sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
+                        # Apostila é sempre apostila (mesmo tipo usado na Prática) — Folha
+                        # Avulsa vira Casa_Teoria. Os dois entram na fila da secretaria,
+                        # a não ser que a professora marque "Eu mesma" (aí ganha o sufixo _Prof).
+                        base_tipo_casa = "Apostila" if tipo_casa_sel == "Apostila" else "Teoria"
+                        if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
+
+                        # Isso só importa (e só é salvo) se "Eu mesma" estiver marcado
+                        # acima — é sobre a atividade da folha/apostila em si, não sobre
+                        # como a turma foi na aula de hoje.
                         if quem_corrige == "Eu mesma (em sala)":
                             status_correcao_prof = st.radio(
-                                "Como as alunas foram nessa correção em sala?",
+                                "Como as alunas foram nessa atividade (folha/apostila) que você corrigiu?",
                                 ["Realizada - sem pendência", "Realizada - com dificuldades", "Não realizada"],
                                 horizontal=True, key=f"stcorr_{d_sel['id']}"
                             )
                             obs_correcao_prof = st.text_input("Observação da correção (opcional):", key=f"obscorr_{d_sel['id']}")
+                    else:  # Solfejo
+                        conteudo_casa = st.text_input("🎼 MSA (lição de casa, sem correção da secretaria):", key=f"cc_{d_sel['id']}")
+                        if conteudo_casa: tarefas_casa["MSA"] = conteudo_casa
 
-                    with st.form(key=f"form_v58_{d_sel['id']}_{mat_focado}"):
-                        lic_db = dados_hoje.get('Licao_Atual', "").split(":")[-1].strip() if ":" in dados_hoje.get('Licao_Atual', "") else ""
-                        lic_hoje = st.text_input("Página/Lição trabalhada:", value=lic_db)
+                    # Método — sempre precisa informar a lição de casa (não é opcional),
+                    # só não entra na correção da secretaria.
+                    if metodos_filtrados:
+                        metodo_casa_sel = st.selectbox("🎼 Método:", metodos_filtrados, key=f"met_casa_{d_sel['id']}")
+                        metodo_casa_pag = st.text_input(f"🎼 Lição de casa — {metodo_casa_sel}:", key=f"met_pag_{d_sel['id']}")
+                    else:
+                        metodo_casa_sel, metodo_casa_pag = None, ""
+                        st.info("ℹ️ Nenhum método cadastrado pra essa categoria ainda (cadastre em ⚙️ Configurar Métodos).")
 
-                        st.markdown("**Dificuldades (compartilhada pra turma):**")
-                        lista_difs = DIF_TEORIA if tipo_aula == "Teoria" else DIF_SOLFEJO
-                        difs_db = dados_hoje.get('Dificuldades', []) or []
-                        cols_d = st.columns(3)
-                        difs_sel = [
-                            d for i, d in enumerate(lista_difs)
-                            if cols_d[i % 3].checkbox(d, value=(d in difs_db), key=f"d_v58_{i}_{d_sel['id']}_{mat_focado}_{dt_str}")
-                        ]
+                    obs_db = dados_hoje.get('Observacao', "")
+                    obs_geral = st.text_area("Observações Pedagógicas:", value=obs_db, key=f"obsg_{d_sel['id']}")
 
-                        st.divider()
-                        st.subheader("🏠 Lição de Casa")
-                        st.caption("📬 O que marcar com 📖 abaixo vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método) e não vai para a secretaria.")
-                        tarefas_casa = {}
-
-                        if tipo_aula == "Teoria":
-                            destino_txt = "vai para a fila da secretaria" if quem_corrige == "Secretaria" else "você mesma vai corrigir em sala"
-                            tipo_casa_sel = st.radio(f"📖 Tipo de lição de casa ({destino_txt}):", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
-                            conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", key=f"cc_{d_sel['id']}")
-                            sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
-                            # Apostila é sempre apostila (mesmo tipo usado na Prática) — Folha
-                            # Avulsa vira Casa_Teoria. Os dois entram na fila da secretaria,
-                            # a não ser que a professora marque "Eu mesma" (aí ganha o sufixo _Prof).
-                            base_tipo_casa = "Apostila" if tipo_casa_sel == "Apostila" else "Teoria"
-                            if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
-                        else:  # Solfejo
-                            conteudo_casa = st.text_input("🎼 MSA (lição de casa, sem correção da secretaria):", key=f"cc_{d_sel['id']}")
-                            if conteudo_casa: tarefas_casa["MSA"] = conteudo_casa
-
-                        # Método — sempre precisa informar a lição de casa (não é opcional),
-                        # só não entra na correção da secretaria.
-                        if metodos_filtrados:
-                            metodo_casa_sel = st.selectbox("🎼 Método:", metodos_filtrados, key=f"met_casa_{d_sel['id']}")
-                            metodo_casa_pag = st.text_input(f"🎼 Lição de casa — {metodo_casa_sel}:", key=f"met_pag_{d_sel['id']}")
+                    if st.button("💾 SALVAR E CONGELAR ANÁLISE", use_container_width=True, key=f"btnsalvar_{d_sel['id']}"):
+                        if mat_focado == "Selecione...":
+                            st.error("Selecione o material da aula antes de salvar.")
+                        elif metodos_filtrados and not metodo_casa_pag.strip():
+                            st.error(f"⚠️ Preencha a lição de casa do método ({metodo_casa_sel}). Não é opcional.")
                         else:
-                            metodo_casa_sel, metodo_casa_pag = None, ""
-                            st.info("ℹ️ Nenhum método cadastrado pra essa categoria ainda (cadastre em ⚙️ Configurar Métodos).")
-
-                        obs_db = dados_hoje.get('Observacao', "")
-                        obs_geral = st.text_area("Observações Pedagógicas:", value=obs_db)
-
-                        if st.form_submit_button("💾 SALVAR E CONGELAR ANÁLISE", use_container_width=True):
-                            if mat_focado == "Selecione...":
-                                st.error("Selecione o material da aula antes de salvar.")
-                            elif metodos_filtrados and not metodo_casa_pag.strip():
-                                st.error(f"⚠️ Preencha a lição de casa do método ({metodo_casa_sel}). Não é opcional.")
-                            else:
-                                if metodo_casa_sel and metodo_casa_pag:
-                                    tarefas_casa[f"Metodo_{metodo_casa_sel}"] = metodo_casa_pag
-                                difs_reais = [d for d in difs_sel if d != "Não apresentou dificuldades"]
-                                status_analise = "Realizada - com dificuldades" if difs_reais else "Realizada - sem pendência"
-                                for al_f in als_selecionadas:
-                                    db_save_historico({
-                                        "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
-                                        "Tipo": f"Analise_{tipo_aula}",
-                                        "Licao_Atual": f"{mat_focado}: {lic_hoje}",
-                                        "Licao_Casa": "---", "Dificuldades": difs_sel,
-                                        "Observacao": obs_geral, "Status": status_analise
-                                    })
-                                    for mat_nome, conteudo in tarefas_casa.items():
-                                        if conteudo:
-                                            # Se essa tarefa é "_Prof" (professora corrige em sala),
-                                            # usa o status/observação reais que ela informou aqui em
-                                            # vez de deixar "Pendente" sem nenhuma informação.
-                                            eh_correcao_propria = mat_nome.endswith("_Prof") and quem_corrige == "Eu mesma (em sala)"
-                                            status_final = status_correcao_prof if eh_correcao_propria else "Pendente"
-                                            obs_final = (f"{obs_geral} | {obs_correcao_prof}".strip(" |") if eh_correcao_propria and obs_correcao_prof
-                                                         else obs_geral)
-                                            db_save_historico({
-                                                "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
-                                                "Tipo": f"Casa_{mat_nome}",
-                                                "Licao_Atual": "Definido", "Licao_Casa": conteudo,
-                                                "Dificuldades": [], "Observacao": obs_final, "Status": status_final
-                                            })
-                                st.success("✅ Registro concluído com sucesso!")
-                                time.sleep(1)
-                                st.rerun()
+                            if metodo_casa_sel and metodo_casa_pag:
+                                tarefas_casa[f"Metodo_{metodo_casa_sel}"] = metodo_casa_pag
+                            difs_reais = [d for d in difs_sel if d != "Não apresentou dificuldades"]
+                            status_analise = "Realizada - com dificuldades" if difs_reais else "Realizada - sem pendência"
+                            for al_f in als_selecionadas:
+                                db_save_historico({
+                                    "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
+                                    "Tipo": f"Analise_{tipo_aula}",
+                                    "Licao_Atual": f"{mat_focado}: {lic_hoje}",
+                                    "Licao_Casa": "---", "Dificuldades": difs_sel,
+                                    "Observacao": obs_geral, "Status": status_analise
+                                })
+                                for mat_nome, conteudo in tarefas_casa.items():
+                                    if conteudo:
+                                        # Se essa tarefa é "_Prof" (professora corrige em sala),
+                                        # usa o status/observação reais que ela informou aqui em
+                                        # vez de deixar "Pendente" sem nenhuma informação.
+                                        eh_correcao_propria = mat_nome.endswith("_Prof") and quem_corrige == "Eu mesma (em sala)"
+                                        status_final = status_correcao_prof if eh_correcao_propria else "Pendente"
+                                        obs_final = (f"{obs_geral} | {obs_correcao_prof}".strip(" |") if eh_correcao_propria and obs_correcao_prof
+                                                     else obs_geral)
+                                        db_save_historico({
+                                            "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
+                                            "Tipo": f"Casa_{mat_nome}",
+                                            "Licao_Atual": "Definido", "Licao_Casa": conteudo,
+                                            "Dificuldades": [], "Observacao": obs_final, "Status": status_final
+                                        })
+                            st.success("✅ Registro concluído com sucesso!")
+                            time.sleep(1)
+                            st.rerun()
 
 # ============================================================
 # MÓDULO ANÁLISE DE IA - V72 (CORREÇÃO APROV + GRÁFICOS)
