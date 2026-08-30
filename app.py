@@ -638,20 +638,21 @@ if menu == "🏠 Secretaria":
 
                             # --- LIÇÃO DE CASA (Casa_...): é uma tarefa combinada, não uma
                             # aula de hoje — mostrada separada pra não confundir com o
-                            # "Lição de hoje" das aulas de fato. Se ainda não foi corrigida
-                            # pela secretaria, isso fica destacado (não é "sem dificuldade",
-                            # é simplesmente "ainda não corrigida").
+                            # "Lição de hoje" das aulas de fato. Se ainda não foi corrigida,
+                            # isso fica destacado (não é "sem dificuldade", é simplesmente
+                            # "ainda não corrigida") — e diz quem é responsável por corrigir.
                             if tipo_bruto.startswith("Casa_"):
                                 lic_cs_casa = _valor_ou_none(r.get('Licao_Casa')) or "não especificada"
                                 status_casa = _valor_ou_none(r.get('Status')) or "sem status"
                                 corrigida = status_casa in STATUS_OK_LICAO
+                                responsavel = "a própria professora" if tipo_bruto.endswith("_Prof") else "a secretaria"
                                 with st.container(border=True):
                                     st.markdown(f"🏠 **Lição de casa — {tipo}**")
                                     st.write(f"**Conteúdo:** {lic_cs_casa}")
                                     if corrigida:
                                         st.caption(f"Status da correção: {status_casa}")
                                     else:
-                                        st.warning(f"⏳ Ainda sem correção da secretaria (status atual: {status_casa})")
+                                        st.warning(f"⏳ Ainda sem correção (quem corrige: {responsavel}) — status atual: {status_casa}")
                                 proxima_semana.append(f"{tipo}: {lic_cs_casa}")
                                 texto_whatsapp += f"🏠 Lição de casa ({tipo}): {lic_cs_casa} — status: {status_casa}\n"
                                 continue
@@ -1631,6 +1632,51 @@ elif menu == "👩‍🏫 Minhas Aulas":
     # --- ABA DE REGISTRO DE AULA ---
     with tab_aula:
         instr_sel = st.session_state.get('nome_logado', 'Selecione...')
+
+        # --- PENDÊNCIAS DE CORREÇÃO PRÓPRIA ---
+        # Lições de casa que essa professora marcou "Eu mesma corrijo" em aulas
+        # anteriores, e que ainda não foram corrigidas. A correção nunca acontece
+        # no dia em que a lição é passada (a aluna ainda vai fazer em casa) — só
+        # faz sentido na aula seguinte, quando a lição volta pronta.
+        df_hist_pend = pd.DataFrame(db_get_historico())
+        pendencias_prof = pd.DataFrame()
+        if not df_hist_pend.empty:
+            mask_prof = (
+                df_hist_pend['Tipo'].isin(["Casa_Teoria_Prof", "Casa_Apostila_Prof"]) &
+                (df_hist_pend['Instrutora'] == instr_sel) &
+                (~df_hist_pend['Status'].isin(STATUS_OK_LICAO))
+            )
+            pendencias_prof = df_hist_pend[mask_prof]
+
+        if not pendencias_prof.empty:
+            with st.expander(f"📋 Lições de casa pendentes pra você corrigir ({len(pendencias_prof)})", expanded=True):
+                st.caption("Essas são as lições que você mesma marcou pra corrigir (em vez da secretaria), lançadas em aulas anteriores.")
+                for _, p in pendencias_prof.iterrows():
+                    with st.container(border=True):
+                        col_info, col_acao = st.columns([2, 1])
+                        with col_info:
+                            rotulo_p = "Apostila" if "Apostila" in p['Tipo'] else "Folha Avulsa (Teoria)"
+                            st.markdown(f"👤 **{p['Aluna']}** — 📖 {rotulo_p}")
+                            st.write(f"**Conteúdo:** {p.get('Licao_Casa', '---')}")
+                            st.caption(f"📅 Lançada em: {p['Data']}")
+                        with col_acao:
+                            with st.expander("✅ Corrigir agora"):
+                                key_id_p = f"corrprof_{p['id']}"
+                                novo_status_p = st.radio(
+                                    "Como a aluna foi?",
+                                    ["Realizada - sem pendência", "Realizada - com dificuldades", "Não realizada"],
+                                    key=f"st_{key_id_p}", horizontal=True
+                                )
+                                nova_obs_p = st.text_area("Observação:", key=f"obs_{key_id_p}")
+                                if st.button("Salvar correção", key=f"btn_{key_id_p}", use_container_width=True):
+                                    supabase.table("historico_geral").update({
+                                        "Status": novo_status_p,
+                                        "Observacao": nova_obs_p or p.get('Observacao', '')
+                                    }).eq("id", p['id']).execute()
+                                    st.success("Correção registrada!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+
         dt_input = st.date_input("Data da Aula:", datetime.now(), key="dt_v58")
         dt_str = dt_input.strftime("%d/%m/%Y")
 
@@ -1846,24 +1892,17 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     st.subheader("🏠 Lição de Casa")
                     st.caption("📬 O que marcar com 📖 abaixo vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método) e não vai para a secretaria.")
                     tarefas_casa = {}
-                    quem_corrige, status_correcao_prof, obs_correcao_prof = None, None, ""
+                    quem_corrige = None
 
                     if tipo_aula == "Teoria":
                         tipo_casa_sel = st.radio("📖 Tipo de lição de casa (vai para a secretaria):", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
                         conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", key=f"cc_{d_sel['id']}")
 
-                        # Quem corrige fica junto da lição de casa (é sobre ela). Se a
-                        # secretaria corrige, a lição permanece "Pendente" na fila de
-                        # correção normal; se a professora corrige ela mesma, ela informa
-                        # aqui o resultado, e a lição nem entra nessa fila.
-                        quem_corrige = st.radio("Quem corrige essa lição de casa?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
-                        if quem_corrige == "Eu mesma (em sala)":
-                            status_correcao_prof = st.radio(
-                                "Como as alunas foram nessa atividade (folha/apostila) que você corrigiu?",
-                                ["Realizada - sem pendência", "Realizada - com dificuldades", "Não realizada"],
-                                horizontal=True, key=f"stcorr_{d_sel['id']}"
-                            )
-                            obs_correcao_prof = st.text_input("Observação da correção (opcional):", key=f"obscorr_{d_sel['id']}")
+                        # Só decide QUEM vai corrigir — a correção em si nunca acontece
+                        # agora (a aluna ainda vai fazer a lição em casa). Se for "Eu
+                        # mesma", essa pendência aparece pra ela corrigir na aula
+                        # seguinte, no painel de "Lições pendentes pra você corrigir".
+                        quem_corrige = st.radio("Quem corrige essa lição de casa (na próxima aula)?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
 
                         sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
                         # Apostila é sempre apostila (mesmo tipo usado na Prática) — Folha
@@ -1907,18 +1946,15 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 })
                                 for mat_nome, conteudo in tarefas_casa.items():
                                     if conteudo:
-                                        # Se essa tarefa é "_Prof" (professora corrige em sala),
-                                        # usa o status/observação reais que ela informou aqui em
-                                        # vez de deixar "Pendente" sem nenhuma informação.
-                                        eh_correcao_propria = mat_nome.endswith("_Prof") and quem_corrige == "Eu mesma (em sala)"
-                                        status_final = status_correcao_prof if eh_correcao_propria else "Pendente"
-                                        obs_final = (f"{obs_geral} | {obs_correcao_prof}".strip(" |") if eh_correcao_propria and obs_correcao_prof
-                                                     else obs_geral)
+                                        # Toda lição de casa nasce "Pendente" — ela só será
+                                        # corrigida na aula seguinte, seja pela secretaria
+                                        # (aba Controle de Lições) ou pela própria professora
+                                        # (painel "Lições pendentes pra você corrigir").
                                         db_save_historico({
                                             "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                             "Tipo": f"Casa_{mat_nome}",
                                             "Licao_Atual": "Definido", "Licao_Casa": conteudo,
-                                            "Dificuldades": [], "Observacao": obs_final, "Status": status_final
+                                            "Dificuldades": [], "Observacao": obs_geral, "Status": "Pendente"
                                         })
                             st.success("✅ Registro concluído com sucesso!")
                             time.sleep(1)
