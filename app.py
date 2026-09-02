@@ -605,19 +605,16 @@ if menu == "🏠 Secretaria":
 
                         difs_do_dia = []       # todas as dificuldades reais da aluna nesse dia
                         proxima_semana = []     # o que ficou combinado pra próxima semana (lição de casa)
-                        sem_registro = []       # professoras cuja aula do dia ainda não tem registro pedagógico
 
                         # Processar cada registro daquela aluna no dia
                         for _, r in dados_aluna.iterrows():
                             tipo_bruto = _valor_ou_none(r.get('Tipo'))
 
-                            # --- LINHA "CRUA" DO RODÍZIO: só tem Aluna/Instrutora/Data, sem
-                            # nenhum registro pedagógico ainda (a professora foi escalada mas
-                            # não preencheu o registro da aula na aba "Minhas Aulas").
+                            # Linha "crua" antiga (de antes da correção do gerador de
+                            # rodízio) sem nenhum Tipo — não tem conteúdo pra mostrar,
+                            # então só ignora. A checagem de "faltando registro" agora é
+                            # feita direto contra a escala do dia, não depende mais disso.
                             if tipo_bruto is None:
-                                instrutora_pendente = _valor_ou_none(r.get('Instrutora'))
-                                if instrutora_pendente:
-                                    sem_registro.append(instrutora_pendente)
                                 continue
 
                             tipo = tipo_bruto.replace("Analise_", "").replace("Aula_", "").replace("Casa_", "").replace("_", " ")
@@ -703,10 +700,21 @@ if menu == "🏠 Secretaria":
                                     texto_whatsapp += f"   ⚠️ Divergência: escalada {prof_escalada}, registrado por {instrutora_registro}\n"
 
                         # --- FALTA DE REGISTRO DA PROFESSORA ---
-                        if sem_registro:
-                            nomes_pendentes = ", ".join(sorted(set(sem_registro)))
-                            st.markdown(f"<div style='background-color: #FEF9E7; padding: 10px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #D4AC0D;'><b>⚠️ Faltando registro da professora:</b> {nomes_pendentes}</div>", unsafe_allow_html=True)
-                            texto_whatsapp += f"⚠️ *Faltando registro da professora:* {nomes_pendentes}\n"
+                        # Verifica direto contra a escala do dia (fonte confiável): pra
+                        # cada uma das 3 disciplinas que essa aluna tinha agendada hoje
+                        # (Prática/Teoria/Solfejo), checa se existe um Analise_<disciplina>
+                        # correspondente. Cobre as 3, não só a Prática.
+                        tipos_registrados_hoje = set(_valor_ou_none(t) for t in dados_aluna['Tipo'].tolist())
+                        faltando_lista = []
+                        for disciplina in ["Prática", "Teoria", "Solfejo"]:
+                            prof_esc_disc = _prof_escalada_para(aluna_v, disciplina)
+                            if prof_esc_disc and f"Analise_{disciplina}" not in tipos_registrados_hoje:
+                                faltando_lista.append(f"{disciplina} ({prof_esc_disc})")
+
+                        if faltando_lista:
+                            txt_faltando = ", ".join(faltando_lista)
+                            st.markdown(f"<div style='background-color: #FEF9E7; padding: 10px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #D4AC0D;'><b>⚠️ Faltando registro da professora:</b> {txt_faltando}</div>", unsafe_allow_html=True)
+                            texto_whatsapp += f"⚠️ *Faltando registro da professora:* {txt_faltando}\n"
 
                         # --- RESUMO CLARO: DIFICULDADES DO DIA + PRÓXIMA SEMANA ---
                         if difs_do_dia:
@@ -955,32 +963,12 @@ if menu == "🏠 Secretaria":
                         lista_final = list(mapa_final.values())
                         supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_final}).execute()
 
-                        # Verifica quais alunas já têm registro de histórico nessa data (evita duplicar ao regerar)
-                        try:
-                            ja_existe_res = supabase.table("historico_geral").select("Aluna").eq("Data", data_sel_str).execute()
-                            alunas_ja_registradas = {r["Aluna"] for r in (ja_existe_res.data or [])}
-                        except Exception:
-                            alunas_ja_registradas = set()
-
-                        novos_h = []
-                        for a_n, dados in mapa_final.items():
-                            if a_n in alunas_ja_registradas:
-                                continue
-                            for hor, valor in dados.items():
-                                if hor == HORARIOS[0]:
-                                    # Esse horário é o aula coletiva inicial ("Roberta | Todas as
-                                    # alunas") com todo mundo junto — não é uma aula individual
-                                    # que precise de registro pedagógico próprio, então não entra
-                                    # no histórico como pendência de professora.
-                                    continue
-                                v_str = str(valor)
-                                # SALVA APENAS O NOME DA PROFESSORA, SEM SALA, SEM PIANO, SEM NADA
-                                if "|" in v_str and "SALA 8" not in v_str and "SALA 9" not in v_str:
-                                    prof_pura = v_str.split("|")[-1].strip()
-                                    novos_h.append({"Aluna": a_n, "Instrutora": prof_pura, "Data": data_sel_str})
-
-                        if novos_h:
-                            supabase.table("historico_geral").insert(novos_h).execute()
+                        # Não gravamos mais nenhuma linha "crua" (só Aluna/Instrutora/Data)
+                        # no histórico aqui — a escala salva acima já é a fonte da verdade
+                        # pra saber quem foi escalado, e o relatório diário (Visão Geral)
+                        # compara direto contra ela pra apontar falta de registro, cobrindo
+                        # Prática, Teoria e Solfejo. A linha crua causava um bug ("Todas as
+                        # alunas" aparecendo como se fosse professora) e só cobria Prática.
 
                         # Persiste o estado do rodízio em círculo e a última alocação de cada aluna
                         db_salvar_rodizio_ciclo(estado_ciclo)
@@ -1307,8 +1295,37 @@ if menu == "🏠 Secretaria":
                             st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao limpar banco: {e}")
-            
+
                 st.divider()
+
+                # --- SEÇÃO 1.5: LIMPEZA DE REGISTROS ÓRFÃOS ("Todas as alunas") ---
+                with st.expander("🧹 Limpar registros órfãos do rodízio ('Todas as alunas')", expanded=False):
+                    st.caption("Uma versão antiga do gerador de rodízio criava, por engano, um registro sem Tipo "
+                               "com 'Instrutora' = 'Todas as alunas' pra cada aluna (o horário coletivo inicial "
+                               "era interpretado como se fosse uma professora). Isso já foi corrigido na geração — "
+                               "esse botão só limpa o que ficou de sobra no banco de escalas antigas.")
+                    if st.button("🔍 Ver quantos registros órfãos existem", use_container_width=True):
+                        try:
+                            res_orfaos = supabase.table("historico_geral").select("id").is_("Tipo", "null").execute()
+                            st.session_state["_qtd_orfaos"] = len(res_orfaos.data or [])
+                        except Exception as e:
+                            st.error(f"Erro ao consultar: {e}")
+
+                    if "_qtd_orfaos" in st.session_state:
+                        qtd = st.session_state["_qtd_orfaos"]
+                        if qtd > 0:
+                            st.warning(f"⚠️ {qtd} registro(s) sem Tipo encontrado(s) (inclui o bug 'Todas as alunas' e qualquer outra linha crua antiga).")
+                            if st.button("🗑️ Apagar todos esses registros órfãos", type="primary", use_container_width=True):
+                                try:
+                                    supabase.table("historico_geral").delete().is_("Tipo", "null").execute()
+                                    st.success("✅ Registros órfãos apagados!")
+                                    del st.session_state["_qtd_orfaos"]
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao apagar: {e}")
+                        else:
+                            st.success("✅ Nenhum registro órfão encontrado.")
             
                 # --- SEÇÃO 2: AJUSTAR REGISTROS INDIVIDUAIS ---
                 st.markdown("### 📝 Ajustar Registros por Aluna")
@@ -2000,7 +2017,11 @@ elif menu == "📊 Analítico IA":
 
             if not df_aluna.empty:
                 # --- CÁLCULO DE APROVEITAMENTO (CORRIGIDO: agora reflete dificuldades reais) ---
-                pedag_rows = df_aluna[df_aluna['Tipo'].str.contains("Prática|Teoria|Solfejo", case=False, na=False)].copy()
+                # Filtro por "começa com Analise_" (não "contém Teoria/Solfejo/Prática"),
+                # pra não confundir com Casa_Teoria_Prof — que também contém "Teoria" no
+                # nome mas é lição de casa, não aula analisada, e sempre tem Dificuldades
+                # vazio, o que inflava o aproveitamento artificialmente.
+                pedag_rows = df_aluna[df_aluna['Tipo'].str.startswith("Analise_", na=False)].copy()
 
                 pedag_rows['tem_dificuldade'] = pedag_rows['Dificuldades'].apply(_tem_dificuldade_real)
                 total_pedag = len(pedag_rows)
@@ -2093,7 +2114,7 @@ elif menu == "📊 Analítico IA":
                 tab_p, tab_s = st.tabs(["👩‍🏫 Feedback Pedagógico", "🏢 Notas da Secretaria"])
             
                 with tab_p:
-                    aulas = df_aluna[df_aluna['Tipo'].str.contains("Prática|Teoria|Solfejo", case=False, na=False)]
+                    aulas = df_aluna[df_aluna['Tipo'].str.startswith("Analise_", na=False)]
                     for _, r in aulas.iterrows():
                         with st.container(border=True):
                             st.write(f"📅 **{r['Data']} - {r['Tipo']}**")
