@@ -120,7 +120,7 @@ def login_sistema():
                     st.rerun()
                 else:
                     profs = db_get_professoras_todas()
-                    match = next((p for p in profs if p.get("login", "").lower().strip() == u
+                    match = next((p for p in profs if (p.get("login") or "").lower().strip() == u
                                   and p.get("senha") == s and p.get("ativo", True)), None)
                     if match:
                         st.session_state.autenticado = True
@@ -132,7 +132,7 @@ def login_sistema():
                         # Login de aluna — usa os campos "login"/"senha" cadastrados
                         # na aba "👥 Turmas e Pessoas" (Alunas e Turmas).
                         alunas_login = db_get_alunas_todas()
-                        match_al = next((a for a in alunas_login if a.get("login", "").lower().strip() == u
+                        match_al = next((a for a in alunas_login if (a.get("login") or "").lower().strip() == u
                                           and a.get("senha") == s and a.get("ativo", True)), None)
                         if match_al:
                             st.session_state.autenticado = True
@@ -1690,7 +1690,7 @@ if menu == "🏠 Secretaria":
 
                                 with st.expander(f"🔑 Acesso de {a['nome']}"):
                                     cl1, cl2, cl3 = st.columns([2, 2, 1])
-                                    login_atual = cl1.text_input("Login:", value=a.get("login", ""), key=f"log_{a['nome']}")
+                                    login_atual = cl1.text_input("Login:", value=a.get("login") or "", key=f"log_{a['nome']}")
                                     nova_senha_al = cl2.text_input("Nova senha:", key=f"sena_{a['nome']}", placeholder="deixe em branco p/ manter")
                                     if cl3.button("💾", key=f"svlog_{a['nome']}", help="Salvar acesso"):
                                         upd = {"login": login_atual.strip().lower()}
