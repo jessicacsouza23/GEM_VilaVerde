@@ -198,6 +198,72 @@ def _tem_dificuldade_real(valor_difs):
 # lição de casa de Solfejo NUNCA entram aqui — quem acompanha é a professora.
 TIPOS_CORRECAO_SECRETARIA = ["Casa_Apostila", "Casa_Teoria"]
 
+# ==========================================
+# CATEGORIZAÇÃO DE LIÇÃO DE CASA (usada no painel da aluna e no relatório da
+# secretaria) — agrupa por disciplina e identifica o material/método exato.
+# ==========================================
+def _categoria_licao_casa(tipo_bruto):
+    if tipo_bruto == "Casa_MSA":
+        return "Solfejo"
+    if tipo_bruto in ("Casa_Teoria", "Casa_Teoria_Prof"):
+        return "Teoria"
+    if tipo_bruto in ("Casa_Apostila", "Casa_Apostila_Prof"):
+        return "Prática"
+    if tipo_bruto.startswith("Casa_Metodo_"):
+        return "Prática"
+    return "Outra atividade"
+
+def _metodo_ou_material(tipo_bruto):
+    if tipo_bruto in ("Casa_Apostila", "Casa_Apostila_Prof"):
+        return "Apostila"
+    if tipo_bruto.startswith("Casa_Metodo_"):
+        return tipo_bruto.replace("Casa_Metodo_", "")
+    if tipo_bruto == "Casa_MSA":
+        return "MSA"
+    if tipo_bruto in ("Casa_Teoria", "Casa_Teoria_Prof"):
+        return "Folha Avulsa"
+    return "Atividade"
+
+def _renderizar_pendencias_casa(pendentes_df):
+    """Mostra as lições de casa pendentes de uma aluna, agrupadas por disciplina
+    e por professora responsável. Na Prática, detalha o método e a lição exata.
+    Usado tanto no painel da própria aluna quanto no relatório da secretaria."""
+    if pendentes_df.empty:
+        st.success("✅ Nenhuma lição de casa pendente.")
+        return
+
+    pendentes_df = pendentes_df.copy()
+    pendentes_df['_dt_tmp'] = pd.to_datetime(pendentes_df['Data'], format='%d/%m/%Y', errors='coerce')
+    pendentes_df['_disciplina'] = pendentes_df['Tipo'].apply(_categoria_licao_casa)
+    pendentes_df['_material'] = pendentes_df['Tipo'].apply(_metodo_ou_material)
+
+    # A lição mais recente de cada combinação disciplina+material é "pra próxima
+    # aula"; as mais antigas que ainda estão pendentes ficam "atrasadas".
+    chave_grupo = pendentes_df['_disciplina'] + "|" + pendentes_df['_material']
+    mais_recente = pendentes_df.groupby(chave_grupo)['_dt_tmp'].transform('max')
+    pendentes_df['_eh_atual'] = pendentes_df['_dt_tmp'] == mais_recente
+
+    icones_disciplina = {"Prática": "🎹", "Teoria": "📚", "Solfejo": "🔊", "Outra atividade": "📖"}
+
+    for disciplina in ["Prática", "Teoria", "Solfejo", "Outra atividade"]:
+        bloco_disc = pendentes_df[pendentes_df['_disciplina'] == disciplina]
+        if bloco_disc.empty:
+            continue
+        st.markdown(f"**{icones_disciplina.get(disciplina, '📖')} {disciplina}**")
+
+        for professora in sorted(bloco_disc['Instrutora'].dropna().unique()):
+            st.caption(f"👩‍🏫 Professora: {professora}")
+            bloco_prof = bloco_disc[bloco_disc['Instrutora'] == professora].sort_values('_dt_tmp', ascending=False)
+            for _, linha in bloco_prof.iterrows():
+                with st.container(border=True):
+                    if linha['_eh_atual']:
+                        st.info(f"📌 **Para a próxima aula** (lançada em {linha['Data']})")
+                    else:
+                        st.warning(f"⚠️ **Atrasada de aula anterior** (lançada em {linha['Data']})")
+                    if disciplina == "Prática":
+                        st.write(f"**Método:** {linha['_material']}")
+                    st.write(f"**Lição:** {linha.get('Licao_Casa', '---')}")
+
 HORARIOS = ["08h45 (Igreja)", "09h35(H2)", "10h10(H3)", "10h45(H4)"]
 OPCOES_LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
 
@@ -826,6 +892,24 @@ if menu == "🏠 Secretaria":
                         txt_faltando = ", ".join(faltando_lista)
                         st.markdown(f"<div style='background-color: #FEF9E7; padding: 10px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #D4AC0D;'><b>⚠️ Faltando registro da professora:</b> {txt_faltando}</div>", unsafe_allow_html=True)
                         texto_whatsapp += f"⚠️ *Faltando registro da professora:* {txt_faltando}\n"
+
+                    # --- LIÇÕES DE CASA PENDENTES (todas em aberto, não só as de hoje) ---
+                    if not df_historico.empty:
+                        mask_pend_sec = (
+                            (df_historico['Aluna'] == aluna_v) &
+                            (df_historico['Tipo'].str.startswith("Casa_", na=False)) &
+                            (~df_historico['Status'].isin(STATUS_OK_LICAO))
+                        )
+                        pendentes_sec_aluna = df_historico[mask_pend_sec]
+                    else:
+                        pendentes_sec_aluna = pd.DataFrame()
+
+                    if not pendentes_sec_aluna.empty:
+                        with st.expander(f"📋 Lições de casa pendentes ({len(pendentes_sec_aluna)})"):
+                            _renderizar_pendencias_casa(pendentes_sec_aluna)
+                        nomes_pend_wpp = ", ".join(f"{_metodo_ou_material(t)} ({d})" for t, d in
+                                                    zip(pendentes_sec_aluna['Tipo'], pendentes_sec_aluna['Data']))
+                        texto_whatsapp += f"📋 Lições pendentes: {nomes_pend_wpp}\n"
 
                     # --- ESTUDO EM CASA (marcado pela própria aluna) ---
                     horarios_estudou = _estudo_do_dia(aluna_v, data_visao)
@@ -1765,18 +1849,6 @@ elif menu == "🎓 Minhas Lições":
 
     tab_licoes_aluna, tab_estudo_aluna = st.tabs(["📚 Minhas Lições de Casa", "✅ Controle de Estudo Diário"])
 
-    # --- CATEGORIZAÇÃO DAS LIÇÕES POR DISCIPLINA (pra exibir organizado) ---
-    def _categoria_licao_casa(tipo_bruto):
-        if tipo_bruto == "Casa_MSA":
-            return "🔊 Solfejo"
-        if tipo_bruto in ("Casa_Teoria", "Casa_Teoria_Prof"):
-            return "📚 Teoria"
-        if tipo_bruto in ("Casa_Apostila", "Casa_Apostila_Prof"):
-            return "🎹 Apostila (Prática/Teoria)"
-        if tipo_bruto.startswith("Casa_Metodo_"):
-            return f"🎼 Método: {tipo_bruto.replace('Casa_Metodo_', '')}"
-        return "📖 Outra atividade"
-
     with tab_licoes_aluna:
         df_hist_aluna = pd.DataFrame(db_get_historico())
         pendentes_aluna = pd.DataFrame()
@@ -1788,28 +1860,7 @@ elif menu == "🎓 Minhas Lições":
             )
             pendentes_aluna = df_hist_aluna[mask_al].copy()
 
-        if pendentes_aluna.empty:
-            st.success("✅ Você não tem nenhuma lição de casa pendente no momento. Parabéns!")
-        else:
-            pendentes_aluna['_dt_tmp'] = pd.to_datetime(pendentes_aluna['Data'], format='%d/%m/%Y', errors='coerce')
-            pendentes_aluna = pendentes_aluna.sort_values('_dt_tmp', ascending=False)
-            pendentes_aluna['_categoria'] = pendentes_aluna['Tipo'].apply(_categoria_licao_casa)
-
-            # A lição mais recente de cada categoria é "pra próxima aula"; as demais
-            # (mais antigas) que ainda estão pendentes ficam marcadas como atrasadas.
-            mais_recente_por_categoria = pendentes_aluna.groupby('_categoria')['_dt_tmp'].transform('max')
-            pendentes_aluna['_eh_atual'] = pendentes_aluna['_dt_tmp'] == mais_recente_por_categoria
-
-            for categoria in pendentes_aluna['_categoria'].unique():
-                st.subheader(categoria)
-                bloco_cat = pendentes_aluna[pendentes_aluna['_categoria'] == categoria]
-                for _, linha in bloco_cat.iterrows():
-                    with st.container(border=True):
-                        if linha['_eh_atual']:
-                            st.info(f"📌 **Para a próxima aula** (lançada em {linha['Data']})")
-                        else:
-                            st.warning(f"⚠️ **Atrasada de aula anterior** (lançada em {linha['Data']})")
-                        st.write(f"**O que fazer:** {linha.get('Licao_Casa', '---')}")
+        _renderizar_pendencias_casa(pendentes_aluna)
 
     with tab_estudo_aluna:
         st.subheader("✅ Registrar meu estudo do dia")
