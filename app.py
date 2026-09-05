@@ -795,20 +795,29 @@ if menu == "🏠 Secretaria":
                         # "Lição de hoje" das aulas de fato. Se ainda não foi corrigida,
                         # isso fica destacado (não é "sem dificuldade", é simplesmente
                         # "ainda não corrigida") — e diz quem é responsável por corrigir.
+                        # O rótulo usa o nome exato do material/método digitado pela
+                        # professora (ex: "🎼 Lição de casa — Volume 1"), igual aparece
+                        # pra ela na hora de lançar.
                         if tipo_bruto.startswith("Casa_"):
                             lic_cs_casa = _valor_ou_none(r.get('Licao_Casa')) or "não especificada"
                             status_casa = _valor_ou_none(r.get('Status')) or "sem status"
                             corrigida = status_casa in STATUS_OK_LICAO
                             responsavel = "a própria professora" if tipo_bruto.endswith("_Prof") else "a secretaria"
+
+                            disciplina_casa = _categoria_licao_casa(tipo_bruto)
+                            material_casa = _metodo_ou_material(tipo_bruto)
+                            icone_casa = {"Prática": "🎼", "Teoria": "📘", "Solfejo": "🔊"}.get(disciplina_casa, "📖")
+                            rotulo_casa = f"{icone_casa} Lição de casa — {material_casa}"
+
                             with st.container(border=True):
-                                st.markdown(f"🏠 **Lição de casa — {tipo}**")
+                                st.markdown(f"**{rotulo_casa}**")
                                 st.write(f"**Conteúdo:** {lic_cs_casa}")
                                 if corrigida:
                                     st.caption(f"Status da correção: {status_casa}")
                                 else:
                                     st.warning(f"⏳ Ainda sem correção (quem corrige: {responsavel}) — status atual: {status_casa}")
-                            proxima_semana.append(f"{tipo}: {lic_cs_casa}")
-                            texto_whatsapp += f"🏠 Lição de casa ({tipo}): {lic_cs_casa} — status: {status_casa}\n"
+                            proxima_semana.append(f"{rotulo_casa}: {lic_cs_casa}")
+                            texto_whatsapp += f"{rotulo_casa}: {lic_cs_casa} — status: {status_casa}\n"
                             continue
 
                         # --- DADOS DA PROFESSORA (Analise_...): onde moram as dificuldades,
@@ -1880,13 +1889,36 @@ elif menu == "🎓 Minhas Lições":
             registro_existente = next((e for e in estudo_todos if e.get("aluna") == minha_aluna and e.get("data") == data_estudo_str), None)
             horarios_ja_marcados = registro_existente.get("horarios", []) if registro_existente else []
 
-            horarios_marcados = st.multiselect(
-                "Em quais horários você estudou nesse dia?",
-                HORARIOS_ESTUDO, default=horarios_ja_marcados, key="horarios_estudo_aluna"
-            )
+            # Lista de horários estudados nesse dia — cada um digitado como
+            # início/término livre (não é mais um período fixo tipo Manhã/Tarde).
+            chave_lista_h = f"lista_horarios_estudo_{data_estudo_str}"
+            if chave_lista_h not in st.session_state:
+                st.session_state[chave_lista_h] = list(horarios_ja_marcados)
+
+            st.write("**Horários que você estudou nesse dia:**")
+            if st.session_state[chave_lista_h]:
+                for idx_h, h_txt in enumerate(st.session_state[chave_lista_h]):
+                    c_h, c_del = st.columns([4, 1])
+                    c_h.write(f"🕐 {h_txt}")
+                    if c_del.button("🗑️", key=f"del_h_{idx_h}_{data_estudo_str}"):
+                        st.session_state[chave_lista_h].pop(idx_h)
+                        st.rerun()
+            else:
+                st.caption("Nenhum horário adicionado ainda pra esse dia.")
+
+            st.caption("Adicionar horário de estudo:")
+            c_ini, c_fim, c_add = st.columns([2, 2, 1])
+            hora_inicio_al = c_ini.text_input("Início (ex: 14:00):", key=f"hi_{data_estudo_str}")
+            hora_fim_al = c_fim.text_input("Término (ex: 15:30):", key=f"hf_{data_estudo_str}")
+            if c_add.button("➕ Adicionar", key=f"add_h_{data_estudo_str}", use_container_width=True):
+                if hora_inicio_al.strip() and hora_fim_al.strip():
+                    st.session_state[chave_lista_h].append(f"{hora_inicio_al.strip()} às {hora_fim_al.strip()}")
+                    st.rerun()
+                else:
+                    st.warning("Preencha início e término antes de adicionar.")
 
             if st.button("💾 Salvar estudo do dia", use_container_width=True):
-                if db_salvar_estudo_diario(minha_aluna, data_estudo_str, horarios_marcados):
+                if db_salvar_estudo_diario(minha_aluna, data_estudo_str, st.session_state[chave_lista_h]):
                     st.success("✅ Estudo registrado!")
                     st.rerun()
 
