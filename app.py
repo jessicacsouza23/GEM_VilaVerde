@@ -1703,50 +1703,6 @@ elif menu == "👩‍🏫 Minhas Aulas":
     with tab_aula:
         instr_sel = st.session_state.get('nome_logado', 'Selecione...')
 
-        # --- PENDÊNCIAS DE CORREÇÃO PRÓPRIA ---
-        # Lições de casa que essa professora marcou "Eu mesma corrijo" em aulas
-        # anteriores, e que ainda não foram corrigidas. A correção nunca acontece
-        # no dia em que a lição é passada (a aluna ainda vai fazer em casa) — só
-        # faz sentido na aula seguinte, quando a lição volta pronta.
-        df_hist_pend = pd.DataFrame(db_get_historico())
-        pendencias_prof = pd.DataFrame()
-        if not df_hist_pend.empty:
-            mask_prof = (
-                df_hist_pend['Tipo'].isin(["Casa_Teoria_Prof", "Casa_Apostila_Prof"]) &
-                (df_hist_pend['Instrutora'] == instr_sel) &
-                (~df_hist_pend['Status'].isin(STATUS_OK_LICAO))
-            )
-            pendencias_prof = df_hist_pend[mask_prof]
-
-        if not pendencias_prof.empty:
-            with st.expander(f"📋 Lições de casa pendentes pra você corrigir ({len(pendencias_prof)})", expanded=True):
-                st.caption("Essas são as lições que você mesma marcou pra corrigir (em vez da secretaria), lançadas em aulas anteriores.")
-                for _, p in pendencias_prof.iterrows():
-                    with st.container(border=True):
-                        col_info, col_acao = st.columns([2, 1])
-                        with col_info:
-                            rotulo_p = "Apostila" if "Apostila" in p['Tipo'] else "Folha Avulsa (Teoria)"
-                            st.markdown(f"👤 **{p['Aluna']}** — 📖 {rotulo_p}")
-                            st.write(f"**Conteúdo:** {p.get('Licao_Casa', '---')}")
-                            st.caption(f"📅 Lançada em: {p['Data']}")
-                        with col_acao:
-                            with st.expander("✅ Corrigir agora"):
-                                key_id_p = f"corrprof_{p['id']}"
-                                novo_status_p = st.radio(
-                                    "Como a aluna foi?",
-                                    ["Realizada - sem pendência", "Realizada - com dificuldades", "Não realizada"],
-                                    key=f"st_{key_id_p}", horizontal=True
-                                )
-                                nova_obs_p = st.text_area("Observação:", key=f"obs_{key_id_p}")
-                                if st.button("Salvar correção", key=f"btn_{key_id_p}", use_container_width=True):
-                                    supabase.table("historico_geral").update({
-                                        "Status": novo_status_p,
-                                        "Observacao": nova_obs_p or p.get('Observacao', '')
-                                    }).eq("id", p['id']).execute()
-                                    st.success("Correção registrada!")
-                                    st.cache_data.clear()
-                                    st.rerun()
-
         dt_input = st.date_input("Data da Aula:", datetime.now(), key="dt_v58")
         dt_str = dt_input.strftime("%d/%m/%Y")
 
@@ -1850,6 +1806,33 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             registros_material = {}
                             for mat in materiais_hoje:
                                 st.markdown(f"#### 🎼 {mat}")
+
+                                # Resumo da última aula (qualquer data anterior) com esse
+                                # material, pra quem está dando aula hoje saber onde a
+                                # aluna parou — útil principalmente quando é outra
+                                # professora (por causa do rodízio) que dá aula dela hoje.
+                                anterior_m = pd.DataFrame()
+                                if not df_hist_local.empty:
+                                    anterior_m = df_hist_local[(df_hist_local['Aluna'] == als_selecionadas[0]) &
+                                                                (df_hist_local['Data'] != dt_str) &
+                                                                (df_hist_local['Tipo'] == "Analise_Prática") &
+                                                                (df_hist_local['Licao_Atual'].str.startswith(f"{mat}:", na=False))].copy()
+                                if not anterior_m.empty:
+                                    anterior_m['_dt_tmp'] = pd.to_datetime(anterior_m['Data'], format='%d/%m/%Y', errors='coerce')
+                                    anterior_m = anterior_m.sort_values('_dt_tmp', ascending=False)
+                                    reg_ant = anterior_m.iloc[0]
+                                    lic_ant_txt = reg_ant.get('Licao_Atual', '')
+                                    lic_ant = lic_ant_txt.split(':', 1)[-1].strip() if ':' in lic_ant_txt else lic_ant_txt
+                                    difs_ant = [d for d in (reg_ant.get('Dificuldades') or []) if d and d != "Não apresentou dificuldades"]
+                                    txt_resumo = f"📋 **Última aula ({reg_ant.get('Data')}):** {lic_ant}"
+                                    if difs_ant:
+                                        txt_resumo += f" — ⚠️ dificuldades: {', '.join(difs_ant)}"
+                                    else:
+                                        txt_resumo += " — ✅ sem dificuldades"
+                                    st.caption(txt_resumo)
+                                else:
+                                    st.caption("📋 Nenhuma aula anterior encontrada com esse material.")
+
                                 dados_mat = {}
                                 if not df_hist_local.empty:
                                     f_m = df_hist_local[(df_hist_local['Aluna'] == als_selecionadas[0]) &
@@ -1930,11 +1913,13 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 # Solfejo: trabalha com MSA, sem correção da secretaria.
                 # ============================================================
                 else:
-                    m_list = ["Selecione...", "MSA", "Folha Extra"] + metodos_filtrados if tipo_aula == "Solfejo" else ["Selecione...", "MSA"] + metodos_filtrados
-                    mat_focado = st.selectbox("Material usado hoje:", m_list, key=f"mat_{d_sel['id']}")
+                    # Teoria/Solfejo: campo livre — a professora escreve o que usou
+                    # (MSA, folha extra, apostila, método, etc.), sem lista fixa. Só a
+                    # Prática usa a seleção dos métodos cadastrados (aba Configurar Métodos).
+                    mat_focado = st.text_input("Material usado hoje:", key=f"mat_{d_sel['id']}", placeholder="Ex: MSA, Folha Extra, Apostila...").strip()
 
                     dados_hoje = {}
-                    if not df_hist_local.empty and mat_focado != "Selecione...":
+                    if not df_hist_local.empty and mat_focado:
                         f_ex = df_hist_local[(df_hist_local['Aluna'] == als_selecionadas[0]) &
                                              (df_hist_local['Data'] == dt_str) &
                                              (df_hist_local['Tipo'] == f"Analise_{tipo_aula}") &
@@ -1997,8 +1982,8 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     obs_geral = st.text_area("Observações Pedagógicas:", value=obs_db, key=f"obsg_{d_sel['id']}")
 
                     if st.button("💾 SALVAR E CONGELAR ANÁLISE", use_container_width=True, key=f"btnsalvar_{d_sel['id']}"):
-                        if mat_focado == "Selecione...":
-                            st.error("Selecione o material da aula antes de salvar.")
+                        if not mat_focado:
+                            st.error("Informe o material usado hoje antes de salvar.")
                         elif metodos_filtrados and not metodo_casa_pag.strip():
                             st.error(f"⚠️ Preencha a lição de casa do método ({metodo_casa_sel}). Não é opcional.")
                         else:
