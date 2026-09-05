@@ -1660,7 +1660,13 @@ if menu == "🏠 Secretaria":
                                     st.cache_data.clear()
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"Erro ao adicionar (nome já existe?): {e}")
+                                    if login_nova_aluna.strip() and "login" in str(e).lower():
+                                        st.error("⚠️ A tabela 'alunas' ainda não tem as colunas 'login'/'senha'. "
+                                                  "Rode este SQL no Supabase (SQL Editor) e tente de novo:\n\n"
+                                                  "```sql\nalter table alunas add column if not exists login text;\n"
+                                                  "alter table alunas add column if not exists senha text;\n```")
+                                    else:
+                                        st.error(f"Erro ao adicionar (nome já existe?): {e}")
 
                     st.divider()
                     st.markdown("#### ✏️ Editar Turma / Ativar-Desativar")
@@ -1690,9 +1696,16 @@ if menu == "🏠 Secretaria":
                                         upd = {"login": login_atual.strip().lower()}
                                         if nova_senha_al:
                                             upd["senha"] = nova_senha_al
-                                        supabase.table("alunas").update(upd).eq("nome", a["nome"]).execute()
-                                        st.success("Acesso atualizado!")
-                                        st.cache_data.clear(); st.rerun()
+                                        try:
+                                            supabase.table("alunas").update(upd).eq("nome", a["nome"]).execute()
+                                            st.success("Acesso atualizado!")
+                                            st.cache_data.clear(); st.rerun()
+                                        except Exception as e:
+                                            st.error("⚠️ A tabela 'alunas' ainda não tem as colunas 'login'/'senha'. "
+                                                      "Rode este SQL no Supabase (SQL Editor) e tente de novo:\n\n"
+                                                      "```sql\nalter table alunas add column if not exists login text;\n"
+                                                      "alter table alunas add column if not exists senha text;\n```")
+                                            st.caption(f"Detalhe técnico: {e}")
                     else:
                         st.info("Nenhuma aluna cadastrada ainda.")
 
