@@ -907,9 +907,14 @@ if menu == "🏠 Secretaria":
                     if not pendentes_sec_aluna.empty:
                         with st.expander(f"📋 Lições de casa pendentes ({len(pendentes_sec_aluna)})"):
                             _renderizar_pendencias_casa(pendentes_sec_aluna)
-                        nomes_pend_wpp = ", ".join(f"{_metodo_ou_material(t)} ({d})" for t, d in
-                                                    zip(pendentes_sec_aluna['Tipo'], pendentes_sec_aluna['Data']))
-                        texto_whatsapp += f"📋 Lições pendentes: {nomes_pend_wpp}\n"
+                        partes_pend_wpp = []
+                        for _, linha_p in pendentes_sec_aluna.iterrows():
+                            disciplina_p = _categoria_licao_casa(linha_p['Tipo'])
+                            material_p = _metodo_ou_material(linha_p['Tipo'])
+                            conteudo_p = _valor_ou_none(linha_p.get('Licao_Casa')) or "não especificado"
+                            data_p = linha_p.get('Data', '---')
+                            partes_pend_wpp.append(f"{disciplina_p} - {material_p}: {conteudo_p} (lançada em {data_p})")
+                        texto_whatsapp += "📋 *Lições pendentes:*\n" + "\n".join(f"   - {p}" for p in partes_pend_wpp) + "\n"
 
                     # --- ESTUDO EM CASA (marcado pela própria aluna) ---
                     horarios_estudou = _estudo_do_dia(aluna_v, data_visao)
