@@ -115,6 +115,7 @@ def login_sistema():
                 if u == "secretaria" and s == SENHA_SECRETARIA:
                     st.session_state.autenticado = True
                     st.session_state.perfil = "Secretaria"
+                    st.session_state.tipo_usuario = "secretaria"
                     st.session_state.nome_logado = "Coordenação"
                     st.rerun()
                 else:
@@ -124,10 +125,23 @@ def login_sistema():
                     if match:
                         st.session_state.autenticado = True
                         st.session_state.perfil = match["nome"]
+                        st.session_state.tipo_usuario = "professora"
                         st.session_state.nome_logado = match["nome"]
                         st.rerun()
                     else:
-                        st.error("❌ Usuário ou senha inválidos.")
+                        # Login de aluna — usa os campos "login"/"senha" cadastrados
+                        # na aba "👥 Turmas e Pessoas" (Alunas e Turmas).
+                        alunas_login = db_get_alunas_todas()
+                        match_al = next((a for a in alunas_login if a.get("login", "").lower().strip() == u
+                                          and a.get("senha") == s and a.get("ativo", True)), None)
+                        if match_al:
+                            st.session_state.autenticado = True
+                            st.session_state.perfil = match_al["nome"]
+                            st.session_state.tipo_usuario = "aluna"
+                            st.session_state.nome_logado = match_al["nome"]
+                            st.rerun()
+                        else:
+                            st.error("❌ Usuário ou senha inválidos.")
         st.stop()
 
 login_sistema()
@@ -357,6 +371,36 @@ def db_salvar_objetivo(aluna, texto, professora):
         st.error(f"Erro ao salvar objetivos: {e}")
         return False
 
+# ==========================================
+# FUNÇÕES DE BANCO - CONTROLE DE ESTUDO DIÁRIO (ALUNA)
+# ==========================================
+HORARIOS_ESTUDO = ["Manhã", "Tarde", "Noite"]
+
+def db_tabela_estudo_existe():
+    try:
+        supabase.table("estudo_diario").select("id").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+def db_get_estudo_diario():
+    try:
+        res = supabase.table("estudo_diario").select("*").execute()
+        return res.data or []
+    except Exception:
+        return []
+
+def db_salvar_estudo_diario(aluna, data_str, horarios_lista):
+    try:
+        supabase.table("estudo_diario").upsert(
+            {"aluna": aluna, "data": data_str, "horarios": horarios_lista},
+            on_conflict="aluna,data"
+        ).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar controle de estudo: {e}")
+        return False
+
 # Inicialização de Variáveis de Segurança
 historico_geral = db_get_historico()
 calendario_db = db_get_calendario()
@@ -501,6 +545,8 @@ calendario_db = {item.get('id'): item.get('escala', []) for item in calendario_r
 st.sidebar.title(f"👋 {st.session_state.nome_logado}")
 if st.session_state.perfil == "Secretaria":
     menu = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "📊 Analítico IA", "💬 Mensagens"])
+elif st.session_state.get("tipo_usuario") == "aluna":
+    menu = st.sidebar.radio("Navegação:", ["🎓 Minhas Lições"])
 else:
     menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📊 Analítico IA", "💬 Mensagens"])
     
@@ -540,6 +586,16 @@ if menu == "🏠 Secretaria":
         # Escala do dia (rodízio salvo) — usada pra conferir se quem registrou a
         # aula é de fato quem estava escalada naquele horário/tipo pra essa aluna.
         escala_do_dia_relatorio = db_get_calendario().get(data_visao, [])
+
+        # Controle de estudo diário das alunas (marcado por elas mesmas), pra
+        # exibir no relatório com carinha de feliz/triste.
+        estudo_diario_todos = db_get_estudo_diario() if db_tabela_estudo_existe() else []
+
+        def _estudo_do_dia(aluna, data_str):
+            """Retorna a lista de horários que a aluna marcou ter estudado nesse
+            dia (lista vazia se não estudou ou não registrou nada)."""
+            reg = next((e for e in estudo_diario_todos if e.get("aluna") == aluna and e.get("data") == data_str), None)
+            return reg.get("horarios", []) if reg else None  # None = não registrou nada ainda
 
         def _prof_escalada_para(aluna, tipo_desejado):
             """Procura na escala do dia quem foi escalada pra dar 'tipo_desejado'
@@ -770,6 +826,17 @@ if menu == "🏠 Secretaria":
                         txt_faltando = ", ".join(faltando_lista)
                         st.markdown(f"<div style='background-color: #FEF9E7; padding: 10px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #D4AC0D;'><b>⚠️ Faltando registro da professora:</b> {txt_faltando}</div>", unsafe_allow_html=True)
                         texto_whatsapp += f"⚠️ *Faltando registro da professora:* {txt_faltando}\n"
+
+                    # --- ESTUDO EM CASA (marcado pela própria aluna) ---
+                    horarios_estudou = _estudo_do_dia(aluna_v, data_visao)
+                    if horarios_estudou is None:
+                        st.caption("📚 Estudo em casa: sem registro da aluna hoje.")
+                    elif horarios_estudou:
+                        st.success(f"📚 😊 Estudou hoje ({', '.join(horarios_estudou)})")
+                        texto_whatsapp += f"📚 😊 Estudou: {', '.join(horarios_estudou)}\n"
+                    else:
+                        st.error("📚 😢 Não estudou hoje.")
+                        texto_whatsapp += "📚 😢 Não estudou hoje\n"
 
                     # --- RESUMO CLARO: DIFICULDADES DO DIA + PRÓXIMA SEMANA ---
                     if difs_do_dia:
@@ -1575,15 +1642,20 @@ if menu == "🏠 Secretaria":
                         nome_nova_aluna = c1.text_input("Nome completo (igual ao usado nos registros):", placeholder="Ex: Maria S - Vila Verde")
                         turma_op = c2.selectbox("Turma:", turmas_existentes + ["+ Nova turma..."])
                         nova_turma_nome = c2.text_input("Nome da nova turma:") if turma_op == "+ Nova turma..." else None
+                        c3, c4 = st.columns(2)
+                        login_nova_aluna = c3.text_input("Login de acesso (opcional):", placeholder="Ex: maria.s")
+                        senha_nova_aluna = c4.text_input("Senha de acesso (opcional):", value="123")
                         if st.form_submit_button("Adicionar Aluna", use_container_width=True):
                             turma_final = nova_turma_nome.strip() if turma_op == "+ Nova turma..." and nova_turma_nome else turma_op
                             if not nome_nova_aluna.strip():
                                 st.error("Informe o nome da aluna.")
                             else:
                                 try:
-                                    supabase.table("alunas").insert({
-                                        "nome": nome_nova_aluna.strip(), "turma": turma_final, "ativo": True
-                                    }).execute()
+                                    dados_nova_aluna = {"nome": nome_nova_aluna.strip(), "turma": turma_final, "ativo": True}
+                                    if login_nova_aluna.strip():
+                                        dados_nova_aluna["login"] = login_nova_aluna.strip().lower()
+                                        dados_nova_aluna["senha"] = senha_nova_aluna
+                                    supabase.table("alunas").insert(dados_nova_aluna).execute()
                                     st.success(f"✅ {nome_nova_aluna} adicionada em {turma_final}!")
                                     st.cache_data.clear()
                                     st.rerun()
@@ -1609,6 +1681,18 @@ if menu == "🏠 Secretaria":
                                 if c3.button(acao, key=f"tg_{a['nome']}"):
                                     supabase.table("alunas").update({"ativo": not a.get("ativo", True)}).eq("nome", a["nome"]).execute()
                                     st.cache_data.clear(); st.rerun()
+
+                                with st.expander(f"🔑 Acesso de {a['nome']}"):
+                                    cl1, cl2, cl3 = st.columns([2, 2, 1])
+                                    login_atual = cl1.text_input("Login:", value=a.get("login", ""), key=f"log_{a['nome']}")
+                                    nova_senha_al = cl2.text_input("Nova senha:", key=f"sena_{a['nome']}", placeholder="deixe em branco p/ manter")
+                                    if cl3.button("💾", key=f"svlog_{a['nome']}", help="Salvar acesso"):
+                                        upd = {"login": login_atual.strip().lower()}
+                                        if nova_senha_al:
+                                            upd["senha"] = nova_senha_al
+                                        supabase.table("alunas").update(upd).eq("nome", a["nome"]).execute()
+                                        st.success("Acesso atualizado!")
+                                        st.cache_data.clear(); st.rerun()
                     else:
                         st.info("Nenhuma aluna cadastrada ainda.")
 
@@ -1658,6 +1742,95 @@ if menu == "🏠 Secretaria":
                                     st.cache_data.clear(); st.rerun()
                     else:
                         st.info("Nenhuma professora cadastrada ainda.")
+
+# ============================================================
+# MÓDULO ALUNA - LIÇÕES PENDENTES + CONTROLE DE ESTUDO DIÁRIO
+# ============================================================
+elif menu == "🎓 Minhas Lições":
+    st.header(f"🎓 Olá, {st.session_state.nome_logado}!")
+    minha_aluna = st.session_state.nome_logado
+
+    tab_licoes_aluna, tab_estudo_aluna = st.tabs(["📚 Minhas Lições de Casa", "✅ Controle de Estudo Diário"])
+
+    # --- CATEGORIZAÇÃO DAS LIÇÕES POR DISCIPLINA (pra exibir organizado) ---
+    def _categoria_licao_casa(tipo_bruto):
+        if tipo_bruto == "Casa_MSA":
+            return "🔊 Solfejo"
+        if tipo_bruto in ("Casa_Teoria", "Casa_Teoria_Prof"):
+            return "📚 Teoria"
+        if tipo_bruto in ("Casa_Apostila", "Casa_Apostila_Prof"):
+            return "🎹 Apostila (Prática/Teoria)"
+        if tipo_bruto.startswith("Casa_Metodo_"):
+            return f"🎼 Método: {tipo_bruto.replace('Casa_Metodo_', '')}"
+        return "📖 Outra atividade"
+
+    with tab_licoes_aluna:
+        df_hist_aluna = pd.DataFrame(db_get_historico())
+        pendentes_aluna = pd.DataFrame()
+        if not df_hist_aluna.empty:
+            mask_al = (
+                (df_hist_aluna['Aluna'] == minha_aluna) &
+                (df_hist_aluna['Tipo'].str.startswith("Casa_", na=False)) &
+                (~df_hist_aluna['Status'].isin(STATUS_OK_LICAO))
+            )
+            pendentes_aluna = df_hist_aluna[mask_al].copy()
+
+        if pendentes_aluna.empty:
+            st.success("✅ Você não tem nenhuma lição de casa pendente no momento. Parabéns!")
+        else:
+            pendentes_aluna['_dt_tmp'] = pd.to_datetime(pendentes_aluna['Data'], format='%d/%m/%Y', errors='coerce')
+            pendentes_aluna = pendentes_aluna.sort_values('_dt_tmp', ascending=False)
+            pendentes_aluna['_categoria'] = pendentes_aluna['Tipo'].apply(_categoria_licao_casa)
+
+            # A lição mais recente de cada categoria é "pra próxima aula"; as demais
+            # (mais antigas) que ainda estão pendentes ficam marcadas como atrasadas.
+            mais_recente_por_categoria = pendentes_aluna.groupby('_categoria')['_dt_tmp'].transform('max')
+            pendentes_aluna['_eh_atual'] = pendentes_aluna['_dt_tmp'] == mais_recente_por_categoria
+
+            for categoria in pendentes_aluna['_categoria'].unique():
+                st.subheader(categoria)
+                bloco_cat = pendentes_aluna[pendentes_aluna['_categoria'] == categoria]
+                for _, linha in bloco_cat.iterrows():
+                    with st.container(border=True):
+                        if linha['_eh_atual']:
+                            st.info(f"📌 **Para a próxima aula** (lançada em {linha['Data']})")
+                        else:
+                            st.warning(f"⚠️ **Atrasada de aula anterior** (lançada em {linha['Data']})")
+                        st.write(f"**O que fazer:** {linha.get('Licao_Casa', '---')}")
+
+    with tab_estudo_aluna:
+        st.subheader("✅ Registrar meu estudo do dia")
+        if not db_tabela_estudo_existe():
+            st.error("⚠️ A tabela 'estudo_diario' ainda não existe no Supabase. Peça pra secretaria criar essa "
+                      "tabela (colunas: id, aluna, data, horarios — com uma chave única em aluna+data) antes de usar essa aba.")
+        else:
+            data_estudo = st.date_input("Dia:", datetime.now(), key="data_estudo_aluna")
+            data_estudo_str = data_estudo.strftime("%d/%m/%Y")
+
+            estudo_todos = db_get_estudo_diario()
+            registro_existente = next((e for e in estudo_todos if e.get("aluna") == minha_aluna and e.get("data") == data_estudo_str), None)
+            horarios_ja_marcados = registro_existente.get("horarios", []) if registro_existente else []
+
+            horarios_marcados = st.multiselect(
+                "Em quais horários você estudou nesse dia?",
+                HORARIOS_ESTUDO, default=horarios_ja_marcados, key="horarios_estudo_aluna"
+            )
+
+            if st.button("💾 Salvar estudo do dia", use_container_width=True):
+                if db_salvar_estudo_diario(minha_aluna, data_estudo_str, horarios_marcados):
+                    st.success("✅ Estudo registrado!")
+                    st.rerun()
+
+            st.divider()
+            st.subheader("📅 Meu histórico de estudo (últimos 30 dias)")
+            hoje_dt = datetime.now().date()
+            meus_estudos = [e for e in estudo_todos if e.get("aluna") == minha_aluna]
+            for e in sorted(meus_estudos, key=lambda x: x.get("data", ""), reverse=True)[:30]:
+                horarios_e = e.get("horarios") or []
+                if horarios_e:
+                    st.write(f"😊 **{e.get('data')}** — estudou: {', '.join(horarios_e)}")
+                else:
+                    st.write(f"😢 **{e.get('data')}** — não estudou")
 
 # ============================================================
 # MÓDULO PROFESSORA - V58 (INTEGRADO E CORRIGIDO)
@@ -2077,13 +2250,41 @@ elif menu == "📊 Analítico IA":
                 resumo_dias = df_aluna.groupby('Data')['st_calc'].first()
                 v_pres, v_falt, v_just = (resumo_dias=='P').sum(), (resumo_dias=='F').sum(), (resumo_dias=='J').sum()
 
+                # --- ESTUDO EM CASA (registrado pela própria aluna) ---
+                def _data_no_periodo(data_str):
+                    try:
+                        d = datetime.strptime(data_str, "%d/%m/%Y").date()
+                        return data_ini <= d <= data_fim
+                    except Exception:
+                        return False
+
+                estudo_todos_analitico = db_get_estudo_diario() if db_tabela_estudo_existe() else []
+                estudos_aluna_periodo = [e for e in estudo_todos_analitico
+                                          if e.get("aluna") == aluna_sel and _data_no_periodo(e.get("data", ""))]
+                dias_com_estudo = sum(1 for e in estudos_aluna_periodo if e.get("horarios"))
+                dias_sem_estudo = sum(1 for e in estudos_aluna_periodo if not e.get("horarios"))
+                total_dias_estudo_reg = len(estudos_aluna_periodo)
+                pct_estudo = int((dias_com_estudo / total_dias_estudo_reg) * 100) if total_dias_estudo_reg > 0 else 0
+
                 # --- 1. RESUMO DE DESEMPENHO (DASHBOARD) ---
                 st.subheader(f"📈 Resumo de Desempenho - {aluna_sel}")
-                k1, k2, k3, k4 = st.columns(4)
+                k1, k2, k3, k4, k5 = st.columns(5)
                 k1.metric("Frequência", f"{int((v_pres+v_just)/len(resumo_dias)*100) if len(resumo_dias)>0 else 0}%")
                 k2.metric("Aulas/Chamadas", len(resumo_dias))
                 k3.metric("Faltas (N/J)", f"{v_falt} / {v_just}")
                 k4.metric("Aproveitamento", f"{aprov_valor}%")
+                cara_estudo = "😊" if pct_estudo >= 70 else ("😐" if pct_estudo >= 40 else "😢")
+                k5.metric(f"Estudo em casa {cara_estudo}", f"{pct_estudo}%" if total_dias_estudo_reg > 0 else "sem dados")
+
+                # --- 1.5 CALENDÁRIO DE ESTUDO (dia a dia, com carinhas) ---
+                if estudos_aluna_periodo:
+                    with st.expander(f"📅 Ver dia a dia do estudo em casa ({dias_com_estudo} 😊 / {dias_sem_estudo} 😢)"):
+                        for e in sorted(estudos_aluna_periodo, key=lambda x: datetime.strptime(x.get("data", "01/01/2000"), "%d/%m/%Y"), reverse=True):
+                            horarios_e = e.get("horarios") or []
+                            if horarios_e:
+                                st.write(f"😊 **{e.get('data')}** — estudou: {', '.join(horarios_e)}")
+                            else:
+                                st.write(f"😢 **{e.get('data')}** — não estudou")
 
                 # --- 2. GRÁFICOS (RESTAURADOS) ---
                 st.divider()
@@ -2270,6 +2471,15 @@ elif menu == "📊 Analítico IA":
 
         df_periodo_q = df_base[(df_base['dt_obj'].dt.date >= data_ini_q) & (df_base['dt_obj'].dt.date <= data_fim_q)]
 
+        estudo_todos_quadro = db_get_estudo_diario() if db_tabela_estudo_existe() else []
+
+        def _estudo_no_periodo_quadro(data_str):
+            try:
+                d = datetime.strptime(data_str, "%d/%m/%Y").date()
+                return data_ini_q <= d <= data_fim_q
+            except Exception:
+                return False
+
         def calcular_medalha(score, tem_dados):
             if not tem_dados:
                 return "🥉", "Bronze", 0
@@ -2294,6 +2504,17 @@ elif menu == "📊 Analítico IA":
                     score = 0
                 icone, nome_medalha, score_final = calcular_medalha(score, total > 0)
                 linha[materia] = f"{icone} {nome_medalha}" + (f" ({score_final}%)" if total > 0 else " (sem registros)")
+
+            # Coluna de estudo em casa (registrado pela própria aluna)
+            estudos_al = [e for e in estudo_todos_quadro if e.get("aluna") == al and _estudo_no_periodo_quadro(e.get("data", ""))]
+            if estudos_al:
+                dias_ok = sum(1 for e in estudos_al if e.get("horarios"))
+                pct = int((dias_ok / len(estudos_al)) * 100)
+                face = "😊" if pct >= 70 else ("😐" if pct >= 40 else "😢")
+                linha["Estudo em Casa"] = f"{face} {pct}% ({dias_ok}/{len(estudos_al)} dias)"
+            else:
+                linha["Estudo em Casa"] = "— sem registro"
+
             linhas_quadro.append(linha)
 
         df_quadro = pd.DataFrame(linhas_quadro)
