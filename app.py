@@ -593,147 +593,200 @@ if menu == "🏠 Secretaria":
                 return None
             return v_str
 
-        if not df_historico.empty:
-            df_dia = df_historico[df_historico['Data'] == data_visao]
-            
-            if not df_dia.empty:
-                # Loop por Aluna
-                for aluna_v in sorted(df_dia['Aluna'].unique()):
-                    with st.expander(f"👤 {aluna_v.upper()}", expanded=True):
-                        dados_aluna = df_dia[df_dia['Aluna'] == aluna_v]
-                        texto_whatsapp += f"👤 *{aluna_v.upper()}*\n"
+        # Lista de alunas do dia vem da ESCALA do rodízio (fonte confiável de quem
+        # tem aula hoje), não do histórico de registros — assim o relatório continua
+        # mostrando todo mundo (com "faltando registro") mesmo se ninguém ainda
+        # registrou nada, em vez de aparecer vazio.
+        alunas_da_escala_hoje = sorted(set(
+            reg.get("Aluna") for reg in escala_do_dia_relatorio if reg.get("Aluna")
+        ))
 
-                        difs_do_dia = []       # todas as dificuldades reais da aluna nesse dia
-                        proxima_semana = []     # o que ficou combinado pra próxima semana (lição de casa)
+        def _buscar_ultima_aula(aluna, disciplina, data_atual_str):
+            """Busca o registro Analise_<disciplina> mais recente dessa aluna em
+            qualquer data ANTERIOR a data_atual_str. Usado quando ela faltou ou
+            justificou hoje — não teve aula nova, então repetimos o que foi visto
+            da última vez, pra não sumir do relatório."""
+            if df_historico.empty:
+                return None
+            candidatos = df_historico[
+                (df_historico['Aluna'] == aluna) & (df_historico['Tipo'] == f"Analise_{disciplina}")
+            ].copy()
+            if candidatos.empty:
+                return None
+            candidatos['_dt_tmp'] = pd.to_datetime(candidatos['Data'], format='%d/%m/%Y', errors='coerce')
+            data_atual_obj = pd.to_datetime(data_atual_str, format='%d/%m/%Y', errors='coerce')
+            candidatos = candidatos[candidatos['_dt_tmp'] < data_atual_obj].sort_values('_dt_tmp', ascending=False)
+            if candidatos.empty:
+                return None
+            return candidatos.iloc[0].to_dict()
 
-                        # Processar cada registro daquela aluna no dia
-                        for _, r in dados_aluna.iterrows():
-                            tipo_bruto = _valor_ou_none(r.get('Tipo'))
+        if alunas_da_escala_hoje:
+            df_dia = df_historico[df_historico['Data'] == data_visao] if not df_historico.empty else pd.DataFrame()
 
-                            # Linha "crua" antiga (de antes da correção do gerador de
-                            # rodízio) sem nenhum Tipo — não tem conteúdo pra mostrar,
-                            # então só ignora. A checagem de "faltando registro" agora é
-                            # feita direto contra a escala do dia, não depende mais disso.
-                            if tipo_bruto is None:
-                                continue
+            # Loop por Aluna
+            for aluna_v in alunas_da_escala_hoje:
+                with st.expander(f"👤 {aluna_v.upper()}", expanded=True):
+                    dados_aluna = df_dia[df_dia['Aluna'] == aluna_v] if not df_dia.empty else pd.DataFrame()
+                    texto_whatsapp += f"👤 *{aluna_v.upper()}*\n"
 
-                            tipo = tipo_bruto.replace("Analise_", "").replace("Aula_", "").replace("Casa_", "").replace("_", " ")
+                    difs_do_dia = []       # todas as dificuldades reais da aluna nesse dia
+                    proxima_semana = []     # o que ficou combinado pra próxima semana (lição de casa)
 
-                            if tipo_bruto == "Chamada":
-                                status = _valor_ou_none(r.get('Status')) or "não registrada"
-                                st.markdown(f"📍 **Presença:** {status}")
-                                texto_whatsapp += f"📍 Presença: {status}\n"
-                                continue
+                    # Status de presença de hoje — decide se "sem registro" é falta de
+                    # preenchimento da professora ou simplesmente porque a aluna faltou.
+                    status_chamada_hoje = None
+                    if not dados_aluna.empty:
+                        linha_chamada = dados_aluna[dados_aluna['Tipo'] == "Chamada"]
+                        if not linha_chamada.empty:
+                            status_chamada_hoje = _valor_ou_none(linha_chamada.iloc[-1].get('Status'))
+                    ausente_hoje = status_chamada_hoje in ("Ausente", "Justificada")
 
-                            if tipo_bruto == "Controle_Licao" or tipo == "Controle Licao":
-                                cat = _valor_ou_none(r.get('Categoria')) or "Geral"
-                                det = _valor_ou_none(r.get('Licao_Detalhe')) or "não especificado"
-                                obs_cl = _valor_ou_none(r.get('Observacao'))
-                                st.markdown(f"📘 **{cat}:** {det}" + (f"\n\n*Nota:* {obs_cl}" if obs_cl else ""))
-                                texto_whatsapp += f"📘 *{cat}*: {det}\n" + (f"   └─ {obs_cl}\n" if obs_cl else "")
-                                continue
+                    # Processar cada registro daquela aluna no dia
+                    for _, r in dados_aluna.iterrows():
+                        tipo_bruto = _valor_ou_none(r.get('Tipo'))
 
-                            # --- LIÇÃO DE CASA (Casa_...): é uma tarefa combinada, não uma
-                            # aula de hoje — mostrada separada pra não confundir com o
-                            # "Lição de hoje" das aulas de fato. Se ainda não foi corrigida,
-                            # isso fica destacado (não é "sem dificuldade", é simplesmente
-                            # "ainda não corrigida") — e diz quem é responsável por corrigir.
-                            if tipo_bruto.startswith("Casa_"):
-                                lic_cs_casa = _valor_ou_none(r.get('Licao_Casa')) or "não especificada"
-                                status_casa = _valor_ou_none(r.get('Status')) or "sem status"
-                                corrigida = status_casa in STATUS_OK_LICAO
-                                responsavel = "a própria professora" if tipo_bruto.endswith("_Prof") else "a secretaria"
-                                with st.container(border=True):
-                                    st.markdown(f"🏠 **Lição de casa — {tipo}**")
-                                    st.write(f"**Conteúdo:** {lic_cs_casa}")
-                                    if corrigida:
-                                        st.caption(f"Status da correção: {status_casa}")
-                                    else:
-                                        st.warning(f"⏳ Ainda sem correção (quem corrige: {responsavel}) — status atual: {status_casa}")
-                                proxima_semana.append(f"{tipo}: {lic_cs_casa}")
-                                texto_whatsapp += f"🏠 Lição de casa ({tipo}): {lic_cs_casa} — status: {status_casa}\n"
-                                continue
+                        # Linha "crua" antiga (de antes da correção do gerador de
+                        # rodízio) sem nenhum Tipo — não tem conteúdo pra mostrar,
+                        # então só ignora. A checagem de "faltando registro" agora é
+                        # feita direto contra a escala do dia, não depende mais disso.
+                        if tipo_bruto is None:
+                            continue
 
-                            # --- DADOS DA PROFESSORA (Analise_...): onde moram as dificuldades,
-                            # as observações (que podem trazer melhorias) e a lição de casa.
-                            lic_at = _valor_ou_none(r.get('Licao_Atual')) or "não informada pela professora"
-                            lic_cs = _valor_ou_none(r.get('Licao_Casa'))
-                            obs_prof = _valor_ou_none(r.get('Observacao'))
-                            difs_reg = _limpar_difs(r.get('Dificuldades'))
+                        tipo = tipo_bruto.replace("Analise_", "").replace("Aula_", "").replace("Casa_", "").replace("_", " ")
 
-                            difs_do_dia.extend(difs_reg)
-                            if lic_cs:
-                                proxima_semana.append(f"{tipo}: {lic_cs}")
+                        if tipo_bruto == "Chamada":
+                            status = _valor_ou_none(r.get('Status')) or "não registrada"
+                            st.markdown(f"📍 **Presença:** {status}")
+                            texto_whatsapp += f"📍 Presença: {status}\n"
+                            continue
 
+                        if tipo_bruto == "Controle_Licao" or tipo == "Controle Licao":
+                            cat = _valor_ou_none(r.get('Categoria')) or "Geral"
+                            det = _valor_ou_none(r.get('Licao_Detalhe')) or "não especificado"
+                            obs_cl = _valor_ou_none(r.get('Observacao'))
+                            st.markdown(f"📘 **{cat}:** {det}" + (f"\n\n*Nota:* {obs_cl}" if obs_cl else ""))
+                            texto_whatsapp += f"📘 *{cat}*: {det}\n" + (f"   └─ {obs_cl}\n" if obs_cl else "")
+                            continue
+
+                        # --- LIÇÃO DE CASA (Casa_...): é uma tarefa combinada, não uma
+                        # aula de hoje — mostrada separada pra não confundir com o
+                        # "Lição de hoje" das aulas de fato. Se ainda não foi corrigida,
+                        # isso fica destacado (não é "sem dificuldade", é simplesmente
+                        # "ainda não corrigida") — e diz quem é responsável por corrigir.
+                        if tipo_bruto.startswith("Casa_"):
+                            lic_cs_casa = _valor_ou_none(r.get('Licao_Casa')) or "não especificada"
+                            status_casa = _valor_ou_none(r.get('Status')) or "sem status"
+                            corrigida = status_casa in STATUS_OK_LICAO
+                            responsavel = "a própria professora" if tipo_bruto.endswith("_Prof") else "a secretaria"
                             with st.container(border=True):
-                                instrutora_registro = _valor_ou_none(r.get('Instrutora'))
-                                prof_escalada = _prof_escalada_para(aluna_v, tipo)
-                                # Nome mostrado no cabeçalho é sempre o do rodízio (fonte
-                                # confiável do planejamento) — cai pro nome que registrou
-                                # só se essa aluna não for encontrada na escala do dia.
-                                prof_exibida = prof_escalada or instrutora_registro or "não identificada"
-                                st.markdown(f"🎹 **{tipo}** — Professora: **{prof_exibida}**")
-                                st.write(f"**Lição de hoje:** {lic_at}")
-                                if difs_reg:
-                                    txt_difs = ", ".join(difs_reg)
-                                    st.markdown(f"<div style='background-color: #FDEDEC; padding: 8px; border-radius: 5px; border-left: 4px solid #CB4335; color: #943126;'><b>⚠️ Dificuldades:</b> {txt_difs}</div>", unsafe_allow_html=True)
-                                    texto_whatsapp += f"• {tipo} ({prof_exibida}): {lic_at}\n   ⚠️ *Dificuldades:* {txt_difs}\n"
+                                st.markdown(f"🏠 **Lição de casa — {tipo}**")
+                                st.write(f"**Conteúdo:** {lic_cs_casa}")
+                                if corrigida:
+                                    st.caption(f"Status da correção: {status_casa}")
                                 else:
-                                    st.caption("✅ Sem dificuldades registradas nessa aula.")
-                                    texto_whatsapp += f"• {tipo} ({prof_exibida}): {lic_at}\n   ✅ Sem dificuldades\n"
+                                    st.warning(f"⏳ Ainda sem correção (quem corrige: {responsavel}) — status atual: {status_casa}")
+                            proxima_semana.append(f"{tipo}: {lic_cs_casa}")
+                            texto_whatsapp += f"🏠 Lição de casa ({tipo}): {lic_cs_casa} — status: {status_casa}\n"
+                            continue
 
-                                # Observação da professora — é aqui que costumam entrar as
-                                # melhorias e qualquer nota relevante pra próxima professora.
-                                if obs_prof:
-                                    st.info(f"📝 **Observação da professora:** {obs_prof}")
-                                    texto_whatsapp += f"   📝 Obs: {obs_prof}\n"
+                        # --- DADOS DA PROFESSORA (Analise_...): onde moram as dificuldades,
+                        # as observações (que podem trazer melhorias) e a lição de casa.
+                        lic_at = _valor_ou_none(r.get('Licao_Atual')) or "não informada pela professora"
+                        lic_cs = _valor_ou_none(r.get('Licao_Casa'))
+                        obs_prof = _valor_ou_none(r.get('Observacao'))
+                        difs_reg = _limpar_difs(r.get('Dificuldades'))
 
-                                # --- CONFERÊNCIA: quem registrou é de fato quem estava
-                                # escalada no rodízio pra essa aluna, nesse tipo de aula?
-                                # Comparação normalizada (sem acento/maiúscula) pra não
-                                # disparar falso alarme por causa de acento diferente.
-                                if prof_escalada and instrutora_registro and \
-                                   limpar_texto(prof_escalada) != limpar_texto(instrutora_registro):
-                                    st.error(f"⚠️ **Divergência com o rodízio:** a escala do dia tinha "
-                                             f"**{prof_escalada}** pra essa aula, mas o registro foi feito "
-                                             f"por **{instrutora_registro}**.")
-                                    texto_whatsapp += f"   ⚠️ Divergência: escalada {prof_escalada}, registrado por {instrutora_registro}\n"
+                        difs_do_dia.extend(difs_reg)
+                        if lic_cs:
+                            proxima_semana.append(f"{tipo}: {lic_cs}")
 
-                        # --- FALTA DE REGISTRO DA PROFESSORA ---
-                        # Verifica direto contra a escala do dia (fonte confiável): pra
-                        # cada uma das 3 disciplinas que essa aluna tinha agendada hoje
-                        # (Prática/Teoria/Solfejo), checa se existe um Analise_<disciplina>
-                        # correspondente. Cobre as 3, não só a Prática.
-                        tipos_registrados_hoje = set(_valor_ou_none(t) for t in dados_aluna['Tipo'].tolist())
-                        faltando_lista = []
-                        for disciplina in ["Prática", "Teoria", "Solfejo"]:
-                            prof_esc_disc = _prof_escalada_para(aluna_v, disciplina)
-                            if prof_esc_disc and f"Analise_{disciplina}" not in tipos_registrados_hoje:
-                                faltando_lista.append(f"{disciplina} ({prof_esc_disc})")
+                        with st.container(border=True):
+                            instrutora_registro = _valor_ou_none(r.get('Instrutora'))
+                            prof_escalada = _prof_escalada_para(aluna_v, tipo)
+                            # Nome mostrado no cabeçalho é sempre o do rodízio (fonte
+                            # confiável do planejamento) — cai pro nome que registrou
+                            # só se essa aluna não for encontrada na escala do dia.
+                            prof_exibida = prof_escalada or instrutora_registro or "não identificada"
+                            st.markdown(f"🎹 **{tipo}** — Professora: **{prof_exibida}**")
+                            st.write(f"**Lição de hoje:** {lic_at}")
+                            if difs_reg:
+                                txt_difs = ", ".join(difs_reg)
+                                st.markdown(f"<div style='background-color: #FDEDEC; padding: 8px; border-radius: 5px; border-left: 4px solid #CB4335; color: #943126;'><b>⚠️ Dificuldades:</b> {txt_difs}</div>", unsafe_allow_html=True)
+                                texto_whatsapp += f"• {tipo} ({prof_exibida}): {lic_at}\n   ⚠️ *Dificuldades:* {txt_difs}\n"
+                            else:
+                                st.caption("✅ Sem dificuldades registradas nessa aula.")
+                                texto_whatsapp += f"• {tipo} ({prof_exibida}): {lic_at}\n   ✅ Sem dificuldades\n"
 
-                        if faltando_lista:
-                            txt_faltando = ", ".join(faltando_lista)
-                            st.markdown(f"<div style='background-color: #FEF9E7; padding: 10px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #D4AC0D;'><b>⚠️ Faltando registro da professora:</b> {txt_faltando}</div>", unsafe_allow_html=True)
-                            texto_whatsapp += f"⚠️ *Faltando registro da professora:* {txt_faltando}\n"
+                            # Observação da professora — é aqui que costumam entrar as
+                            # melhorias e qualquer nota relevante pra próxima professora.
+                            if obs_prof:
+                                st.info(f"📝 **Observação da professora:** {obs_prof}")
+                                texto_whatsapp += f"   📝 Obs: {obs_prof}\n"
 
-                        # --- RESUMO CLARO: DIFICULDADES DO DIA + PRÓXIMA SEMANA ---
-                        if difs_do_dia:
-                            st.markdown(f"<div style='background-color: #FDEBD0; padding: 10px; border-radius: 6px; margin-top: 8px;'><b>⚠️ Resumo das dificuldades de hoje:</b> {', '.join(sorted(set(difs_do_dia)))}</div>", unsafe_allow_html=True)
-                            texto_whatsapp += f"\n⚠️ *Resumo das dificuldades:* {', '.join(sorted(set(difs_do_dia)))}\n"
+                            # --- CONFERÊNCIA: quem registrou é de fato quem estava
+                            # escalada no rodízio pra essa aluna, nesse tipo de aula?
+                            # Comparação normalizada (sem acento/maiúscula) pra não
+                            # disparar falso alarme por causa de acento diferente.
+                            if prof_escalada and instrutora_registro and \
+                               limpar_texto(prof_escalada) != limpar_texto(instrutora_registro):
+                                st.error(f"⚠️ **Divergência com o rodízio:** a escala do dia tinha "
+                                         f"**{prof_escalada}** pra essa aula, mas o registro foi feito "
+                                         f"por **{instrutora_registro}**.")
+                                texto_whatsapp += f"   ⚠️ Divergência: escalada {prof_escalada}, registrado por {instrutora_registro}\n"
 
-                        if proxima_semana:
-                            st.markdown(f"<div style='background-color: #EAF2F8; padding: 10px; border-radius: 6px; margin-top: 8px;'><b>📅 Para a próxima semana:</b><br>{'<br>'.join(proxima_semana)}</div>", unsafe_allow_html=True)
-                            texto_whatsapp += f"📅 *Para a próxima semana:*\n" + "\n".join([f"   - {p}" for p in proxima_semana]) + "\n"
+                    # --- FALTA DE REGISTRO DA PROFESSORA (ou repetição, se faltou) ---
+                    # Verifica direto contra a escala do dia (fonte confiável): pra
+                    # cada uma das 3 disciplinas que essa aluna tinha agendada hoje
+                    # (Prática/Teoria/Solfejo), checa se existe um Analise_<disciplina>
+                    # correspondente. Se não existe E a aluna faltou/justificou, repete
+                    # a última aula em vez de acusar falta de registro da professora.
+                    tipos_registrados_hoje = set(_valor_ou_none(t) for t in dados_aluna['Tipo'].tolist())
+                    faltando_lista = []
+                    for disciplina in ["Prática", "Teoria", "Solfejo"]:
+                        prof_esc_disc = _prof_escalada_para(aluna_v, disciplina)
+                        if not prof_esc_disc or f"Analise_{disciplina}" in tipos_registrados_hoje:
+                            continue
 
-                        texto_whatsapp += "\n"
-                
-                st.divider()
-                st.subheader("📋 Enviar para WhatsApp")
-                st.text_area("Texto pronto para cópia:", value=texto_whatsapp, height=250)
-            else:
-                st.info("Nenhum dado encontrado para esta data.")
+                        if ausente_hoje:
+                            ultima_aula = _buscar_ultima_aula(aluna_v, disciplina, data_visao)
+                            with st.container(border=True):
+                                st.markdown(f"🔁 **{disciplina}** — Professora: **{prof_esc_disc}**")
+                                st.caption(f"Aluna {status_chamada_hoje.lower()} hoje — repetindo dados da última aula:")
+                                if ultima_aula:
+                                    lic_ant = _valor_ou_none(ultima_aula.get('Licao_Atual')) or "não informada"
+                                    difs_ant = _limpar_difs(ultima_aula.get('Dificuldades'))
+                                    data_ant = ultima_aula.get('Data', '---')
+                                    st.write(f"**Última lição ({data_ant}):** {lic_ant}")
+                                    if difs_ant:
+                                        st.markdown(f"<div style='background-color: #FDEDEC; padding: 8px; border-radius: 5px; border-left: 4px solid #CB4335; color: #943126;'><b>⚠️ Dificuldades da última aula:</b> {', '.join(difs_ant)}</div>", unsafe_allow_html=True)
+                                    else:
+                                        st.caption("✅ Sem dificuldades na última aula registrada.")
+                                else:
+                                    st.info("Nenhuma aula anterior encontrada pra repetir.")
+                        else:
+                            faltando_lista.append(f"{disciplina} ({prof_esc_disc})")
+
+                    if faltando_lista:
+                        txt_faltando = ", ".join(faltando_lista)
+                        st.markdown(f"<div style='background-color: #FEF9E7; padding: 10px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #D4AC0D;'><b>⚠️ Faltando registro da professora:</b> {txt_faltando}</div>", unsafe_allow_html=True)
+                        texto_whatsapp += f"⚠️ *Faltando registro da professora:* {txt_faltando}\n"
+
+                    # --- RESUMO CLARO: DIFICULDADES DO DIA + PRÓXIMA SEMANA ---
+                    if difs_do_dia:
+                        st.markdown(f"<div style='background-color: #FDEBD0; padding: 10px; border-radius: 6px; margin-top: 8px;'><b>⚠️ Resumo das dificuldades de hoje:</b> {', '.join(sorted(set(difs_do_dia)))}</div>", unsafe_allow_html=True)
+                        texto_whatsapp += f"\n⚠️ *Resumo das dificuldades:* {', '.join(sorted(set(difs_do_dia)))}\n"
+
+                    if proxima_semana:
+                        st.markdown(f"<div style='background-color: #EAF2F8; padding: 10px; border-radius: 6px; margin-top: 8px;'><b>📅 Para a próxima semana:</b><br>{'<br>'.join(proxima_semana)}</div>", unsafe_allow_html=True)
+                        texto_whatsapp += f"📅 *Para a próxima semana:*\n" + "\n".join([f"   - {p}" for p in proxima_semana]) + "\n"
+
+                    texto_whatsapp += "\n"
+
+            st.divider()
+            st.subheader("📋 Enviar para WhatsApp")
+            st.text_area("Texto pronto para cópia:", value=texto_whatsapp, height=250)
         else:
-            st.warning("O banco de dados está vazio.")
+            st.info("Nenhuma escala encontrada para esta data (rodízio não foi gerado ainda).")
             
         import base64
 
