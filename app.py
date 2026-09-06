@@ -742,13 +742,27 @@ if menu == "🏠 Secretaria":
                 return None
             return candidatos.iloc[0].to_dict()
 
+        # Colunas que o restante do relatório espera encontrar em qualquer
+        # DataFrame de histórico, mesmo quando não há nenhum registro ainda
+        # (banco vazio) — evita KeyError ao acessar essas colunas mais abaixo.
+        COLUNAS_HISTORICO_MIN = ['id', 'Aluna', 'Data', 'Tipo', 'Instrutora', 'Licao_Atual',
+                                  'Licao_Casa', 'Dificuldades', 'Observacao', 'Status']
+
+        def _garantir_colunas(df_x):
+            df_x = df_x.copy()
+            for col in COLUNAS_HISTORICO_MIN:
+                if col not in df_x.columns:
+                    df_x[col] = None
+            return df_x
+
         if alunas_da_escala_hoje:
             df_dia = df_historico[df_historico['Data'] == data_visao] if not df_historico.empty else pd.DataFrame()
+            df_dia = _garantir_colunas(df_dia)
 
             # Loop por Aluna
             for aluna_v in alunas_da_escala_hoje:
                 with st.expander(f"👤 {aluna_v.upper()}", expanded=True):
-                    dados_aluna = df_dia[df_dia['Aluna'] == aluna_v] if not df_dia.empty else pd.DataFrame()
+                    dados_aluna = df_dia[df_dia['Aluna'] == aluna_v]
                     texto_whatsapp += f"👤 *{aluna_v.upper()}*\n"
 
                     difs_do_dia = []       # todas as dificuldades reais da aluna nesse dia
