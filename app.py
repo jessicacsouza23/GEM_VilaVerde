@@ -854,6 +854,28 @@ if menu == "🏠 Secretaria":
                                 st.info(f"📝 **Observação da professora:** {obs_prof}")
                                 texto_whatsapp += f"   📝 Obs: {obs_prof}\n"
 
+                            # --- DIFICULDADES E OBSERVAÇÕES DA AULA ANTERIOR (mesma
+                            # disciplina) — pra comparar rapidinho se melhorou ou não,
+                            # sem precisar abrir o Analítico IA.
+                            ultima_aula_disc = _buscar_ultima_aula(aluna_v, tipo, data_visao)
+                            if ultima_aula_disc:
+                                difs_ant_disc = _limpar_difs(ultima_aula_disc.get('Dificuldades'))
+                                obs_ant_disc = _valor_ou_none(ultima_aula_disc.get('Observacao'))
+                                data_ant_disc = ultima_aula_disc.get('Data', '---')
+                                with st.expander(f"↩️ Aula anterior de {tipo} ({data_ant_disc})"):
+                                    if difs_ant_disc:
+                                        st.markdown(f"⚠️ **Dificuldades:** {', '.join(difs_ant_disc)}")
+                                    else:
+                                        st.caption("✅ Sem dificuldades na aula anterior.")
+                                    if obs_ant_disc:
+                                        st.markdown(f"📝 **Observação:** {obs_ant_disc}")
+                                    else:
+                                        st.caption("Sem observação registrada na aula anterior.")
+                                if difs_ant_disc:
+                                    texto_whatsapp += f"   ↩️ Aula anterior ({data_ant_disc}) — dificuldades: {', '.join(difs_ant_disc)}\n"
+                                if obs_ant_disc:
+                                    texto_whatsapp += f"   ↩️ Obs. aula anterior: {obs_ant_disc}\n"
+
                             # --- CONFERÊNCIA: quem registrou é de fato quem estava
                             # escalada no rodízio pra essa aluna, nesse tipo de aula?
                             # Comparação normalizada (sem acento/maiúscula) pra não
