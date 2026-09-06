@@ -2325,6 +2325,7 @@ elif menu == "📊 Analítico IA":
 
         if df_base.empty:
             st.info("ℹ️ O banco de dados está vazio.")
+            df_base['dt_obj'] = pd.Series(dtype='datetime64[ns]')
         else:
             # 1. TRATAMENTO DE DATAS
             df_base['dt_obj'] = pd.to_datetime(df_base['Data'], format="%d/%m/%Y", errors='coerce')
@@ -2592,61 +2593,64 @@ elif menu == "📊 Analítico IA":
         data_ini_q = c_q1.date_input("De:", datetime.now().date() - timedelta(days=30), key="quadro_ini")
         data_fim_q = c_q2.date_input("Até:", datetime.now().date(), key="quadro_fim")
 
-        df_periodo_q = df_base[(df_base['dt_obj'].dt.date >= data_ini_q) & (df_base['dt_obj'].dt.date <= data_fim_q)]
-
-        estudo_todos_quadro = db_get_estudo_diario() if db_tabela_estudo_existe() else []
-
-        def _estudo_no_periodo_quadro(data_str):
-            try:
-                d = datetime.strptime(data_str, "%d/%m/%Y").date()
-                return data_ini_q <= d <= data_fim_q
-            except Exception:
-                return False
-
-        def calcular_medalha(score, tem_dados):
-            if not tem_dados:
-                return "🥉", "Bronze", 0
-            if score >= 80:
-                return "🥇", "Ouro", score
-            elif score >= 50:
-                return "🥈", "Prata", score
-            else:
-                return "🥉", "Bronze", score
-
-        linhas_quadro = []
-        for al in ALUNAS_LISTA:
-            linha = {"Aluna": al}
-            for materia in ["Prática", "Teoria", "Solfejo"]:
-                regs = df_periodo_q[(df_periodo_q['Aluna'] == al) & (df_periodo_q['Tipo'] == f"Analise_{materia}")].copy()
-                total = len(regs)
-                if total > 0:
-                    regs['tem_dificuldade'] = regs['Dificuldades'].apply(_tem_dificuldade_real)
-                    sem_dificuldade = int((~regs['tem_dificuldade']).sum())
-                    score = round((sem_dificuldade / total) * 100)
-                else:
-                    score = 0
-                icone, nome_medalha, score_final = calcular_medalha(score, total > 0)
-                linha[materia] = f"{icone} {nome_medalha}" + (f" ({score_final}%)" if total > 0 else " (sem registros)")
-
-            # Coluna de estudo em casa (registrado pela própria aluna)
-            estudos_al = [e for e in estudo_todos_quadro if e.get("aluna") == al and _estudo_no_periodo_quadro(e.get("data", ""))]
-            if estudos_al:
-                dias_ok = sum(1 for e in estudos_al if e.get("horarios"))
-                pct = int((dias_ok / len(estudos_al)) * 100)
-                face = "😊" if pct >= 70 else ("😐" if pct >= 40 else "😢")
-                linha["Estudo em Casa"] = f"{face} {pct}% ({dias_ok}/{len(estudos_al)} dias)"
-            else:
-                linha["Estudo em Casa"] = "— sem registro"
-
-            linhas_quadro.append(linha)
-
-        df_quadro = pd.DataFrame(linhas_quadro)
-        if not df_quadro.empty:
-            st.dataframe(df_quadro, use_container_width=True, hide_index=True)
+        if df_base.empty:
+            st.info("ℹ️ O banco de dados está vazio — ainda não há registros pra montar o quadro.")
         else:
-            st.info("Nenhuma aluna cadastrada ainda.")
+            df_periodo_q = df_base[(df_base['dt_obj'].dt.date >= data_ini_q) & (df_base['dt_obj'].dt.date <= data_fim_q)]
 
-        st.caption(f"📅 Período analisado: {data_ini_q.strftime('%d/%m/%Y')} até {data_fim_q.strftime('%d/%m/%Y')}. A medalha é calculada pela % de aulas sem dificuldade registrada em cada matéria, dentro do período escolhido.")
+            estudo_todos_quadro = db_get_estudo_diario() if db_tabela_estudo_existe() else []
+
+            def _estudo_no_periodo_quadro(data_str):
+                try:
+                    d = datetime.strptime(data_str, "%d/%m/%Y").date()
+                    return data_ini_q <= d <= data_fim_q
+                except Exception:
+                    return False
+
+            def calcular_medalha(score, tem_dados):
+                if not tem_dados:
+                    return "🥉", "Bronze", 0
+                if score >= 80:
+                    return "🥇", "Ouro", score
+                elif score >= 50:
+                    return "🥈", "Prata", score
+                else:
+                    return "🥉", "Bronze", score
+
+            linhas_quadro = []
+            for al in ALUNAS_LISTA:
+                linha = {"Aluna": al}
+                for materia in ["Prática", "Teoria", "Solfejo"]:
+                    regs = df_periodo_q[(df_periodo_q['Aluna'] == al) & (df_periodo_q['Tipo'] == f"Analise_{materia}")].copy()
+                    total = len(regs)
+                    if total > 0:
+                        regs['tem_dificuldade'] = regs['Dificuldades'].apply(_tem_dificuldade_real)
+                        sem_dificuldade = int((~regs['tem_dificuldade']).sum())
+                        score = round((sem_dificuldade / total) * 100)
+                    else:
+                        score = 0
+                    icone, nome_medalha, score_final = calcular_medalha(score, total > 0)
+                    linha[materia] = f"{icone} {nome_medalha}" + (f" ({score_final}%)" if total > 0 else " (sem registros)")
+
+                # Coluna de estudo em casa (registrado pela própria aluna)
+                estudos_al = [e for e in estudo_todos_quadro if e.get("aluna") == al and _estudo_no_periodo_quadro(e.get("data", ""))]
+                if estudos_al:
+                    dias_ok = sum(1 for e in estudos_al if e.get("horarios"))
+                    pct = int((dias_ok / len(estudos_al)) * 100)
+                    face = "😊" if pct >= 70 else ("😐" if pct >= 40 else "😢")
+                    linha["Estudo em Casa"] = f"{face} {pct}% ({dias_ok}/{len(estudos_al)} dias)"
+                else:
+                    linha["Estudo em Casa"] = "— sem registro"
+
+                linhas_quadro.append(linha)
+
+            df_quadro = pd.DataFrame(linhas_quadro)
+            if not df_quadro.empty:
+                st.dataframe(df_quadro, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhuma aluna cadastrada ainda.")
+
+            st.caption(f"📅 Período analisado: {data_ini_q.strftime('%d/%m/%Y')} até {data_fim_q.strftime('%d/%m/%Y')}. A medalha é calculada pela % de aulas sem dificuldade registrada em cada matéria, dentro do período escolhido.")
 
 # ============================================================
 # MÓDULO MENSAGENS - MURAL GERAL + DIRETAS (NOVO)
