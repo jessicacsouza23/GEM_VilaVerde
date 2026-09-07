@@ -72,6 +72,16 @@ def db_get_alunas_todas():
     except Exception:
         return []
 
+@st.cache_data(ttl=30)
+def db_get_secretarias_extra():
+    """Contas de secretaria adicionais (além da conta mestre 'secretaria'),
+    cadastradas na tabela 'secretarias' — mesmo padrão de professoras."""
+    try:
+        res = supabase.table("secretarias").select("*").execute()
+        return res.data or []
+    except Exception:
+        return []
+
 # --- 2. CONEXÃO IA COM ECONOMIA DE QUOTA (CACHE) ---
 @st.cache_resource(show_spinner=False)
 def inicializar_ia_economica():
@@ -119,6 +129,17 @@ def login_sistema():
                     st.session_state.nome_logado = "Coordenação"
                     st.rerun()
                 else:
+                    # Contas de secretaria adicionais, cadastradas pela coordenação
+                    # em "👥 Turmas e Pessoas" (aba Secretarias).
+                    secs_extra = db_get_secretarias_extra()
+                    match_sec = next((sec for sec in secs_extra if (sec.get("login") or "").lower().strip() == u
+                                       and sec.get("senha") == s and sec.get("ativo", True)), None)
+                    if match_sec:
+                        st.session_state.autenticado = True
+                        st.session_state.perfil = "Secretaria"
+                        st.session_state.tipo_usuario = "secretaria"
+                        st.session_state.nome_logado = match_sec["nome"]
+                        st.rerun()
                     profs = db_get_professoras_todas()
                     match = next((p for p in profs if (p.get("login") or "").lower().strip() == u
                                   and p.get("senha") == s and p.get("ativo", True)), None)
@@ -612,7 +633,7 @@ st.sidebar.title(f"👋 {st.session_state.nome_logado}")
 if st.session_state.perfil == "Secretaria":
     menu = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "📊 Analítico IA", "💬 Mensagens"])
 elif st.session_state.get("tipo_usuario") == "aluna":
-    menu = st.sidebar.radio("Navegação:", ["🎓 Minhas Lições"])
+    menu = st.sidebar.radio("Navegação:", ["🎓 Minhas Lições", "💬 Mensagens"])
 else:
     menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📊 Analítico IA", "💬 Mensagens"])
     
@@ -1762,7 +1783,7 @@ if menu == "🏠 Secretaria":
 
             # --- ABA 6: TURMAS E PESSOAS (CADASTRO) ---
             with tab_pessoas:
-                sub_alunas, sub_profs = st.tabs(["🎀 Alunas e Turmas", "👩‍🏫 Professoras"])
+                sub_alunas, sub_profs, sub_secs = st.tabs(["🎀 Alunas e Turmas", "👩‍🏫 Professoras", "🔐 Secretarias"])
 
                 # --- ALUNAS E TURMAS ---
                 with sub_alunas:
@@ -1889,6 +1910,57 @@ if menu == "🏠 Secretaria":
                                     st.cache_data.clear(); st.rerun()
                     else:
                         st.info("Nenhuma professora cadastrada ainda.")
+
+                with sub_secs:
+                    st.caption("A conta mestre 'secretaria' continua funcionando normalmente. Aqui você cadastra "
+                               "contas adicionais, uma pra cada pessoa da secretaria, cada uma com login próprio.")
+                    secs_raw = db_get_secretarias_extra()
+
+                    st.markdown("#### ➕ Adicionar Secretaria")
+                    with st.form("form_add_sec", clear_on_submit=True):
+                        c1, c2, c3 = st.columns(3)
+                        nome_nova_sec = c1.text_input("Nome:", placeholder="Ex: Esther")
+                        login_nova_sec = c2.text_input("Login:", placeholder="Ex: esther")
+                        senha_nova_sec = c3.text_input("Senha:", value="456")
+                        if st.form_submit_button("Adicionar Secretaria", use_container_width=True):
+                            if not nome_nova_sec.strip() or not login_nova_sec.strip():
+                                st.error("Informe nome e login.")
+                            else:
+                                try:
+                                    supabase.table("secretarias").insert({
+                                        "nome": nome_nova_sec.strip(), "login": login_nova_sec.strip().lower(),
+                                        "senha": senha_nova_sec, "ativo": True
+                                    }).execute()
+                                    st.success(f"✅ {nome_nova_sec} adicionada!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error("⚠️ A tabela 'secretarias' pode não existir ainda no Supabase. Crie com:\n\n"
+                                              "```sql\ncreate table if not exists secretarias (\n"
+                                              "    id uuid primary key default gen_random_uuid(),\n"
+                                              "    nome text not null, login text unique, senha text, ativo boolean default true\n);\n```")
+                                    st.caption(f"Detalhe técnico: {e}")
+
+                    st.divider()
+                    st.markdown("#### ✏️ Editar / Ativar-Desativar")
+                    if secs_raw:
+                        for sec in sorted(secs_raw, key=lambda x: x["nome"]):
+                            with st.container(border=True):
+                                c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+                                c1.write(("🟢 " if sec.get("ativo", True) else "⚪ ") + sec["nome"])
+                                c2.caption(f"Login: {sec.get('login', '---')}")
+                                nova_senha_sec = c3.text_input("Nova senha:", key=f"sensec_{sec['nome']}", placeholder="deixe em branco p/ manter")
+                                if c4.button("💾", key=f"svsec_{sec['nome']}", help="Salvar nova senha"):
+                                    if nova_senha_sec:
+                                        supabase.table("secretarias").update({"senha": nova_senha_sec}).eq("nome", sec["nome"]).execute()
+                                        st.success("Senha atualizada!")
+                                        st.cache_data.clear(); st.rerun()
+                                acao_sec = "Desativar" if sec.get("ativo", True) else "Reativar"
+                                if c4.button(acao_sec, key=f"tgsec_{sec['nome']}"):
+                                    supabase.table("secretarias").update({"ativo": not sec.get("ativo", True)}).eq("nome", sec["nome"]).execute()
+                                    st.cache_data.clear(); st.rerun()
+                    else:
+                        st.info("Nenhuma secretaria adicional cadastrada ainda (a conta mestre 'secretaria' continua valendo).")
 
 # ============================================================
 # MÓDULO ALUNA - LIÇÕES PENDENTES + CONTROLE DE ESTUDO DIÁRIO
