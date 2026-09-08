@@ -74,8 +74,9 @@ def db_get_alunas_todas():
 
 @st.cache_data(ttl=30)
 def db_get_secretarias_extra():
-    """Contas de secretaria adicionais (além da conta mestre 'secretaria'),
-    cadastradas na tabela 'secretarias' — mesmo padrão de professoras."""
+    """Nomes das pessoas da secretaria cadastradas (não são contas de login —
+    login continua único/mestre — é só uma lista pra identificar quem corrigiu
+    o quê, ex: em Controle de Lições)."""
     try:
         res = supabase.table("secretarias").select("*").execute()
         return res.data or []
@@ -129,17 +130,10 @@ def login_sistema():
                     st.session_state.nome_logado = "Coordenação"
                     st.rerun()
                 else:
-                    # Contas de secretaria adicionais, cadastradas pela coordenação
-                    # em "👥 Turmas e Pessoas" (aba Secretarias).
-                    secs_extra = db_get_secretarias_extra()
-                    match_sec = next((sec for sec in secs_extra if (sec.get("login") or "").lower().strip() == u
-                                       and sec.get("senha") == s and sec.get("ativo", True)), None)
-                    if match_sec:
-                        st.session_state.autenticado = True
-                        st.session_state.perfil = "Secretaria"
-                        st.session_state.tipo_usuario = "secretaria"
-                        st.session_state.nome_logado = match_sec["nome"]
-                        st.rerun()
+                    # Login de secretaria é sempre único (u == "secretaria"); a lista de
+                    # nomes cadastrados em "👥 Turmas e Pessoas" → Secretarias é só pra
+                    # identificar quem corrigiu o quê (ex: em Controle de Lições), não
+                    # gera login próprio pra cada uma.
                     profs = db_get_professoras_todas()
                     match = next((p for p in profs if (p.get("login") or "").lower().strip() == u
                                   and p.get("senha") == s and p.get("ativo", True)), None)
@@ -198,7 +192,8 @@ def carregar_professoras_alunas_turmas():
     return profs_lista, alunas_lista, turmas
 
 PROFESSORAS_LISTA, ALUNAS_LISTA, TURMAS = carregar_professoras_alunas_turmas()
-SECRETARIAS_LISTA = ["Esther", "Jéssica", "Larissa", "Lurdes", "Natasha", "Roseli"]
+_secs_cadastradas = sorted([s["nome"] for s in db_get_secretarias_extra() if s.get("ativo", True)])
+SECRETARIAS_LISTA = _secs_cadastradas or ["Esther", "Jéssica", "Larissa", "Lurdes", "Natasha", "Roseli"]
 
 CATEGORIAS_LICAO = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila", "Folhas avulsas (teoria)"]
 STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refazer", "Não realizada"]
@@ -1912,24 +1907,21 @@ if menu == "🏠 Secretaria":
                         st.info("Nenhuma professora cadastrada ainda.")
 
                 with sub_secs:
-                    st.caption("A conta mestre 'secretaria' continua funcionando normalmente. Aqui você cadastra "
-                               "contas adicionais, uma pra cada pessoa da secretaria, cada uma com login próprio.")
+                    st.caption("O login continua único ('secretaria'). Aqui é só uma lista de nomes das pessoas "
+                               "da secretaria, usada por exemplo pra identificar quem corrigiu cada atividade "
+                               "em 'Controle de Lições'. Não gera login nenhum.")
                     secs_raw = db_get_secretarias_extra()
 
                     st.markdown("#### ➕ Adicionar Secretaria")
                     with st.form("form_add_sec", clear_on_submit=True):
-                        c1, c2, c3 = st.columns(3)
-                        nome_nova_sec = c1.text_input("Nome:", placeholder="Ex: Esther")
-                        login_nova_sec = c2.text_input("Login:", placeholder="Ex: esther")
-                        senha_nova_sec = c3.text_input("Senha:", value="456")
-                        if st.form_submit_button("Adicionar Secretaria", use_container_width=True):
-                            if not nome_nova_sec.strip() or not login_nova_sec.strip():
-                                st.error("Informe nome e login.")
+                        nome_nova_sec = st.text_input("Nome:", placeholder="Ex: Esther")
+                        if st.form_submit_button("Adicionar", use_container_width=True):
+                            if not nome_nova_sec.strip():
+                                st.error("Informe o nome.")
                             else:
                                 try:
                                     supabase.table("secretarias").insert({
-                                        "nome": nome_nova_sec.strip(), "login": login_nova_sec.strip().lower(),
-                                        "senha": senha_nova_sec, "ativo": True
+                                        "nome": nome_nova_sec.strip(), "ativo": True
                                     }).execute()
                                     st.success(f"✅ {nome_nova_sec} adicionada!")
                                     st.cache_data.clear()
@@ -1938,25 +1930,18 @@ if menu == "🏠 Secretaria":
                                     st.error("⚠️ A tabela 'secretarias' pode não existir ainda no Supabase. Crie com:\n\n"
                                               "```sql\ncreate table if not exists secretarias (\n"
                                               "    id uuid primary key default gen_random_uuid(),\n"
-                                              "    nome text not null, login text unique, senha text, ativo boolean default true\n);\n```")
+                                              "    nome text not null, ativo boolean default true\n);\n```")
                                     st.caption(f"Detalhe técnico: {e}")
 
                     st.divider()
-                    st.markdown("#### ✏️ Editar / Ativar-Desativar")
+                    st.markdown("#### ✏️ Ativar/Desativar")
                     if secs_raw:
                         for sec in sorted(secs_raw, key=lambda x: x["nome"]):
                             with st.container(border=True):
-                                c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+                                c1, c2 = st.columns([3, 1])
                                 c1.write(("🟢 " if sec.get("ativo", True) else "⚪ ") + sec["nome"])
-                                c2.caption(f"Login: {sec.get('login', '---')}")
-                                nova_senha_sec = c3.text_input("Nova senha:", key=f"sensec_{sec['nome']}", placeholder="deixe em branco p/ manter")
-                                if c4.button("💾", key=f"svsec_{sec['nome']}", help="Salvar nova senha"):
-                                    if nova_senha_sec:
-                                        supabase.table("secretarias").update({"senha": nova_senha_sec}).eq("nome", sec["nome"]).execute()
-                                        st.success("Senha atualizada!")
-                                        st.cache_data.clear(); st.rerun()
                                 acao_sec = "Desativar" if sec.get("ativo", True) else "Reativar"
-                                if c4.button(acao_sec, key=f"tgsec_{sec['nome']}"):
+                                if c2.button(acao_sec, key=f"tgsec_{sec['nome']}"):
                                     supabase.table("secretarias").update({"ativo": not sec.get("ativo", True)}).eq("nome", sec["nome"]).execute()
                                     st.cache_data.clear(); st.rerun()
                     else:
@@ -2739,16 +2724,18 @@ elif menu == "📊 Analítico IA":
             st.caption(f"📅 Período analisado: {data_ini_q.strftime('%d/%m/%Y')} até {data_fim_q.strftime('%d/%m/%Y')}. A medalha é calculada pela % de aulas sem dificuldade registrada em cada matéria, dentro do período escolhido.")
 
 # ============================================================
-# MÓDULO MENSAGENS - MURAL GERAL + DIRETAS (NOVO)
+# MÓDULO MENSAGENS - MURAL GERAL + MURAL PROFESSORAS + DIRETAS
 # ============================================================
 elif menu == "💬 Mensagens":
     st.markdown("<h1 style='text-align: center; color: #2E4053;'>💬 Mensagens</h1>", unsafe_allow_html=True)
 
     eh_secretaria = st.session_state.perfil == "Secretaria"
+    eh_professora = st.session_state.get("tipo_usuario") == "professora"
+    eh_aluna = st.session_state.get("tipo_usuario") == "aluna"
     meu_nome = st.session_state.nome_logado
     # ID usado para enviar/filtrar mensagens: a secretaria usa sempre "Secretaria",
     # independente do nome de exibição do login (ex: "Coordenação"), pra bater
-    # com o destinatário que as professoras selecionam.
+    # com o destinatário que as professoras/alunas selecionam.
     meu_id_msg = "Secretaria" if eh_secretaria else meu_nome
 
     # Checagem: avisa claramente se a tabela ainda não foi criada no Supabase
@@ -2763,35 +2750,85 @@ elif menu == "💬 Mensagens":
                   "Rode o script `sql_novas_tabelas.sql` no SQL Editor do Supabase e recarregue a página.")
         st.stop()
 
-    tab_mural, tab_direto = st.tabs(["📢 Mural Geral", "✉️ Conversa Direta"])
-
     todas_mensagens = db_get_mensagens()
 
-    # --- MURAL GERAL (visível para todos, só secretaria posta) ---
+    # Convenção usada no campo "para" do mural (sem precisar mudar o schema):
+    #   "TODOS"          -> mural geral, visível pra secretaria + professoras (NÃO alunas)
+    #   "TODOS_ALUNAS"    -> mural geral, visível também pras alunas
+    #   "PROFESSORAS"     -> mural exclusivo entre professoras (secretaria e alunas NÃO veem)
+    if eh_professora:
+        abas_msg = ["📢 Mural Geral", "👩‍🏫 Mural só Professoras", "✉️ Conversa Direta"]
+    else:
+        abas_msg = ["📢 Mural Geral", "✉️ Conversa Direta"]
+    tabs_msg = st.tabs(abas_msg)
+    tab_mural = tabs_msg[0]
+    tab_mural_prof = tabs_msg[1] if eh_professora else None
+    tab_direto = tabs_msg[-1]
+
+    # --- MURAL GERAL ---
     with tab_mural:
-        st.caption("Avisos gerais da secretaria para todas as professoras.")
-        msgs_mural = [m for m in todas_mensagens if m.get("para") == "TODOS"]
-        if eh_secretaria:
+        if eh_aluna:
+            st.caption("Avisos gerais da secretaria e das professoras.")
+            msgs_mural = [m for m in todas_mensagens if m.get("para") == "TODOS_ALUNAS"]
+        else:
+            st.caption("Avisos gerais entre secretaria e professoras. Você escolhe se as alunas também veem.")
+            msgs_mural = [m for m in todas_mensagens if m.get("para") in ("TODOS", "TODOS_ALUNAS")]
+
+        if eh_secretaria or eh_professora:
             with st.form("form_mural", clear_on_submit=True):
-                texto_mural = st.text_area("Novo aviso para todas:")
+                texto_mural = st.text_area("Novo aviso:")
+                incluir_alunas = st.checkbox("📚 Enviar também para as alunas?")
                 if st.form_submit_button("📢 Publicar no Mural") and texto_mural.strip():
-                    db_enviar_mensagem(meu_id_msg, "TODOS", texto_mural.strip())
+                    destino_mural = "TODOS_ALUNAS" if incluir_alunas else "TODOS"
+                    db_enviar_mensagem(meu_id_msg, destino_mural, texto_mural.strip())
                     st.rerun()
+
         if msgs_mural:
             for m in reversed(msgs_mural):
                 with st.container(border=True):
-                    st.write(f"**{m.get('de')}** — {m.get('created_at', '')}")
+                    marca_alunas = " 📚" if m.get("para") == "TODOS_ALUNAS" and not eh_aluna else ""
+                    st.write(f"**{m.get('de')}**{marca_alunas} — {m.get('created_at', '')}")
                     st.write(m.get("texto"))
         else:
             st.info("Nenhum aviso publicado ainda.")
 
-    # --- CONVERSA DIRETA (secretaria <-> professora) ---
+    # --- MURAL SÓ PROFESSORAS (secretaria e alunas não têm acesso a essa aba) ---
+    if eh_professora:
+        with tab_mural_prof:
+            st.caption("Só professoras veem esse mural — a secretaria e as alunas não têm acesso aqui.")
+            msgs_prof = [m for m in todas_mensagens if m.get("para") == "PROFESSORAS"]
+            with st.form("form_mural_prof", clear_on_submit=True):
+                texto_mural_prof = st.text_area("Novo recado só pras professoras:")
+                if st.form_submit_button("👩‍🏫 Publicar (só professoras)") and texto_mural_prof.strip():
+                    db_enviar_mensagem(meu_id_msg, "PROFESSORAS", texto_mural_prof.strip())
+                    st.rerun()
+            if msgs_prof:
+                for m in reversed(msgs_prof):
+                    with st.container(border=True):
+                        st.write(f"**{m.get('de')}** — {m.get('created_at', '')}")
+                        st.write(m.get("texto"))
+            else:
+                st.info("Nenhum recado publicado ainda.")
+
+    # --- CONVERSA DIRETA ---
     with tab_direto:
         if eh_secretaria:
-            contato = st.selectbox("Conversar com:", PROFESSORAS_LISTA)
+            tipo_contato = st.radio("Conversar com:", ["Professora", "Aluna"], horizontal=True)
+            contato = st.selectbox("Selecione:", PROFESSORAS_LISTA if tipo_contato == "Professora" else ALUNAS_LISTA)
+        elif eh_professora:
+            tipo_contato = st.radio("Conversar com:", ["Secretaria", "Professora", "Aluna"], horizontal=True)
+            if tipo_contato == "Secretaria":
+                contato = "Secretaria"
+            elif tipo_contato == "Professora":
+                outras_profs = [p for p in PROFESSORAS_LISTA if p != meu_nome]
+                contato = st.selectbox("Selecione a professora:", outras_profs)
+            else:
+                contato = st.selectbox("Selecione a aluna:", ALUNAS_LISTA)
+        elif eh_aluna:
+            tipo_contato = st.radio("Conversar com:", ["Professora", "Secretaria"], horizontal=True)
+            contato = st.selectbox("Selecione a professora:", PROFESSORAS_LISTA) if tipo_contato == "Professora" else "Secretaria"
         else:
             contato = "Secretaria"
-            st.caption("Conversando com a Secretaria.")
 
         def eh_dessa_conversa(m):
             return ((m.get("de") == meu_id_msg and m.get("para") == contato) or
