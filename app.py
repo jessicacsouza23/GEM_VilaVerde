@@ -534,7 +534,7 @@ def filtrar_por_periodo(df, periodo):
 def carregar_planejamento():
     try:
         # Busca o registro mais recente do planejamento
-        res = supabase.table("planejamento").select("*").order("created_at", descending=True).limit(1).execute()
+        res = supabase.table("planejamento").select("*").order("created_at", desc=True).limit(1).execute()
         if res.data:
             # Retorna a coluna onde você guarda o JSON da escala
             return res.data[0]['dados_escala'] 
@@ -552,7 +552,7 @@ def salvar_analise_congelada(aluna, periodo_tipo, periodo_id, conteudo, user_id)
                 "conteudo": conteudo,
                 "user_id": user_id
             },
-            on_conflict=["aluna", "periodo_tipo", "periodo_id"]
+            on_conflict="aluna,periodo_tipo,periodo_id"
         ).execute()
 
         st.success("✅ Análise congelada salva com sucesso!")
@@ -679,9 +679,18 @@ if menu == "🏠 Secretaria":
             reg = next((e for e in estudo_diario_todos if e.get("aluna") == aluna and e.get("data") == data_str), None)
             return reg.get("horarios", []) if reg else None  # None = não registrou nada ainda
 
+        # Marcador especial: usado quando a aluna caiu na fila "SECRETARIA" do
+        # rodízio (não sobrou sala/professora disponível pra dar Prática pra
+        # ela naquele horário). Sem isso, essas alunas ficavam simplesmente
+        # ignoradas no relatório — não apareciam nem como "aula ok" nem como
+        # "faltou registro da professora".
+        SEM_PROFESSORA_DISPONIVEL = "__SEM_PROFESSORA_DISPONIVEL__"
+
         def _prof_escalada_para(aluna, tipo_desejado):
             """Procura na escala do dia quem foi escalada pra dar 'tipo_desejado'
             (Prática/Teoria/Solfejo) pra 'aluna'. Retorna None se não achar.
+            Retorna SEM_PROFESSORA_DISPONIVEL se a aluna tinha Prática agendada
+            mas ficou na fila da SECRETARIA (sem professora/sala disponível).
             Compara nomes normalizados (sem acento/maiúscula) pra não falhar
             por causa de acento ou espaço digitado diferente entre as telas."""
             aluna_norm = limpar_texto(aluna)
@@ -699,6 +708,10 @@ if menu == "🏠 Secretaria":
                         tipo_cont = "Solfejo"
                     elif cont_up.startswith("SALA"):
                         tipo_cont = "Prática"
+                    elif cont_up.startswith("SECRETARIA"):
+                        if tipo_desejado == "Prática":
+                            return SEM_PROFESSORA_DISPONIVEL
+                        continue
                     else:
                         continue
                     if tipo_cont == tipo_desejado:
@@ -866,8 +879,11 @@ if menu == "🏠 Secretaria":
                             prof_escalada = _prof_escalada_para(aluna_v, tipo)
                             # Nome mostrado no cabeçalho é sempre o do rodízio (fonte
                             # confiável do planejamento) — cai pro nome que registrou
-                            # só se essa aluna não for encontrada na escala do dia.
-                            prof_exibida = prof_escalada or instrutora_registro or "não identificada"
+                            # só se essa aluna não for encontrada na escala do dia. O
+                            # marcador de "sem professora disponível" nunca deve
+                            # aparecer como se fosse um nome de professora.
+                            prof_escalada_nome = prof_escalada if prof_escalada != SEM_PROFESSORA_DISPONIVEL else None
+                            prof_exibida = prof_escalada_nome or instrutora_registro or "não identificada"
                             st.markdown(f"🎹 **{tipo}** — Professora: **{prof_exibida}**")
                             st.write(f"**Lição de hoje:** {lic_at}")
                             if difs_reg:
@@ -910,12 +926,12 @@ if menu == "🏠 Secretaria":
                             # escalada no rodízio pra essa aluna, nesse tipo de aula?
                             # Comparação normalizada (sem acento/maiúscula) pra não
                             # disparar falso alarme por causa de acento diferente.
-                            if prof_escalada and instrutora_registro and \
-                               limpar_texto(prof_escalada) != limpar_texto(instrutora_registro):
+                            if prof_escalada_nome and instrutora_registro and \
+                               limpar_texto(prof_escalada_nome) != limpar_texto(instrutora_registro):
                                 st.error(f"⚠️ **Divergência com o rodízio:** a escala do dia tinha "
-                                         f"**{prof_escalada}** pra essa aula, mas o registro foi feito "
+                                         f"**{prof_escalada_nome}** pra essa aula, mas o registro foi feito "
                                          f"por **{instrutora_registro}**.")
-                                texto_whatsapp += f"   ⚠️ Divergência: escalada {prof_escalada}, registrado por {instrutora_registro}\n"
+                                texto_whatsapp += f"   ⚠️ Divergência: escalada {prof_escalada_nome}, registrado por {instrutora_registro}\n"
 
                     # --- FALTA DE REGISTRO DA PROFESSORA (ou repetição, se faltou) ---
                     # Verifica direto contra a escala do dia (fonte confiável): pra
@@ -925,9 +941,18 @@ if menu == "🏠 Secretaria":
                     # a última aula em vez de acusar falta de registro da professora.
                     tipos_registrados_hoje = set(_valor_ou_none(t) for t in dados_aluna['Tipo'].tolist())
                     faltando_lista = []
+                    sem_professora_lista = []
                     for disciplina in ["Prática", "Teoria", "Solfejo"]:
                         prof_esc_disc = _prof_escalada_para(aluna_v, disciplina)
                         if not prof_esc_disc or f"Analise_{disciplina}" in tipos_registrados_hoje:
+                            continue
+
+                        # Aluna tinha Prática agendada, mas não sobrou sala/professora
+                        # disponível pra ela naquele horário (caiu na fila da
+                        # SECRETARIA) — isso não é "professora esqueceu de registrar",
+                        # é "não teve quem desse aula", então sinaliza separado.
+                        if prof_esc_disc == SEM_PROFESSORA_DISPONIVEL:
+                            sem_professora_lista.append(disciplina)
                             continue
 
                         if ausente_hoje:
@@ -948,6 +973,11 @@ if menu == "🏠 Secretaria":
                                     st.info("Nenhuma aula anterior encontrada pra repetir.")
                         else:
                             faltando_lista.append(f"{disciplina} ({prof_esc_disc})")
+
+                    if sem_professora_lista:
+                        txt_sem_prof = ", ".join(sem_professora_lista)
+                        st.markdown(f"<div style='background-color: #FDEDEC; padding: 10px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #CB4335;'><b>⚠️ Sem professora disponível hoje:</b> {txt_sem_prof} — aluna ficou na fila de espera, ninguém foi escalado pra dar essa aula.</div>", unsafe_allow_html=True)
+                        texto_whatsapp += f"⚠️ *Sem professora disponível:* {txt_sem_prof} (ficou na fila de espera)\n"
 
                     if faltando_lista:
                         txt_faltando = ", ".join(faltando_lista)
@@ -1405,9 +1435,19 @@ if menu == "🏠 Secretaria":
         st.subheader("📍 Chamada Geral")
         data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados], key="data_chamada_unica")
         presenca_padrao = st.toggle("Marcar todas como Presente por padrão", value=True)
-        
+
+        # Só lista quem de fato tinha aula agendada nesse sábado (escala do
+        # rodízio já gerada), em vez de todas as alunas do sistema — assim não
+        # cria falta/presença pra quem sequer estava programada pra aquele dia.
+        escala_do_dia_cham = db_get_calendario().get(data_ch_sel, [])
+        alunas_lista = sorted(set(reg.get("Aluna") for reg in escala_do_dia_cham if reg.get("Aluna")))
+        if not alunas_lista:
+            st.warning("⚠️ Nenhuma escala encontrada pra essa data ainda — gere o rodízio em "
+                       "'🗓️ Planejamento' antes de fazer a chamada. Por enquanto, a lista abaixo "
+                       "mostra todas as alunas do sistema.")
+            alunas_lista = sorted([a for l in TURMAS.values() for a in l])
+
         registros_chamada = []
-        alunas_lista = sorted([a for l in TURMAS.values() for a in l])
         
         for idx, aluna in enumerate(alunas_lista):
             col1, col2, col3 = st.columns([2, 3, 3])
@@ -2171,9 +2211,15 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 st.markdown(f"### 📋 Pendências de {tipo_aula}")
                 pends_disc = pd.DataFrame()
                 if not df_hist_local.empty:
+                    # Pega qualquer status que ainda não seja "ok" (Pendente,
+                    # Devolvida, Não Realizada, etc.) — não só o literal
+                    # "Pendente" — senão, quando a secretaria marca algo como
+                    # "Devolvida" ou "Não Realizada" em Controle de Lições, a
+                    # lição some daqui pra professora sem nunca ter sido
+                    # resolvida de fato.
                     pends_disc = df_hist_local[
                         (df_hist_local['Aluna'].isin(als_selecionadas)) &
-                        (df_hist_local['Status'] == 'Pendente')
+                        (~df_hist_local['Status'].isin(STATUS_OK_LICAO))
                     ].copy()
                     if not pends_disc.empty:
                         pends_disc['_disciplina'] = pends_disc['Tipo'].apply(_categoria_licao_casa)
@@ -2496,7 +2542,13 @@ elif menu == "📊 Analítico IA":
                     return 'P'
 
                 df_aluna['st_calc'] = df_aluna.apply(identificar_v72, axis=1)
-                resumo_dias = df_aluna.groupby('Data')['st_calc'].first()
+                # Agrupa em ordem cronológica real (por dt_obj), não pela ordem
+                # alfabética da string "DD/MM/AAAA" — sem isso, "01/12/2026"
+                # aparecia antes de "15/01/2026" no gráfico de linha do tempo.
+                resumo_dias = (
+                    df_aluna.sort_values('dt_obj', ascending=True)
+                    .groupby('Data', sort=False)['st_calc'].first()
+                )
                 v_pres, v_falt, v_just = (resumo_dias=='P').sum(), (resumo_dias=='F').sum(), (resumo_dias=='J').sum()
 
                 # --- ESTUDO EM CASA (registrado pela própria aluna) ---
@@ -2565,9 +2617,12 @@ elif menu == "📊 Analítico IA":
 
                 with c2:
                     st.markdown("### 📚 Lições Pendentes (correção da secretaria)")
-                    # Só entra aqui o que a secretaria de fato corrige: apostila da prática e folhas de teoria
+                    # Só entra aqui o que a secretaria de fato corrige: apostila da prática e folhas de teoria.
+                    # Usa STATUS_OK_LICAO (mesmo critério do resto do sistema) em vez de
+                    # checar se o texto contém "Realizada" — isso evitava que "Realizada -
+                    # com dificuldades" (que ainda precisa de atenção) sumisse daqui.
                     pendencias = df_aluna[(df_aluna['Tipo'].isin(TIPOS_CORRECAO_SECRETARIA)) &
-                                          (~df_aluna['Status'].str.contains("Realizada", na=False))]
+                                          (~df_aluna['Status'].isin(STATUS_OK_LICAO))]
                     if not pendencias.empty:
                         for _, p in pendencias.iterrows():
                             rotulo = p['Tipo'].replace('Casa_', '')
