@@ -2145,19 +2145,61 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
             st.markdown(f"### 👥 Chamada: {d_sel['loc']}")
             for al in als_ref:
-                c_ch, c_info = st.columns([1, 3])
-                if c_ch.checkbox(al, value=True, key=f"ch_{al}_{d_sel['id']}"):
+                if st.checkbox(al, value=True, key=f"ch_{al}_{d_sel['id']}"):
                     als_selecionadas.append(al)
-                    if not df_hist_local.empty:
-                        pends = df_hist_local[(df_hist_local['Aluna'] == al) & (df_hist_local['Status'] == 'Pendente')]
-                        if not pends.empty:
-                            with c_info.expander(f"⚠️ Pendências de {al}"):
-                                for _, p in pends.iterrows(): st.caption(f"• {p['Licao_Casa']}")
 
             if als_selecionadas:
                 tipo_aula = d_sel["tipo"]
+
+                # ============================================================
+                # PENDÊNCIAS DA DISCIPLINA — só o que ficou pendente de aulas
+                # anteriores DESSA MESMA disciplina (Prática só vê Prática,
+                # Teoria só vê Teoria, Solfejo só vê Solfejo). A professora dá
+                # um clique pra dizer se a aluna passou, passou com dificuldades,
+                # ou se fica pendente pra próxima semana.
+                # ============================================================
+                st.markdown(f"### 📋 Pendências de {tipo_aula}")
+                pends_disc = pd.DataFrame()
+                if not df_hist_local.empty:
+                    pends_disc = df_hist_local[
+                        (df_hist_local['Aluna'].isin(als_selecionadas)) &
+                        (df_hist_local['Status'] == 'Pendente')
+                    ].copy()
+                    if not pends_disc.empty:
+                        pends_disc['_disciplina'] = pends_disc['Tipo'].apply(_categoria_licao_casa)
+                        pends_disc = pends_disc[pends_disc['_disciplina'] == tipo_aula]
+
+                if pends_disc.empty:
+                    st.success(f"✅ Nenhuma pendência de {tipo_aula} pra essas alunas.")
+                else:
+                    for al in als_selecionadas:
+                        pends_al = pends_disc[pends_disc['Aluna'] == al]
+                        if pends_al.empty:
+                            continue
+                        st.caption(f"👤 {al}")
+                        for _, p in pends_al.iterrows():
+                            with st.container(border=True):
+                                c_txt, c_acao = st.columns([2, 1])
+                                c_txt.write(f"📖 {p['Licao_Casa']}")
+                                key_id = f"pend_{p['id']}"
+                                resultado = c_acao.radio(
+                                    "Resultado:", ["Fica p/ próxima semana", "Passou", "Passou com dificuldades"],
+                                    key=f"rd_{key_id}", horizontal=True
+                                )
+                                if c_acao.button("Salvar", key=f"btn_{key_id}"):
+                                    if resultado == "Fica p/ próxima semana":
+                                        st.info("Continua pendente pra próxima semana.")
+                                    else:
+                                        novo_status = "Realizada - sem pendência" if resultado == "Passou" else "Realizada - com dificuldades"
+                                        supabase.table("historico_geral").update({"Status": novo_status}).eq("id", p['id']).execute()
+                                        st.success("✅ Atualizado!")
+                                        st.cache_data.clear()
+                                        st.rerun()
+
+                st.divider()
                 metodos_filtrados = df_metodos_db[df_metodos_db['categoria'] == tipo_aula]['nome'].tolist() if not df_metodos_db.empty else []
                 st.markdown(f"### 📝 Registro: {tipo_aula}")
+
 
                 # ============================================================
                 # PRÁTICA — pode ter um ou mais métodos pra corrigir/verificar,
