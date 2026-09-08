@@ -2086,6 +2086,8 @@ elif menu == "👩‍🏫 Minhas Aulas":
         if dt_str in cal_db:
             for reg in cal_db[dt_str]:
                 for h in HORARIOS:
+                    if h == "08h45 (Igreja)":
+                        continue  # Aulas da Igreja não entram no Registro de Aula das professoras — ficam só em Planejamentos
                     cont = str(reg.get(h, ""))
                     if cont and n_bus in limpar_texto(cont).lower():
                         tipo = "Teoria" if "SALA 8" in cont.upper() else "Solfejo" if "SALA 9" in cont.upper() else "Prática"
