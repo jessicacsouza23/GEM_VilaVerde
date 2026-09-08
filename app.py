@@ -1449,13 +1449,17 @@ if menu == "🏠 Secretaria":
             st.divider()
         
             # --- LÓGICA DE PENDÊNCIAS REAIS ---
-            # Só entra aqui exatamente o que a secretaria corrige: folha avulsa de
-            # Teoria e apostila da Prática (ver TIPOS_CORRECAO_SECRETARIA).
+            # Mostra TODAS as lições de casa pendentes da aluna (Apostila, Folha
+            # Avulsa, Método, MSA, e as versões "_Prof" corrigidas pela própria
+            # professora) — a secretaria consegue ACOMPANHAR tudo aqui. Só pode
+            # de fato RESOLVER (marcar status) o que é responsabilidade dela
+            # mesma (ver TIPOS_CORRECAO_SECRETARIA); o resto é só visualização,
+            # já que quem corrige é a professora.
             pendencias_reais = []
             if not df_historico.empty:
                 df_alu = df_historico[df_historico['Aluna'] == aluna].copy()
                 if not df_alu.empty:
-                    df_alu = df_alu[df_alu['Tipo'].isin(TIPOS_CORRECAO_SECRETARIA)]
+                    df_alu = df_alu[df_alu['Tipo'].str.startswith("Casa_", na=False)]
 
                     if not df_alu.empty:
                         # Converte data para ordenação
@@ -1476,34 +1480,40 @@ if menu == "🏠 Secretaria":
             if pendencias_reais:
                 st.error(f"🚨 ATIVIDADES PENDENTES PARA {aluna.upper()}")
                 for p in pendencias_reais:
+                    eh_da_secretaria = p['Tipo'] in TIPOS_CORRECAO_SECRETARIA
+                    disciplina_p = _categoria_licao_casa(p['Tipo'])
+                    material_p = _metodo_ou_material(p['Tipo'])
+                    icone_p = {"Prática": "🎼", "Teoria": "📘", "Solfejo": "🔊"}.get(disciplina_p, "📖")
+
                     with st.container(border=True):
                         col_info, col_acao = st.columns([2, 1])
                         with col_info:
-                            tipo_bruto_p = p['Tipo'].replace('Casa_', '')
-                            icone_p = "📖" if "Apostila" in tipo_bruto_p else "📄"
-                            tipo_p = tipo_bruto_p.replace('Teoria', 'Folha Avulsa (Teoria)').upper()
-                            st.markdown(f"{icone_p} **{tipo_p}** | {p['Licao_Casa']}")
-                            st.caption(f"📅 Lançado em: {p['Data']} | Status Atual: {p['Status']}")
+                            responsavel_p = "Secretaria" if eh_da_secretaria else "Professora (auto-correção)"
+                            st.markdown(f"{icone_p} **{material_p}** ({disciplina_p}) | {p['Licao_Casa']}")
+                            st.caption(f"📅 Lançado em: {p['Data']} | Status Atual: {p['Status']} | Corrige: {responsavel_p}")
                             if p.get('Observacao'):
                                 st.info(f"💬 Nota: {p['Observacao']}")
-                        
+
                         with col_acao:
-                            with st.expander("✅ Resolver"):
-                                # Key única baseada no ID do banco para evitar conflitos
-                                key_id = f"res_{p['id']}"
-                                st_res = st.radio("Nova Situação:", ["Pendente", "Realizada", "Não Realizada", "Devolvida"], key=f"st_{key_id}", horizontal=True)
-                                obs_res = st.text_area("Obs da Secretaria:", key=f"obs_{key_id}")
-                                
-                                if st.button("Atualizar Status", key=f"btn_{key_id}", use_container_width=True):
-                                    supabase.table("historico_geral").update({
-                                        "Status": st_res,
-                                        "Observacao": f"{p.get('Observacao', '')} | Sec: {obs_res}" if obs_res else p.get('Observacao'),
-                                        "Secretaria": sec_resp,
-                                        "Data": data_corr_str # Atualiza para a data da correção
-                                    }).eq("id", p['id']).execute()
-                                    st.success("Atualizado!"); st.cache_data.clear(); st.rerun()
+                            if eh_da_secretaria:
+                                with st.expander("✅ Resolver"):
+                                    # Key única baseada no ID do banco para evitar conflitos
+                                    key_id = f"res_{p['id']}"
+                                    st_res = st.radio("Nova Situação:", ["Pendente", "Realizada", "Não Realizada", "Devolvida"], key=f"st_{key_id}", horizontal=True)
+                                    obs_res = st.text_area("Obs da Secretaria:", key=f"obs_{key_id}")
+                                    
+                                    if st.button("Atualizar Status", key=f"btn_{key_id}", use_container_width=True):
+                                        supabase.table("historico_geral").update({
+                                            "Status": st_res,
+                                            "Observacao": f"{p.get('Observacao', '')} | Sec: {obs_res}" if obs_res else p.get('Observacao'),
+                                            "Secretaria": sec_resp,
+                                            "Data": data_corr_str # Atualiza para a data da correção
+                                        }).eq("id", p['id']).execute()
+                                        st.success("Atualizado!"); st.cache_data.clear(); st.rerun()
+                            else:
+                                st.caption("👀 Só acompanhamento — quem resolve é a própria professora.")
             else:
-                st.success(f"✅ Nenhuma pendência de Teoria ou Apostila para {aluna}.")
+                st.success(f"✅ Nenhuma pendência de lição de casa para {aluna}.")
         
             st.divider()
         
@@ -2688,13 +2698,94 @@ elif menu == "📊 Analítico IA":
                             st.success("✅ Objetivos salvos!")
                             st.rerun()
 
-                # --- 5. RESUMO FINAL E DICAS ---
+                # --- 5. RESUMO FINAL E DICAS (por disciplina, com dados reais do período) ---
                 st.divider()
-                st.info(f"💡 **Dicas para Próxima Aula:** Foque em resolver as dificuldades de " + 
-                        (", ".join(list(set(difs))[:2]) if difs else "técnica e postura") + ".")
-            
-                status_aluna = "Ótimo desempenho!" if aprov_valor > 80 else "Atenção necessária às lições."
-                st.success(f"📌 **Como a aluna está indo:** {status_aluna} (Aproveitamento: {aprov_valor}%)")
+                st.markdown(f"### 📌 Como a aluna está indo & Dicas para a Próxima Aula")
+
+                # 5.1 Aproveitamento e dificuldade mais recorrente, DISCIPLINA POR
+                # DISCIPLINA (não um número só misturando tudo) — só considera
+                # aulas de fato analisadas (Analise_...) nesse período.
+                resumo_disciplinas = []
+                for disciplina_r in ["Prática", "Teoria", "Solfejo"]:
+                    rows_disc = pedag_rows[pedag_rows['Tipo'] == f"Analise_{disciplina_r}"]
+                    total_disc = len(rows_disc)
+                    if total_disc == 0:
+                        continue
+                    sem_dif_disc = int((~rows_disc['tem_dificuldade']).sum())
+                    aprov_disc = int((sem_dif_disc / total_disc) * 100)
+
+                    difs_disc = []
+                    for d in rows_disc['Dificuldades'].dropna():
+                        if isinstance(d, list):
+                            difs_disc.extend([x for x in d if x and x != "Não apresentou dificuldades"])
+
+                    dif_top_disc, qtd_top_disc = None, 0
+                    if difs_disc:
+                        contagem_disc = pd.Series(difs_disc).value_counts()
+                        dif_top_disc, qtd_top_disc = contagem_disc.index[0], int(contagem_disc.iloc[0])
+
+                    resumo_disciplinas.append({
+                        "disciplina": disciplina_r, "total": total_disc, "aprov": aprov_disc,
+                        "dif_top": dif_top_disc, "qtd_top": qtd_top_disc
+                    })
+
+                if resumo_disciplinas:
+                    icones_disc = {"Prática": "🎹", "Teoria": "📚", "Solfejo": "🔊"}
+                    for r_d in resumo_disciplinas:
+                        if r_d["aprov"] >= 80:
+                            nivel = "indo muito bem"
+                        elif r_d["aprov"] >= 50:
+                            nivel = "com desempenho mediano, pede atenção"
+                        else:
+                            nivel = "com bastante dificuldade, precisa de reforço"
+
+                        linha = (f"{icones_disc[r_d['disciplina']]} **{r_d['disciplina']}** "
+                                 f"({r_d['total']} aula(s) analisada(s) no período): {nivel} — "
+                                 f"{r_d['aprov']}% das aulas sem dificuldade registrada.")
+                        if r_d["dif_top"]:
+                            linha += (f" A dificuldade mais recorrente foi **\"{r_d['dif_top']}\"** "
+                                      f"({r_d['qtd_top']}x) — vale focar exatamente nisso na próxima aula, "
+                                      f"antes de avançar de conteúdo.")
+
+                        if r_d["aprov"] >= 80:
+                            st.success(linha)
+                        elif r_d["aprov"] >= 50:
+                            st.warning(linha)
+                        else:
+                            st.error(linha)
+                else:
+                    st.info("ℹ️ Ainda não há aulas analisadas nesse período pra dar uma dica específica por disciplina.")
+
+                # 5.2 Só entram aqui alertas que realmente pesam nos dados —
+                # frequência baixa, pouco estudo em casa, ou lição de casa em
+                # aberto — em vez de frases genéricas.
+                avisos_extra = []
+                total_aulas_freq = len(resumo_dias)
+                if total_aulas_freq > 0:
+                    pct_falta = (v_falt / total_aulas_freq) * 100
+                    if pct_falta >= 25:
+                        avisos_extra.append(
+                            f"📍 Faltou em {v_falt} de {total_aulas_freq} aula(s) registrada(s) nesse período "
+                            f"({int(pct_falta)}%) — a frequência baixa pode estar atrapalhando o progresso."
+                        )
+                if total_dias_estudo_reg > 0 and pct_estudo < 50:
+                    avisos_extra.append(
+                        f"🏠 Só estudou em casa em {dias_com_estudo} de {total_dias_estudo_reg} dia(s) registrados "
+                        f"({pct_estudo}%) — reforçar o estudo em casa deve ajudar a destravar o que está pendente."
+                    )
+                if not casa_rows.empty:
+                    pendencias_abertas_periodo = casa_rows[~casa_rows['Status'].isin(STATUS_OK_LICAO)]
+                    if not pendencias_abertas_periodo.empty:
+                        avisos_extra.append(
+                            f"📖 Ainda tem {len(pendencias_abertas_periodo)} lição(ões) de casa em aberto nesse "
+                            f"período — vale conferir isso antes da próxima aula."
+                        )
+
+                for aviso in avisos_extra:
+                    st.info(aviso)
+
+                if objetivo_atual:
+                    st.caption(f"🎯 Objetivo combinado com a aluna: {objetivo_atual}")
 
             else:
                 st.warning("Selecione uma aluna ou mude o filtro para ver os registros.")
