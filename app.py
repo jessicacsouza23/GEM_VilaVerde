@@ -522,6 +522,7 @@ DIF_TEORIA = ["Não assistiu os vídeos complementares", "Não apresentou dificu
 DIF_SOLFEJO = ["Não assistiu os vídeos complementares", "Dificuldades em ler as notas na clave de sol", "Dificuldades em ler as notas na clave de fá", 
                "Está com dificuldades no uso do metrônomo", "Estuda em metrônomo", "Não realizou as atividades", "Dificuldade em leitura ritmica", 
                "Dificuldades em leitura métrica", "Dificuldade em solfejo (afinação)", "Dificuldades no movimento da mão", 
+               "Demonstra insegurança ao lidar com o conteúdo", "Dificuldade ritmica",
                "Dificuldades na ordem das notas, ascendente e descendente", "Não realizou as atividades da apostila", "Não estudou nada", 
                "Estudou de forma insatisfatória", "Não apresentou dificuldades"]
 
