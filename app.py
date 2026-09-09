@@ -2351,6 +2351,11 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 }
                                 st.divider()
 
+                            # A observação complementa a análise da aula; por
+                            # isso fica logo após as dificuldades, antes da
+                            # lição que será enviada para casa.
+                            obs_geral = st.text_area("Observações Pedagógicas:", key=f"obs_{d_sel['id']}")
+
                             st.subheader("🏠 Lição de Casa para a próxima aula")
                             st.caption("📬 O que marcar com 📖 vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método) — mas precisa preencher, não é opcional.")
                             apostila_casa = st.text_input("📖 Apostila (página/lição — vai para a secretaria):", key=f"aph_{d_sel['id']}")
@@ -2366,8 +2371,6 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             )
                             for mc in metodos_extra:
                                 paginas_metodo_casa[mc] = st.text_input(f"🎼 Lição de casa — {mc}:", key=f"mcpx_{mc}_{d_sel['id']}")
-
-                            obs_geral = st.text_area("Observações Pedagógicas:", key=f"obs_{d_sel['id']}")
 
                             if st.form_submit_button("💾 SALVAR E CONGELAR ANÁLISE", use_container_width=True):
                                 faltando = [mc for mc in metodos_do_dia if not paginas_metodo_casa.get(mc, "").strip()]
@@ -2441,6 +2444,11 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         if cols_d[i % 3].checkbox(d, value=(d in difs_db), key=f"d_v58_{i}_{d_sel['id']}_{mat_focado}_{dt_str}")
                     ]
 
+                    # Observação pedagógica pertence ao registro da aula e
+                    # fica junto das dificuldades, não da lição de casa.
+                    obs_db = dados_hoje.get('Observacao', "")
+                    obs_geral = st.text_area("Observações Pedagógicas:", value=obs_db, key=f"obsg_{d_sel['id']}")
+
                     st.divider()
                     st.subheader("🏠 Lição de Casa")
                     st.caption("📬 O que marcar com 📖 abaixo vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método) e não vai para a secretaria.")
@@ -2474,9 +2482,6 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     else:
                         metodo_casa_sel, metodo_casa_pag = None, ""
                         st.info("ℹ️ Nenhum método cadastrado pra essa categoria ainda (cadastre em ⚙️ Configurar Métodos).")
-
-                    obs_db = dados_hoje.get('Observacao', "")
-                    obs_geral = st.text_area("Observações Pedagógicas:", value=obs_db, key=f"obsg_{d_sel['id']}")
 
                     if st.button("💾 SALVAR E CONGELAR ANÁLISE", use_container_width=True, key=f"btnsalvar_{d_sel['id']}"):
                         if not mat_focado:
