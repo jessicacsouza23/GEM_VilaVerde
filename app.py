@@ -507,6 +507,7 @@ DIF_PRATICA = ["Não estudou nada", "Estudou de forma insatisfatória", "Não as
                "Dificuldade com o uso do metrônomo", "Estuda sem o metrônomo", "Dificuldades em ler as notas na clave de sol", 
                "Dificuldades no movimento da mão", "Demonstra insegurança ao lidar com o conteúdo",
                "Dificuldade em leitura ritmica", "Dificuldades em leitura métrica",
+                "Dificuldades na ordem das notas", "ascendente e descendente",
                "Dificuldades em ler as notas na clave de fá", "Não realizou as atividades da apostila", "Dificuldade em fazer a articulação ligada e semiligada",
                "Dificuldade com as respirações", "Dificuldade com as respirações sobre passagem", 
                "Dificuldades em recurso de dedilhado (passagem, alargamento, contração, mudança ou substituição)", "Dificuldade em fazer nota de apoio", 
