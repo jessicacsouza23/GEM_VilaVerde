@@ -196,8 +196,15 @@ _secs_cadastradas = sorted([s["nome"] for s in db_get_secretarias_extra() if s.g
 SECRETARIAS_LISTA = _secs_cadastradas or ["Esther", "Jéssica", "Larissa", "Lurdes", "Natasha", "Roseli"]
 
 CATEGORIAS_LICAO = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila", "Folhas avulsas (teoria)"]
-STATUS_LICAO = ["Realizadas - sem pendência", "Realizada - devolvida para refazer", "Não realizada"]
-STATUS_OK_LICAO = ["Realizada", "Realizadas - sem pendência", "Realizada - sem pendência"]
+# Situações usadas pela secretaria ao corrigir apostilas e folhas avulsas.
+# "Resolvido com pendências" encerra aquela correção, mas registra que a
+# aluna precisa retomar o conteúdo; "Não resolvido" mantém a atividade na fila.
+STATUS_LICAO = ["Pendente", "Resolvido", "Resolvido com pendências", "Não resolvido"]
+STATUS_OK_LICAO = [
+    "Resolvido", "Resolvido com pendências",
+    # Compatibilidade com registros já existentes no banco.
+    "Realizada", "Realizadas - sem pendência", "Realizada - sem pendência",
+]
 
 # Critério ÚNICO de "aula sem dificuldade", usado tanto no Prontuário Individual
 # quanto no Quadro de Desempenho, pra os dois números do sistema baterem sempre.
@@ -1437,52 +1444,43 @@ if menu == "🏠 Secretaria":
     # --- ABA 3: CHAMADA GERAL ---
     with tab_cham:
         st.subheader("📍 Chamada Geral")
-
-        # Seletor de mês/ano próprio (igual ao do Planejamento) — antes a
-        # chamada só enxergava os sábados do mês que estava selecionado lá na
-        # aba Planejamento, então dava pra ficar preso no mês atual sem
-        # conseguir fazer chamada de um mês diferente.
         c_mes_ch, c_ano_ch = st.columns(2)
         mes_cham = c_mes_ch.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="mes_chamada_unica")
         ano_cham = c_ano_ch.selectbox("Ano:", [2026, 2027], key="ano_chamada_unica")
         sabados_cham = [dia for semana in calendar.Calendar().monthdatescalendar(ano_cham, mes_cham)
                          for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes_cham]
+        data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados_cham], key="data_chamada_unica")
+        presenca_padrao = st.toggle("Marcar todas como Presente por padrão", value=True)
 
-        if not sabados_cham:
-            st.info("Nenhum sábado encontrado nesse mês.")
-        else:
-            data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados_cham], key="data_chamada_unica")
-            presenca_padrao = st.toggle("Marcar todas como Presente por padrão", value=True)
+        # Só lista quem de fato tinha aula agendada nesse sábado (escala do
+        # rodízio já gerada), em vez de todas as alunas do sistema — assim não
+        # cria falta/presença pra quem sequer estava programada pra aquele dia.
+        escala_do_dia_cham = db_get_calendario().get(data_ch_sel, [])
+        alunas_lista = sorted(set(reg.get("Aluna") for reg in escala_do_dia_cham if reg.get("Aluna")))
+        if not alunas_lista:
+            st.warning("⚠️ Nenhuma escala encontrada pra essa data ainda — gere o rodízio em "
+                       "'🗓️ Planejamento' antes de fazer a chamada. Por enquanto, a lista abaixo "
+                       "mostra todas as alunas do sistema.")
+            alunas_lista = sorted([a for l in TURMAS.values() for a in l])
 
-            # Só lista quem de fato tinha aula agendada nesse sábado (escala do
-            # rodízio já gerada), em vez de todas as alunas do sistema — assim não
-            # cria falta/presença pra quem sequer estava programada pra aquele dia.
-            escala_do_dia_cham = db_get_calendario().get(data_ch_sel, [])
-            alunas_lista = sorted(set(reg.get("Aluna") for reg in escala_do_dia_cham if reg.get("Aluna")))
-            if not alunas_lista:
-                st.warning("⚠️ Nenhuma escala encontrada pra essa data ainda — gere o rodízio em "
-                           "'🗓️ Planejamento' antes de fazer a chamada. Por enquanto, a lista abaixo "
-                           "mostra todas as alunas do sistema.")
-                alunas_lista = sorted([a for l in TURMAS.values() for a in l])
+        registros_chamada = []
+        
+        for idx, aluna in enumerate(alunas_lista):
+            col1, col2, col3 = st.columns([2, 3, 3])
+            col1.write(f"**{aluna}**")
+            chave_status = f"status_{idx}_{aluna}_{data_ch_sel}"
+            status = col2.radio(f"Status {aluna}", ["Presente", "Ausente", "Justificada"], index=0 if presenca_padrao else 1, key=chave_status, horizontal=True, label_visibility="collapsed")
+            motivo = ""
+            if status == "Justificada":
+                chave_motivo = f"motivo_{idx}_{aluna}_{data_ch_sel}"
+                motivo = col3.text_input("Motivo", key=chave_motivo, placeholder="Justificativa", label_visibility="collapsed")
+            registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
 
-            registros_chamada = []
-            
-            for idx, aluna in enumerate(alunas_lista):
-                col1, col2, col3 = st.columns([2, 3, 3])
-                col1.write(f"**{aluna}**")
-                chave_status = f"status_{idx}_{aluna}_{data_ch_sel}"
-                status = col2.radio(f"Status {aluna}", ["Presente", "Ausente", "Justificada"], index=0 if presenca_padrao else 1, key=chave_status, horizontal=True, label_visibility="collapsed")
-                motivo = ""
-                if status == "Justificada":
-                    chave_motivo = f"motivo_{idx}_{aluna}_{data_ch_sel}"
-                    motivo = col3.text_input("Motivo", key=chave_motivo, placeholder="Justificativa", label_visibility="collapsed")
-                registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
-
-            if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
-                novos_ch = [{"Data": data_ch_sel, "Aluna": r["Aluna"], "Tipo": "Chamada", "Status": r["Status"], "Observacao": r["Motivo"], "Licao_Atual": "Presença em Aula"} for r in registros_chamada]
-                supabase.table("historico_geral").delete().eq("Data", data_ch_sel).eq("Tipo", "Chamada").execute()
-                supabase.table("historico_geral").insert(novos_ch).execute()
-                st.success("✅ Chamada Salva!"); st.cache_data.clear()
+        if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
+            novos_ch = [{"Data": data_ch_sel, "Aluna": r["Aluna"], "Tipo": "Chamada", "Status": r["Status"], "Observacao": r["Motivo"], "Licao_Atual": "Presença em Aula"} for r in registros_chamada]
+            supabase.table("historico_geral").delete().eq("Data", data_ch_sel).eq("Tipo", "Chamada").execute()
+            supabase.table("historico_geral").insert(novos_ch).execute()
+            st.success("✅ Chamada Salva!"); st.cache_data.clear()
 
     # --- ABA 4: CONTROLE DE LIÇÕES E PENDÊNCIAS (ESTILO CONGELADO) ---
         with tab_licao:
@@ -1507,12 +1505,9 @@ if menu == "🏠 Secretaria":
             st.divider()
         
             # --- LÓGICA DE PENDÊNCIAS REAIS ---
-            # Mostra TODAS as lições de casa pendentes da aluna (Apostila, Folha
-            # Avulsa, Método, MSA, e as versões "_Prof" corrigidas pela própria
-            # professora) — a secretaria consegue ACOMPANHAR tudo aqui. Só pode
-            # de fato RESOLVER (marcar status) o que é responsabilidade dela
-            # mesma (ver TIPOS_CORRECAO_SECRETARIA); o resto é só visualização,
-            # já que quem corrige é a professora.
+            # A secretaria só corrige apostilas e folhas avulsas de Teoria.
+            # Solfejo é acompanhado e corrigido pela professora em sala: a
+            # secretaria pode vê-lo, mas nunca recebe ação de correção.
             pendencias_reais = []
             if not df_historico.empty:
                 df_alu = df_historico[df_historico['Aluna'] == aluna].copy()
@@ -1546,7 +1541,7 @@ if menu == "🏠 Secretaria":
                     with st.container(border=True):
                         col_info, col_acao = st.columns([2, 1])
                         with col_info:
-                            responsavel_p = "Secretaria" if eh_da_secretaria else "Professora (auto-correção)"
+                            responsavel_p = "Secretaria" if eh_da_secretaria else "Professora (em sala)"
                             st.markdown(f"{icone_p} **{material_p}** ({disciplina_p}) | {p['Licao_Casa']}")
                             st.caption(f"📅 Lançado em: {p['Data']} | Status Atual: {p['Status']} | Corrige: {responsavel_p}")
                             if p.get('Observacao'):
@@ -1557,7 +1552,12 @@ if menu == "🏠 Secretaria":
                                 with st.expander("✅ Resolver"):
                                     # Key única baseada no ID do banco para evitar conflitos
                                     key_id = f"res_{p['id']}"
-                                    st_res = st.radio("Nova Situação:", ["Pendente", "Realizada", "Não Realizada", "Devolvida"], key=f"st_{key_id}", horizontal=True)
+                                    st_res = st.radio(
+                                        "Resultado da correção:",
+                                        ["Resolvido", "Resolvido com pendências", "Não resolvido"],
+                                        key=f"st_{key_id}", horizontal=True,
+                                        help="'Não resolvido' mantém a atividade na lista; os demais encerram esta correção."
+                                    )
                                     obs_res = st.text_area("Obs da Secretaria:", key=f"obs_{key_id}")
                                     
                                     if st.button("Atualizar Status", key=f"btn_{key_id}", use_container_width=True):
@@ -1590,7 +1590,7 @@ if menu == "🏠 Secretaria":
                 
                 st.divider()
                 
-                status_sel = st.radio("Status Inicial:", ["Pendente", "Em Treinamento", "Realizada"], horizontal=True)
+                status_sel = st.radio("Status Inicial:", ["Pendente", "Resolvido", "Resolvido com pendências", "Não resolvido"], horizontal=True)
                 obs_hoje = st.text_area("Observações Técnicas / Dicas:")
                 
                 if st.form_submit_button("❄️ CONGELAR E SALVAR", use_container_width=True, type="primary"):
@@ -2213,9 +2213,8 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
             st.markdown(f"### 👥 Chamada: {d_sel['loc']}")
 
-            # Quem já foi marcada Ausente/Justificada na Chamada Geral da secretaria
-            # pra essa data não entra na lista de registro — não tem aula pra
-            # registrar de quem faltou, então nem aparece pra marcar.
+            # A chamada geral é a fonte de presença. Quem estiver ausente ou
+            # justificada não deve receber registro pedagógico nesta aula.
             status_chamada_hoje_prof = {}
             if not df_hist_local.empty:
                 chamada_hoje_df = df_hist_local[(df_hist_local['Tipo'] == "Chamada") & (df_hist_local['Data'] == dt_str)]
@@ -2226,8 +2225,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
             als_presentes_hoje = [al for al in als_ref if al not in als_ausentes_hoje]
 
             for al_aus in als_ausentes_hoje:
-                st.warning(f"❌ **{al_aus}** está marcada como **{status_chamada_hoje_prof.get(al_aus)}** hoje "
-                           f"— não precisa enviar registro de aula dela.")
+                st.warning(f"❌ **{al_aus}** está marcada como **{status_chamada_hoje_prof.get(al_aus)}** hoje — não precisa enviar registro de aula dela.")
 
             for al in als_presentes_hoje:
                 if st.checkbox(al, value=True, key=f"ch_{al}_{d_sel['id']}"):
@@ -2236,72 +2234,56 @@ elif menu == "👩‍🏫 Minhas Aulas":
             if als_selecionadas:
                 tipo_aula = d_sel["tipo"]
 
-                # ============================================================
-                # PENDÊNCIAS DA DISCIPLINA — só faz sentido aparecer aqui o que
-                # é RESPONSABILIDADE DA PRÓPRIA PROFESSORA corrigir NA PRÓXIMA
-                # AULA como uma pendência separada:
-                # - Prática: nunca aparece aqui — a conferência já acontece no
-                #   formulário de registro logo abaixo (campo "a aluna fez a
-                #   lição de casa desse material?", por método/apostila).
-                # - Solfejo: também nunca aparece aqui — quem corrige é sempre
-                #   a própria professora, mas ela já faz isso naturalmente na
-                #   aula seguinte, dentro do próprio registro (conteúdo
-                #   trabalhado em sala + lição de casa pra próxima aula), sem
-                #   precisar de um painel de pendência à parte. Nunca vai pra
-                #   secretaria.
-                # - Teoria: só aparece se a professora marcou "Eu mesma
-                #   corrijo" na hora de passar a lição (sufixo _Prof) — o que
-                #   é da secretaria (Apostila/Folha Avulsa comuns) fica de
-                #   fora, isso é responsabilidade dela, não da professora.
-                # ============================================================
+                # Só folhas avulsas cuja própria professora escolheu corrigir
+                # aparecem aqui. Apostilas são da secretaria; Solfejo é
+                # corrigido em sala, dentro do registro da aula seguinte.
+                pends_disc = pd.DataFrame()
+                if tipo_aula == "Teoria" and not df_hist_local.empty:
+                    # Pega qualquer status que ainda não seja "ok" (Pendente,
+                    # Devolvida, Não Realizada, etc.) — não só o literal
+                    # "Pendente" — senão, quando a secretaria marca algo como
+                    # "Devolvida" ou "Não Realizada" em Controle de Lições, a
+                    # lição some daqui pra professora sem nunca ter sido
+                    # resolvida de fato.
+                    pends_disc = df_hist_local[
+                        (df_hist_local['Aluna'].isin(als_selecionadas)) &
+                        (~df_hist_local['Status'].isin(STATUS_OK_LICAO))
+                    ].copy()
+                    if not pends_disc.empty:
+                        pends_disc['_disciplina'] = pends_disc['Tipo'].apply(_categoria_licao_casa)
+                        pends_disc = pends_disc[pends_disc['_disciplina'] == tipo_aula]
+                        pends_disc = pends_disc[pends_disc['Tipo'].str.endswith("_Prof")]
+
                 if tipo_aula == "Teoria":
-                    st.markdown(f"### 📋 Pendências de {tipo_aula}")
-                    pends_disc = pd.DataFrame()
-                    if not df_hist_local.empty:
-                        # Pega qualquer status que ainda não seja "ok" (Pendente,
-                        # Devolvida, Não Realizada, etc.) — não só o literal
-                        # "Pendente" — senão, quando a secretaria marca algo como
-                        # "Devolvida" ou "Não Realizada" em Controle de Lições, a
-                        # lição some daqui pra professora sem nunca ter sido
-                        # resolvida de fato.
-                        pends_disc = df_hist_local[
-                            (df_hist_local['Aluna'].isin(als_selecionadas)) &
-                            (~df_hist_local['Status'].isin(STATUS_OK_LICAO))
-                        ].copy()
-                        if not pends_disc.empty:
-                            pends_disc['_disciplina'] = pends_disc['Tipo'].apply(_categoria_licao_casa)
-                            pends_disc = pends_disc[pends_disc['_disciplina'] == tipo_aula]
-                            if tipo_aula == "Teoria":
-                                pends_disc = pends_disc[pends_disc['Tipo'].str.endswith("_Prof")]
+                    st.markdown("### 📋 Folhas avulsas para você corrigir")
+                if tipo_aula == "Teoria" and pends_disc.empty:
+                    st.success("✅ Nenhuma folha avulsa pendente para você corrigir.")
+                elif tipo_aula == "Teoria":
+                    for al in als_selecionadas:
+                        pends_al = pends_disc[pends_disc['Aluna'] == al]
+                        if pends_al.empty:
+                            continue
+                        st.caption(f"👤 {al}")
+                        for _, p in pends_al.iterrows():
+                            with st.container(border=True):
+                                c_txt, c_acao = st.columns([2, 1])
+                                c_txt.write(f"📖 {p['Licao_Casa']}")
+                                key_id = f"pend_{p['id']}"
+                                resultado = c_acao.radio(
+                                    "Resultado:", ["Fica p/ próxima semana", "Passou", "Passou com dificuldades"],
+                                    key=f"rd_{key_id}", horizontal=True
+                                )
+                                if c_acao.button("Salvar", key=f"btn_{key_id}"):
+                                    if resultado == "Fica p/ próxima semana":
+                                        st.info("Continua pendente pra próxima semana.")
+                                    else:
+                                        novo_status = "Realizada - sem pendência" if resultado == "Passou" else "Realizada - com dificuldades"
+                                        supabase.table("historico_geral").update({"Status": novo_status}).eq("id", p['id']).execute()
+                                        st.success("✅ Atualizado!")
+                                        st.cache_data.clear()
+                                        st.rerun()
 
-                    if pends_disc.empty:
-                        st.success(f"✅ Nenhuma pendência de {tipo_aula} pra essas alunas.")
-                    else:
-                        for al in als_selecionadas:
-                            pends_al = pends_disc[pends_disc['Aluna'] == al]
-                            if pends_al.empty:
-                                continue
-                            st.caption(f"👤 {al}")
-                            for _, p in pends_al.iterrows():
-                                with st.container(border=True):
-                                    c_txt, c_acao = st.columns([2, 1])
-                                    c_txt.write(f"📖 {p['Licao_Casa']}")
-                                    key_id = f"pend_{p['id']}"
-                                    resultado = c_acao.radio(
-                                        "Resultado:", ["Fica p/ próxima semana", "Passou", "Passou com dificuldades"],
-                                        key=f"rd_{key_id}", horizontal=True
-                                    )
-                                    if c_acao.button("Salvar", key=f"btn_{key_id}"):
-                                        if resultado == "Fica p/ próxima semana":
-                                            st.info("Continua pendente pra próxima semana.")
-                                        else:
-                                            novo_status = "Realizada - sem pendência" if resultado == "Passou" else "Realizada - com dificuldades"
-                                            supabase.table("historico_geral").update({"Status": novo_status}).eq("id", p['id']).execute()
-                                            st.success("✅ Atualizado!")
-                                            st.cache_data.clear()
-                                            st.rerun()
                     st.divider()
-
                 metodos_filtrados = df_metodos_db[df_metodos_db['categoria'] == tipo_aula]['nome'].tolist() if not df_metodos_db.empty else []
                 st.markdown(f"### 📝 Registro: {tipo_aula}")
 
@@ -2482,12 +2464,13 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         base_tipo_casa = "Apostila" if tipo_casa_sel == "Apostila" else "Teoria"
                         if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
                     else:  # Solfejo
-                        conteudo_casa = st.text_input("🎼 MSA (lição de casa, sem correção da secretaria):", key=f"cc_{d_sel['id']}")
+                        st.info("🔊 Solfejo é corrigido pela professora em sala. Registre o conteúdo dado hoje e a lição para estudo até a próxima aula; não será enviado à secretaria.")
+                        conteudo_casa = st.text_input("🎼 Lição de casa para a próxima aula:", key=f"cc_{d_sel['id']}", placeholder="Ex.: MSA, exercício ou página para estudar")
                         if conteudo_casa: tarefas_casa["MSA"] = conteudo_casa
 
                     # Método — sempre precisa informar a lição de casa (não é opcional),
                     # só não entra na correção da secretaria.
-                    if metodos_filtrados:
+                    if metodos_filtrados and tipo_aula != "Solfejo":
                         metodo_casa_sel = st.selectbox("🎼 Método:", metodos_filtrados, key=f"met_casa_{d_sel['id']}")
                         metodo_casa_pag = st.text_input(f"🎼 Lição de casa — {metodo_casa_sel}:", key=f"met_pag_{d_sel['id']}")
                     else:
@@ -2500,7 +2483,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     if st.button("💾 SALVAR E CONGELAR ANÁLISE", use_container_width=True, key=f"btnsalvar_{d_sel['id']}"):
                         if not mat_focado:
                             st.error("Informe o material usado hoje antes de salvar.")
-                        elif metodos_filtrados and not metodo_casa_pag.strip():
+                        elif metodos_filtrados and tipo_aula != "Solfejo" and not metodo_casa_pag.strip():
                             st.error(f"⚠️ Preencha a lição de casa do método ({metodo_casa_sel}). Não é opcional.")
                         else:
                             if metodo_casa_sel and metodo_casa_pag:
