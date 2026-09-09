@@ -204,6 +204,7 @@ STATUS_OK_LICAO = [
     "Resolvido", "Resolvido com pendências",
     # Compatibilidade com registros já existentes no banco.
     "Realizada", "Realizadas - sem pendência", "Realizada - sem pendência",
+    "Realizada - com dificuldades",
 ]
 
 # Critério ÚNICO de "aula sem dificuldade", usado tanto no Prontuário Individual
@@ -1544,8 +1545,6 @@ if menu == "🏠 Secretaria":
                             responsavel_p = "Secretaria" if eh_da_secretaria else "Professora (em sala)"
                             st.markdown(f"{icone_p} **{material_p}** ({disciplina_p}) | {p['Licao_Casa']}")
                             st.caption(f"📅 Lançado em: {p['Data']} | Status Atual: {p['Status']} | Corrige: {responsavel_p}")
-                            if p.get('Observacao'):
-                                st.info(f"💬 Nota: {p['Observacao']}")
 
                         with col_acao:
                             if eh_da_secretaria:
@@ -1563,7 +1562,10 @@ if menu == "🏠 Secretaria":
                                     if st.button("Atualizar Status", key=f"btn_{key_id}", use_container_width=True):
                                         supabase.table("historico_geral").update({
                                             "Status": st_res,
-                                            "Observacao": f"{p.get('Observacao', '')} | Sec: {obs_res}" if obs_res else p.get('Observacao'),
+                                            # A observação da professora pertence à análise
+                                            # pedagógica, não à pendência. Aqui ficam apenas
+                                            # notas registradas pela própria secretaria.
+                                            "Observacao": f"Sec: {obs_res}" if obs_res else "",
                                             "Secretaria": sec_resp,
                                             "Data": data_corr_str # Atualiza para a data da correção
                                         }).eq("id", p['id']).execute()
@@ -2277,7 +2279,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     if resultado == "Fica p/ próxima semana":
                                         st.info("Continua pendente pra próxima semana.")
                                     else:
-                                        novo_status = "Realizada - sem pendência" if resultado == "Passou" else "Realizada - com dificuldades"
+                                        novo_status = "Resolvido" if resultado == "Passou" else "Resolvido com pendências"
                                         supabase.table("historico_geral").update({"Status": novo_status}).eq("id", p['id']).execute()
                                         st.success("✅ Atualizado!")
                                         st.cache_data.clear()
@@ -2293,7 +2295,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 # além da apostila. Cada método é conferido separadamente.
                 # ============================================================
                 if tipo_aula == "Prática":
-                    st.caption("👀 Conferência de hoje: o que a aluna trouxe pronto (ou não) pra essa aula. A lição de casa pra próxima aula fica mais abaixo.")
+                    st.caption("👀 Conferência de hoje: ao informar se a aluna fez a lição de um método, a última lição enviada desse método é atualizada automaticamente. A lição para a próxima aula fica mais abaixo.")
                     opcoes_materiais = ["Apostila"] + metodos_filtrados
                     materiais_hoje = st.multiselect("Métodos/Apostila conferidos hoje:", opcoes_materiais, key=f"mm_{d_sel['id']}")
 
@@ -2389,18 +2391,39 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                                 "Dificuldades": dados["difs"], "Observacao": obs_geral,
                                                 "Status": status_analise
                                             })
+
+                                            # A conferência feita nesta aula é a correção da
+                                            # última lição de casa daquele método. Apostila é
+                                            # exceção: sua correção é responsabilidade da
+                                            # secretaria e não é alterada aqui.
+                                            if mat != "Apostila" and not df_hist_local.empty:
+                                                pend_metodo = df_hist_local[
+                                                    (df_hist_local['Aluna'] == al_f) &
+                                                    (df_hist_local['Tipo'] == f"Casa_Metodo_{mat}") &
+                                                    (df_hist_local['Data'] != dt_str) &
+                                                    (~df_hist_local['Status'].isin(STATUS_OK_LICAO))
+                                                ].copy()
+                                                if not pend_metodo.empty:
+                                                    pend_metodo['_dt_tmp'] = pd.to_datetime(pend_metodo['Data'], format='%d/%m/%Y', errors='coerce')
+                                                    ultima_licao = pend_metodo.sort_values('_dt_tmp', ascending=False).iloc[0]
+                                                    status_metodo = {
+                                                        "Sim": "Resolvido",
+                                                        "Parcial": "Resolvido com pendências",
+                                                        "Não": "Não resolvido",
+                                                    }[dados['fez']]
+                                                    supabase.table("historico_geral").update({"Status": status_metodo}).eq("id", ultima_licao['id']).execute()
                                         if apostila_casa:
                                             db_save_historico({
                                                 "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                                 "Tipo": "Casa_Apostila", "Licao_Atual": "Definido", "Licao_Casa": apostila_casa,
-                                                "Dificuldades": [], "Observacao": obs_geral, "Status": "Pendente"
+                                                "Dificuldades": [], "Observacao": "", "Status": "Pendente"
                                             })
                                         for mc, pag in paginas_metodo_casa.items():
                                             if pag:
                                                 db_save_historico({
                                                     "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                                     "Tipo": f"Casa_Metodo_{mc}", "Licao_Atual": "Definido", "Licao_Casa": pag,
-                                                    "Dificuldades": [], "Observacao": obs_geral, "Status": "Pendente"
+                                                    "Dificuldades": [], "Observacao": "", "Status": "Pendente"
                                                 })
                                     st.success("✅ Registro concluído com sucesso!")
                                     time.sleep(1)
@@ -2511,7 +2534,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                             "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                             "Tipo": f"Casa_{mat_nome}",
                                             "Licao_Atual": "Definido", "Licao_Casa": conteudo,
-                                            "Dificuldades": [], "Observacao": obs_geral, "Status": "Pendente"
+                                            "Dificuldades": [], "Observacao": "", "Status": "Pendente"
                                         })
                             st.success("✅ Registro concluído com sucesso!")
                             time.sleep(1)
@@ -2692,18 +2715,30 @@ elif menu == "📊 Analítico IA":
                 tab_p, tab_s = st.tabs(["👩‍🏫 Feedback Pedagógico", "🏢 Notas da Secretaria"])
             
                 with tab_p:
-                    aulas = df_aluna[df_aluna['Tipo'].str.startswith("Analise_", na=False)]
-                    for _, r in aulas.iterrows():
+                    aulas = df_aluna[df_aluna['Tipo'].str.startswith("Analise_", na=False)].copy()
+                    # Prática pode gerar mais de um registro na mesma aula (um
+                    # por método). No feedback isso é uma única disciplina,
+                    # então reunimos todos os registros da mesma data e área.
+                    for (data_aula, tipo_aula_feedback), bloco in aulas.groupby(["Data", "Tipo"], sort=False):
+                        disciplina_feedback = tipo_aula_feedback.replace("Analise_", "")
+                        professoras_feedback = [str(p) for p in bloco['Instrutora'].dropna().unique() if str(p).strip()]
+                        conteudos = [str(c) for c in bloco['Licao_Atual'].dropna().unique() if str(c).strip()]
+                        observacoes = [str(o) for o in bloco['Observacao'].dropna().unique() if str(o).strip()]
+                        dificuldades = []
+                        for difs_registro in bloco['Dificuldades']:
+                            if isinstance(difs_registro, list):
+                                dificuldades.extend(d for d in difs_registro if d and d != "Não apresentou dificuldades")
+                        dificuldades = list(dict.fromkeys(dificuldades))
+
                         with st.container(border=True):
-                            st.write(f"📅 **{r['Data']} - {r['Tipo']}**")
-                            st.write(f"🎼 **Feito em sala:** {r.get('Licao_Atual') or 'não informado'}")
-                            difs_r = r.get('Dificuldades')
-                            difs_r_lista = [d for d in difs_r if d and d != "Não apresentou dificuldades"] if isinstance(difs_r, list) else []
-                            if difs_r_lista:
-                                st.markdown(f"⚠️ **Dificuldades:** {', '.join(difs_r_lista)}")
+                            st.write(f"📅 **{data_aula} — {disciplina_feedback}**")
+                            st.write(f"👩‍🏫 **Professora:** {', '.join(professoras_feedback) if professoras_feedback else 'Não informada'}")
+                            st.write(f"🎼 **Feito em sala:** {' • '.join(conteudos) if conteudos else 'não informado'}")
+                            if dificuldades:
+                                st.markdown(f"⚠️ **Dificuldades:** {', '.join(dificuldades)}")
                             else:
                                 st.caption("✅ Sem dificuldades registradas nessa aula.")
-                            st.write(f"📝 **Observação:** {r.get('Observacao') or 'Sem notas'}")
+                            st.write(f"📝 **Observação:** {' • '.join(observacoes) if observacoes else 'Sem notas'}")
             
                 with tab_s:
                     sec = df_aluna[df_aluna['Tipo'].str.contains("Chamada|Correção", case=False, na=False)]
