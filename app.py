@@ -249,7 +249,7 @@ def _metodo_ou_material(tipo_bruto):
         return "Folha Avulsa"
     return "Atividade"
 
-def _renderizar_pendencias_casa(pendentes_df):
+def _renderizar_pendencias_casa(pendentes_df, somente_proxima_aula=False):
     """Mostra as lições de casa pendentes de uma aluna, agrupadas por disciplina
     e por professora responsável. Na Prática, detalha o método e a lição exata.
     Usado tanto no painel da própria aluna quanto no relatório da secretaria."""
@@ -268,6 +268,15 @@ def _renderizar_pendencias_casa(pendentes_df):
     mais_recente = pendentes_df.groupby(chave_grupo)['_dt_tmp'].transform('max')
     pendentes_df['_eh_atual'] = pendentes_df['_dt_tmp'] == mais_recente
 
+    # No acesso da aluna, mostramos só a lição atual que ela deve preparar
+    # para a próxima aula. Dificuldades, observações e pendências antigas são
+    # informações internas de professoras e secretaria.
+    if somente_proxima_aula:
+        pendentes_df = pendentes_df[pendentes_df['_eh_atual']]
+        if pendentes_df.empty:
+            st.success("✅ Nenhuma lição de casa para a próxima aula.")
+            return
+
     icones_disciplina = {"Prática": "🎹", "Teoria": "📚", "Solfejo": "🔊", "Outra atividade": "📖"}
 
     for disciplina in ["Prática", "Teoria", "Solfejo", "Outra atividade"]:
@@ -283,7 +292,7 @@ def _renderizar_pendencias_casa(pendentes_df):
                 with st.container(border=True):
                     if linha['_eh_atual']:
                         st.info(f"📌 **Para a próxima aula** (lançada em {linha['Data']})")
-                    else:
+                    elif not somente_proxima_aula:
                         st.warning(f"⚠️ **Atrasada de aula anterior** (lançada em {linha['Data']})")
                     if disciplina == "Prática":
                         st.write(f"**Método:** {linha['_material']}")
@@ -2037,7 +2046,7 @@ elif menu == "🎓 Minhas Lições":
             )
             pendentes_aluna = df_hist_aluna[mask_al].copy()
 
-        _renderizar_pendencias_casa(pendentes_aluna)
+        _renderizar_pendencias_casa(pendentes_aluna, somente_proxima_aula=True)
 
     with tab_estudo_aluna:
         st.subheader("✅ Registrar meu estudo do dia")
