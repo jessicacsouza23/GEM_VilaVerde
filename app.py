@@ -221,7 +221,7 @@ def _tem_dificuldade_real(valor_difs):
 # folha avulsa de Teoria e qualquer apostila enviada para casa. O sufixo
 # _Prof é aceito para que apostilas antigas, lançadas antes desta regra, também
 # possam ser corrigidas pela secretaria. Método e Solfejo nunca entram aqui.
-TIPOS_CORRECAO_SECRETARIA = ["Casa_Apostila", "Casa_Apostila_Prof", "Casa_Teoria"]
+TIPOS_CORRECAO_SECRETARIA = ["Casa_Apostila", "Casa_Apostila_Teoria", "Casa_Apostila_Prof", "Casa_Teoria"]
 
 # ==========================================
 # CATEGORIZAÇÃO DE LIÇÃO DE CASA (usada no painel da aluna e no relatório da
@@ -230,16 +230,16 @@ TIPOS_CORRECAO_SECRETARIA = ["Casa_Apostila", "Casa_Apostila_Prof", "Casa_Teoria
 def _categoria_licao_casa(tipo_bruto):
     if tipo_bruto == "Casa_MSA":
         return "Solfejo"
-    if tipo_bruto in ("Casa_Teoria", "Casa_Teoria_Prof"):
+    if tipo_bruto in ("Casa_Teoria", "Casa_Teoria_Prof", "Casa_Apostila_Teoria", "Casa_Apostila_Prof"):
         return "Teoria"
-    if tipo_bruto in ("Casa_Apostila", "Casa_Apostila_Prof"):
+    if tipo_bruto == "Casa_Apostila":
         return "Prática"
     if tipo_bruto.startswith("Casa_Metodo_"):
         return "Prática"
     return "Outra atividade"
 
 def _metodo_ou_material(tipo_bruto):
-    if tipo_bruto in ("Casa_Apostila", "Casa_Apostila_Prof"):
+    if tipo_bruto in ("Casa_Apostila", "Casa_Apostila_Teoria", "Casa_Apostila_Prof"):
         return "Apostila"
     if tipo_bruto.startswith("Casa_Metodo_"):
         return tipo_bruto.replace("Casa_Metodo_", "")
@@ -2490,7 +2490,9 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         else:
                             quem_corrige = st.radio("Quem corrige a folha avulsa na próxima aula?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
                             sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
-                        base_tipo_casa = "Apostila" if tipo_casa_sel == "Apostila" else "Teoria"
+                        # Mantém a disciplina no tipo salvo: apostila de Teoria
+                        # não se mistura com apostila de Prática nos relatórios.
+                        base_tipo_casa = "Apostila_Teoria" if tipo_casa_sel == "Apostila" else "Teoria"
                         if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
                     else:  # Solfejo
                         st.info("🔊 Solfejo é corrigido pela professora em sala. Registre o conteúdo dado hoje e a lição para estudo até a próxima aula; não será enviado à secretaria.")
@@ -2683,8 +2685,9 @@ elif menu == "📊 Analítico IA":
                                           (~df_aluna['Status'].isin(STATUS_OK_LICAO))]
                     if not pendencias.empty:
                         for _, p in pendencias.iterrows():
-                            rotulo = p['Tipo'].replace('Casa_', '')
-                            st.warning(f"📖 **{rotulo}**: {p.get('Licao_Casa', '---')} (Status: {p.get('Status', '---')})")
+                            disciplina_p = _categoria_licao_casa(p['Tipo'])
+                            material_p = _metodo_ou_material(p['Tipo'])
+                            st.warning(f"📖 **{material_p} ({disciplina_p})**: {p.get('Licao_Casa', '---')} (Status: {p.get('Status', '---')})")
                     else:
                         st.success("✅ Apostila e Teoria em dia.")
 
@@ -2695,6 +2698,7 @@ elif menu == "📊 Analítico IA":
                 if not casa_rows.empty:
                     for _, c in casa_rows.iterrows():
                         rotulo = (c['Tipo'].replace("Casa_Metodo_", "Método: ")
+                                  .replace("Casa_Apostila_Teoria", "Apostila (Teoria)")
                                   .replace("Casa_Apostila_Prof", "Apostila (corrigida pela professora)")
                                   .replace("Casa_Teoria_Prof", "Folha Avulsa (corrigida pela professora)")
                                   .replace("Casa_Teoria", "Folha Avulsa (Teoria)")
