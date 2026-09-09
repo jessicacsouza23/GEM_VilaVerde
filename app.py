@@ -217,9 +217,10 @@ def _tem_dificuldade_real(valor_difs):
         return valor_difs.strip() != "Não apresentou dificuldades"
     return False
 # Únicos tipos de lição de casa que entram na fila de correção da secretaria:
-# folha avulsa de Teoria e a apostila da Prática. Método (qualquer aula) e a
-# lição de casa de Solfejo NUNCA entram aqui — quem acompanha é a professora.
-TIPOS_CORRECAO_SECRETARIA = ["Casa_Apostila", "Casa_Teoria"]
+# folha avulsa de Teoria e qualquer apostila enviada para casa. O sufixo
+# _Prof é aceito para que apostilas antigas, lançadas antes desta regra, também
+# possam ser corrigidas pela secretaria. Método e Solfejo nunca entram aqui.
+TIPOS_CORRECAO_SECRETARIA = ["Casa_Apostila", "Casa_Apostila_Prof", "Casa_Teoria"]
 
 # ==========================================
 # CATEGORIZAÇÃO DE LIÇÃO DE CASA (usada no painel da aluna e no relatório da
@@ -1505,14 +1506,13 @@ if menu == "🏠 Secretaria":
             st.divider()
         
             # --- LÓGICA DE PENDÊNCIAS REAIS ---
-            # A secretaria só corrige apostilas e folhas avulsas de Teoria.
-            # Solfejo é acompanhado e corrigido pela professora em sala: a
-            # secretaria pode vê-lo, mas nunca recebe ação de correção.
+            # Este painel exibe somente o que a secretaria realmente corrige:
+            # apostilas e folhas avulsas de Teoria. Solfejo não aparece aqui.
             pendencias_reais = []
             if not df_historico.empty:
                 df_alu = df_historico[df_historico['Aluna'] == aluna].copy()
                 if not df_alu.empty:
-                    df_alu = df_alu[df_alu['Tipo'].str.startswith("Casa_", na=False)]
+                    df_alu = df_alu[df_alu['Tipo'].isin(TIPOS_CORRECAO_SECRETARIA)]
 
                     if not df_alu.empty:
                         # Converte data para ordenação
@@ -2448,19 +2448,17 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     quem_corrige = None
 
                     if tipo_aula == "Teoria":
-                        tipo_casa_sel = st.radio("📖 Tipo de lição de casa (vai para a secretaria):", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
+                        tipo_casa_sel = st.radio("📖 Tipo de lição de casa:", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
                         conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", key=f"cc_{d_sel['id']}")
 
-                        # Só decide QUEM vai corrigir — a correção em si nunca acontece
-                        # agora (a aluna ainda vai fazer a lição em casa). Se for "Eu
-                        # mesma", essa pendência aparece pra ela corrigir na aula
-                        # seguinte, no painel de "Lições pendentes pra você corrigir".
-                        quem_corrige = st.radio("Quem corrige essa lição de casa (na próxima aula)?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
-
-                        sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
-                        # Apostila é sempre apostila (mesmo tipo usado na Prática) — Folha
-                        # Avulsa vira Casa_Teoria. Os dois entram na fila da secretaria,
-                        # a não ser que a professora marque "Eu mesma" (aí ganha o sufixo _Prof).
+                        # Apostila sempre é corrigida pela secretaria. A escolha fica
+                        # apenas para folha avulsa de Teoria, como combinado.
+                        if tipo_casa_sel == "Apostila":
+                            st.caption("🏢 Apostilas enviadas para casa são corrigidas pela secretaria.")
+                            sufixo = ""
+                        else:
+                            quem_corrige = st.radio("Quem corrige a folha avulsa na próxima aula?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
+                            sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
                         base_tipo_casa = "Apostila" if tipo_casa_sel == "Apostila" else "Teoria"
                         if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
                     else:  # Solfejo
