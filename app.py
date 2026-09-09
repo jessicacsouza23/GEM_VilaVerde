@@ -2745,11 +2745,22 @@ elif menu == "📊 Analítico IA":
                             st.write(f"📝 **Observação:** {' • '.join(observacoes) if observacoes else 'Sem notas'}")
             
                 with tab_s:
-                    sec = df_aluna[df_aluna['Tipo'].str.contains("Chamada|Correção", case=False, na=False)]
-                    for _, r in sec.iterrows():
-                        with st.container(border=True):
-                            st.write(f"📅 **{r['Data']} - {r['Tipo']}**")
-                            st.info(f"📌 {r.get('Observacao', 'Sem observações')}")
+                    # Esta aba é exclusiva para notas feitas pela secretaria na
+                    # correção de lições. Presença/chamada não é observação
+                    # pedagógica e, portanto, não aparece aqui.
+                    sec = df_aluna[
+                        (df_aluna['Tipo'].isin(TIPOS_CORRECAO_SECRETARIA)) &
+                        (df_aluna['Observacao'].fillna("").str.strip().str.startswith("Sec:"))
+                    ]
+                    if sec.empty:
+                        st.info("Nenhuma observação de correção da secretaria neste período.")
+                    else:
+                        for _, r in sec.iterrows():
+                            disciplina_sec = _categoria_licao_casa(r['Tipo'])
+                            material_sec = _metodo_ou_material(r['Tipo'])
+                            with st.container(border=True):
+                                st.write(f"📅 **{r['Data']} — {material_sec} ({disciplina_sec})**")
+                                st.info(f"📌 {r.get('Observacao', '')}")
 
                 # --- 4.5 EVOLUÇÃO DAS DIFICULDADES AO LONGO DO TEMPO ---
                 st.divider()
