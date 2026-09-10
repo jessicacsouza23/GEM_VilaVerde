@@ -843,10 +843,15 @@ if menu == "🏠 Secretaria":
         if alunas_da_escala_hoje:
             df_dia = df_historico[df_historico['Data'] == data_visao] if not df_historico.empty else pd.DataFrame()
             df_dia = _garantir_colunas(df_dia)
+            modo_exibicao_alunas = st.radio(
+                "Exibição das alunas:", ["Exibir detalhes", "Contrair todas"],
+                horizontal=True, key="modo_exibicao_relatorio_diario"
+            )
+            exibir_detalhes_alunas = modo_exibicao_alunas == "Exibir detalhes"
 
             # Loop por Aluna
             for aluna_v in alunas_da_escala_hoje:
-                with st.expander(f"👤 {aluna_v.upper()}", expanded=True):
+                with st.expander(f"👤 {aluna_v.upper()}", expanded=exibir_detalhes_alunas):
                     dados_aluna = df_dia[df_dia['Aluna'] == aluna_v]
                     texto_whatsapp += f"👤 *{aluna_v.upper()}*\n"
 
