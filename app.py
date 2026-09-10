@@ -1167,7 +1167,10 @@ if menu == "🏠 Secretaria":
                         cand_2 = [p for p in cand_1 if p != prof_sabado_passado]
 
                         pool_final = cand_2 if cand_2 else (cand_1 if cand_1 else candidatos)
-                        return random.choice(pool_final)
+                        # Escolha circular e determinística: entre as opções
+                        # permitidas, prioriza quem atendeu menos alunas no
+                        # ciclo atual. Não há sorteio no rodízio.
+                        return sorted(pool_final, key=lambda p: (len(estado_ciclo[p]["alunas_dadas"]), p))[0]
 
                     # 4. MAPEAMENTO INICIAL
                     mapa_final = {a: {"Aluna": a} for turma in TURMAS.values() for a in turma}
@@ -1295,8 +1298,7 @@ if menu == "🏠 Secretaria":
                                 s_livres = [s for s in salas_total if s not in registro_salas_profs.values()]
                                 s_livres_pref = [s for s in s_livres if s != sala_passada] or s_livres
                                 if s_livres_pref:
-                                    random.shuffle(s_livres_pref)
-                                    registro_salas_profs[p] = s_livres_pref[0]
+                                registro_salas_profs[p] = sorted(s_livres_pref)[0]
 
                         # --- PASSO 1: ALOCAR FIXAS ---
                         alunas_rodizio = []
@@ -1322,8 +1324,7 @@ if menu == "🏠 Secretaria":
                                 alunas_rodizio.append(a)
 
                         # --- PASSO 2: RODÍZIO EM CÍRCULO (não repete até dar aula pra todas) ---
-                        random.shuffle(alunas_rodizio)
-                        for a in alunas_rodizio:
+                        for a in sorted(alunas_rodizio):
                             if profs_disponiveis:
                                 p_esc = escolher_professora_para_aluna(a, profs_disponiveis)
                                 s_e = registro_salas_profs.get(p_esc)
