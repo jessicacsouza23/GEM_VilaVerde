@@ -1125,7 +1125,6 @@ if menu == "🏠 Secretaria":
                 st.caption("A professora acompanha a turma dela onde quer que ela caia no rodízio — mesmo se o horário mudar por causa de uma aula fixa.")
                 
                 folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA)
-                turma_inicio_teoria = st.selectbox("Turma que inicia Teoria:", lista_turmas_ord)
                 professoras_saida = st.multiselect("Professoras com saída antecipada:", [p for p in PROFESSORAS_LISTA if p not in folga_ativa])
                 ultima_aula_prof = {}
                 for prof_saida in professoras_saida:
@@ -1192,11 +1191,10 @@ if menu == "🏠 Secretaria":
                     # --- PRIORIDADE DA AULA FIXA: escolhe qual turma faz Teoria/Solfejo/Prática
                     # em cada horário de forma que a professora fixa NUNCA esteja dando aula
                     # coletiva no exato horário em que a turma da sua aluna fixa está na prática.
-                    t_list_base = list(TURMAS.keys())
-                    # A turma escolhida inicia a sequência; as outras seguem
-                    # em ordem, sem obrigar a Turma 1 a começar Teoria.
-                    inicio_idx = t_list_base.index(turma_inicio_teoria)
-                    t_list = t_list_base[inicio_idx:] + t_list_base[:inicio_idx]
+                    # A ordem inicial é apenas uma referência; o otimizador
+                    # abaixo escolhe livremente a melhor turma para iniciar
+                    # Teoria, conforme fixas e disponibilidade das professoras.
+                    t_list = list(TURMAS.keys())
                     melhor_arranjo = None
                     if len(t_list) == 3:
                         def _contar_conflitos_fixa(arranjo):
