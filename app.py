@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 import google.generativeai as genai
 from datetime import datetime, timedelta, date
 import io
+import html
 import streamlit as st
 import unicodedata
 import json
@@ -32,6 +33,34 @@ def limpar_texto(txt):
     # Remove acentos
     return "".join(c for c in unicodedata.normalize('NFD', txt) 
                   if unicodedata.category(c) != 'Mn')
+
+def gerar_pdf_relatorio_diario(data_relatorio, texto_relatorio):
+    """Gera o PDF do resumo diário sem depender de arquivos temporários."""
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=1.5*cm, leftMargin=1.5*cm,
+                            topMargin=1.5*cm, bottomMargin=1.5*cm)
+    estilos = getSampleStyleSheet()
+    titulo = ParagraphStyle("titulo_relatorio", parent=estilos["Title"], alignment=TA_CENTER,
+                            textColor=colors.HexColor("#2E4053"), fontSize=18, leading=22)
+    corpo = ParagraphStyle("corpo_relatorio", parent=estilos["BodyText"], fontSize=9.5,
+                           leading=14, spaceAfter=5)
+    historia = [Paragraph("Relatório Diário Vila Verde", titulo), Spacer(1, 0.2*cm),
+                Paragraph(f"Data: {html.escape(data_relatorio)}", corpo), Spacer(1, 0.2*cm)]
+    for bloco in texto_relatorio.split("\n"):
+        texto = html.escape(bloco.strip()).replace("*", "")
+        if texto:
+            historia.append(Paragraph(texto, corpo))
+        else:
+            historia.append(Spacer(1, 0.08*cm))
+    doc.build(historia)
+    return buffer.getvalue()
 
 # --- 1. CONFIGURAÇÕES INICIAIS ---
 st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
@@ -1059,6 +1088,17 @@ if menu == "🏠 Secretaria":
             st.divider()
             st.subheader("📋 Enviar para WhatsApp")
             st.text_area("Texto pronto para cópia:", value=texto_whatsapp, height=250)
+            try:
+                pdf_relatorio = gerar_pdf_relatorio_diario(data_visao, texto_whatsapp)
+                st.download_button(
+                    "📄 Baixar relatório do dia em PDF",
+                    data=pdf_relatorio,
+                    file_name=f"relatorio-vila-verde-{data_visao.replace('/', '-')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            except ImportError:
+                st.warning("A geração de PDF precisa do pacote reportlab instalado no ambiente.")
         else:
             st.info("Nenhuma escala encontrada para esta data (rodízio não foi gerado ainda).")
             
