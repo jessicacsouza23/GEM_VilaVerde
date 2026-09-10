@@ -9,6 +9,7 @@ import google.generativeai as genai
 from datetime import datetime, timedelta, date
 import io
 import html
+import os
 import streamlit as st
 import unicodedata
 import json
@@ -41,15 +42,28 @@ def gerar_pdf_relatorio_diario(data_relatorio, texto_relatorio):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import cm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+
+    # Fonte incluída no projeto para que os emojis do relatório sejam
+    # incorporados no PDF, inclusive no ambiente publicado.
+    fonte_emoji = os.path.join(os.path.dirname(__file__), "assets", "fonts", "NotoColorEmoji.ttf")
+    nome_fonte = "Helvetica"
+    if os.path.exists(fonte_emoji):
+        try:
+            pdfmetrics.registerFont(TTFont("NotoEmoji", fonte_emoji))
+            nome_fonte = "NotoEmoji"
+        except Exception:
+            pass
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=1.5*cm, leftMargin=1.5*cm,
                             topMargin=1.5*cm, bottomMargin=1.5*cm)
     estilos = getSampleStyleSheet()
     titulo = ParagraphStyle("titulo_relatorio", parent=estilos["Title"], alignment=TA_CENTER,
-                            textColor=colors.HexColor("#2E4053"), fontSize=18, leading=22)
-    corpo = ParagraphStyle("corpo_relatorio", parent=estilos["BodyText"], fontSize=9.5,
+                            textColor=colors.HexColor("#2E4053"), fontSize=18, leading=22, fontName=nome_fonte)
+    corpo = ParagraphStyle("corpo_relatorio", parent=estilos["BodyText"], fontSize=9.5, fontName=nome_fonte,
                            leading=14, spaceAfter=5)
     historia = [Paragraph("Relatório Diário Vila Verde", titulo), Spacer(1, 0.2*cm),
                 Paragraph(f"Data: {html.escape(data_relatorio)}", corpo), Spacer(1, 0.2*cm)]
