@@ -1298,7 +1298,7 @@ if menu == "🏠 Secretaria":
                                 s_livres = [s for s in salas_total if s not in registro_salas_profs.values()]
                                 s_livres_pref = [s for s in s_livres if s != sala_passada] or s_livres
                                 if s_livres_pref:
-                                registro_salas_profs[p] = sorted(s_livres_pref)[0]
+                                    registro_salas_profs[p] = sorted(s_livres_pref)[0]
 
                         # --- PASSO 1: ALOCAR FIXAS ---
                         alunas_rodizio = []
