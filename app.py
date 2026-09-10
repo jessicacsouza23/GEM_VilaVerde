@@ -655,6 +655,11 @@ else:
     menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📊 Analítico IA", "💬 Mensagens"])
     
     
+if st.session_state.perfil == "Secretaria":
+    if st.sidebar.button("🔄 Sincronizar dados", use_container_width=True, help="Atualiza os dados enviados por professoras e secretarias."):
+        st.cache_data.clear()
+        st.rerun()
+
 if st.sidebar.button("Sair"):
     st.session_state.autenticado = False
     st.rerun()
@@ -2693,7 +2698,18 @@ elif menu == "📊 Analítico IA":
                 dias_com_estudo = sum(1 for e in estudos_aluna_periodo if e.get("horarios"))
                 dias_sem_estudo = sum(1 for e in estudos_aluna_periodo if not e.get("horarios"))
                 total_dias_estudo_reg = len(estudos_aluna_periodo)
-                pct_estudo = int((dias_com_estudo / total_dias_estudo_reg) * 100) if total_dias_estudo_reg > 0 else 0
+                # A porcentagem mede a constância no período inteiro escolhido,
+                # e não apenas nos dias em que a aluna abriu o sistema.
+                total_dias_periodo = max((data_fim - data_ini).days + 1, 1)
+                pct_estudo = int((dias_com_estudo / total_dias_periodo) * 100)
+                if pct_estudo >= 80:
+                    emoji_estudo, classificacao_estudo = "🌟", "Excelente constância"
+                elif pct_estudo >= 60:
+                    emoji_estudo, classificacao_estudo = "😊", "Boa constância"
+                elif pct_estudo >= 40:
+                    emoji_estudo, classificacao_estudo = "😐", "Precisa melhorar"
+                else:
+                    emoji_estudo, classificacao_estudo = "😟", "Baixa constância"
 
                 # --- 1. RESUMO DE DESEMPENHO (DASHBOARD) ---
                 st.subheader(f"📈 Resumo de Desempenho - {aluna_sel}")
@@ -2702,8 +2718,11 @@ elif menu == "📊 Analítico IA":
                 k2.metric("Aulas/Chamadas", len(resumo_dias))
                 k3.metric("Faltas (N/J)", f"{v_falt} / {v_just}")
                 k4.metric("Aproveitamento", f"{aprov_valor}%")
-                cara_estudo = "😊" if pct_estudo >= 70 else ("😐" if pct_estudo >= 40 else "😢")
-                k5.metric(f"Estudo em casa {cara_estudo}", f"{pct_estudo}%" if total_dias_estudo_reg > 0 else "sem dados")
+                k5.metric(
+                    f"Estudo em casa {emoji_estudo}", f"{pct_estudo}%",
+                    help=f"Estudou em {dias_com_estudo} de {total_dias_periodo} dias do período selecionado."
+                )
+                k5.caption(classificacao_estudo)
 
                 # --- 1.5 CALENDÁRIO DE ESTUDO (dia a dia, com carinhas) ---
                 if estudos_aluna_periodo:
