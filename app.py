@@ -1223,7 +1223,34 @@ if menu == "🏠 Secretaria":
                                         continue
                                     candidatos_arranjo.append([linha0, linha1, linha2])
 
-                        melhor_arranjo = min(candidatos_arranjo, key=_contar_conflitos_fixa)
+                        # Só aceita arranjos que preservem as professoras
+                        # escolhidas para Teoria/Solfejo, respeitem saída
+                        # antecipada e deixem a professora fixa livre para sua
+                        # aluna. A solução troca as TURMAS de horário, nunca a
+                        # professora coletiva configurada.
+                        def _arranjo_valido(arranjo):
+                            for i, (t_teo_i, t_sol_i, t_pra_i) in enumerate(arranjo):
+                                h_i = HORARIOS[i + 1]
+                                prof_teo_i = pt_por_turma[t_teo_i]
+                                prof_sol_i = ps_por_turma[t_sol_i]
+                                if prof_teo_i == prof_sol_i:
+                                    return False
+                                for prof_coletiva in (prof_teo_i, prof_sol_i):
+                                    if prof_coletiva in folga_ativa:
+                                        return False
+                                    if prof_coletiva in ultima_aula_prof and HORARIOS.index(ultima_aula_prof[prof_coletiva]) < HORARIOS.index(h_i):
+                                        return False
+                                for aluna_fixa in TURMAS[t_pra_i]:
+                                    prof_fixa_i = dict_fixas.get(str(aluna_fixa).strip().lower())
+                                    if prof_fixa_i and prof_fixa_i in (prof_teo_i, prof_sol_i):
+                                        return False
+                            return True
+
+                        arranjos_validos = [a for a in candidatos_arranjo if _arranjo_valido(a)]
+                        if not arranjos_validos:
+                            st.error("Não existe combinação de horários que respeite simultaneamente as professoras fixas, Teoria/Solfejo, folgas e saídas antecipadas. Ajuste uma dessas configurações.")
+                            st.stop()
+                        melhor_arranjo = min(arranjos_validos, key=_contar_conflitos_fixa)
                         conflitos_restantes = _contar_conflitos_fixa(melhor_arranjo)
                         if conflitos_restantes > 0:
                             st.info(f"ℹ️ Foram encontrados {conflitos_restantes} conflito(s) na distribuição inicial de turmas. A geração remanejará a professora coletiva quando necessário para preservar as alunas fixas.")
@@ -1270,7 +1297,7 @@ if menu == "🏠 Secretaria":
                         # Troca a professora coletiva em conflito por outra
                         # disponível. A escolha feita acima continua sendo
                         # respeitada quando não há aluna fixa naquele horário.
-                        if p_teoria in professoras_reservadas:
+                        if p_teoria not in profs_horario or p_teoria in professoras_reservadas:
                             candidatas_teoria = [
                                 p for p in profs_horario
                                 if p != p_solfejo and p not in professoras_reservadas
@@ -1280,7 +1307,7 @@ if menu == "🏠 Secretaria":
                             else:
                                 erros_fixas_geracao.append(f"Não há professora disponível para remanejar a Teoria no horário {h}.")
 
-                        if p_solfejo in professoras_reservadas or p_solfejo == p_teoria:
+                        if p_solfejo not in profs_horario or p_solfejo in professoras_reservadas or p_solfejo == p_teoria:
                             candidatas_solfejo = [
                                 p for p in profs_horario
                                 if p != p_teoria and p not in professoras_reservadas
