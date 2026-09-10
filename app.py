@@ -2719,7 +2719,7 @@ elif menu == "📊 Analítico IA":
                 k3.metric("Faltas (N/J)", f"{v_falt} / {v_just}")
                 k4.metric("Aproveitamento", f"{aprov_valor}%")
                 k5.metric(
-                    f"Estudo em casa {emoji_estudo}", f"{pct_estudo}%",
+                    "Estudo em casa", f"{pct_estudo}% {emoji_estudo}",
                     help=f"Estudou em {dias_com_estudo} de {total_dias_periodo} dias do período selecionado."
                 )
                 k5.caption(classificacao_estudo)
