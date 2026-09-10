@@ -1172,6 +1172,7 @@ if menu == "🏠 Secretaria":
                     profs_base = [p for p in PROFESSORAS_LISTA if p not in folga_ativa]
                     registro_salas_profs = {}
                     novas_ultimas_alocacoes = {}
+                    erros_fixas_geracao = []
 
                     # --- PRIORIDADE DA AULA FIXA: escolhe qual turma faz Teoria/Solfejo/Prática
                     # em cada horário de forma que a professora fixa NUNCA esteja dando aula
@@ -1208,7 +1209,7 @@ if menu == "🏠 Secretaria":
                         melhor_arranjo = min(candidatos_arranjo, key=_contar_conflitos_fixa)
                         conflitos_restantes = _contar_conflitos_fixa(melhor_arranjo)
                         if conflitos_restantes > 0:
-                            st.warning(f"⚠️ Não foi possível eliminar {conflitos_restantes} conflito(s) de aula fixa só trocando as turmas — a professora fixa dá aula coletiva bem no horário da aluna dela em todo arranjo possível. Essas alunas vão pro rodízio normal nesse horário específico.")
+                            st.info(f"ℹ️ Foram encontrados {conflitos_restantes} conflito(s) na distribuição inicial de turmas. A geração remanejará a professora coletiva quando necessário para preservar as alunas fixas.")
 
                     # 5. LOOP DE HORÁRIOS (H1 a H4)
                     for i, h in enumerate(HORARIOS[1:]):
@@ -1219,6 +1220,53 @@ if menu == "🏠 Secretaria":
 
                         p_teoria = pt_por_turma[t_teo]
                         p_solfejo = ps_por_turma[t_sol]
+
+                        # --- PRIORIDADE OBRIGATÓRIA DAS FIXAS ---
+                        # A professora fixa é reservada para sua aluna na
+                        # Prática. Se ela estiver prevista para Teoria/Solfejo
+                        # neste horário, a coletiva é remanejada antes de
+                        # qualquer aluna entrar no rodízio.
+                        fixas_deste_horario = [
+                            (a, dict_fixas.get(str(a).strip().lower()))
+                            for a in TURMAS[t_pra]
+                            if dict_fixas.get(str(a).strip().lower())
+                        ]
+                        professoras_reservadas = [p for _, p in fixas_deste_horario]
+
+                        for p_fixa in sorted(set(professoras_reservadas)):
+                            if p_fixa not in profs_base:
+                                erros_fixas_geracao.append(
+                                    f"{p_fixa} está de folga/indisponível, mas possui aluna fixa no horário {h}."
+                                )
+                        repetidas = sorted({p for p in professoras_reservadas if professoras_reservadas.count(p) > 1})
+                        for p_repetida in repetidas:
+                            alunas_mesma_prof = [a for a, p in fixas_deste_horario if p == p_repetida]
+                            erros_fixas_geracao.append(
+                                f"{p_repetida} está fixa para {', '.join(alunas_mesma_prof)} no mesmo horário {h}; uma professora não pode atender duas práticas simultâneas."
+                            )
+
+                        # Troca a professora coletiva em conflito por outra
+                        # disponível. A escolha feita acima continua sendo
+                        # respeitada quando não há aluna fixa naquele horário.
+                        if p_teoria in professoras_reservadas:
+                            candidatas_teoria = [
+                                p for p in profs_base
+                                if p != p_solfejo and p not in professoras_reservadas
+                            ]
+                            if candidatas_teoria:
+                                p_teoria = sorted(candidatas_teoria)[0]
+                            else:
+                                erros_fixas_geracao.append(f"Não há professora disponível para remanejar a Teoria no horário {h}.")
+
+                        if p_solfejo in professoras_reservadas or p_solfejo == p_teoria:
+                            candidatas_solfejo = [
+                                p for p in profs_base
+                                if p != p_teoria and p not in professoras_reservadas
+                            ]
+                            if candidatas_solfejo:
+                                p_solfejo = sorted(candidatas_solfejo)[0]
+                            else:
+                                erros_fixas_geracao.append(f"Não há professora disponível para remanejar o Solfejo no horário {h}.")
 
                         # --- A. SALAS COLETIVAS ---
                         for a in TURMAS[t_teo]: mapa_final[a][h] = f"SALA 8 | {p_teoria}"
@@ -1259,8 +1307,12 @@ if menu == "🏠 Secretaria":
                                 profs_disponiveis.remove(p_fixa)
                                 novas_ultimas_alocacoes[a] = {"professora": p_fixa, "sala": s_f, "data": data_sel_str}
                             elif p_fixa:
-                                # professora fixa indisponível hoje: entra no rodízio normal em vez de ir pra secretaria
-                                alunas_rodizio.append(a)
+                                # Nunca troca uma aluna fixa pelo rodízio. Caso
+                                # tenha ocorrido um conflito impossível, a
+                                # escala inteira é interrompida antes de salvar.
+                                erros_fixas_geracao.append(
+                                    f"Não foi possível reservar {p_fixa} para {a} no horário {h}."
+                                )
                             else:
                                 alunas_rodizio.append(a)
 
@@ -1279,6 +1331,13 @@ if menu == "🏠 Secretaria":
                                 novas_ultimas_alocacoes[a] = {"professora": p_esc, "sala": s_e, "data": data_sel_str}
                             else:
                                 mapa_final[a][h] = f"SECRETARIA | {a}"
+
+                    # Não salva uma escala que desrespeite professora fixa.
+                    if erros_fixas_geracao:
+                        st.error("⚠️ Rodízio não gerado porque há conflito com professora fixa:")
+                        for erro_fixa in dict.fromkeys(erros_fixas_geracao):
+                            st.write(f"• {erro_fixa}")
+                        st.stop()
 
                     # 6. SALVAMENTO
                     try:
