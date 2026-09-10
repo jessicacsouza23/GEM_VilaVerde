@@ -44,7 +44,7 @@ def gerar_pdf_relatorio_diario(data_relatorio, texto_relatorio):
     from reportlab.lib.units import cm
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
 
     # Fonte incluída no projeto para que os emojis do relatório sejam
     # incorporados no PDF, inclusive no ambiente publicado.
@@ -73,6 +73,9 @@ def gerar_pdf_relatorio_diario(data_relatorio, texto_relatorio):
         historia.append(Paragraph(html.escape(partes[0].strip()).replace("*", ""), corpo))
     nome = ParagraphStyle("nome_aluna", parent=corpo, alignment=TA_CENTER, fontSize=12,
                           leading=16, textColor=colors.HexColor("#2E4053"), spaceAfter=6)
+    pasta_icones = os.path.join(os.path.dirname(__file__), "assets", "pdf-icons")
+    icones = {"🎼": "report", "👤": "student", "📍": "location", "✅": "ok", "⚠️": "warning",
+              "📘": "book", "📋": "list", "📅": "calendar"}
     for parte in partes[1:]:
         linhas = [linha.strip() for linha in parte.split("\n") if linha.strip()]
         if not linhas:
@@ -87,7 +90,17 @@ def gerar_pdf_relatorio_diario(data_relatorio, texto_relatorio):
         ]))
         historia.append(tabela)
         for linha in linhas[1:]:
-            historia.append(Paragraph(html.escape(linha).replace("*", ""), corpo))
+            chave_icone = next((chave for chave in icones if chave in linha), None)
+            texto_linha = html.escape(linha).replace("*", "")
+            if chave_icone:
+                texto_linha = texto_linha.replace(chave_icone, "", 1).strip()
+                caminho_icone = os.path.join(pasta_icones, f"{icones[chave_icone]}.png")
+                if os.path.exists(caminho_icone):
+                    linha_pdf = Table([[RLImage(caminho_icone, width=11, height=11), Paragraph(texto_linha, corpo)]], colWidths=[0.5*cm, 17*cm])
+                    linha_pdf.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
+                    historia.append(linha_pdf)
+                    continue
+            historia.append(Paragraph(texto_linha, corpo))
         historia.append(Spacer(1, 0.25*cm))
     doc.build(historia)
     return buffer.getvalue()
