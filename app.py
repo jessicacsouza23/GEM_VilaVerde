@@ -1125,6 +1125,13 @@ if menu == "🏠 Secretaria":
                 st.caption("A professora acompanha a turma dela onde quer que ela caia no rodízio — mesmo se o horário mudar por causa de uma aula fixa.")
                 
                 folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA)
+                turma_inicio_teoria = st.selectbox("Turma que inicia Teoria:", lista_turmas_ord)
+                professoras_saida = st.multiselect("Professoras com saída antecipada:", [p for p in PROFESSORAS_LISTA if p not in folga_ativa])
+                ultima_aula_prof = {}
+                for prof_saida in professoras_saida:
+                    ultima_aula_prof[prof_saida] = st.selectbox(
+                        f"Último horário disponível — {prof_saida}:", HORARIOS[1:], key=f"saida_{prof_saida}"
+                    )
     
                 # --- BOTÃO DE GERAÇÃO — RODÍZIO EM CÍRCULO REAL (V2) ---
                 if st.button("🚀 GERAR RODÍZIO AUTOMÁTICO", use_container_width=True, type="primary"):
@@ -1185,7 +1192,11 @@ if menu == "🏠 Secretaria":
                     # --- PRIORIDADE DA AULA FIXA: escolhe qual turma faz Teoria/Solfejo/Prática
                     # em cada horário de forma que a professora fixa NUNCA esteja dando aula
                     # coletiva no exato horário em que a turma da sua aluna fixa está na prática.
-                    t_list = list(TURMAS.keys())
+                    t_list_base = list(TURMAS.keys())
+                    # A turma escolhida inicia a sequência; as outras seguem
+                    # em ordem, sem obrigar a Turma 1 a começar Teoria.
+                    inicio_idx = t_list_base.index(turma_inicio_teoria)
+                    t_list = t_list_base[inicio_idx:] + t_list_base[:inicio_idx]
                     melhor_arranjo = None
                     if len(t_list) == 3:
                         def _contar_conflitos_fixa(arranjo):
@@ -1221,6 +1232,11 @@ if menu == "🏠 Secretaria":
 
                     # 5. LOOP DE HORÁRIOS (H1 a H4)
                     for i, h in enumerate(HORARIOS[1:]):
+                        indice_horario = HORARIOS.index(h)
+                        profs_horario = [
+                            p for p in profs_base
+                            if p not in ultima_aula_prof or HORARIOS.index(ultima_aula_prof[p]) >= indice_horario
+                        ]
                         if melhor_arranjo:
                             t_teo, t_sol, t_pra = melhor_arranjo[i]
                         else:
@@ -1242,7 +1258,7 @@ if menu == "🏠 Secretaria":
                         professoras_reservadas = [p for _, p in fixas_deste_horario]
 
                         for p_fixa in sorted(set(professoras_reservadas)):
-                            if p_fixa not in profs_base:
+                            if p_fixa not in profs_horario:
                                 erros_fixas_geracao.append(
                                     f"{p_fixa} está de folga/indisponível, mas possui aluna fixa no horário {h}."
                                 )
@@ -1258,7 +1274,7 @@ if menu == "🏠 Secretaria":
                         # respeitada quando não há aluna fixa naquele horário.
                         if p_teoria in professoras_reservadas:
                             candidatas_teoria = [
-                                p for p in profs_base
+                                p for p in profs_horario
                                 if p != p_solfejo and p not in professoras_reservadas
                             ]
                             if candidatas_teoria:
@@ -1268,7 +1284,7 @@ if menu == "🏠 Secretaria":
 
                         if p_solfejo in professoras_reservadas or p_solfejo == p_teoria:
                             candidatas_solfejo = [
-                                p for p in profs_base
+                                p for p in profs_horario
                                 if p != p_teoria and p not in professoras_reservadas
                             ]
                             if candidatas_solfejo:
@@ -1281,7 +1297,7 @@ if menu == "🏠 Secretaria":
                         for a in TURMAS[t_sol]: mapa_final[a][h] = f"SALA 9 | {p_solfejo}"
 
                         # --- B. PRÁTICA INDIVIDUAL (S1 A S7) ---
-                        disponiveis_agora = [p for p in profs_base if p not in [p_teoria, p_solfejo]]
+                        disponiveis_agora = [p for p in profs_horario if p not in [p_teoria, p_solfejo]]
                         alunas_na_pratica = list(TURMAS[t_pra])
 
                         salas_total = [f"SALA {s}" for s in range(1, 8)]
