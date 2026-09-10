@@ -1099,14 +1099,6 @@ if menu == "🏠 Secretaria":
                 )
             except ImportError:
                 st.warning("A geração de PDF precisa do pacote reportlab instalado no ambiente.")
-            components.html("""
-                <button onclick="window.parent.print()" style="width:100%; padding:10px;
-                    border:1px solid #2E4053; border-radius:8px; background:#ffffff;
-                    color:#2E4053; font-weight:700; cursor:pointer;">
-                    🖨️ Imprimir tela / Salvar visualmente como PDF
-                </button>
-            """, height=52)
-            st.caption("Use esta opção para manter o visual da tela e os emojis. Na janela de impressão, escolha “Salvar como PDF”.")
         else:
             st.info("Nenhuma escala encontrada para esta data (rodízio não foi gerado ainda).")
             
