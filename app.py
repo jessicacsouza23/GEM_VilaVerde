@@ -44,7 +44,7 @@ def gerar_pdf_relatorio_diario(data_relatorio, texto_relatorio):
     from reportlab.lib.units import cm
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
     # Fonte incluída no projeto para que os emojis do relatório sejam
     # incorporados no PDF, inclusive no ambiente publicado.
@@ -67,12 +67,28 @@ def gerar_pdf_relatorio_diario(data_relatorio, texto_relatorio):
                            leading=14, spaceAfter=5)
     historia = [Paragraph("Relatório Diário Vila Verde", titulo), Spacer(1, 0.2*cm),
                 Paragraph(f"Data: {html.escape(data_relatorio)}", corpo), Spacer(1, 0.2*cm)]
-    for bloco in texto_relatorio.split("\n"):
-        texto = html.escape(bloco.strip()).replace("*", "")
-        if texto:
-            historia.append(Paragraph(texto, corpo))
-        else:
-            historia.append(Spacer(1, 0.08*cm))
+    # Cada trecho iniciado por "👤" vira um cartão independente da aluna.
+    partes = texto_relatorio.split("👤")
+    if partes[0].strip():
+        historia.append(Paragraph(html.escape(partes[0].strip()).replace("*", ""), corpo))
+    nome = ParagraphStyle("nome_aluna", parent=corpo, alignment=TA_CENTER, fontSize=12,
+                          leading=16, textColor=colors.HexColor("#2E4053"), spaceAfter=6)
+    for parte in partes[1:]:
+        linhas = [linha.strip() for linha in parte.split("\n") if linha.strip()]
+        if not linhas:
+            continue
+        cabecalho = html.escape(linhas[0]).replace("*", "")
+        corpo_cartao = "<br/>".join(html.escape(linha).replace("*", "") for linha in linhas[1:]) or "Sem registros."
+        tabela = Table([[Paragraph(cabecalho, nome)], [Paragraph(corpo_cartao, corpo)]], colWidths=[17.5*cm])
+        tabela.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF2F8")),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#FFFFFF")),
+            ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#BFC9CA")),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.HexColor("#BFC9CA")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ]))
+        historia.extend([tabela, Spacer(1, 0.25*cm)])
     doc.build(historia)
     return buffer.getvalue()
 
