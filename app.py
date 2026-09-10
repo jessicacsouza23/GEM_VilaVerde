@@ -78,17 +78,17 @@ def gerar_pdf_relatorio_diario(data_relatorio, texto_relatorio):
         if not linhas:
             continue
         cabecalho = html.escape(linhas[0]).replace("*", "")
-        corpo_cartao = "<br/>".join(html.escape(linha).replace("*", "") for linha in linhas[1:]) or "Sem registros."
-        tabela = Table([[Paragraph(cabecalho, nome)], [Paragraph(corpo_cartao, corpo)]], colWidths=[17.5*cm])
+        tabela = Table([[Paragraph(cabecalho, nome)]], colWidths=[17.5*cm])
         tabela.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF2F8")),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#FFFFFF")),
             ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#BFC9CA")),
-            ("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.HexColor("#BFC9CA")),
             ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
             ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ]))
-        historia.extend([tabela, Spacer(1, 0.25*cm)])
+        historia.append(tabela)
+        for linha in linhas[1:]:
+            historia.append(Paragraph(html.escape(linha).replace("*", ""), corpo))
+        historia.append(Spacer(1, 0.25*cm))
     doc.build(historia)
     return buffer.getvalue()
 
