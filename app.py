@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, date
 import io
 import html
 import os
+import re
 import streamlit as st
 import unicodedata
 import json
@@ -81,7 +82,7 @@ def gerar_pdf_relatorio_diario(data_relatorio, texto_relatorio):
         if not linhas:
             continue
         cabecalho = html.escape(linhas[0]).replace("*", "")
-        tabela = Table([[Paragraph(cabecalho, nome)]], colWidths=[17.5*cm])
+        tabela = Table([[Paragraph(f"<b>{cabecalho}</b>", nome)]], colWidths=[17.5*cm])
         tabela.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF2F8")),
             ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#BFC9CA")),
@@ -92,6 +93,7 @@ def gerar_pdf_relatorio_diario(data_relatorio, texto_relatorio):
         for linha in linhas[1:]:
             chave_icone = next((chave for chave in icones if chave in linha), None)
             texto_linha = html.escape(linha).replace("*", "")
+            texto_linha = re.sub(r"\b(Prática|Teoria|Solfejo)\b", r"<b>\1</b>", texto_linha)
             if chave_icone:
                 texto_linha = texto_linha.replace(chave_icone, "", 1).strip()
                 caminho_icone = os.path.join(pasta_icones, f"{icones[chave_icone]}.png")
