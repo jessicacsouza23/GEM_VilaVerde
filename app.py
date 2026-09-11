@@ -386,6 +386,61 @@ HORARIOS_ANTIGOS = {
     "10h45(H4)": "10h45 - 11h15 (Aula 4)", "10h40(H4)": "10h45 - 11h15 (Aula 4)", "10h45 - 11h15 (H4)": "10h45 - 11h15 (Aula 4)",
 }
 
+def _e_pratica_individual_em_sala_coletiva(valor):
+    """Identifica uma prática individual que, por necessidade do dia, acontece
+    fisicamente na Sala 8 (Teoria) ou 9 (Solfejo).
+
+    O marcador é gravado automaticamente ao salvar uma edição manual. Assim a
+    sala continua visível no rodízio, mas a aluna não é confundida com a turma
+    coletiva daquela disciplina.
+    """
+    texto = str(valor).upper()
+    return ("SALA 8" in texto or "SALA 9" in texto) and ("PRÁTICA" in texto or "PRATICA" in texto)
+
+def _marcar_praticas_manuais_em_salas_coletivas(escala_nova, escala_anterior):
+    """Marca como Prática somente as linhas alteradas manualmente para Sala 8/9.
+
+    Se a alteração mudar uma turma inteira, ela continua sendo Teoria/Solfejo
+    coletiva. Já uma aluna incluída isoladamente na sala coletiva recebe o
+    marcador '(Prática)', para aparecer individualmente na agenda e no mural.
+    """
+    anteriores = {str(linha.get("Aluna", "")): linha for linha in escala_anterior}
+    novas = {str(linha.get("Aluna", "")): linha for linha in escala_nova}
+
+    for horario in HORARIOS:
+        grupos_alterados = {}
+        for aluna, linha_nova in novas.items():
+            novo = str(linha_nova.get(horario, ""))
+            antigo = str(anteriores.get(aluna, {}).get(horario, ""))
+            novo_up = novo.upper()
+            if novo == antigo or _e_pratica_individual_em_sala_coletiva(novo):
+                continue
+            if "SALA 8" in novo_up or "SALA 9" in novo_up:
+                grupos_alterados.setdefault(novo, []).append(aluna)
+
+        for conteudo, alunas_alteradas in grupos_alterados.items():
+            alunas_no_mesmo_local = [
+                aluna for aluna, linha in novas.items()
+                if str(linha.get(horario, "")) == conteudo
+            ]
+            # Uma mudança aplicada a uma turma completa permanece coletiva.
+            eh_turma_completa = any(
+                set(alunas_no_mesmo_local) == set(alunas_turma)
+                and set(alunas_alteradas) == set(alunas_turma)
+                for alunas_turma in TURMAS.values()
+            )
+            if eh_turma_completa:
+                continue
+
+            for aluna in alunas_alteradas:
+                if "|" not in conteudo:
+                    continue
+                linha = novas[aluna]
+                sala, professora = [parte.strip() for parte in conteudo.split("|", 1)]
+                linha[horario] = f"{sala} (Prática) | {professora}"
+
+    return list(novas.values())
+
 def _normalizar_escala_horarios(escala):
     """Mantém escalas já salvas acessíveis depois da mudança de horários."""
     normalizada = []
@@ -514,12 +569,13 @@ def sincronizar_ciclo_e_alocacao_da_escala(lista_escala, data_str):
             if chave == "Aluna":
                 continue
             v_str = str(valor)
-            # Só conta como prática individual: tem "SALA" + número (1-7) + professora.
-            # Ignora SALA 8/9 (coletivas), SECRETARIA e o horário inicial (Roberta | Todas).
+            # Conta práticas individuais. Normalmente são Salas 1-7, mas uma
+            # prática manual pode usar fisicamente a Sala 8/9 e vem marcada.
             if "|" not in v_str:
                 continue
             sala_parte = v_str.split("|")[0].strip().upper()
-            if sala_parte in ("SALA 8", "SALA 9") or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper():
+            if ((sala_parte in ("SALA 8", "SALA 9") and not _e_pratica_individual_em_sala_coletiva(v_str))
+                    or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper()):
                 continue
             if not sala_parte.startswith("SALA"):
                 continue
@@ -837,7 +893,9 @@ if menu == "🏠 Secretaria":
                     if "|" not in cont:
                         continue
                     cont_up = cont.upper()
-                    if "SALA 8" in cont_up:
+                    if _e_pratica_individual_em_sala_coletiva(cont):
+                        tipo_cont = "Prática"
+                    elif "SALA 8" in cont_up:
                         tipo_cont = "Teoria"
                     elif "SALA 9" in cont_up:
                         tipo_cont = "Solfejo"
@@ -1565,8 +1623,10 @@ if menu == "🏠 Secretaria":
                             continue
 
                         local_exibicao = local_prof
-                        if "SALA 8" in local_up: local_exibicao = f"{local_prof} (Teoria)"
-                        elif "SALA 9" in local_up: local_exibicao = f"{local_prof} (Solfejo)"
+                        if "SALA 8" in local_up and not _e_pratica_individual_em_sala_coletiva(local_prof):
+                            local_exibicao = f"{local_prof} (Teoria)"
+                        elif "SALA 9" in local_up and not _e_pratica_individual_em_sala_coletiva(local_prof):
+                            local_exibicao = f"{local_prof} (Solfejo)"
 
                         bg = "#ffffff"
                         for sala, cor in cores.items():
@@ -1609,6 +1669,9 @@ if menu == "🏠 Secretaria":
                         <div style="text-align:center; margin-bottom:18px;">
                             <h1 style="margin:0; font-size:26px; color:#111; font-family: 'Noto Sans', Arial, sans-serif;">Rodízio Geral das aulas - GEM Vila Verde</h1>
                             <h3 style="margin:6px 0 0 0; color:#555; font-weight:600; font-family: 'Noto Sans', Arial, sans-serif;">Data: {data_sel_str}</h3>
+                            <div style="margin:12px auto 0; max-width:720px; background:#262730; color:white; padding:8px 14px; border-radius:7px; font-size:14px; font-weight:700;">
+                                Horário do café: 08:00h até 08:30h, Oração: 08:35h até 08:45h
+                            </div>
                         </div>
                         <div style="display:flex; gap:12px; align-items:flex-start;">
                             {colunas_html}
@@ -1660,7 +1723,7 @@ if menu == "🏠 Secretaria":
             # ... (Restante do código do editor de tabela continua igual)    
                 # --- PARTE 2: EDITOR DE TABELA ---
                 st.subheader("⚙️ Editor da Escala (Tabela)")
-                st.caption("Para uma prática manual no horário da Igreja, substitua “Roberta | Todas as alunas” pela sala e professora escolhida na linha da aluna, por exemplo: “SALA 1 | Téta”. A aluna aparecerá na agenda da professora como Prática.")
+                st.caption("Ao preencher uma sala/professora manualmente, a aluna aparece na agenda como Prática. Isso também vale para SALA 8 ou SALA 9: se mover apenas uma aluna para lá, o sistema mantém a turma coletiva e registra aquela aluna como prática individual.")
                 df_editado_final = st.data_editor(
                     df_escala,
                     use_container_width=True,
@@ -1669,7 +1732,9 @@ if menu == "🏠 Secretaria":
                 
                 c_save1, c_save2 = st.columns(2)
                 if c_save1.button("💾 Salvar Alterações", use_container_width=True):
-                    lista_ajustada = df_editado_final.to_dict('records')
+                    lista_ajustada = _marcar_praticas_manuais_em_salas_coletivas(
+                        df_editado_final.to_dict('records'), df_escala.to_dict('records')
+                    )
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_ajustada}).execute()
                     # Sincroniza a memória do rodízio com o que ficou salvo de verdade,
                     # pra ajuste manual não se perder e não repetir errado no próximo sábado.
@@ -1991,7 +2056,8 @@ if menu == "🏠 Secretaria":
                                 if "|" not in v_str:
                                     continue
                                 sala_parte = v_str.split("|")[0].strip().upper()
-                                if sala_parte in ("SALA 8", "SALA 9") or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper():
+                                if ((sala_parte in ("SALA 8", "SALA 9") and not _e_pratica_individual_em_sala_coletiva(v_str))
+                                        or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper()):
                                     continue
                                 if not sala_parte.startswith("SALA"):
                                     continue
@@ -2057,7 +2123,8 @@ if menu == "🏠 Secretaria":
                                         if "|" not in v_str:
                                             continue
                                         sala_parte = v_str.split("|")[0].strip().upper()
-                                        if sala_parte in ("SALA 8", "SALA 9") or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper():
+                                        if ((sala_parte in ("SALA 8", "SALA 9") and not _e_pratica_individual_em_sala_coletiva(v_str))
+                                                or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper()):
                                             continue
                                         if not sala_parte.startswith("SALA"):
                                             continue
@@ -2479,7 +2546,9 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     if h == HORARIOS[0] and "TODAS" in cont.upper():
                         continue
                     if cont and n_bus in limpar_texto(cont).lower():
-                        tipo = "Teoria" if "SALA 8" in cont.upper() else "Solfejo" if "SALA 9" in cont.upper() else "Prática"
+                        tipo = ("Prática" if _e_pratica_individual_em_sala_coletiva(cont)
+                                else "Teoria" if "SALA 8" in cont.upper()
+                                else "Solfejo" if "SALA 9" in cont.upper() else "Prática")
                         sala = cont.split('|')[0].strip()
                         turma_aluna = aluna_para_turma.get(reg.get("Aluna"))
                         
