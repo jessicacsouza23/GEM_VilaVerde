@@ -1634,7 +1634,9 @@ if menu == "🏠 Secretaria":
                             continue
 
                         local_exibicao = local_prof
-                        if _e_alocacao_individual_em_sala_coletiva(local_prof):
+                        if local_up.startswith("SECRETARIA"):
+                            local_exibicao = "ATIVIDADE COM AS SECRETARIAS"
+                        elif _e_alocacao_individual_em_sala_coletiva(local_prof):
                             disciplina_sala = "Teoria" if "SALA 8" in local_up else "Solfejo"
                             local_exibicao = re.sub(r"\(PR[ÁA]TICA\)", f"({disciplina_sala})", local_exibicao, flags=re.IGNORECASE)
                         if "SALA 8" in local_up and not _e_alocacao_individual_em_sala_coletiva(local_prof):
@@ -1649,7 +1651,7 @@ if menu == "🏠 Secretaria":
                         # destaque visual próprio, sem confundir com a turma
                         # coletiva nem alterar a cor das práticas normais.
                         if _e_alocacao_individual_em_sala_coletiva(local_prof):
-                            bg = "#fce7f3"
+                            bg = cores["SECRETARIA"]
 
                         alunas_gp = grupos[local_prof]
                         if h_col == HORARIOS[0] and "TODAS" in local_up:
