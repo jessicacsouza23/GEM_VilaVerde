@@ -570,12 +570,12 @@ def sincronizar_ciclo_e_alocacao_da_escala(lista_escala, data_str):
                 continue
             v_str = str(valor)
             # Conta práticas individuais. Normalmente são Salas 1-7, mas uma
-            # prática manual pode usar fisicamente a Sala 8/9 e vem marcada.
+            # prática manual marcada na Sala 8/9 também entra na memória para
+            # a mesma professora não pegar essa aluna na próxima semana.
             if "|" not in v_str:
                 continue
             sala_parte = v_str.split("|")[0].strip().upper()
-            if ((sala_parte in ("SALA 8", "SALA 9") and not _e_pratica_individual_em_sala_coletiva(v_str))
-                    or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper()):
+            if (("SALA 8" in sala_parte or "SALA 9" in sala_parte) and not _e_pratica_individual_em_sala_coletiva(v_str)) or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper():
                 continue
             if not sala_parte.startswith("SALA"):
                 continue
@@ -2056,8 +2056,7 @@ if menu == "🏠 Secretaria":
                                 if "|" not in v_str:
                                     continue
                                 sala_parte = v_str.split("|")[0].strip().upper()
-                                if ((sala_parte in ("SALA 8", "SALA 9") and not _e_pratica_individual_em_sala_coletiva(v_str))
-                                        or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper()):
+                                if (("SALA 8" in sala_parte or "SALA 9" in sala_parte) and not _e_pratica_individual_em_sala_coletiva(v_str)) or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper():
                                     continue
                                 if not sala_parte.startswith("SALA"):
                                     continue
@@ -2123,8 +2122,7 @@ if menu == "🏠 Secretaria":
                                         if "|" not in v_str:
                                             continue
                                         sala_parte = v_str.split("|")[0].strip().upper()
-                                        if ((sala_parte in ("SALA 8", "SALA 9") and not _e_pratica_individual_em_sala_coletiva(v_str))
-                                                or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper()):
+                                        if (("SALA 8" in sala_parte or "SALA 9" in sala_parte) and not _e_pratica_individual_em_sala_coletiva(v_str)) or "SECRETARIA" in sala_parte or "TODAS" in v_str.upper():
                                             continue
                                         if not sala_parte.startswith("SALA"):
                                             continue
