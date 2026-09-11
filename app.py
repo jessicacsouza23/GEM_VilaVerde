@@ -1597,7 +1597,9 @@ if menu == "🏠 Secretaria":
                 
                 st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
 
-                termos_excluir = ["FALTA", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
+                # Valores de ausência podem existir na escala por ajustes manuais;
+                # não são salas/aulas e não devem sair no mural impresso.
+                termos_excluir = ["FALTA", "FALTOU", "NÃO PRESENTE", "AUSENTE", "NINGUÉM", "VAZIO"]
                 cores = {"SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", "SALA 4": "#fee2e2",
                          "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5",
                          "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"}
