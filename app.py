@@ -1485,28 +1485,19 @@ if menu == "🏠 Secretaria":
                                 f"{p_repetida} está fixa para {', '.join(alunas_mesma_prof)} no mesmo horário {h}; uma professora não pode atender duas práticas simultâneas."
                             )
 
-                        # Troca a professora coletiva em conflito por outra
-                        # disponível. A escolha feita acima continua sendo
-                        # respeitada quando não há aluna fixa naquele horário.
+                        # As professoras escolhidas para Teoria/Solfejo são uma
+                        # prioridade explícita. O arranjo acima deve mover as
+                        # TURMAS entre horários para resolver conflitos; nunca
+                        # substituímos silenciosamente uma professora coletiva.
                         if p_teoria not in profs_horario or p_teoria in professoras_reservadas:
-                            candidatas_teoria = [
-                                p for p in profs_horario
-                                if p != p_solfejo and p not in professoras_reservadas
-                            ]
-                            if candidatas_teoria:
-                                p_teoria = sorted(candidatas_teoria)[0]
-                            else:
-                                erros_fixas_geracao.append(f"Não há professora disponível para remanejar a Teoria no horário {h}.")
+                            erros_fixas_geracao.append(
+                                f"{p_teoria} foi configurada para Teoria de {t_teo}, mas não está livre no horário {h}."
+                            )
 
                         if p_solfejo not in profs_horario or p_solfejo in professoras_reservadas or p_solfejo == p_teoria:
-                            candidatas_solfejo = [
-                                p for p in profs_horario
-                                if p != p_teoria and p not in professoras_reservadas
-                            ]
-                            if candidatas_solfejo:
-                                p_solfejo = sorted(candidatas_solfejo)[0]
-                            else:
-                                erros_fixas_geracao.append(f"Não há professora disponível para remanejar o Solfejo no horário {h}.")
+                            erros_fixas_geracao.append(
+                                f"{p_solfejo} foi configurada para Solfejo de {t_sol}, mas não está livre no horário {h}."
+                            )
 
                         # --- A. SALAS COLETIVAS ---
                         for a in TURMAS[t_teo]: mapa_final[a][h] = f"SALA 8 | {p_teoria}"
