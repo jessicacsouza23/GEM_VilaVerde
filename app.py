@@ -11,6 +11,7 @@ import io
 import html
 import os
 import re
+import uuid
 import streamlit as st
 import unicodedata
 import json
@@ -424,6 +425,17 @@ def db_save_historico(dados):
         st.error(f"Erro ao salvar no banco: {e}")
         return None
 
+def db_get_gabaritos():
+    try:
+        res = supabase.table("gabaritos").select("*").order("created_at", desc=True).execute()
+        return res.data or []
+    except Exception:
+        return []
+
+def _nome_seguro_arquivo(nome):
+    base = os.path.basename(nome)
+    return "".join(c if c.isalnum() or c in ".-_" else "_" for c in base)
+
 # ==========================================
 # FUNÇÕES DE BANCO - RODÍZIO EM CÍRCULO (NOVO)
 # ==========================================
@@ -722,11 +734,11 @@ calendario_db = {item.get('id'): item.get('escala', []) for item in calendario_r
 # --- 5. INTERFACE E NAVEGAÇÃO ---
 st.sidebar.title(f"👋 {st.session_state.nome_logado}")
 if st.session_state.perfil == "Secretaria":
-    menu = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "📊 Analítico IA", "💬 Mensagens"])
+    menu = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "📑 Gabaritos", "📊 Analítico IA", "💬 Mensagens"])
 elif st.session_state.get("tipo_usuario") == "aluna":
     menu = st.sidebar.radio("Navegação:", ["🎓 Minhas Lições", "💬 Mensagens"])
 else:
-    menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📊 Analítico IA", "💬 Mensagens"])
+    menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📑 Gabaritos", "📊 Analítico IA", "💬 Mensagens"])
     
     
 if st.session_state.perfil == "Secretaria":
@@ -2300,6 +2312,66 @@ elif menu == "🎓 Minhas Lições":
                     st.write(f"😊 **{e.get('data')}** — estudou: {', '.join(horarios_e)}")
                 else:
                     st.write(f"😢 **{e.get('data')}** — não estudou")
+
+# ============================================================
+# MÓDULO GABARITOS - PROFESSORAS E SECRETARIA
+# ============================================================
+elif menu == "📑 Gabaritos":
+    eh_secretaria_gab = st.session_state.perfil == "Secretaria"
+    st.header("📑 Gabaritos")
+    st.caption("Folhas espelho e respostas corretas. Este material é interno; alunas não têm acesso.")
+
+    if not eh_secretaria_gab:
+        with st.expander("➕ Enviar gabarito", expanded=True):
+            with st.form("form_enviar_gabarito", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                disciplina_gab = c1.selectbox("Disciplina", ["Prática", "Teoria", "Solfejo"])
+                turma_gab = c2.selectbox("Turma", list(TURMAS.keys()))
+                titulo_gab = st.text_input("Material / lição", placeholder="Ex.: Apostila MSA - páginas 7 e 8")
+                obs_gab = st.text_area("Observação opcional")
+                arquivo_gab = st.file_uploader("Imagem ou PDF", type=["pdf", "png", "jpg", "jpeg", "webp"])
+                if st.form_submit_button("Enviar gabarito", use_container_width=True, type="primary"):
+                    if not arquivo_gab or not titulo_gab.strip():
+                        st.error("Informe o material/lição e selecione o arquivo.")
+                    else:
+                        try:
+                            nome_arquivo = _nome_seguro_arquivo(arquivo_gab.name)
+                            caminho = f"{uuid.uuid4().hex}_{nome_arquivo}"
+                            supabase.storage.from_("gabaritos").upload(
+                                path=caminho, file=arquivo_gab.getvalue(),
+                                file_options={"content-type": arquivo_gab.type or "application/octet-stream"}
+                            )
+                            supabase.table("gabaritos").insert({
+                                "titulo": titulo_gab.strip(), "disciplina": disciplina_gab, "turma": turma_gab,
+                                "observacao": obs_gab.strip(), "professora": st.session_state.nome_logado,
+                                "arquivo_path": caminho, "arquivo_nome": nome_arquivo
+                            }).execute()
+                            st.success("✅ Gabarito enviado para a Secretaria.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Não foi possível enviar o gabarito: {e}")
+
+    gabaritos = db_get_gabaritos()
+    if gabaritos:
+        disciplinas_filtro = ["Todas"] + ["Prática", "Teoria", "Solfejo"]
+        filtro_disc = st.selectbox("Filtrar por disciplina", disciplinas_filtro)
+        for gab in gabaritos:
+            if filtro_disc != "Todas" and gab.get("disciplina") != filtro_disc:
+                continue
+            with st.container(border=True):
+                st.markdown(f"**{gab.get('titulo')}** - {gab.get('disciplina')} | {gab.get('turma')}")
+                st.caption(f"👩‍🏫 Enviado por: {gab.get('professora')} | Arquivo: {gab.get('arquivo_nome')}")
+                if gab.get("observacao"):
+                    st.write(gab["observacao"])
+                try:
+                    link = supabase.storage.from_("gabaritos").create_signed_url(gab["arquivo_path"], 3600)
+                    url = link.get("signedURL") or link.get("signedUrl")
+                    if url:
+                        st.link_button("Abrir gabarito", url)
+                except Exception:
+                    st.caption("Arquivo indisponível. Verifique a configuração do bucket gabaritos.")
+    else:
+        st.info("Nenhum gabarito enviado ainda.")
 
 # ============================================================
 # MÓDULO PROFESSORA - V58 (INTEGRADO E CORRIGIDO)
