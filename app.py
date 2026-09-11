@@ -242,7 +242,12 @@ def carregar_dados_globais():
     try:
         h = supabase.table("historico_geral").select("*").execute()
         c = supabase.table("calendario").select("*").execute()
-        return h.data, c.data
+        calendarios = []
+        for item in (c.data or []):
+            novo_item = dict(item)
+            novo_item["escala"] = _normalizar_escala_horarios(item.get("escala", []))
+            calendarios.append(novo_item)
+        return h.data, calendarios
     except:
         return [], []
         
@@ -373,7 +378,24 @@ def _renderizar_pendencias_casa(pendentes_df, somente_proxima_aula=False):
                         st.write(f"**Método:** {linha['_material']}")
                     st.write(f"**Lição:** {linha.get('Licao_Casa', '---')}")
 
-HORARIOS = ["08h45 (Igreja)", "09h35(H2)", "10h10(H3)", "10h45(H4)"]
+HORARIOS = ["08h50 - 09h30 (H1)", "09h35 - 10h05 (H2)", "10h10 - 10h40 (H3)", "10h45 - 11h15 (H4)"]
+HORARIOS_ANTIGOS = {
+    "08h45 (Igreja)": "08h50 - 09h30 (H1)",
+    "09h35(H2)": "09h35 - 10h05 (H2)", "09h30(H2)": "09h35 - 10h05 (H2)",
+    "10h10(H3)": "10h10 - 10h40 (H3)", "10h05(H3)": "10h10 - 10h40 (H3)",
+    "10h45(H4)": "10h45 - 11h15 (H4)", "10h40(H4)": "10h45 - 11h15 (H4)",
+}
+
+def _normalizar_escala_horarios(escala):
+    """Mantém escalas já salvas acessíveis depois da mudança de horários."""
+    normalizada = []
+    for linha in escala or []:
+        nova = dict(linha)
+        for antigo, novo in HORARIOS_ANTIGOS.items():
+            if novo not in nova and antigo in nova:
+                nova[novo] = nova[antigo]
+        normalizada.append(nova)
+    return normalizada
 OPCOES_LICOES_NUM = [str(i) for i in range(1, 41)] + ["Outro"]
 
 # ==========================================
@@ -398,7 +420,7 @@ def db_get_calendario():
             for item in response.data:
                 # 1. Pega o ID bruto (Data)
                 data_bruta = str(item.get("id", "")).strip()
-                escala = item.get("escala", [])
+                escala = _normalizar_escala_horarios(item.get("escala", []))
                 
                 # 2. Tenta padronizar para DD/MM/AAAA (Ex: 7/3/2026 -> 07/03/2026)
                 try:
@@ -2454,7 +2476,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     # O horário da Igreja normalmente é coletivo. Se a
                     # Secretaria preencher uma sala/professora manualmente para
                     # uma aluna, ele vira uma prática individual normal.
-                    if h == "08h45 (Igreja)" and "TODAS" in cont.upper():
+                    if h == HORARIOS[0] and "TODAS" in cont.upper():
                         continue
                     if cont and n_bus in limpar_texto(cont).lower():
                         tipo = "Teoria" if "SALA 8" in cont.upper() else "Solfejo" if "SALA 9" in cont.upper() else "Prática"
