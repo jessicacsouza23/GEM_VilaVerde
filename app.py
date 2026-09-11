@@ -1645,6 +1645,11 @@ if menu == "🏠 Secretaria":
                         bg = "#ffffff"
                         for sala, cor in cores.items():
                             if sala in local_up: bg = cor; break
+                        # Aluna movimentada manualmente para Teoria/Solfejo:
+                        # destaque visual próprio, sem confundir com a turma
+                        # coletiva nem alterar a cor das práticas normais.
+                        if _e_alocacao_individual_em_sala_coletiva(local_prof):
+                            bg = "#fce7f3"
 
                         alunas_gp = grupos[local_prof]
                         if h_col == HORARIOS[0] and "TODAS" in local_up:
