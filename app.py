@@ -184,9 +184,21 @@ except Exception as e:
     st.stop()
 
 # --- 3. SISTEMA DE USUÁRIOS E PERMISSÕES ---
-# A secretaria continua fixa por segurança. As professoras agora são
-# cadastradas na tabela "professoras" (aba "👥 Turmas e Pessoas").
-SENHA_SECRETARIA = "123"
+# Professoras e alunas usam suas contas cadastradas no banco. A conta da
+# Secretaria também é validada no banco pela função validar_acesso, sem senha
+# fixa no código do aplicativo.
+def db_validar_acesso(login, senha):
+    """Valida uma conta interna sem trazer a senha de volta para o app."""
+    try:
+        resposta = supabase.rpc("validar_acesso", {
+            "p_login": login,
+            "p_senha": senha,
+        }).execute()
+        return (resposta.data or [None])[0]
+    except Exception:
+        # Enquanto a migração ainda não tiver sido executada, professoras e
+        # alunas continuam conseguindo entrar pelas tabelas já existentes.
+        return None
 
 def login_sistema():
     if "autenticado" not in st.session_state:
@@ -198,11 +210,12 @@ def login_sistema():
             u = st.text_input("Usuário").lower().strip()
             s = st.text_input("Senha", type="password")
             if st.form_submit_button("Entrar"):
-                if u == "secretaria" and s == SENHA_SECRETARIA:
+                conta_interna = db_validar_acesso(u, s)
+                if conta_interna and conta_interna.get("perfil") == "secretaria":
                     st.session_state.autenticado = True
                     st.session_state.perfil = "Secretaria"
                     st.session_state.tipo_usuario = "secretaria"
-                    st.session_state.nome_logado = "Coordenação"
+                    st.session_state.nome_logado = conta_interna.get("nome") or "Coordenação"
                     st.rerun()
                 else:
                     # Login de secretaria é sempre único (u == "secretaria"); a lista de
