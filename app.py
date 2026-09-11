@@ -378,12 +378,12 @@ def _renderizar_pendencias_casa(pendentes_df, somente_proxima_aula=False):
                         st.write(f"**Método:** {linha['_material']}")
                     st.write(f"**Lição:** {linha.get('Licao_Casa', '---')}")
 
-HORARIOS = ["08h50 - 09h30 (H1)", "09h35 - 10h05 (H2)", "10h10 - 10h40 (H3)", "10h45 - 11h15 (H4)"]
+HORARIOS = ["08h50 - 09h30 (Aula 1)", "09h35 - 10h05 (Aula 2)", "10h10 - 10h40 (Aula 3)", "10h45 - 11h15 (Aula 4)"]
 HORARIOS_ANTIGOS = {
-    "08h45 (Igreja)": "08h50 - 09h30 (H1)",
-    "09h35(H2)": "09h35 - 10h05 (H2)", "09h30(H2)": "09h35 - 10h05 (H2)",
-    "10h10(H3)": "10h10 - 10h40 (H3)", "10h05(H3)": "10h10 - 10h40 (H3)",
-    "10h45(H4)": "10h45 - 11h15 (H4)", "10h40(H4)": "10h45 - 11h15 (H4)",
+    "08h45 (Igreja)": "08h50 - 09h30 (Aula 1)", "08h50 - 09h30 (H1)": "08h50 - 09h30 (Aula 1)",
+    "09h35(H2)": "09h35 - 10h05 (Aula 2)", "09h30(H2)": "09h35 - 10h05 (Aula 2)", "09h35 - 10h05 (H2)": "09h35 - 10h05 (Aula 2)",
+    "10h10(H3)": "10h10 - 10h40 (Aula 3)", "10h05(H3)": "10h10 - 10h40 (Aula 3)", "10h10 - 10h40 (H3)": "10h10 - 10h40 (Aula 3)",
+    "10h45(H4)": "10h45 - 11h15 (Aula 4)", "10h40(H4)": "10h45 - 11h15 (Aula 4)", "10h45 - 11h15 (H4)": "10h45 - 11h15 (Aula 4)",
 }
 
 def _normalizar_escala_horarios(escala):
