@@ -2363,7 +2363,11 @@ elif menu == "📑 Gabaritos":
             with st.container(border=True):
                 st.markdown(f"**{gab.get('titulo')}** - {gab.get('disciplina')} | {gab.get('turma')}")
                 data_gab = gab.get("data_correcao") or "não informada"
-                st.caption(f"👩‍🏫 Enviado por: {gab.get('professora')} | 📅 Correção: {data_gab} | Arquivo: {gab.get('arquivo_nome')}")
+                st.markdown(
+                    f"**👩‍🏫 Enviado por:** {gab.get('professora')}  \n"
+                    f"**📅 Correção:** {data_gab}  \n"
+                    f"**📎 Arquivo:** {gab.get('arquivo_nome')}"
+                )
                 if gab.get("observacao"):
                     st.write(gab["observacao"])
                 try:
