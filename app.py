@@ -2370,6 +2370,15 @@ elif menu == "📑 Gabaritos":
                         st.link_button("Abrir gabarito", url)
                 except Exception:
                     st.caption("Arquivo indisponível. Verifique a configuração do bucket gabaritos.")
+                if not eh_secretaria_gab and gab.get("professora") == st.session_state.nome_logado:
+                    if st.button("🗑️ Excluir meu gabarito", key=f"excluir_gab_{gab.get('id')}"):
+                        try:
+                            supabase.storage.from_("gabaritos").remove([gab["arquivo_path"]])
+                            supabase.table("gabaritos").delete().eq("id", gab["id"]).execute()
+                            st.success("Gabarito excluído.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Não foi possível excluir o gabarito: {e}")
     else:
         st.info("Nenhum gabarito enviado ainda.")
 
