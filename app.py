@@ -2328,6 +2328,7 @@ elif menu == "📑 Gabaritos":
                 disciplina_gab = c1.selectbox("Disciplina", ["Prática", "Teoria", "Solfejo"])
                 turma_gab = c2.selectbox("Turma", list(TURMAS.keys()))
                 titulo_gab = st.text_input("Material / lição", placeholder="Ex.: Apostila MSA - páginas 7 e 8")
+                data_correcao_gab = st.date_input("Data prevista para correção", value=datetime.now().date())
                 obs_gab = st.text_area("Observação opcional")
                 arquivo_gab = st.file_uploader("Imagem ou PDF", type=["pdf", "png", "jpg", "jpeg", "webp"])
                 if st.form_submit_button("Enviar gabarito", use_container_width=True, type="primary"):
@@ -2344,7 +2345,8 @@ elif menu == "📑 Gabaritos":
                             supabase.table("gabaritos").insert({
                                 "titulo": titulo_gab.strip(), "disciplina": disciplina_gab, "turma": turma_gab,
                                 "observacao": obs_gab.strip(), "professora": st.session_state.nome_logado,
-                                "arquivo_path": caminho, "arquivo_nome": nome_arquivo
+                                "arquivo_path": caminho, "arquivo_nome": nome_arquivo,
+                                "data_correcao": data_correcao_gab.isoformat()
                             }).execute()
                             st.success("✅ Gabarito enviado para a Secretaria.")
                             st.rerun()
@@ -2360,7 +2362,8 @@ elif menu == "📑 Gabaritos":
                 continue
             with st.container(border=True):
                 st.markdown(f"**{gab.get('titulo')}** - {gab.get('disciplina')} | {gab.get('turma')}")
-                st.caption(f"👩‍🏫 Enviado por: {gab.get('professora')} | Arquivo: {gab.get('arquivo_nome')}")
+                data_gab = gab.get("data_correcao") or "não informada"
+                st.caption(f"👩‍🏫 Enviado por: {gab.get('professora')} | 📅 Correção: {data_gab} | Arquivo: {gab.get('arquivo_nome')}")
                 if gab.get("observacao"):
                     st.write(gab["observacao"])
                 try:
