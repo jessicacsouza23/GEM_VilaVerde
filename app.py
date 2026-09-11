@@ -1551,7 +1551,7 @@ if menu == "🏠 Secretaria":
                             if sala in local_up: bg = cor; break
 
                         alunas_gp = grupos[local_prof]
-                        if h_col == HORARIOS[0]:
+                        if h_col == HORARIOS[0] and "TODAS" in local_up:
                             text_alunas = "Todas as alunas"
                         else:
                             presentes = [t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)]
@@ -1638,6 +1638,7 @@ if menu == "🏠 Secretaria":
             # ... (Restante do código do editor de tabela continua igual)    
                 # --- PARTE 2: EDITOR DE TABELA ---
                 st.subheader("⚙️ Editor da Escala (Tabela)")
+                st.caption("Para uma prática manual no horário da Igreja, substitua “Roberta | Todas as alunas” pela sala e professora escolhida na linha da aluna, por exemplo: “SALA 1 | Téta”. A aluna aparecerá na agenda da professora como Prática.")
                 df_editado_final = st.data_editor(
                     df_escala,
                     use_container_width=True,
@@ -2449,9 +2450,12 @@ elif menu == "👩‍🏫 Minhas Aulas":
         if dt_str in cal_db:
             for reg in cal_db[dt_str]:
                 for h in HORARIOS:
-                    if h == "08h45 (Igreja)":
-                        continue  # Aulas da Igreja não entram no Registro de Aula das professoras — ficam só em Planejamentos
                     cont = str(reg.get(h, ""))
+                    # O horário da Igreja normalmente é coletivo. Se a
+                    # Secretaria preencher uma sala/professora manualmente para
+                    # uma aluna, ele vira uma prática individual normal.
+                    if h == "08h45 (Igreja)" and "TODAS" in cont.upper():
+                        continue
                     if cont and n_bus in limpar_texto(cont).lower():
                         tipo = "Teoria" if "SALA 8" in cont.upper() else "Solfejo" if "SALA 9" in cont.upper() else "Prática"
                         sala = cont.split('|')[0].strip()
