@@ -416,6 +416,14 @@ def db_marcar_licao_feita_aluna(aluna, historico_id):
         st.error(f"Erro ao marcar a lição como feita: {e}")
         return False
 
+def db_desfazer_licao_feita_aluna(aluna, historico_id):
+    try:
+        supabase.table("licoes_feitas_alunas").delete().eq("aluna", aluna).eq("historico_id", str(historico_id)).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao desfazer a marcação: {e}")
+        return False
+
 def _renderizar_licoes_aluna_com_historico(licoes_df, aluna, feitas):
     """Exibe lições atuais e anteriores sem expor o parecer pedagógico interno.
 
@@ -458,7 +466,12 @@ def _renderizar_licoes_aluna_com_historico(licoes_df, aluna, feitas):
                 st.write(f"**Lição:** {linha.get('Licao_Casa', '---')}")
                 if marcado:
                     data_marcacao = str(marcado.get("marcado_em", "")).replace("T", " ")[:16]
-                    st.success(f"✅ Feito{f' em {data_marcacao}' if data_marcacao else ''}")
+                    c_feito, c_desfazer = st.columns([4, 1])
+                    c_feito.success(f"✅ Feito{f' em {data_marcacao}' if data_marcacao else ''}")
+                    if c_desfazer.button("Desfazer", key=f"desfazer_feito_aluna_{hist_id}"):
+                        if db_desfazer_licao_feita_aluna(aluna, hist_id):
+                            st.success("Marcação desfeita.")
+                            st.rerun()
                 elif not hist_id:
                     st.caption("Esta lição antiga não possui identificador para ser marcada.")
                 elif st.button("✓ Marcar como feito", key=f"feito_aluna_{hist_id}"):
@@ -2411,13 +2424,21 @@ if menu == "🏠 Secretaria":
                     st.divider()
                     st.markdown("#### ✏️ Ativar/Desativar")
                     if secs_raw:
-                        for sec in sorted(secs_raw, key=lambda x: x["nome"]):
+                        for indice_sec, sec in enumerate(sorted(secs_raw, key=lambda x: x["nome"])):
                             with st.container(border=True):
                                 c1, c2 = st.columns([3, 1])
                                 c1.write(("🟢 " if sec.get("ativo", True) else "⚪ ") + sec["nome"])
                                 acao_sec = "Desativar" if sec.get("ativo", True) else "Reativar"
-                                if c2.button(acao_sec, key=f"tgsec_{sec['nome']}"):
-                                    supabase.table("secretarias").update({"ativo": not sec.get("ativo", True)}).eq("nome", sec["nome"]).execute()
+                                # Pode haver nomes iguais cadastrados. A chave e a
+                                # atualização precisam usar o id do registro, não o nome.
+                                id_sec = sec.get("id")
+                                chave_sec = id_sec or f"{sec['nome']}_{indice_sec}"
+                                if c2.button(acao_sec, key=f"tgsec_{chave_sec}"):
+                                    consulta_sec = supabase.table("secretarias").update({"ativo": not sec.get("ativo", True)})
+                                    if id_sec:
+                                        consulta_sec.eq("id", id_sec).execute()
+                                    else:
+                                        consulta_sec.eq("nome", sec["nome"]).execute()
                                     st.cache_data.clear(); st.rerun()
                     else:
                         st.info("Nenhuma secretaria adicional cadastrada ainda (a conta mestre 'secretaria' continua valendo).")
@@ -2766,18 +2787,20 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 c_txt.write(f"📖 {p['Licao_Casa']}")
                                 key_id = f"pend_{p['id']}"
                                 resultado = c_acao.radio(
-                                    "Resultado:", ["Fica p/ próxima semana", "Passou", "Passou com dificuldades"],
+                                    "Resultado:", ["Resolvido", "Resolvido com pendências", "Não resolvido"],
                                     key=f"rd_{key_id}", horizontal=True
                                 )
-                                if c_acao.button("Salvar", key=f"btn_{key_id}"):
-                                    if resultado == "Fica p/ próxima semana":
-                                        st.info("Continua pendente pra próxima semana.")
-                                    else:
-                                        novo_status = "Resolvido" if resultado == "Passou" else "Resolvido com pendências"
-                                        supabase.table("historico_geral").update({"Status": novo_status}).eq("id", p['id']).execute()
-                                        st.success("✅ Atualizado!")
-                                        st.cache_data.clear()
-                                        st.rerun()
+                                obs_correcao = st.text_area(
+                                    "Observações da professora:", value=str(p.get("Observacao") or ""),
+                                    key=f"obs_corr_{key_id}", placeholder="Opcional: registre orientações ou pontos a retomar."
+                                )
+                                if st.button("Salvar", key=f"btn_{key_id}"):
+                                    supabase.table("historico_geral").update({
+                                        "Status": resultado, "Observacao": obs_correcao.strip()
+                                    }).eq("id", p['id']).execute()
+                                    st.success("✅ Correção atualizada!")
+                                    st.cache_data.clear()
+                                    st.rerun()
 
                     st.divider()
                 metodos_filtrados = df_metodos_db[df_metodos_db['categoria'] == tipo_aula]['nome'].tolist() if not df_metodos_db.empty else []
