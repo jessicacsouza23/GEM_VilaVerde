@@ -643,6 +643,30 @@ def db_get_gabaritos():
     except Exception:
         return []
 
+def db_get_avaliacoes():
+    try:
+        return supabase.table("avaliacoes").select("*").order("data_avaliacao", desc=True).execute().data or []
+    except Exception:
+        return []
+
+def db_get_avaliacao_responsaveis(avaliacao_id=None):
+    try:
+        consulta = supabase.table("avaliacao_responsaveis").select("*")
+        if avaliacao_id:
+            consulta = consulta.eq("avaliacao_id", avaliacao_id)
+        return consulta.execute().data or []
+    except Exception:
+        return []
+
+def db_get_avaliacao_notas(avaliacao_id=None):
+    try:
+        consulta = supabase.table("avaliacao_notas").select("*")
+        if avaliacao_id:
+            consulta = consulta.eq("avaliacao_id", avaliacao_id)
+        return consulta.execute().data or []
+    except Exception:
+        return []
+
 def _nome_seguro_arquivo(nome):
     base = os.path.basename(nome)
     return "".join(c if c.isalnum() or c in ".-_" else "_" for c in base)
@@ -945,11 +969,11 @@ calendario_db = {item.get('id'): item.get('escala', []) for item in calendario_r
 # --- 5. INTERFACE E NAVEGAÇÃO ---
 st.sidebar.title(f"👋 {st.session_state.nome_logado}")
 if st.session_state.perfil == "Secretaria":
-    menu = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "📑 Gabaritos", "📊 Analítico IA", "💬 Mensagens"])
+    menu = st.sidebar.radio("Navegação:", ["🏠 Secretaria", "📁 Envio de Documentos", "📝 Provas", "📊 Analítico IA", "💬 Mensagens"])
 elif st.session_state.get("tipo_usuario") == "aluna":
-    menu = st.sidebar.radio("Navegação:", ["🎓 Minhas Lições", "💬 Mensagens"])
+    menu = st.sidebar.radio("Navegação:", ["🎓 Minhas Lições", "📁 Documentos", "📝 Boletim", "💬 Mensagens"])
 else:
-    menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📑 Gabaritos", "📊 Analítico IA", "💬 Mensagens"])
+    menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📁 Envio de Documentos", "📝 Provas", "📊 Analítico IA", "💬 Mensagens"])
     
     
 if st.session_state.perfil == "Secretaria":
@@ -2057,26 +2081,6 @@ if menu == "🏠 Secretaria":
             # MÓDULO AJUSTES - V62 (CORREÇÃO UUID + ORGANIZAÇÃO)
             # ============================================================
             with tab_ajustes:
-                st.subheader("🛠️ Gestão do Banco de Dados")
-                
-                # --- SEÇÃO 1: APAGAR TUDO (CORRIGIDO PARA UUID) ---
-                with st.expander("🚨 ÁREA CRÍTICA: Limpar Banco de Dados", expanded=False):
-                    st.error("Esta ação apagará TODO o histórico do sistema. Cuidado!")
-                    confirma_geral = st.checkbox("Confirmar reset total do banco de dados.")
-                    
-                    if st.button("🔥 LIMPAR TUDO", type="secondary", use_container_width=True, disabled=not confirma_geral):
-                        try:
-                            # CORREÇÃO: Usamos .not_.is_("id", "null") que funciona para qualquer tipo de ID (UUID ou Int)
-                            supabase.table("historico_geral").delete().not_.is_("id", "null").execute()
-                            
-                            st.success("💥 O banco de dados foi limpo com sucesso!")
-                            st.cache_data.clear()
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao limpar banco: {e}")
-
-                st.divider()
-
                 # --- SEÇÃO 1.5: LIMPEZA DE REGISTROS ÓRFÃOS ("Todas as alunas") ---
                 with st.expander("🧹 Limpar registros órfãos do rodízio ('Todas as alunas')", expanded=False):
                     st.caption("Uma versão antiga do gerador de rodízio criava, por engano, um registro sem Tipo "
@@ -2607,24 +2611,72 @@ elif menu == "🎓 Minhas Lições":
                     st.write(f"😢 **{e.get('data')}** — não estudou")
 
 # ============================================================
-# MÓDULO GABARITOS - PROFESSORAS E SECRETARIA
+# DOCUMENTOS RECEBIDOS PELAS ALUNAS
 # ============================================================
-elif menu == "📑 Gabaritos":
-    eh_secretaria_gab = st.session_state.perfil == "Secretaria"
-    st.header("📑 Gabaritos")
-    st.caption("Folhas espelho e respostas corretas. Este material é interno; alunas não têm acesso.")
+elif menu == "📁 Documentos":
+    st.header("📁 Meus Documentos")
+    cadastro_aluna = next((a for a in db_get_alunas_todas() if a.get("nome") == st.session_state.nome_logado), {})
+    turma_aluna = cadastro_aluna.get("turma")
+    documentos_aluna = [
+        d for d in db_get_gabaritos()
+        if d.get("visivel_alunas") and d.get("turma") == turma_aluna
+    ]
+    if not documentos_aluna:
+        st.info("Nenhum documento foi liberado para sua turma ainda.")
+    else:
+        for documento in documentos_aluna:
+            with st.container(border=True):
+                st.markdown(f"**{documento.get('titulo')}** — {documento.get('disciplina')}")
+                st.caption(f"Turma: {turma_aluna} | Enviado por: {documento.get('professora')}")
+                if documento.get("observacao"):
+                    st.write(documento["observacao"])
+                try:
+                    link_doc = supabase.storage.from_("gabaritos").create_signed_url(documento["arquivo_path"], 3600)
+                    url_doc = link_doc.get("signedURL") or link_doc.get("signedUrl")
+                    if url_doc:
+                        st.link_button("Abrir documento", url_doc)
+                except Exception:
+                    st.caption("Documento indisponível no momento.")
 
-    if not eh_secretaria_gab:
-        with st.expander("➕ Enviar gabarito", expanded=True):
+# ============================================================
+# BOLETIM DA ALUNA
+# ============================================================
+elif menu == "📝 Boletim":
+    st.header("📝 Meu Boletim")
+    avaliacoes_aluna = db_get_avaliacoes()
+    notas_aluna = [n for n in db_get_avaliacao_notas() if n.get("aluna") == st.session_state.nome_logado]
+    if not avaliacoes_aluna:
+        st.info("Nenhuma prova ou avaliação cadastrada ainda.")
+    else:
+        for avaliacao in avaliacoes_aluna:
+            with st.container(border=True):
+                st.markdown(f"**{avaliacao.get('titulo')}**")
+                if avaliacao.get("data_avaliacao"):
+                    st.caption(f"Data: {avaliacao['data_avaliacao']}")
+                cols_boletim = st.columns(3)
+                for col_bol, disciplina_bol in zip(cols_boletim, ["Prática", "Teoria", "Solfejo"]):
+                    nota = next((n for n in notas_aluna if n.get("avaliacao_id") == avaliacao.get("id") and n.get("disciplina") == disciplina_bol), None)
+                    col_bol.metric(disciplina_bol, f"{float(nota['nota']):.1f}" if nota and nota.get("nota") is not None else "Aguardando")
+
+# ============================================================
+# MÓDULO DOCUMENTOS - PROFESSORAS E COORDENAÇÃO
+# ============================================================
+elif menu == "📁 Envio de Documentos":
+    eh_secretaria_gab = st.session_state.perfil == "Secretaria"
+    st.header("📁 Envio de Documentos")
+    st.caption("Envie documentos para consulta interna ou libere-os para as alunas da turma selecionada.")
+
+    with st.expander("➕ Enviar documento", expanded=True):
             with st.form("form_enviar_gabarito", clear_on_submit=True):
                 c1, c2 = st.columns(2)
                 disciplina_gab = c1.selectbox("Disciplina", ["Prática", "Teoria", "Solfejo"])
                 turma_gab = c2.selectbox("Turma", list(TURMAS.keys()))
-                titulo_gab = st.text_input("Material / lição", placeholder="Ex.: Apostila MSA - páginas 7 e 8")
-                data_correcao_gab = st.date_input("Data prevista para correção", value=datetime.now().date())
+                titulo_gab = st.text_input("Título do documento", placeholder="Ex.: Apostila MSA - páginas 7 e 8")
+                data_correcao_gab = st.date_input("Data do documento", value=datetime.now().date())
                 obs_gab = st.text_area("Observação opcional")
+                visivel_alunas = st.checkbox("📚 Liberar este documento para as alunas desta turma")
                 arquivo_gab = st.file_uploader("Imagem ou PDF", type=["pdf", "png", "jpg", "jpeg", "webp"])
-                if st.form_submit_button("Enviar gabarito", use_container_width=True, type="primary"):
+                if st.form_submit_button("Enviar documento", use_container_width=True, type="primary"):
                     if not arquivo_gab or not titulo_gab.strip():
                         st.error("Informe o material/lição e selecione o arquivo.")
                     else:
@@ -2639,9 +2691,10 @@ elif menu == "📑 Gabaritos":
                                 "titulo": titulo_gab.strip(), "disciplina": disciplina_gab, "turma": turma_gab,
                                 "observacao": obs_gab.strip(), "professora": st.session_state.nome_logado,
                                 "arquivo_path": caminho, "arquivo_nome": nome_arquivo,
-                                "data_correcao": data_correcao_gab.isoformat()
+                                "data_correcao": data_correcao_gab.isoformat(),
+                                "visivel_alunas": visivel_alunas
                             }).execute()
-                            st.success("✅ Gabarito enviado para a Secretaria.")
+                            st.success("✅ Documento enviado.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Não foi possível enviar o gabarito: {e}")
@@ -2658,29 +2711,124 @@ elif menu == "📑 Gabaritos":
                 data_gab = gab.get("data_correcao") or "não informada"
                 st.markdown(
                     f"**👩‍🏫 Enviado por:** {gab.get('professora')}  \n"
-                    f"**📅 Correção:** {data_gab}  \n"
+                    f"**📅 Data:** {data_gab}  \n"
                     f"**📎 Arquivo:** {gab.get('arquivo_nome')}"
                 )
+                if gab.get("visivel_alunas"):
+                    st.caption("📚 Disponível para as alunas desta turma.")
                 if gab.get("observacao"):
                     st.write(gab["observacao"])
                 try:
                     link = supabase.storage.from_("gabaritos").create_signed_url(gab["arquivo_path"], 3600)
                     url = link.get("signedURL") or link.get("signedUrl")
                     if url:
-                        st.link_button("Abrir gabarito", url)
+                        st.link_button("Abrir documento", url)
                 except Exception:
-                    st.caption("Arquivo indisponível. Verifique a configuração do bucket gabaritos.")
-                if not eh_secretaria_gab and gab.get("professora") == st.session_state.nome_logado:
-                    if st.button("🗑️ Excluir meu gabarito", key=f"excluir_gab_{gab.get('id')}"):
+                    st.caption("Arquivo indisponível. Verifique a configuração do armazenamento.")
+                if eh_secretaria_gab or gab.get("professora") == st.session_state.nome_logado:
+                    if st.button("🗑️ Excluir documento", key=f"excluir_gab_{gab.get('id')}"):
                         try:
                             supabase.storage.from_("gabaritos").remove([gab["arquivo_path"]])
                             supabase.table("gabaritos").delete().eq("id", gab["id"]).execute()
-                            st.success("Gabarito excluído.")
+                            st.success("Documento excluído.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Não foi possível excluir o gabarito: {e}")
     else:
-        st.info("Nenhum gabarito enviado ainda.")
+        st.info("Nenhum documento enviado ainda.")
+
+# ============================================================
+# PROVAS E AVALIAÇÕES
+# ============================================================
+elif menu == "📝 Provas":
+    eh_secretaria_provas = st.session_state.perfil == "Secretaria"
+    st.header("📝 Provas e Avaliações")
+    avaliacoes = db_get_avaliacoes()
+
+    if eh_secretaria_provas:
+        with st.expander("➕ Criar prova ou avaliação", expanded=True):
+            with st.form("form_criar_avaliacao", clear_on_submit=True):
+                titulo_avaliacao = st.text_input("Nome da prova/avaliação", placeholder="Ex.: Avaliação mensal de setembro")
+                data_avaliacao = st.date_input("Data da avaliação", value=datetime.now().date())
+                if st.form_submit_button("Criar avaliação", use_container_width=True):
+                    if not titulo_avaliacao.strip():
+                        st.error("Informe o nome da avaliação.")
+                    else:
+                        try:
+                            supabase.table("avaliacoes").insert({
+                                "titulo": titulo_avaliacao.strip(), "data_avaliacao": data_avaliacao.isoformat()
+                            }).execute()
+                            st.success("✅ Avaliação criada. Agora defina as professoras responsáveis.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Não foi possível criar a avaliação: {e}")
+
+        if avaliacoes:
+            opcoes_av = {f"{a.get('titulo')} — {a.get('data_avaliacao') or 'sem data'}": a for a in avaliacoes}
+            rotulo_av = st.selectbox("Avaliação para configurar:", list(opcoes_av.keys()))
+            avaliacao_sel = opcoes_av[rotulo_av]
+            responsaveis_atuais = db_get_avaliacao_responsaveis(avaliacao_sel["id"])
+            mapa_responsaveis = {(r.get("aluna"), r.get("disciplina")): r.get("professora") for r in responsaveis_atuais}
+            st.subheader("👩‍🏫 Professoras responsáveis")
+            st.caption("Defina uma professora para cada aluna e disciplina. As notas continuam individuais, inclusive para aulas em turma.")
+            if not PROFESSORAS_LISTA:
+                st.warning("Cadastre professoras antes de configurar as responsáveis.")
+            else:
+                selecoes_responsaveis = []
+                for aluna_prova in ALUNAS_LISTA:
+                    with st.container(border=True):
+                        st.markdown(f"**{aluna_prova}**")
+                        cols_resp = st.columns(3)
+                        for col_resp, disciplina_resp in zip(cols_resp, ["Prática", "Teoria", "Solfejo"]):
+                            atual_resp = mapa_responsaveis.get((aluna_prova, disciplina_resp))
+                            indice_resp = PROFESSORAS_LISTA.index(atual_resp) if atual_resp in PROFESSORAS_LISTA else 0
+                            professora_resp = col_resp.selectbox(
+                                disciplina_resp, PROFESSORAS_LISTA, index=indice_resp,
+                                key=f"resp_{avaliacao_sel['id']}_{aluna_prova}_{disciplina_resp}"
+                            )
+                            selecoes_responsaveis.append({
+                                "avaliacao_id": avaliacao_sel["id"], "aluna": aluna_prova,
+                                "disciplina": disciplina_resp, "professora": professora_resp
+                            })
+                if st.button("💾 Salvar professoras responsáveis", use_container_width=True):
+                    try:
+                        supabase.table("avaliacao_responsaveis").upsert(
+                            selecoes_responsaveis, on_conflict="avaliacao_id,aluna,disciplina"
+                        ).execute()
+                        st.success("✅ Responsáveis salvas.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Não foi possível salvar as responsáveis: {e}")
+    else:
+        nome_professora_prova = st.session_state.nome_logado
+        responsaveis_prof = [r for r in db_get_avaliacao_responsaveis() if r.get("professora") == nome_professora_prova]
+        if not responsaveis_prof:
+            st.info("Nenhuma avaliação foi atribuída a você ainda.")
+        else:
+            notas_existentes = db_get_avaliacao_notas()
+            mapa_avaliacoes = {a.get("id"): a for a in avaliacoes}
+            for responsavel in responsaveis_prof:
+                prova = mapa_avaliacoes.get(responsavel.get("avaliacao_id"), {})
+                with st.container(border=True):
+                    st.markdown(f"**{prova.get('titulo', 'Avaliação')}** — {responsavel.get('disciplina')}")
+                    st.caption(f"Aluna: {responsavel.get('aluna')}")
+                    nota_existente = next((n for n in notas_existentes if n.get("avaliacao_id") == responsavel.get("avaliacao_id") and n.get("aluna") == responsavel.get("aluna") and n.get("disciplina") == responsavel.get("disciplina")), None)
+                    valor_nota = float(nota_existente["nota"]) if nota_existente and nota_existente.get("nota") is not None else 0.0
+                    nota_digitada = st.number_input(
+                        "Nota (0 a 10):", min_value=0.0, max_value=10.0, value=valor_nota, step=0.1,
+                        key=f"nota_{responsavel['id']}"
+                    )
+                    if st.button("Salvar nota", key=f"salvar_nota_{responsavel['id']}"):
+                        try:
+                            supabase.table("avaliacao_notas").upsert({
+                                "avaliacao_id": responsavel["avaliacao_id"], "aluna": responsavel["aluna"],
+                                "disciplina": responsavel["disciplina"], "nota": nota_digitada,
+                                "professora": nome_professora_prova
+                            }, on_conflict="avaliacao_id,aluna,disciplina").execute()
+                            st.success("✅ Nota salva.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Não foi possível salvar a nota: {e}")
 
 # ============================================================
 # MÓDULO PROFESSORA - V58 (INTEGRADO E CORRIGIDO)
