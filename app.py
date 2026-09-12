@@ -2709,7 +2709,9 @@ elif menu == "📁 Envio de Documentos":
     st.caption("Envie documentos para consulta interna ou libere-os para as alunas da turma selecionada.")
 
     with st.expander("➕ Enviar documento", expanded=True):
-            with st.form("form_enviar_gabarito", clear_on_submit=True):
+            # Sem formulário: o destino precisa atualizar a tela imediatamente
+            # para mostrar o seletor de turma ou de aluna.
+            with st.container():
                 disciplina_gab = st.selectbox("Disciplina", ["Prática", "Teoria", "Solfejo"])
                 destinos_documento = ["Uso interno", "Enviar para uma turma"]
                 if eh_secretaria_gab:
@@ -2727,7 +2729,7 @@ elif menu == "📁 Envio de Documentos":
                 if destino_documento == "Uso interno":
                     st.caption("🔒 Documento interno: nenhuma aluna poderá vê-lo.")
                 arquivo_gab = st.file_uploader("Imagem ou PDF", type=["pdf", "png", "jpg", "jpeg", "webp"])
-                if st.form_submit_button("Enviar documento", use_container_width=True, type="primary"):
+                if st.button("Enviar documento", key="btn_enviar_documento", use_container_width=True, type="primary"):
                     if not arquivo_gab or not titulo_gab.strip():
                         st.error("Informe o material/lição e selecione o arquivo.")
                     else:
