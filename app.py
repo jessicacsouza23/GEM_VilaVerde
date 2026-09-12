@@ -677,6 +677,36 @@ def db_get_avaliacao_notas(avaliacao_id=None):
     except Exception:
         return []
 
+def db_get_exercicios_registro(aluna, data_str, disciplina, material):
+    try:
+        res = (supabase.table("exercicios_registro").select("*")
+               .eq("aluna", aluna).eq("data", data_str)
+               .eq("disciplina", disciplina).eq("material", material)
+               .order("ordem").execute())
+        return res.data or []
+    except Exception:
+        return []
+
+def db_salvar_exercicios_registro(aluna, data_str, instrutora, disciplina, material, exercicios):
+    try:
+        # O botão Salvar substitui apenas os exercícios daquele método e data,
+        # mantendo o restante do histórico intacto.
+        (supabase.table("exercicios_registro").delete().eq("aluna", aluna)
+         .eq("data", data_str).eq("disciplina", disciplina).eq("material", material).execute())
+        linhas = [
+            {"aluna": aluna, "data": data_str, "instrutora": instrutora,
+             "disciplina": disciplina, "material": material,
+             "exercicio": item["exercicio"], "dificuldades": item["dificuldades"], "ordem": indice}
+            for indice, item in enumerate(exercicios)
+            if item.get("exercicio", "").strip()
+        ]
+        if linhas:
+            supabase.table("exercicios_registro").insert(linhas).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar exercícios: {e}")
+        return False
+
 def _nome_seguro_arquivo(nome):
     base = os.path.basename(nome)
     return "".join(c if c.isalnum() or c in ".-_" else "_" for c in base)
@@ -3213,6 +3243,41 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     st.caption("Marque as dificuldades percebidas ao conferir a lição de casa acima.")
                                 cols_d = st.columns(3)
                                 difs_marcadas = [d for i, d in enumerate(DIF_PRATICA) if cols_d[i % 3].checkbox(d, value=(d in difs_db_m), key=f"dp_{mat}_{i}_{d_sel['id']}")]
+
+                                # Exercícios permitem registrar dificuldades de forma
+                                # separada, mesmo dentro do mesmo método.
+                                chave_qtd_ex = f"qtd_exercicios_{mat}_{d_sel['id']}"
+                                exercicios_salvos = db_get_exercicios_registro(als_selecionadas[0], dt_str, "Prática", mat)
+                                if chave_qtd_ex not in st.session_state:
+                                    st.session_state[chave_qtd_ex] = len(exercicios_salvos)
+                                st.markdown("**🎼 Exercícios e dificuldades separadas**")
+                                st.caption("Opcional: adicione quantos exercícios precisar. As dificuldades de cada um ficam registradas separadamente.")
+                                if st.button("➕ Adicionar exercício", key=f"add_ex_{mat}_{d_sel['id']}"):
+                                    st.session_state[chave_qtd_ex] += 1
+                                    st.rerun()
+                                exercicios_mat = []
+                                for indice_ex in range(st.session_state[chave_qtd_ex]):
+                                    salvo_ex = exercicios_salvos[indice_ex] if indice_ex < len(exercicios_salvos) else {}
+                                    with st.container(border=True):
+                                        c_ex_titulo, c_ex_remover = st.columns([5, 1])
+                                        nome_ex = c_ex_titulo.text_input(
+                                            f"Exercício {indice_ex + 1}:", value=str(salvo_ex.get("exercicio") or ""),
+                                            key=f"ex_nome_{mat}_{indice_ex}_{d_sel['id']}", placeholder="Ex.: Estudo 21, exercício 3"
+                                        )
+                                        if c_ex_remover.button("🗑️", key=f"del_ex_{mat}_{indice_ex}_{d_sel['id']}"):
+                                            if indice_ex == st.session_state[chave_qtd_ex] - 1:
+                                                st.session_state[chave_qtd_ex] -= 1
+                                                st.rerun()
+                                        difs_ex_salvas = salvo_ex.get("dificuldades") or []
+                                        cols_ex = st.columns(3)
+                                        difs_ex = [
+                                            dificuldade for i, dificuldade in enumerate(DIF_PRATICA)
+                                            if cols_ex[i % 3].checkbox(
+                                                dificuldade, value=(dificuldade in difs_ex_salvas),
+                                                key=f"ex_dif_{mat}_{indice_ex}_{i}_{d_sel['id']}"
+                                            )
+                                        ]
+                                        exercicios_mat.append({"exercicio": nome_ex, "dificuldades": difs_ex})
                                 resultado_licao = None
                                 if mat != "Apostila":
                                     opcoes_resultado = ["Passou", "Não passou", "Estudar mais"]
@@ -3225,7 +3290,9 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     )
                                 registros_material[mat] = {
                                     "pagina": pagina, "resultado_licao": resultado_licao,
-                                    "licao_anterior": licao_anterior, "difs": difs_marcadas
+                                    "licao_anterior": licao_anterior,
+                                    "difs": list(dict.fromkeys(difs_marcadas + [d for ex in exercicios_mat for d in ex["dificuldades"]])),
+                                    "exercicios": exercicios_mat
                                 }
                                 st.divider()
 
@@ -3318,6 +3385,14 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                                 "Dificuldades": dados["difs"], "Observacao": obs_geral,
                                                 "Status": status_analise
                                             }, registro_analise_existente.iloc[-1].get("id") if not registro_analise_existente.empty else None)
+
+                                            # Mantém os exercícios separados para consulta
+                                            # futura e agrega as dificuldades no registro
+                                            # principal, que é a fonte do Analítico.
+                                            db_salvar_exercicios_registro(
+                                                al_f, dt_str, instr_sel, "Prática", mat,
+                                                dados.get("exercicios", [])
+                                            )
 
                                             # A conferência feita nesta aula é a correção da
                                             # última lição de casa daquele método. Apostila é
