@@ -3638,7 +3638,9 @@ elif menu == "👩‍🏫 Minhas Aulas":
 elif menu == "📊 Analítico IA":
     st.markdown(f"<h1 style='text-align: center; color: #2E4053;'>📊 Prontuário Pedagógico Master</h1>", unsafe_allow_html=True)
     
-    tab_aluna, tab_quadro = st.tabs(["👤 Prontuário Individual", "🏆 Quadro de Desempenho"])
+    tab_aluna, tab_quadro, tab_boletim_geral = st.tabs([
+        "👤 Prontuário Individual", "🏆 Quadro de Desempenho", "🎼 Boletim"
+    ])
 
     with tab_aluna:
         historico_raw = db_get_historico()
@@ -4193,6 +4195,76 @@ das aulas; pontos fortes e pontos que precisam de reforço; plano objetivo para 
                 st.info("Nenhuma aluna cadastrada ainda.")
 
             st.caption(f"📅 Período analisado: {data_ini_q.strftime('%d/%m/%Y')} até {data_fim_q.strftime('%d/%m/%Y')}. A medalha é calculada pela % de aulas sem dificuldade registrada em cada matéria, dentro do período escolhido.")
+
+    # --- ABA 3: BOLETIM GERAL (NOTAS DE TODAS AS ALUNAS) ---
+    with tab_boletim_geral:
+        st.markdown("### 🎼 Boletim de Avaliações")
+        st.caption("Consulte as notas por aluna e disciplina. A média considera todas as notas lançadas nas avaliações do período.")
+
+        col_boletim_ini, col_boletim_fim = st.columns(2)
+        data_ini_boletim = col_boletim_ini.date_input(
+            "De:", datetime.now().date() - timedelta(days=30), key="boletim_geral_ini"
+        )
+        data_fim_boletim = col_boletim_fim.date_input(
+            "Até:", datetime.now().date(), key="boletim_geral_fim"
+        )
+
+        if data_ini_boletim > data_fim_boletim:
+            st.error("A data inicial não pode ser posterior à data final.")
+        else:
+            avaliacoes_boletim = []
+            for avaliacao in db_get_avaliacoes():
+                try:
+                    data_avaliacao = datetime.fromisoformat(str(avaliacao.get("data_avaliacao"))).date()
+                    if data_ini_boletim <= data_avaliacao <= data_fim_boletim:
+                        avaliacoes_boletim.append(avaliacao)
+                except Exception:
+                    continue
+
+            mapa_avaliacoes_boletim = {a.get("id"): a for a in avaliacoes_boletim}
+            notas_boletim = [
+                nota for nota in db_get_avaliacao_notas()
+                if nota.get("avaliacao_id") in mapa_avaliacoes_boletim and nota.get("nota") is not None
+            ]
+
+            if not avaliacoes_boletim:
+                st.info("Nenhuma avaliação foi cadastrada dentro do período escolhido.")
+            elif not notas_boletim:
+                st.info("Há avaliações no período, mas nenhuma nota foi lançada ainda.")
+            else:
+                st.success(
+                    f"{len(avaliacoes_boletim)} avaliação(ões) e {len(notas_boletim)} nota(s) lançada(s) no período."
+                )
+                for aluna_boletim in ALUNAS_LISTA:
+                    notas_aluna_boletim = [n for n in notas_boletim if n.get("aluna") == aluna_boletim]
+                    if not notas_aluna_boletim:
+                        continue
+
+                    valores_aluna_boletim = [float(n["nota"]) for n in notas_aluna_boletim]
+                    media_aluna_boletim = sum(valores_aluna_boletim) / len(valores_aluna_boletim)
+                    with st.expander(
+                        f"🎓 {aluna_boletim} — média geral: {media_aluna_boletim:.1f}", expanded=False
+                    ):
+                        linhas_boletim = []
+                        for nota in notas_aluna_boletim:
+                            avaliacao = mapa_avaliacoes_boletim.get(nota.get("avaliacao_id"), {})
+                            linhas_boletim.append({
+                                "Data": avaliacao.get("data_avaliacao") or "—",
+                                "Avaliação": avaliacao.get("titulo") or "Avaliação",
+                                "Disciplina": nota.get("disciplina") or "—",
+                                "Nota": float(nota["nota"]),
+                                "Professora": nota.get("professora") or "—",
+                            })
+                        df_boletim_aluna = pd.DataFrame(linhas_boletim).sort_values(["Data", "Disciplina"])
+                        st.dataframe(df_boletim_aluna, use_container_width=True, hide_index=True)
+
+                        medias_disciplina = (
+                            df_boletim_aluna.groupby("Disciplina", as_index=False)["Nota"]
+                            .mean().rename(columns={"Nota": "Média"})
+                        )
+                        medias_disciplina["Média"] = medias_disciplina["Média"].round(1)
+                        st.caption("Média por disciplina")
+                        st.dataframe(medias_disciplina, use_container_width=True, hide_index=True)
 
 # ============================================================
 # MÓDULO MENSAGENS - MURAL GERAL + MURAL PROFESSORAS + DIRETAS
