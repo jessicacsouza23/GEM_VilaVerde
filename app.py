@@ -2713,9 +2713,7 @@ elif menu == "📁 Envio de Documentos":
             # para mostrar o seletor de turma ou de aluna.
             with st.container():
                 disciplina_gab = st.selectbox("Disciplina", ["Prática", "Teoria", "Solfejo"])
-                destinos_documento = ["Uso interno", "Enviar para uma turma"]
-                if eh_secretaria_gab:
-                    destinos_documento.append("Enviar para uma aluna")
+                destinos_documento = ["Uso interno", "Enviar para uma turma", "Enviar para uma aluna"]
                 destino_documento = st.radio("Destino do documento:", destinos_documento, horizontal=True)
                 turma_gab, aluna_documento = None, None
                 if destino_documento == "Enviar para uma turma":
