@@ -2540,9 +2540,8 @@ elif menu == "🎓 Minhas Lições":
                 (dados_estrela["_dt_estrela"].dt.date <= fim_estrelas)
             ]
         icone_estrela, nome_estrela, score_estrela, tem_dados_estrela = calcular_classificacao_desempenho(regs_estrela)
-        detalhe_estrela = f"{score_estrela}% sem dificuldades" if tem_dados_estrela else "sem registros"
         coluna_estrela.metric(f"{ {'Prática': '🎹', 'Teoria': '📚', 'Solfejo': '🔊'}[disciplina_estrela] } {disciplina_estrela}",
-                              f"{icone_estrela} {nome_estrela}", detalhe_estrela)
+                              f"{icone_estrela} {nome_estrela}")
 
     tab_licoes_aluna, tab_estudo_aluna = st.tabs(["📚 Minhas Lições de Casa", "✅ Controle de Estudo Diário"])
 
@@ -2629,7 +2628,10 @@ elif menu == "📁 Documentos":
     turma_aluna = cadastro_aluna.get("turma")
     documentos_aluna = [
         d for d in db_get_gabaritos()
-        if d.get("visivel_alunas") and d.get("turma") == turma_aluna
+        if d.get("visivel_alunas") and (
+            d.get("aluna") == st.session_state.nome_logado or
+            (not d.get("aluna") and d.get("turma") == turma_aluna)
+        )
     ]
     if not documentos_aluna:
         st.info("Nenhum documento foi liberado para sua turma ainda.")
@@ -2652,21 +2654,51 @@ elif menu == "📁 Documentos":
 # BOLETIM DA ALUNA
 # ============================================================
 elif menu == "📝 Boletim":
-    st.header("📝 Meu Boletim")
+    st.markdown("""
+    <style>
+      .boletim-capa { background: linear-gradient(135deg,#2e4053,#593b8f); color:#fff;
+        border-radius:18px; padding:24px 26px; margin:4px 0 20px; }
+      .boletim-capa h1 { color:#fff!important; margin:0; font-size:2rem; }
+      .boletim-capa p { margin:7px 0 0; opacity:.88; }
+      .boletim-prova { border:1px solid #e7ddf4; border-radius:16px; padding:18px;
+        margin:14px 0; background:linear-gradient(120deg,#fff,#fcf9ff); }
+      .boletim-prova h3 { color:#41266e; margin:0 0 3px; }
+      .boletim-data { color:#806aa3; font-size:.9rem; margin-bottom:14px; }
+      .boletim-notas { display:flex; gap:10px; flex-wrap:wrap; }
+      .nota-musical { flex:1; min-width:155px; border-radius:12px; padding:13px 15px;
+        background:#f2ebfa; border-left:5px solid #8b5cc7; }
+      .nota-musical .disciplina { color:#61468e; font-weight:700; font-size:.92rem; }
+      .nota-musical .valor { color:#2e4053; font-size:1.45rem; font-weight:800; margin-top:3px; }
+      .nota-musical .aguardando { color:#8b7a9c; font-size:1rem; font-weight:600; margin-top:7px; }
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="boletim-capa">
+      <h1>🎼 Meu Boletim</h1>
+      <p>{html.escape(str(st.session_state.nome_logado))} &nbsp;•&nbsp; suas notas em cada avaliação</p>
+    </div>
+    """, unsafe_allow_html=True)
     avaliacoes_aluna = db_get_avaliacoes()
     notas_aluna = [n for n in db_get_avaliacao_notas() if n.get("aluna") == st.session_state.nome_logado]
     if not avaliacoes_aluna:
-        st.info("Nenhuma prova ou avaliação cadastrada ainda.")
+        st.info("🎵 Nenhuma prova ou avaliação cadastrada ainda.")
     else:
         for avaliacao in avaliacoes_aluna:
-            with st.container(border=True):
-                st.markdown(f"**{avaliacao.get('titulo')}**")
-                if avaliacao.get("data_avaliacao"):
-                    st.caption(f"Data: {avaliacao['data_avaliacao']}")
-                cols_boletim = st.columns(3)
-                for col_bol, disciplina_bol in zip(cols_boletim, ["Prática", "Teoria", "Solfejo"]):
-                    nota = next((n for n in notas_aluna if n.get("avaliacao_id") == avaliacao.get("id") and n.get("disciplina") == disciplina_bol), None)
-                    col_bol.metric(disciplina_bol, f"{float(nota['nota']):.1f}" if nota and nota.get("nota") is not None else "Aguardando")
+            notas_html = []
+            for disciplina_bol, icone_bol in [("Prática", "🎹"), ("Teoria", "📚"), ("Solfejo", "🔊")]:
+                nota = next((n for n in notas_aluna if n.get("avaliacao_id") == avaliacao.get("id") and n.get("disciplina") == disciplina_bol), None)
+                if nota and nota.get("nota") is not None:
+                    valor_html = f"<div class='valor'>{float(nota['nota']):.1f}</div>"
+                else:
+                    valor_html = "<div class='aguardando'>Aguardando</div>"
+                notas_html.append(f"<div class='nota-musical'><div class='disciplina'>{icone_bol} {disciplina_bol}</div>{valor_html}</div>")
+            st.markdown(f"""
+            <div class="boletim-prova">
+              <h3>🎶 {html.escape(str(avaliacao.get('titulo') or 'Avaliação'))}</h3>
+              <div class="boletim-data">📅 {html.escape(str(avaliacao.get('data_avaliacao') or 'Data ainda não informada'))}</div>
+              <div class="boletim-notas">{''.join(notas_html)}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
 # ============================================================
 # MÓDULO DOCUMENTOS - PROFESSORAS E COORDENAÇÃO
@@ -2678,13 +2710,22 @@ elif menu == "📁 Envio de Documentos":
 
     with st.expander("➕ Enviar documento", expanded=True):
             with st.form("form_enviar_gabarito", clear_on_submit=True):
-                c1, c2 = st.columns(2)
-                disciplina_gab = c1.selectbox("Disciplina", ["Prática", "Teoria", "Solfejo"])
-                turma_gab = c2.selectbox("Turma", list(TURMAS.keys()))
+                disciplina_gab = st.selectbox("Disciplina", ["Prática", "Teoria", "Solfejo"])
+                destinos_documento = ["Uso interno", "Enviar para uma turma"]
+                if eh_secretaria_gab:
+                    destinos_documento.append("Enviar para uma aluna")
+                destino_documento = st.radio("Destino do documento:", destinos_documento, horizontal=True)
+                turma_gab, aluna_documento = None, None
+                if destino_documento == "Enviar para uma turma":
+                    turma_gab = st.selectbox("Turma que receberá o documento", list(TURMAS.keys()))
+                elif destino_documento == "Enviar para uma aluna":
+                    aluna_documento = st.selectbox("Aluna que receberá o documento", ALUNAS_LISTA)
                 titulo_gab = st.text_input("Título do documento", placeholder="Ex.: Apostila MSA - páginas 7 e 8")
                 data_correcao_gab = st.date_input("Data do documento", value=datetime.now().date())
                 obs_gab = st.text_area("Observação opcional")
-                visivel_alunas = st.checkbox("📚 Liberar este documento para as alunas desta turma")
+                visivel_alunas = destino_documento != "Uso interno"
+                if destino_documento == "Uso interno":
+                    st.caption("🔒 Documento interno: nenhuma aluna poderá vê-lo.")
                 arquivo_gab = st.file_uploader("Imagem ou PDF", type=["pdf", "png", "jpg", "jpeg", "webp"])
                 if st.form_submit_button("Enviar documento", use_container_width=True, type="primary"):
                     if not arquivo_gab or not titulo_gab.strip():
@@ -2699,6 +2740,7 @@ elif menu == "📁 Envio de Documentos":
                             )
                             supabase.table("gabaritos").insert({
                                 "titulo": titulo_gab.strip(), "disciplina": disciplina_gab, "turma": turma_gab,
+                                "aluna": aluna_documento,
                                 "observacao": obs_gab.strip(), "professora": st.session_state.nome_logado,
                                 "arquivo_path": caminho, "arquivo_nome": nome_arquivo,
                                 "data_correcao": data_correcao_gab.isoformat(),
@@ -2717,7 +2759,8 @@ elif menu == "📁 Envio de Documentos":
             if filtro_disc != "Todas" and gab.get("disciplina") != filtro_disc:
                 continue
             with st.container(border=True):
-                st.markdown(f"**{gab.get('titulo')}** - {gab.get('disciplina')} | {gab.get('turma')}")
+                destino_gab = f"Aluna: {gab.get('aluna')}" if gab.get("aluna") else (f"Turma: {gab.get('turma')}" if gab.get("turma") else "Uso interno")
+                st.markdown(f"**{gab.get('titulo')}** - {gab.get('disciplina')} | {destino_gab}")
                 data_gab = gab.get("data_correcao") or "não informada"
                 st.markdown(
                     f"**👩‍🏫 Enviado por:** {gab.get('professora')}  \n"
@@ -2725,7 +2768,7 @@ elif menu == "📁 Envio de Documentos":
                     f"**📎 Arquivo:** {gab.get('arquivo_nome')}"
                 )
                 if gab.get("visivel_alunas"):
-                    st.caption("📚 Disponível para as alunas desta turma.")
+                    st.caption("📚 Disponível para o destino indicado.")
                 if gab.get("observacao"):
                     st.write(gab["observacao"])
                 try:
@@ -2777,6 +2820,25 @@ elif menu == "📝 Provas":
             opcoes_av = {f"{a.get('titulo')} — {a.get('data_avaliacao') or 'sem data'}": a for a in avaliacoes}
             rotulo_av = st.selectbox("Avaliação para configurar:", list(opcoes_av.keys()))
             avaliacao_sel = opcoes_av[rotulo_av]
+            chave_excluir_avaliacao = f"confirmar_excluir_avaliacao_{avaliacao_sel['id']}"
+            if not st.session_state.get(chave_excluir_avaliacao):
+                if st.button("🗑️ Excluir esta avaliação", key=f"excluir_avaliacao_{avaliacao_sel['id']}"):
+                    st.session_state[chave_excluir_avaliacao] = True
+                    st.rerun()
+            else:
+                st.warning("Ao excluir esta avaliação, as responsáveis e as notas lançadas nela também serão apagadas.")
+                c_confirma_av, c_cancela_av = st.columns(2)
+                if c_confirma_av.button("Confirmar exclusão", key=f"confirmar_avaliacao_{avaliacao_sel['id']}"):
+                    try:
+                        supabase.table("avaliacoes").delete().eq("id", avaliacao_sel["id"]).execute()
+                        st.session_state.pop(chave_excluir_avaliacao, None)
+                        st.success("✅ Avaliação excluída.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Não foi possível excluir a avaliação: {e}")
+                if c_cancela_av.button("Cancelar", key=f"cancelar_avaliacao_{avaliacao_sel['id']}"):
+                    st.session_state.pop(chave_excluir_avaliacao, None)
+                    st.rerun()
             responsaveis_atuais = db_get_avaliacao_responsaveis(avaliacao_sel["id"])
             mapa_responsaveis = {(r.get("aluna"), r.get("disciplina")): r.get("professora") for r in responsaveis_atuais}
             st.subheader("👩‍🏫 Professoras responsáveis")
