@@ -636,6 +636,16 @@ def db_save_historico(dados):
         st.error(f"Erro ao salvar no banco: {e}")
         return None
 
+def db_atualizar_ou_criar_historico(dados, registro_id=None):
+    """Atualiza o registro do dia quando ele já existe; evita duplicatas ao editar."""
+    try:
+        if registro_id:
+            return supabase.table("historico_geral").update(dados).eq("id", registro_id).execute()
+        return supabase.table("historico_geral").insert(dados).execute()
+    except Exception as e:
+        st.error(f"Erro ao atualizar registro: {e}")
+        return None
+
 def db_get_gabaritos():
     try:
         res = supabase.table("gabaritos").select("*").order("created_at", desc=True).execute()
@@ -2978,6 +2988,16 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
             if als_selecionadas:
                 tipo_aula = d_sel["tipo"]
+                # Ao trocar data, aula ou aluna, limpa apenas os widgets do
+                # registro anterior. Assim a tela recarrega os dados salvos da
+                # pessoa selecionada, sem misturar informações entre alunas.
+                contexto_registro = f"{d_sel['id']}|{dt_str}|{tipo_aula}|{als_selecionadas[0]}"
+                if st.session_state.get("_contexto_registro_prof") != contexto_registro:
+                    sufixo_registro = f"_{d_sel['id']}"
+                    for chave_widget in list(st.session_state.keys()):
+                        if str(chave_widget).endswith(sufixo_registro):
+                            st.session_state.pop(chave_widget, None)
+                    st.session_state["_contexto_registro_prof"] = contexto_registro
 
                 # Só folhas avulsas cuja própria professora escolheu corrigir
                 # aparecem aqui. Apostilas são da secretaria; Solfejo é
@@ -3042,7 +3062,20 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 if tipo_aula == "Prática":
                     st.caption("👀 Registre a correção da lição de casa de cada método. Se marcar Não passou ou Estudar mais, a mesma lição será sugerida automaticamente para a próxima aula e continuará editável.")
                     opcoes_materiais = ["Apostila"] + metodos_filtrados
-                    materiais_hoje = st.multiselect("Métodos/Apostila conferidos hoje:", opcoes_materiais, key=f"mm_{d_sel['id']}")
+                    materiais_salvos = []
+                    if not df_hist_local.empty:
+                        analises_salvas = df_hist_local[
+                            (df_hist_local['Aluna'] == als_selecionadas[0]) &
+                            (df_hist_local['Data'] == dt_str) &
+                            (df_hist_local['Tipo'] == "Analise_Prática")
+                        ]
+                        materiais_salvos = [
+                            str(valor).split(":", 1)[0].strip()
+                            for valor in analises_salvas.get("Licao_Atual", pd.Series(dtype=str)).tolist()
+                            if str(valor).split(":", 1)[0].strip() in opcoes_materiais
+                        ]
+                    materiais_hoje = st.multiselect("Métodos/Apostila conferidos hoje:", opcoes_materiais,
+                                                     default=list(dict.fromkeys(materiais_salvos)), key=f"mm_{d_sel['id']}")
 
                     if not materiais_hoje:
                         st.info("Selecione ao menos um método ou a apostila trabalhada hoje.")
@@ -3120,9 +3153,12 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 difs_marcadas = [d for i, d in enumerate(DIF_PRATICA) if cols_d[i % 3].checkbox(d, value=(d in difs_db_m), key=f"dp_{mat}_{i}_{d_sel['id']}")]
                                 resultado_licao = None
                                 if mat != "Apostila":
+                                    opcoes_resultado = ["Passou", "Não passou", "Estudar mais"]
+                                    texto_resultado_db = str(dados_mat.get("Licao_Casa") or "")
+                                    resultado_db = next((op for op in opcoes_resultado if texto_resultado_db.endswith(op)), "Passou")
                                     resultado_licao = st.radio(
                                         "Resultado da correção:",
-                                        ["Passou", "Não passou", "Estudar mais"],
+                                        opcoes_resultado, index=opcoes_resultado.index(resultado_db),
                                         horizontal=True, key=f"resultado_licao_{mat}_{d_sel['id']}"
                                     )
                                 registros_material[mat] = {
@@ -3147,13 +3183,30 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 chave_resultado_anterior = f"resultado_anterior_{mc}_{d_sel['id']}"
                                 dados_resultado = registros_material.get(mc, {})
                                 resultado_atual = dados_resultado.get("resultado_licao")
-                                # Ao trocar para Não passou/Estudar mais, sugere a
-                                # lição anterior no campo normal e editável.
-                                if (resultado_atual in ("Não passou", "Estudar mais")
-                                        and st.session_state.get(chave_resultado_anterior) != resultado_atual
-                                        and dados_resultado.get("licao_anterior")
-                                        and not st.session_state.get(chave_casa, "").strip()):
-                                    st.session_state[chave_casa] = dados_resultado["licao_anterior"]
+                                # Ao reabrir um registro já salvo, traz a lição de
+                                # casa daquele mesmo dia para edição.
+                                if chave_casa not in st.session_state and not df_hist_local.empty:
+                                    casa_salva = df_hist_local[
+                                        (df_hist_local['Aluna'] == als_selecionadas[0]) &
+                                        (df_hist_local['Data'] == dt_str) &
+                                        (df_hist_local['Tipo'] == f"Casa_Metodo_{mc}")
+                                    ]
+                                    if not casa_salva.empty:
+                                        st.session_state[chave_casa] = str(casa_salva.iloc[-1].get("Licao_Casa") or "")
+                                resultado_anterior = st.session_state.get(chave_resultado_anterior)
+                                if resultado_anterior is None and dados_resultado.get("pagina"):
+                                    # Primeiro carregamento do registro salvo: não
+                                    # deve limpar a lição de casa sem ação da professora.
+                                    resultado_anterior = resultado_atual
+                                # Passou não gera repetição para casa. Ao trocar a
+                                # escolha, o campo é limpo. Não passou/Estudar mais
+                                # sugerem a mesma lição no campo editável.
+                                if resultado_anterior != resultado_atual:
+                                    if resultado_atual == "Passou":
+                                        st.session_state[chave_casa] = ""
+                                    elif (resultado_atual in ("Não passou", "Estudar mais")
+                                          and dados_resultado.get("licao_anterior")):
+                                        st.session_state[chave_casa] = dados_resultado["licao_anterior"]
                                 st.session_state[chave_resultado_anterior] = resultado_atual
                                 paginas_metodo_casa[mc] = st.text_input(f"🎼 Lição de casa — {mc}:", key=chave_casa)
 
@@ -3174,7 +3227,11 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                             and dados_resultado.get("resultado_licao") in ("Não passou", "Estudar mais")
                                             and dados_resultado.get("licao_anterior")):
                                         paginas_metodo_casa[mc] = dados_resultado["licao_anterior"]
-                                faltando = [mc for mc in metodos_do_dia if not paginas_metodo_casa.get(mc, "").strip()]
+                                faltando = [
+                                    mc for mc in metodos_do_dia
+                                    if (registros_material.get(mc, {}).get("resultado_licao") != "Passou"
+                                        and not paginas_metodo_casa.get(mc, "").strip())
+                                ]
                                 if faltando:
                                     st.error(f"⚠️ Preencha a lição de casa do(s) método(s): {', '.join(faltando)}. Não é opcional.")
                                 else:
@@ -3182,7 +3239,15 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                         for mat, dados in registros_material.items():
                                             difs_reais = [d for d in dados["difs"] if d != "Não apresentou dificuldades"]
                                             status_analise = "Realizada - com dificuldades" if difs_reais else "Realizada - sem pendência"
-                                            db_save_historico({
+                                            registro_analise_existente = pd.DataFrame()
+                                            if not df_hist_local.empty:
+                                                registro_analise_existente = df_hist_local[
+                                                    (df_hist_local['Aluna'] == al_f) &
+                                                    (df_hist_local['Data'] == dt_str) &
+                                                    (df_hist_local['Tipo'] == "Analise_Prática") &
+                                                    (df_hist_local['Licao_Atual'].str.startswith(f"{mat}:", na=False))
+                                                ]
+                                            db_atualizar_ou_criar_historico({
                                                 "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                                 "Tipo": "Analise_Prática",
                                                 "Licao_Atual": f"{mat}: {dados['pagina']}",
@@ -3190,7 +3255,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                                                 if dados.get("resultado_licao") else "Apostila conferida na aula"),
                                                 "Dificuldades": dados["difs"], "Observacao": obs_geral,
                                                 "Status": status_analise
-                                            })
+                                            }, registro_analise_existente.iloc[-1].get("id") if not registro_analise_existente.empty else None)
 
                                             # A conferência feita nesta aula é a correção da
                                             # última lição de casa daquele método. Apostila é
@@ -3212,19 +3277,29 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                                         "Não passou": "Não resolvido",
                                                     }[dados['resultado_licao']]
                                                     supabase.table("historico_geral").update({"Status": status_metodo}).eq("id", ultima_licao['id']).execute()
+                                        casas_atuais = df_hist_local[
+                                            (df_hist_local['Aluna'] == al_f) & (df_hist_local['Data'] == dt_str) &
+                                            (df_hist_local['Tipo'].str.startswith("Casa_", na=False))
+                                        ] if not df_hist_local.empty else pd.DataFrame()
+                                        casa_apostila_existente = casas_atuais[casas_atuais['Tipo'] == "Casa_Apostila"] if not casas_atuais.empty else pd.DataFrame()
                                         if apostila_casa:
-                                            db_save_historico({
+                                            db_atualizar_ou_criar_historico({
                                                 "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                                 "Tipo": "Casa_Apostila", "Licao_Atual": "Definido", "Licao_Casa": apostila_casa,
                                                 "Dificuldades": [], "Observacao": "", "Status": "Pendente"
-                                            })
+                                            }, casa_apostila_existente.iloc[-1].get("id") if not casa_apostila_existente.empty else None)
+                                        elif not casa_apostila_existente.empty:
+                                            supabase.table("historico_geral").delete().eq("id", casa_apostila_existente.iloc[-1]["id"]).execute()
                                         for mc, pag in paginas_metodo_casa.items():
+                                            casa_metodo_existente = casas_atuais[casas_atuais['Tipo'] == f"Casa_Metodo_{mc}"] if not casas_atuais.empty else pd.DataFrame()
                                             if pag:
-                                                db_save_historico({
+                                                db_atualizar_ou_criar_historico({
                                                     "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                                     "Tipo": f"Casa_Metodo_{mc}", "Licao_Atual": "Definido", "Licao_Casa": pag,
                                                     "Dificuldades": [], "Observacao": "", "Status": "Pendente"
-                                                })
+                                                }, casa_metodo_existente.iloc[-1].get("id") if not casa_metodo_existente.empty else None)
+                                            elif not casa_metodo_existente.empty:
+                                                supabase.table("historico_geral").delete().eq("id", casa_metodo_existente.iloc[-1]["id"]).execute()
                                     st.success("✅ Registro concluído com sucesso!")
                                     time.sleep(1)
                                     st.rerun()
@@ -3240,7 +3315,21 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     # Teoria/Solfejo: campo livre — a professora escreve o que usou
                     # (MSA, folha extra, apostila, método, etc.), sem lista fixa. Só a
                     # Prática usa a seleção dos métodos cadastrados (aba Configurar Métodos).
-                    mat_focado = st.text_input("Material usado hoje:", key=f"mat_{d_sel['id']}", placeholder="Ex: MSA, Folha Extra, Apostila...").strip()
+                    registro_hoje_base = pd.DataFrame()
+                    if not df_hist_local.empty:
+                        registro_hoje_base = df_hist_local[
+                            (df_hist_local['Aluna'] == als_selecionadas[0]) &
+                            (df_hist_local['Data'] == dt_str) &
+                            (df_hist_local['Tipo'] == f"Analise_{tipo_aula}")
+                        ]
+                    material_salvo = ""
+                    if not registro_hoje_base.empty:
+                        texto_salvo = str(registro_hoje_base.iloc[-1].get("Licao_Atual") or "")
+                        material_salvo = texto_salvo.split(":", 1)[0].strip()
+                    mat_focado = st.text_input(
+                        "Material usado hoje:", value=material_salvo, key=f"mat_{d_sel['id']}",
+                        placeholder="Ex: MSA, Folha Extra, Apostila..."
+                    ).strip()
 
                     dados_hoje = {}
                     if not df_hist_local.empty and mat_focado:
@@ -3277,10 +3366,19 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     st.caption("📬 O que marcar com 📖 abaixo vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método) e não vai para a secretaria.")
                     tarefas_casa = {}
                     quem_corrige = None
+                    casas_hoje = df_hist_local[
+                        (df_hist_local['Aluna'] == als_selecionadas[0]) &
+                        (df_hist_local['Data'] == dt_str) &
+                        (df_hist_local['Tipo'].str.startswith("Casa_", na=False))
+                    ] if not df_hist_local.empty else pd.DataFrame()
 
                     if tipo_aula == "Teoria":
-                        tipo_casa_sel = st.radio("📖 Tipo de lição de casa:", ["Folha Avulsa", "Apostila"], horizontal=True, key=f"tc_{d_sel['id']}")
-                        conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", key=f"cc_{d_sel['id']}")
+                        casa_teoria_salva = casas_hoje[casas_hoje['Tipo'].isin(["Casa_Teoria", "Casa_Teoria_Prof", "Casa_Apostila_Teoria"])] if not casas_hoje.empty else pd.DataFrame()
+                        tipo_salvo = str(casa_teoria_salva.iloc[-1].get("Tipo") or "") if not casa_teoria_salva.empty else ""
+                        tipo_casa_sel = st.radio("📖 Tipo de lição de casa:", ["Folha Avulsa", "Apostila"], horizontal=True,
+                                                 index=1 if tipo_salvo == "Casa_Apostila_Teoria" else 0, key=f"tc_{d_sel['id']}")
+                        conteudo_salvo = str(casa_teoria_salva.iloc[-1].get("Licao_Casa") or "") if not casa_teoria_salva.empty else ""
+                        conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", value=conteudo_salvo, key=f"cc_{d_sel['id']}")
 
                         # Apostila sempre é corrigida pela secretaria. A escolha fica
                         # apenas para folha avulsa de Teoria, como combinado.
@@ -3288,7 +3386,8 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             st.caption("🏢 Apostilas enviadas para casa são corrigidas pela secretaria.")
                             sufixo = ""
                         else:
-                            quem_corrige = st.radio("Quem corrige a folha avulsa na próxima aula?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True, key=f"qc_{d_sel['id']}")
+                            quem_corrige = st.radio("Quem corrige a folha avulsa na próxima aula?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True,
+                                                     index=1 if tipo_salvo == "Casa_Teoria_Prof" else 0, key=f"qc_{d_sel['id']}")
                             sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
                         # Mantém a disciplina no tipo salvo: apostila de Teoria
                         # não se mistura com apostila de Prática nos relatórios.
@@ -3296,7 +3395,9 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
                     else:  # Solfejo
                         st.info("🔊 Solfejo é corrigido pela professora em sala. Registre o conteúdo dado hoje e a lição para estudo até a próxima aula; não será enviado à secretaria.")
-                        conteudo_casa = st.text_input("🎼 Lição de casa para a próxima aula:", key=f"cc_{d_sel['id']}", placeholder="Ex.: MSA, exercício ou página para estudar")
+                        casa_solfejo_salva = casas_hoje[casas_hoje['Tipo'] == "Casa_MSA"] if not casas_hoje.empty else pd.DataFrame()
+                        conteudo_solfejo_salvo = str(casa_solfejo_salva.iloc[-1].get("Licao_Casa") or "") if not casa_solfejo_salva.empty else ""
+                        conteudo_casa = st.text_input("🎼 Lição de casa para a próxima aula:", value=conteudo_solfejo_salvo, key=f"cc_{d_sel['id']}", placeholder="Ex.: MSA, exercício ou página para estudar")
                         if conteudo_casa: tarefas_casa["MSA"] = conteudo_casa
 
                     # Método — sempre precisa informar a lição de casa (não é opcional),
@@ -3319,25 +3420,34 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             difs_reais = [d for d in difs_sel if d != "Não apresentou dificuldades"]
                             status_analise = "Realizada - com dificuldades" if difs_reais else "Realizada - sem pendência"
                             for al_f in als_selecionadas:
-                                db_save_historico({
+                                analise_existente = df_hist_local[
+                                    (df_hist_local['Aluna'] == al_f) & (df_hist_local['Data'] == dt_str) &
+                                    (df_hist_local['Tipo'] == f"Analise_{tipo_aula}") &
+                                    (df_hist_local['Licao_Atual'].str.startswith(f"{mat_focado}:", na=False))
+                                ] if not df_hist_local.empty else pd.DataFrame()
+                                db_atualizar_ou_criar_historico({
                                     "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                     "Tipo": f"Analise_{tipo_aula}",
                                     "Licao_Atual": f"{mat_focado}: {lic_hoje}",
                                     "Licao_Casa": "---", "Dificuldades": difs_sel,
                                     "Observacao": obs_geral, "Status": status_analise
-                                })
+                                }, analise_existente.iloc[-1].get("id") if not analise_existente.empty else None)
                                 for mat_nome, conteudo in tarefas_casa.items():
                                     if conteudo:
                                         # Toda lição de casa nasce "Pendente" — ela só será
                                         # corrigida na aula seguinte, seja pela secretaria
                                         # (aba Controle de Lições) ou pela própria professora
                                         # (painel "Lições pendentes pra você corrigir").
-                                        db_save_historico({
+                                        casa_existente = df_hist_local[
+                                            (df_hist_local['Aluna'] == al_f) & (df_hist_local['Data'] == dt_str) &
+                                            (df_hist_local['Tipo'] == f"Casa_{mat_nome}")
+                                        ] if not df_hist_local.empty else pd.DataFrame()
+                                        db_atualizar_ou_criar_historico({
                                             "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                             "Tipo": f"Casa_{mat_nome}",
                                             "Licao_Atual": "Definido", "Licao_Casa": conteudo,
                                             "Dificuldades": [], "Observacao": "", "Status": "Pendente"
-                                        })
+                                        }, casa_existente.iloc[-1].get("id") if not casa_existente.empty else None)
                             st.success("✅ Registro concluído com sucesso!")
                             time.sleep(1)
                             st.rerun()
