@@ -310,6 +310,27 @@ def _tem_dificuldade_real(valor_difs):
     if isinstance(valor_difs, str) and valor_difs.strip():
         return valor_difs.strip() != "Não apresentou dificuldades"
     return False
+
+def calcular_classificacao_desempenho(registros):
+    """Aplica a mesma regra do Quadro de Desempenho a uma disciplina.
+
+    A classificação considera somente registros de aula. Uma aula sem nenhuma
+    dificuldade registrada conta como aproveitamento; registros sem aula e
+    lições de casa não entram no cálculo.
+    """
+    total = len(registros)
+    if total == 0:
+        return "🥉", "Bronze", 0, False
+    sem_dificuldade = sum(
+        1 for dificuldades in registros["Dificuldades"]
+        if not _tem_dificuldade_real(dificuldades)
+    )
+    score = round((sem_dificuldade / total) * 100)
+    if score >= 80:
+        return "🥇", "Ouro", score, True
+    if score >= 50:
+        return "🥈", "Prata", score, True
+    return "🥉", "Bronze", score, True
 # Únicos tipos de lição de casa que entram na fila de correção da secretaria:
 # folha avulsa de Teoria e qualquer apostila enviada para casa. O sufixo
 # _Prof é aceito para que apostilas antigas, lançadas antes desta regra, também
@@ -2422,24 +2443,59 @@ if menu == "🏠 Secretaria":
                                     st.caption(f"Detalhe técnico: {e}")
 
                     st.divider()
-                    st.markdown("#### ✏️ Ativar/Desativar")
+                    st.markdown("#### ✏️ Gerenciar Secretarias")
                     if secs_raw:
                         for indice_sec, sec in enumerate(sorted(secs_raw, key=lambda x: x["nome"])):
                             with st.container(border=True):
-                                c1, c2 = st.columns([3, 1])
-                                c1.write(("🟢 " if sec.get("ativo", True) else "⚪ ") + sec["nome"])
-                                acao_sec = "Desativar" if sec.get("ativo", True) else "Reativar"
                                 # Pode haver nomes iguais cadastrados. A chave e a
                                 # atualização precisam usar o id do registro, não o nome.
                                 id_sec = sec.get("id")
                                 chave_sec = id_sec or f"{sec['nome']}_{indice_sec}"
-                                if c2.button(acao_sec, key=f"tgsec_{chave_sec}"):
+                                c_nome, c_salvar, c_ativo, c_excluir = st.columns([4, 1, 1.25, 1])
+                                nome_editado = c_nome.text_input(
+                                    "Nome:", value=sec["nome"], key=f"edsec_{chave_sec}",
+                                    label_visibility="collapsed"
+                                )
+                                if c_salvar.button("💾", key=f"salvasec_{chave_sec}", help="Salvar nome"):
+                                    novo_nome = nome_editado.strip()
+                                    if not novo_nome:
+                                        st.error("Informe o nome da secretaria.")
+                                    else:
+                                        consulta_sec = supabase.table("secretarias").update({"nome": novo_nome})
+                                        if id_sec:
+                                            consulta_sec.eq("id", id_sec).execute()
+                                        else:
+                                            consulta_sec.eq("nome", sec["nome"]).execute()
+                                        st.cache_data.clear(); st.rerun()
+
+                                acao_sec = "Desativar" if sec.get("ativo", True) else "Reativar"
+                                if c_ativo.button(acao_sec, key=f"tgsec_{chave_sec}"):
                                     consulta_sec = supabase.table("secretarias").update({"ativo": not sec.get("ativo", True)})
                                     if id_sec:
                                         consulta_sec.eq("id", id_sec).execute()
                                     else:
                                         consulta_sec.eq("nome", sec["nome"]).execute()
                                     st.cache_data.clear(); st.rerun()
+
+                                chave_confirma = f"confirmar_excluir_sec_{chave_sec}"
+                                if not st.session_state.get(chave_confirma):
+                                    if c_excluir.button("Excluir", key=f"excluirsec_{chave_sec}"):
+                                        st.session_state[chave_confirma] = True
+                                        st.rerun()
+                                else:
+                                    st.warning(f"Excluir **{sec['nome']}** da lista? Os registros antigos não serão apagados.")
+                                    c_confirma, c_cancela = st.columns(2)
+                                    if c_confirma.button("Confirmar exclusão", key=f"confirmasec_{chave_sec}"):
+                                        consulta_sec = supabase.table("secretarias").delete()
+                                        if id_sec:
+                                            consulta_sec.eq("id", id_sec).execute()
+                                        else:
+                                            consulta_sec.eq("nome", sec["nome"]).execute()
+                                        st.session_state.pop(chave_confirma, None)
+                                        st.cache_data.clear(); st.rerun()
+                                    if c_cancela.button("Cancelar", key=f"cancelasec_{chave_sec}"):
+                                        st.session_state.pop(chave_confirma, None)
+                                        st.rerun()
                     else:
                         st.info("Nenhuma secretaria adicional cadastrada ainda (a conta mestre 'secretaria' continua valendo).")
 
@@ -2449,6 +2505,30 @@ if menu == "🏠 Secretaria":
 elif menu == "🎓 Minhas Lições":
     st.header(f"🎓 Olá, {st.session_state.nome_logado}!")
     minha_aluna = st.session_state.nome_logado
+
+    # A mesma classificação do Quadro de Desempenho, mas apresentada apenas
+    # para a própria aluna e com o período padrão de 30 dias.
+    df_desempenho_aluna = pd.DataFrame(db_get_historico())
+    st.subheader("⭐ Meu desempenho")
+    st.caption("Sua estrela nos últimos 30 dias, calculada pela mesma regra do Quadro de Desempenho.")
+    cols_estrelas = st.columns(3)
+    inicio_estrelas = datetime.now().date() - timedelta(days=30)
+    fim_estrelas = datetime.now().date()
+    for coluna_estrela, disciplina_estrela in zip(cols_estrelas, ["Prática", "Teoria", "Solfejo"]):
+        regs_estrela = pd.DataFrame()
+        if not df_desempenho_aluna.empty:
+            dados_estrela = df_desempenho_aluna.copy()
+            dados_estrela["_dt_estrela"] = pd.to_datetime(dados_estrela["Data"], format="%d/%m/%Y", errors="coerce")
+            regs_estrela = dados_estrela[
+                (dados_estrela["Aluna"] == minha_aluna) &
+                (dados_estrela["Tipo"] == f"Analise_{disciplina_estrela}") &
+                (dados_estrela["_dt_estrela"].dt.date >= inicio_estrelas) &
+                (dados_estrela["_dt_estrela"].dt.date <= fim_estrelas)
+            ]
+        icone_estrela, nome_estrela, score_estrela, tem_dados_estrela = calcular_classificacao_desempenho(regs_estrela)
+        detalhe_estrela = f"{score_estrela}% sem dificuldades" if tem_dados_estrela else "sem registros"
+        coluna_estrela.metric(f"{ {'Prática': '🎹', 'Teoria': '📚', 'Solfejo': '🔊'}[disciplina_estrela] } {disciplina_estrela}",
+                              f"{icone_estrela} {nome_estrela}", detalhe_estrela)
 
     tab_licoes_aluna, tab_estudo_aluna = st.tabs(["📚 Minhas Lições de Casa", "✅ Controle de Estudo Diário"])
 
@@ -2812,7 +2892,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 # além da apostila. Cada método é conferido separadamente.
                 # ============================================================
                 if tipo_aula == "Prática":
-                    st.caption("👀 Registre o resultado da lição anterior de cada método. Se marcar Não passou ou Estudar mais, a mesma lição será sugerida automaticamente para a próxima aula e continuará editável.")
+                    st.caption("👀 Registre a correção da lição de casa de cada método. Se marcar Não passou ou Estudar mais, a mesma lição será sugerida automaticamente para a próxima aula e continuará editável.")
                     opcoes_materiais = ["Apostila"] + metodos_filtrados
                     materiais_hoje = st.multiselect("Métodos/Apostila conferidos hoje:", opcoes_materiais, key=f"mm_{d_sel['id']}")
 
@@ -2862,7 +2942,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     if not f_m.empty: dados_mat = f_m.iloc[-1].to_dict()
 
                                 lic_db = dados_mat.get('Licao_Atual', "").split(":")[-1].strip() if ":" in dados_mat.get('Licao_Atual', "") else ""
-                                pagina = st.text_input(f"Página/lição ({mat}):", value=lic_db, key=f"pag_{mat}_{d_sel['id']}")
+                                pagina = st.text_input(f"Conteúdo trabalhado hoje — página/lição ({mat}):", value=lic_db, key=f"pag_{mat}_{d_sel['id']}")
 
                                 # A última lição de casa deste método é a referência
                                 # do resultado registrado agora. Ela também será usada
@@ -2878,16 +2958,22 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     if not pend_metodo_ref.empty:
                                         pend_metodo_ref['_dt_tmp'] = pd.to_datetime(pend_metodo_ref['Data'], format='%d/%m/%Y', errors='coerce')
                                         licao_anterior = str(pend_metodo_ref.sort_values('_dt_tmp', ascending=False).iloc[0].get('Licao_Casa') or '').strip()
-                                if licao_anterior:
-                                    st.caption(f"📌 Lição anterior de **{mat}**: {licao_anterior}")
+                                if mat != "Apostila":
+                                    st.markdown("**📋 Correção da lição de casa**")
+                                    if licao_anterior:
+                                        st.info(f"🎼 **Método:** {mat}  \n📖 **Lição que está sendo conferida:** {licao_anterior}")
+                                    else:
+                                        st.caption(f"Nenhuma lição de casa pendente encontrada para o método {mat}.")
 
                                 difs_db_m = dados_mat.get('Dificuldades', []) or []
+                                if mat != "Apostila":
+                                    st.caption("Marque as dificuldades percebidas ao conferir a lição de casa acima.")
                                 cols_d = st.columns(3)
                                 difs_marcadas = [d for i, d in enumerate(DIF_PRATICA) if cols_d[i % 3].checkbox(d, value=(d in difs_db_m), key=f"dp_{mat}_{i}_{d_sel['id']}")]
                                 resultado_licao = None
                                 if mat != "Apostila":
                                     resultado_licao = st.radio(
-                                        f"Resultado da lição anterior — {mat}:",
+                                        "Resultado da correção:",
                                         ["Passou", "Não passou", "Estudar mais"],
                                         horizontal=True, key=f"resultado_licao_{mat}_{d_sel['id']}"
                                     )
@@ -2952,7 +3038,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                                 "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                                 "Tipo": "Analise_Prática",
                                                 "Licao_Atual": f"{mat}: {dados['pagina']}",
-                                                "Licao_Casa": (f"Resultado da lição anterior: {dados['resultado_licao']}"
+                                                "Licao_Casa": (f"Resultado da correção da lição de casa: {dados['resultado_licao']}"
                                                                 if dados.get("resultado_licao") else "Apostila conferida na aula"),
                                                 "Dificuldades": dados["difs"], "Observacao": obs_geral,
                                                 "Status": status_analise
@@ -3540,30 +3626,13 @@ elif menu == "📊 Analítico IA":
                 except Exception:
                     return False
 
-            def calcular_medalha(score, tem_dados):
-                if not tem_dados:
-                    return "🥉", "Bronze", 0
-                if score >= 80:
-                    return "🥇", "Ouro", score
-                elif score >= 50:
-                    return "🥈", "Prata", score
-                else:
-                    return "🥉", "Bronze", score
-
             linhas_quadro = []
             for al in ALUNAS_LISTA:
                 linha = {"Aluna": al}
                 for materia in ["Prática", "Teoria", "Solfejo"]:
                     regs = df_periodo_q[(df_periodo_q['Aluna'] == al) & (df_periodo_q['Tipo'] == f"Analise_{materia}")].copy()
-                    total = len(regs)
-                    if total > 0:
-                        regs['tem_dificuldade'] = regs['Dificuldades'].apply(_tem_dificuldade_real)
-                        sem_dificuldade = int((~regs['tem_dificuldade']).sum())
-                        score = round((sem_dificuldade / total) * 100)
-                    else:
-                        score = 0
-                    icone, nome_medalha, score_final = calcular_medalha(score, total > 0)
-                    linha[materia] = f"{icone} {nome_medalha}" + (f" ({score_final}%)" if total > 0 else " (sem registros)")
+                    icone, nome_medalha, score_final, tem_dados = calcular_classificacao_desempenho(regs)
+                    linha[materia] = f"{icone} {nome_medalha}" + (f" ({score_final}%)" if tem_dados else " (sem registros)")
 
                 # Coluna de estudo em casa (registrado pela própria aluna)
                 estudos_al = [e for e in estudo_todos_quadro if e.get("aluna") == al and _estudo_no_periodo_quadro(e.get("data", ""))]
