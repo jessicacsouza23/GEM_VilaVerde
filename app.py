@@ -391,6 +391,81 @@ def _renderizar_pendencias_casa(pendentes_df, somente_proxima_aula=False):
                         st.write(f"**Método:** {linha['_material']}")
                     st.write(f"**Lição:** {linha.get('Licao_Casa', '---')}")
 
+def db_tabela_licoes_feitas_existe():
+    try:
+        supabase.table("licoes_feitas_alunas").select("id").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+def db_get_licoes_feitas_aluna(aluna):
+    try:
+        res = supabase.table("licoes_feitas_alunas").select("*").eq("aluna", aluna).execute()
+        return res.data or []
+    except Exception:
+        return []
+
+def db_marcar_licao_feita_aluna(aluna, historico_id):
+    try:
+        supabase.table("licoes_feitas_alunas").upsert(
+            {"aluna": aluna, "historico_id": str(historico_id)},
+            on_conflict="aluna,historico_id"
+        ).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao marcar a lição como feita: {e}")
+        return False
+
+def _renderizar_licoes_aluna_com_historico(licoes_df, aluna, feitas):
+    """Exibe lições atuais e anteriores sem expor o parecer pedagógico interno.
+
+    O marcador Feito é uma declaração pessoal da aluna; a professora registra o
+    resultado pedagógico normalmente na aula seguinte.
+    """
+    if licoes_df.empty:
+        st.info("Nenhuma lição de casa registrada ainda.")
+        return
+
+    licoes_df = licoes_df.copy()
+    licoes_df["_dt_tmp"] = pd.to_datetime(licoes_df["Data"], format="%d/%m/%Y", errors="coerce")
+    licoes_df["_disciplina"] = licoes_df["Tipo"].apply(_categoria_licao_casa)
+    licoes_df["_material"] = licoes_df["Tipo"].apply(_metodo_ou_material)
+    feitas_ids = {str(item.get("historico_id")): item for item in feitas}
+
+    pendentes = licoes_df[~licoes_df["Status"].isin(STATUS_OK_LICAO)].copy()
+    atuais_ids = set()
+    if not pendentes.empty:
+        pendentes["_grupo"] = pendentes["_disciplina"] + "|" + pendentes["_material"]
+        indice_atual = pendentes.groupby("_grupo")["_dt_tmp"].idxmax()
+        atuais_ids = {str(pendentes.loc[idx].get("id")) for idx in indice_atual if pd.notna(idx)}
+
+    st.caption("Marcar como **Feito** é apenas seu controle pessoal. A lição continua no histórico e a professora registra o acompanhamento na aula.")
+    for disciplina in ["Prática", "Teoria", "Solfejo", "Outra atividade"]:
+        bloco = licoes_df[licoes_df["_disciplina"] == disciplina].sort_values("_dt_tmp", ascending=False)
+        if bloco.empty:
+            continue
+        st.markdown(f"**{ {'Prática': '🎹', 'Teoria': '📚', 'Solfejo': '🔊', 'Outra atividade': '📖'}.get(disciplina)} {disciplina}**")
+        for _, linha in bloco.iterrows():
+            hist_id = str(linha.get("id", ""))
+            marcado = feitas_ids.get(hist_id)
+            with st.container(border=True):
+                if hist_id in atuais_ids:
+                    st.info(f"📌 **Para a próxima aula** (lançada em {linha.get('Data', '---')})")
+                else:
+                    st.caption(f"📚 Histórico — lançada em {linha.get('Data', '---')}")
+                if disciplina == "Prática":
+                    st.write(f"**Método:** {linha.get('_material', '---')}")
+                st.write(f"**Lição:** {linha.get('Licao_Casa', '---')}")
+                if marcado:
+                    data_marcacao = str(marcado.get("marcado_em", "")).replace("T", " ")[:16]
+                    st.success(f"✅ Feito{f' em {data_marcacao}' if data_marcacao else ''}")
+                elif not hist_id:
+                    st.caption("Esta lição antiga não possui identificador para ser marcada.")
+                elif st.button("✓ Marcar como feito", key=f"feito_aluna_{hist_id}"):
+                    if db_marcar_licao_feita_aluna(aluna, hist_id):
+                        st.success("✅ Lição marcada como feita.")
+                        st.rerun()
+
 HORARIOS = ["08h50 - 09h30 (Aula 1)", "09h35 - 10h05 (Aula 2)", "10h10 - 10h40 (Aula 3)", "10h45 - 11h15 (Aula 4)"]
 HORARIOS_ANTIGOS = {
     "08h45 (Igreja)": "08h50 - 09h30 (Aula 1)", "08h50 - 09h30 (H1)": "08h50 - 09h30 (Aula 1)",
@@ -2358,16 +2433,20 @@ elif menu == "🎓 Minhas Lições":
 
     with tab_licoes_aluna:
         df_hist_aluna = pd.DataFrame(db_get_historico())
-        pendentes_aluna = pd.DataFrame()
+        licoes_aluna = pd.DataFrame()
         if not df_hist_aluna.empty:
             mask_al = (
                 (df_hist_aluna['Aluna'] == minha_aluna) &
-                (df_hist_aluna['Tipo'].str.startswith("Casa_", na=False)) &
-                (~df_hist_aluna['Status'].isin(STATUS_OK_LICAO))
+                (df_hist_aluna['Tipo'].str.startswith("Casa_", na=False))
             )
-            pendentes_aluna = df_hist_aluna[mask_al].copy()
+            licoes_aluna = df_hist_aluna[mask_al].copy()
 
-        _renderizar_pendencias_casa(pendentes_aluna, somente_proxima_aula=True)
+        if not db_tabela_licoes_feitas_existe():
+            st.error("⚠️ O controle pessoal de lições ainda não foi criado no banco. Peça para a Coordenação executar a migration 011 antes de usar esta tela.")
+        else:
+            _renderizar_licoes_aluna_com_historico(
+                licoes_aluna, minha_aluna, db_get_licoes_feitas_aluna(minha_aluna)
+            )
 
     with tab_estudo_aluna:
         st.subheader("✅ Registrar meu estudo do dia")
@@ -2710,14 +2789,17 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 # além da apostila. Cada método é conferido separadamente.
                 # ============================================================
                 if tipo_aula == "Prática":
-                    st.caption("👀 Conferência de hoje: ao informar se a aluna fez a lição de um método, a última lição enviada desse método é atualizada automaticamente. A lição para a próxima aula fica mais abaixo.")
+                    st.caption("👀 Registre o resultado da lição anterior de cada método. Se marcar Não passou ou Estudar mais, a mesma lição será sugerida automaticamente para a próxima aula e continuará editável.")
                     opcoes_materiais = ["Apostila"] + metodos_filtrados
                     materiais_hoje = st.multiselect("Métodos/Apostila conferidos hoje:", opcoes_materiais, key=f"mm_{d_sel['id']}")
 
                     if not materiais_hoje:
                         st.info("Selecione ao menos um método ou a apostila trabalhada hoje.")
                     else:
-                        with st.form(key=f"form_pratica_{d_sel['id']}_{'_'.join(materiais_hoje)}"):
+                        # Não usamos formulário aqui: a mudança de resultado precisa
+                        # preencher a sugestão de lição imediatamente, sem esperar o
+                        # salvamento do registro inteiro.
+                        with st.container():
                             registros_material = {}
                             for mat in materiais_hoje:
                                 st.markdown(f"#### 🎼 {mat}")
@@ -2758,13 +2840,37 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
                                 lic_db = dados_mat.get('Licao_Atual', "").split(":")[-1].strip() if ":" in dados_mat.get('Licao_Atual', "") else ""
                                 pagina = st.text_input(f"Página/lição ({mat}):", value=lic_db, key=f"pag_{mat}_{d_sel['id']}")
-                                fez_licao = st.selectbox(f"A aluna fez a lição de casa desse material?", ["Sim", "Não", "Parcial"], key=f"fez_{mat}_{d_sel['id']}")
+
+                                # A última lição de casa deste método é a referência
+                                # do resultado registrado agora. Ela também será usada
+                                # como sugestão para repetição/reforço, se necessário.
+                                licao_anterior = ""
+                                if mat != "Apostila" and not df_hist_local.empty:
+                                    pend_metodo_ref = df_hist_local[
+                                        (df_hist_local['Aluna'] == als_selecionadas[0]) &
+                                        (df_hist_local['Tipo'] == f"Casa_Metodo_{mat}") &
+                                        (df_hist_local['Data'] != dt_str) &
+                                        (~df_hist_local['Status'].isin(STATUS_OK_LICAO))
+                                    ].copy()
+                                    if not pend_metodo_ref.empty:
+                                        pend_metodo_ref['_dt_tmp'] = pd.to_datetime(pend_metodo_ref['Data'], format='%d/%m/%Y', errors='coerce')
+                                        licao_anterior = str(pend_metodo_ref.sort_values('_dt_tmp', ascending=False).iloc[0].get('Licao_Casa') or '').strip()
+                                if licao_anterior:
+                                    st.caption(f"📌 Lição anterior de **{mat}**: {licao_anterior}")
 
                                 difs_db_m = dados_mat.get('Dificuldades', []) or []
                                 cols_d = st.columns(3)
+                                difs_marcadas = [d for i, d in enumerate(DIF_PRATICA) if cols_d[i % 3].checkbox(d, value=(d in difs_db_m), key=f"dp_{mat}_{i}_{d_sel['id']}")]
+                                resultado_licao = None
+                                if mat != "Apostila":
+                                    resultado_licao = st.radio(
+                                        f"Resultado da lição anterior — {mat}:",
+                                        ["Passou", "Não passou", "Estudar mais"],
+                                        horizontal=True, key=f"resultado_licao_{mat}_{d_sel['id']}"
+                                    )
                                 registros_material[mat] = {
-                                    "pagina": pagina, "fez": fez_licao,
-                                    "difs": [d for i, d in enumerate(DIF_PRATICA) if cols_d[i % 3].checkbox(d, value=(d in difs_db_m), key=f"dp_{mat}_{i}_{d_sel['id']}")]
+                                    "pagina": pagina, "resultado_licao": resultado_licao,
+                                    "licao_anterior": licao_anterior, "difs": difs_marcadas
                                 }
                                 st.divider()
 
@@ -2780,7 +2886,19 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             metodos_do_dia = [m for m in materiais_hoje if m != "Apostila"]
                             paginas_metodo_casa = {}
                             for mc in metodos_do_dia:
-                                paginas_metodo_casa[mc] = st.text_input(f"🎼 Lição de casa — {mc}:", key=f"mcp_{mc}_{d_sel['id']}")
+                                chave_casa = f"mcp_{mc}_{d_sel['id']}"
+                                chave_resultado_anterior = f"resultado_anterior_{mc}_{d_sel['id']}"
+                                dados_resultado = registros_material.get(mc, {})
+                                resultado_atual = dados_resultado.get("resultado_licao")
+                                # Ao trocar para Não passou/Estudar mais, sugere a
+                                # lição anterior no campo normal e editável.
+                                if (resultado_atual in ("Não passou", "Estudar mais")
+                                        and st.session_state.get(chave_resultado_anterior) != resultado_atual
+                                        and dados_resultado.get("licao_anterior")
+                                        and not st.session_state.get(chave_casa, "").strip()):
+                                    st.session_state[chave_casa] = dados_resultado["licao_anterior"]
+                                st.session_state[chave_resultado_anterior] = resultado_atual
+                                paginas_metodo_casa[mc] = st.text_input(f"🎼 Lição de casa — {mc}:", key=chave_casa)
 
                             metodos_extra = st.multiselect(
                                 "🎼 Outro(s) método(s) pra passar lição (além dos conferidos hoje):",
@@ -2789,7 +2907,16 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             for mc in metodos_extra:
                                 paginas_metodo_casa[mc] = st.text_input(f"🎼 Lição de casa — {mc}:", key=f"mcpx_{mc}_{d_sel['id']}")
 
-                            if st.form_submit_button("💾 SALVAR E CONGELAR ANÁLISE", use_container_width=True):
+                            if st.button("💾 SALVAR E CONGELAR ANÁLISE", key=f"salvar_pratica_{d_sel['id']}", use_container_width=True):
+                                # Em caso de não aprovação ou necessidade de reforço,
+                                # a mesma lição anterior é enviada novamente se a
+                                # professora não escreveu uma outra lição manualmente.
+                                for mc in metodos_do_dia:
+                                    dados_resultado = registros_material.get(mc, {})
+                                    if (not paginas_metodo_casa.get(mc, "").strip()
+                                            and dados_resultado.get("resultado_licao") in ("Não passou", "Estudar mais")
+                                            and dados_resultado.get("licao_anterior")):
+                                        paginas_metodo_casa[mc] = dados_resultado["licao_anterior"]
                                 faltando = [mc for mc in metodos_do_dia if not paginas_metodo_casa.get(mc, "").strip()]
                                 if faltando:
                                     st.error(f"⚠️ Preencha a lição de casa do(s) método(s): {', '.join(faltando)}. Não é opcional.")
@@ -2802,7 +2929,8 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                                 "Aluna": al_f, "Data": dt_str, "Instrutora": instr_sel,
                                                 "Tipo": "Analise_Prática",
                                                 "Licao_Atual": f"{mat}: {dados['pagina']}",
-                                                "Licao_Casa": f"Fez a lição de casa: {dados['fez']}",
+                                                "Licao_Casa": (f"Resultado da lição anterior: {dados['resultado_licao']}"
+                                                                if dados.get("resultado_licao") else "Apostila conferida na aula"),
                                                 "Dificuldades": dados["difs"], "Observacao": obs_geral,
                                                 "Status": status_analise
                                             })
@@ -2822,10 +2950,10 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                                     pend_metodo['_dt_tmp'] = pd.to_datetime(pend_metodo['Data'], format='%d/%m/%Y', errors='coerce')
                                                     ultima_licao = pend_metodo.sort_values('_dt_tmp', ascending=False).iloc[0]
                                                     status_metodo = {
-                                                        "Sim": "Resolvido",
-                                                        "Parcial": "Resolvido com pendências",
-                                                        "Não": "Não resolvido",
-                                                    }[dados['fez']]
+                                                        "Passou": "Resolvido",
+                                                        "Estudar mais": "Resolvido com pendências",
+                                                        "Não passou": "Não resolvido",
+                                                    }[dados['resultado_licao']]
                                                     supabase.table("historico_geral").update({"Status": status_metodo}).eq("id", ultima_licao['id']).execute()
                                         if apostila_casa:
                                             db_save_historico({
