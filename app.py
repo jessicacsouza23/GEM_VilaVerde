@@ -3642,10 +3642,31 @@ elif menu == "📊 Analítico IA":
         "👤 Prontuário Individual", "🏆 Quadro de Desempenho", "🎼 Boletim"
     ])
 
-    with tab_aluna:
-        historico_raw = db_get_historico()
-        df_base = pd.DataFrame(historico_raw)
+    # Os mesmos filtros são usados pelo Prontuário e pelo Boletim.
+    # Assim a consulta sempre mostra a mesma aluna e o mesmo recorte de período.
+    historico_raw = db_get_historico()
+    df_base = pd.DataFrame(historico_raw)
+    with st.sidebar:
+        st.header("🔍 Filtros de Auditoria")
+        aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v72")
+        tipo_p = st.selectbox("📅 Período:", ["Tudo", "Mensal", "Bimestral", "Semestral", "Por Dia Específico", "Personalizado"])
 
+        hoje = datetime.now().date()
+        if tipo_p == "Por Dia Específico":
+            data_ini = data_fim = st.date_input("Dia da Aula:", hoje)
+        elif tipo_p == "Mensal":
+            data_ini, data_fim = hoje - timedelta(days=30), hoje
+        elif tipo_p == "Bimestral":
+            data_ini, data_fim = hoje - timedelta(days=60), hoje
+        elif tipo_p == "Semestral":
+            data_ini, data_fim = hoje - timedelta(days=180), hoje
+        elif tipo_p == "Personalizado":
+            data_ini = st.date_input("De:", hoje - timedelta(days=30))
+            data_fim = st.date_input("Até:", hoje)
+        else:
+            data_ini, data_fim = datetime(2024, 1, 1).date(), hoje + timedelta(days=1)
+
+    with tab_aluna:
         if df_base.empty:
             st.info("ℹ️ O banco de dados está vazio.")
             df_base['dt_obj'] = pd.Series(dtype='datetime64[ns]')
@@ -3653,21 +3674,6 @@ elif menu == "📊 Analítico IA":
             # 1. TRATAMENTO DE DATAS
             df_base['dt_obj'] = pd.to_datetime(df_base['Data'], format="%d/%m/%Y", errors='coerce')
             df_base = df_base.dropna(subset=['dt_obj']).sort_values('dt_obj', ascending=False)
-
-            with st.sidebar:
-                st.header("🔍 Filtros de Auditoria")
-                aluna_sel = st.selectbox("👤 Selecione a Aluna:", ALUNAS_LISTA, key="analise_v72")
-                tipo_p = st.selectbox("📅 Período:", ["Tudo", "Mensal", "Bimestral", "Semestral", "Por Dia Específico", "Personalizado"])
-            
-                hoje = datetime.now().date()
-                if tipo_p == "Por Dia Específico": data_ini = data_fim = st.date_input("Dia da Aula:", hoje)
-                elif tipo_p == "Mensal": data_ini, data_fim = hoje - timedelta(days=30), hoje
-                elif tipo_p == "Bimestral": data_ini, data_fim = hoje - timedelta(days=60), hoje
-                elif tipo_p == "Semestral": data_ini, data_fim = hoje - timedelta(days=180), hoje
-                elif tipo_p == "Personalizado":
-                    data_ini = st.date_input("De:", hoje - timedelta(days=30))
-                    data_fim = st.date_input("Até:", hoje)
-                else: data_ini, data_fim = datetime(2024, 1, 1).date(), hoje + timedelta(days=1)
 
             # Filtragem Base
             mask = (df_base['Aluna'] == aluna_sel) & (df_base['dt_obj'].dt.date >= data_ini) & (df_base['dt_obj'].dt.date <= data_fim)
@@ -4199,24 +4205,19 @@ das aulas; pontos fortes e pontos que precisam de reforço; plano objetivo para 
     # --- ABA 3: BOLETIM GERAL (NOTAS DE TODAS AS ALUNAS) ---
     with tab_boletim_geral:
         st.markdown("### 🎼 Boletim de Avaliações")
-        st.caption("Consulte as notas por aluna e disciplina. A média considera todas as notas lançadas nas avaliações do período.")
-
-        col_boletim_ini, col_boletim_fim = st.columns(2)
-        data_ini_boletim = col_boletim_ini.date_input(
-            "De:", datetime.now().date() - timedelta(days=30), key="boletim_geral_ini"
-        )
-        data_fim_boletim = col_boletim_fim.date_input(
-            "Até:", datetime.now().date(), key="boletim_geral_fim"
+        st.caption(
+            f"Notas de {aluna_sel} no período de {data_ini.strftime('%d/%m/%Y')} "
+            f"até {data_fim.strftime('%d/%m/%Y')}. Use os Filtros de Auditoria para alterar a consulta."
         )
 
-        if data_ini_boletim > data_fim_boletim:
+        if data_ini > data_fim:
             st.error("A data inicial não pode ser posterior à data final.")
         else:
             avaliacoes_boletim = []
             for avaliacao in db_get_avaliacoes():
                 try:
                     data_avaliacao = datetime.fromisoformat(str(avaliacao.get("data_avaliacao"))).date()
-                    if data_ini_boletim <= data_avaliacao <= data_fim_boletim:
+                    if data_ini <= data_avaliacao <= data_fim:
                         avaliacoes_boletim.append(avaliacao)
                 except Exception:
                     continue
@@ -4224,7 +4225,8 @@ das aulas; pontos fortes e pontos que precisam de reforço; plano objetivo para 
             mapa_avaliacoes_boletim = {a.get("id"): a for a in avaliacoes_boletim}
             notas_boletim = [
                 nota for nota in db_get_avaliacao_notas()
-                if nota.get("avaliacao_id") in mapa_avaliacoes_boletim and nota.get("nota") is not None
+                if nota.get("avaliacao_id") in mapa_avaliacoes_boletim
+                and nota.get("aluna") == aluna_sel and nota.get("nota") is not None
             ]
 
             if not avaliacoes_boletim:
@@ -4233,38 +4235,31 @@ das aulas; pontos fortes e pontos que precisam de reforço; plano objetivo para 
                 st.info("Há avaliações no período, mas nenhuma nota foi lançada ainda.")
             else:
                 st.success(
-                    f"{len(avaliacoes_boletim)} avaliação(ões) e {len(notas_boletim)} nota(s) lançada(s) no período."
+                    f"{len(avaliacoes_boletim)} avaliação(ões) e {len(notas_boletim)} nota(s) lançada(s) para esta aluna no período."
                 )
-                for aluna_boletim in ALUNAS_LISTA:
-                    notas_aluna_boletim = [n for n in notas_boletim if n.get("aluna") == aluna_boletim]
-                    if not notas_aluna_boletim:
-                        continue
+                valores_aluna_boletim = [float(n["nota"]) for n in notas_boletim]
+                media_aluna_boletim = sum(valores_aluna_boletim) / len(valores_aluna_boletim)
+                st.metric("🎵 Média geral das provas", f"{media_aluna_boletim:.1f}")
+                linhas_boletim = []
+                for nota in notas_boletim:
+                    avaliacao = mapa_avaliacoes_boletim.get(nota.get("avaliacao_id"), {})
+                    linhas_boletim.append({
+                        "Data": avaliacao.get("data_avaliacao") or "—",
+                        "Avaliação": avaliacao.get("titulo") or "Avaliação",
+                        "Disciplina": nota.get("disciplina") or "—",
+                        "Nota": float(nota["nota"]),
+                        "Professora": nota.get("professora") or "—",
+                    })
+                df_boletim_aluna = pd.DataFrame(linhas_boletim).sort_values(["Data", "Disciplina"])
+                st.dataframe(df_boletim_aluna, use_container_width=True, hide_index=True)
 
-                    valores_aluna_boletim = [float(n["nota"]) for n in notas_aluna_boletim]
-                    media_aluna_boletim = sum(valores_aluna_boletim) / len(valores_aluna_boletim)
-                    with st.expander(
-                        f"🎓 {aluna_boletim} — média geral: {media_aluna_boletim:.1f}", expanded=False
-                    ):
-                        linhas_boletim = []
-                        for nota in notas_aluna_boletim:
-                            avaliacao = mapa_avaliacoes_boletim.get(nota.get("avaliacao_id"), {})
-                            linhas_boletim.append({
-                                "Data": avaliacao.get("data_avaliacao") or "—",
-                                "Avaliação": avaliacao.get("titulo") or "Avaliação",
-                                "Disciplina": nota.get("disciplina") or "—",
-                                "Nota": float(nota["nota"]),
-                                "Professora": nota.get("professora") or "—",
-                            })
-                        df_boletim_aluna = pd.DataFrame(linhas_boletim).sort_values(["Data", "Disciplina"])
-                        st.dataframe(df_boletim_aluna, use_container_width=True, hide_index=True)
-
-                        medias_disciplina = (
-                            df_boletim_aluna.groupby("Disciplina", as_index=False)["Nota"]
-                            .mean().rename(columns={"Nota": "Média"})
-                        )
-                        medias_disciplina["Média"] = medias_disciplina["Média"].round(1)
-                        st.caption("Média por disciplina")
-                        st.dataframe(medias_disciplina, use_container_width=True, hide_index=True)
+                medias_disciplina = (
+                    df_boletim_aluna.groupby("Disciplina", as_index=False)["Nota"]
+                    .mean().rename(columns={"Nota": "Média"})
+                )
+                medias_disciplina["Média"] = medias_disciplina["Média"].round(1)
+                st.caption("Média por disciplina")
+                st.dataframe(medias_disciplina, use_container_width=True, hide_index=True)
 
 # ============================================================
 # MÓDULO MENSAGENS - MURAL GERAL + MURAL PROFESSORAS + DIRETAS
