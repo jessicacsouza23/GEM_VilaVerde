@@ -331,6 +331,24 @@ def calcular_classificacao_desempenho(registros):
     if score >= 50:
         return "🥈", "Prata", score, True
     return "🥉", "Bronze", score, True
+
+def calcular_resumo_frequencia(registros, aluna):
+    """Retorna presença, ausências, justificadas e frequência da aluna."""
+    if registros.empty or "Tipo" not in registros.columns:
+        return 0, 0, 0, 0
+    chamadas = registros[
+        (registros["Aluna"] == aluna) & (registros["Tipo"] == "Chamada")
+    ].copy()
+    if chamadas.empty:
+        return 0, 0, 0, 0
+    chamadas["_dt_freq"] = pd.to_datetime(chamadas["Data"], format="%d/%m/%Y", errors="coerce")
+    chamadas = chamadas.sort_values("_dt_freq").groupby("Data", as_index=False).last()
+    presentes = int((chamadas["Status"] == "Presente").sum())
+    ausentes = int((chamadas["Status"] == "Ausente").sum())
+    justificadas = int((chamadas["Status"] == "Justificada").sum())
+    total = len(chamadas)
+    frequencia = int(((presentes + justificadas) / total) * 100) if total else 0
+    return presentes, ausentes, justificadas, frequencia
 # Únicos tipos de lição de casa que entram na fila de correção da secretaria:
 # folha avulsa de Teoria e qualquer apostila enviada para casa. O sufixo
 # _Prof é aceito para que apostilas antigas, lançadas antes desta regra, também
@@ -2553,6 +2571,13 @@ elif menu == "🎓 Minhas Lições":
     # A mesma classificação do Quadro de Desempenho, mas apresentada apenas
     # para a própria aluna e com o período padrão de 30 dias.
     df_desempenho_aluna = pd.DataFrame(db_get_historico())
+    _, faltas_aluna, justificadas_aluna, frequencia_aluna = calcular_resumo_frequencia(
+        df_desempenho_aluna, minha_aluna
+    )
+    col_freq, col_falta, col_just = st.columns(3)
+    col_freq.metric("📅 Frequência", f"{frequencia_aluna}%")
+    col_falta.metric("❌ Ausências", faltas_aluna)
+    col_just.metric("📝 Justificadas", justificadas_aluna)
     st.subheader("⭐ Meu desempenho")
     st.caption("Sua estrela nos últimos 30 dias, calculada pela mesma regra do Quadro de Desempenho.")
     cols_estrelas = st.columns(3)
@@ -2700,6 +2725,10 @@ elif menu == "📝 Boletim":
       .nota-musical .disciplina { color:#61468e; font-weight:700; font-size:.92rem; }
       .nota-musical .valor { color:#2e4053; font-size:1.45rem; font-weight:800; margin-top:3px; }
       .nota-musical .aguardando { color:#8b7a9c; font-size:1rem; font-weight:600; margin-top:7px; }
+      .boletim-resumo { display:flex; gap:10px; flex-wrap:wrap; margin:0 0 18px; }
+      .boletim-resumo-item { flex:1; min-width:160px; border-radius:12px; padding:12px 15px;
+        background:#eef5ff; border-left:5px solid #4d7dc2; color:#304b71; }
+      .boletim-resumo-item b { display:block; color:#203957; font-size:1.4rem; margin-top:2px; }
     </style>
     """, unsafe_allow_html=True)
     st.markdown(f"""
@@ -2710,6 +2739,20 @@ elif menu == "📝 Boletim":
     """, unsafe_allow_html=True)
     avaliacoes_aluna = db_get_avaliacoes()
     notas_aluna = [n for n in db_get_avaliacao_notas() if n.get("aluna") == st.session_state.nome_logado]
+    df_freq_boletim = pd.DataFrame(db_get_historico())
+    _, faltas_boletim, justificadas_boletim, frequencia_boletim = calcular_resumo_frequencia(
+        df_freq_boletim, st.session_state.nome_logado
+    )
+    valores_notas = [float(n["nota"]) for n in notas_aluna if n.get("nota") is not None]
+    media_notas = sum(valores_notas) / len(valores_notas) if valores_notas else None
+    media_html = f"{media_notas:.1f}" if media_notas is not None else "Aguardando"
+    st.markdown(f"""
+    <div class="boletim-resumo">
+      <div class="boletim-resumo-item">📅 Frequência<b>{frequencia_boletim}%</b></div>
+      <div class="boletim-resumo-item">🎵 Média das notas<b>{media_html}</b></div>
+      <div class="boletim-resumo-item">❌ Faltas<b>{faltas_boletim} ausência(s) · {justificadas_boletim} justificada(s)</b></div>
+    </div>
+    """, unsafe_allow_html=True)
     if not avaliacoes_aluna:
         st.info("🎵 Nenhuma prova ou avaliação cadastrada ainda.")
     else:
@@ -3721,6 +3764,60 @@ elif menu == "📊 Analítico IA":
                     chart_bar = pd.DataFrame({'Status': ['Presença', 'Falta', 'Justificada'], 'Qtd': [v_pres, v_falt, v_just]})
                     st.bar_chart(chart_bar, x='Status', y='Qtd', color="#27AE60")
 
+                # --- 2.5 PROVAS X RENDIMENTO PEDAGÓGICO ---
+                st.divider()
+                st.markdown("### 🎼 Provas e Rendimento Pedagógico")
+                avaliacoes_periodo = []
+                for avaliacao in db_get_avaliacoes():
+                    try:
+                        data_prova = datetime.fromisoformat(str(avaliacao.get("data_avaliacao"))).date()
+                        if data_ini <= data_prova <= data_fim:
+                            avaliacoes_periodo.append(avaliacao)
+                    except Exception:
+                        continue
+                ids_avaliacoes_periodo = {a.get("id") for a in avaliacoes_periodo}
+                notas_periodo = [
+                    n for n in db_get_avaliacao_notas()
+                    if n.get("aluna") == aluna_sel and n.get("avaliacao_id") in ids_avaliacoes_periodo
+                    and n.get("nota") is not None
+                ]
+                media_provas_periodo = (
+                    sum(float(n["nota"]) for n in notas_periodo) / len(notas_periodo)
+                    if notas_periodo else None
+                )
+                if notas_periodo:
+                    linhas_comparacao = []
+                    for disciplina_cmp in ["Prática", "Teoria", "Solfejo"]:
+                        notas_disc = [float(n["nota"]) for n in notas_periodo if n.get("disciplina") == disciplina_cmp]
+                        regs_disc = pedag_rows[pedag_rows["Tipo"] == f"Analise_{disciplina_cmp}"]
+                        if regs_disc.empty and not notas_disc:
+                            continue
+                        rendimento = (
+                            round((~regs_disc["tem_dificuldade"]).sum() / len(regs_disc) * 100)
+                            if not regs_disc.empty else None
+                        )
+                        media_disc = round(sum(notas_disc) / len(notas_disc) * 10) if notas_disc else None
+                        if rendimento is not None:
+                            linhas_comparacao.append({"Disciplina": disciplina_cmp, "Indicador": "Rendimento pedagógico", "Percentual": rendimento})
+                        if media_disc is not None:
+                            linhas_comparacao.append({"Disciplina": disciplina_cmp, "Indicador": "Média das provas", "Percentual": media_disc})
+                    c_media_prova, c_qtd_provas = st.columns(2)
+                    c_media_prova.metric("🎵 Média das provas", f"{media_provas_periodo:.1f}" if media_provas_periodo is not None else "—")
+                    c_qtd_provas.metric("📝 Notas no período", len(notas_periodo))
+                    if linhas_comparacao:
+                        fig_provas = px.bar(
+                            pd.DataFrame(linhas_comparacao), x="Disciplina", y="Percentual", color="Indicador",
+                            barmode="group", range_y=[0, 100],
+                            color_discrete_map={"Rendimento pedagógico": "#6b4aa2", "Média das provas": "#3a9d6d"}
+                        )
+                        fig_provas.update_layout(
+                            yaxis_title="Percentual", legend_title="", title="Comparação entre o rendimento nas aulas e as notas das provas"
+                        )
+                        st.plotly_chart(fig_provas, use_container_width=True)
+                    st.caption("A média das provas é convertida para percentual no gráfico: nota 8,5 equivale a 85%. Se houver mais de uma prova no período, a média é calculada com todas as notas lançadas.")
+                else:
+                    st.info("Ainda não há notas de provas desta aluna dentro do período escolhido.")
+
                 # --- 3. DIFICULDADES E PENDÊNCIAS ---
                 st.divider()
                 c1, c2 = st.columns(2)
@@ -3994,6 +4091,54 @@ elif menu == "📊 Analítico IA":
 
                 if objetivo_atual:
                     st.caption(f"🎯 Objetivo combinado com a aluna: {objetivo_atual}")
+
+                # --- 6. RESUMO PEDAGÓGICO COM IA ---
+                st.divider()
+                st.markdown("### 🤖 Resumo Pedagógico das Provas e do Período")
+                if notas_periodo:
+                    resumo_disciplinas_ia = "; ".join(
+                        f"{item['disciplina']}: {item['aprov']}% de aulas sem dificuldade em {item['total']} aula(s)"
+                        for item in resumo_disciplinas
+                    ) or "Sem registros pedagógicos por disciplina."
+                    notas_detalhadas_ia = "; ".join(
+                        f"{n.get('disciplina')}: nota {float(n['nota']):.1f}"
+                        for n in notas_periodo
+                    )
+                    chave_resumo_ia = f"resumo_ia_provas_{aluna_sel}_{data_ini}_{data_fim}"
+                    st.caption("A análise usa somente os dados já registrados no sistema. Ela sugere prioridades pedagógicas; não é diagnóstico.")
+                    if st.button("✨ Gerar resumo pedagógico com IA", key=f"gerar_{chave_resumo_ia}", use_container_width=True):
+                        modelo_ia, status_ia = inicializar_ia_economica()
+                        if not modelo_ia:
+                            st.warning(f"IA indisponível: {status_ia}")
+                        else:
+                            prompt_ia = f"""
+Você é uma coordenadora pedagógica de educação musical. Produza uma análise detalhada,
+respeitosa e prática, em português do Brasil, baseada somente nos dados abaixo.
+Não invente fatos, não faça diagnósticos clínicos e não use tom punitivo.
+
+Aluna: {aluna_sel}
+Período: {data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}
+Frequência: {int((v_pres + v_just) / len(resumo_dias) * 100) if len(resumo_dias) else 0}%,
+{v_falt} ausência(s), {v_just} justificada(s).
+Desempenho nas aulas: {resumo_disciplinas_ia}
+Notas das provas: {notas_detalhadas_ia}
+Média geral das provas: {media_provas_periodo:.1f} de 10.
+Lições em aberto: {len(pendencias_abertas_periodo) if not casa_rows.empty else 0}.
+
+Escreva em quatro partes curtas: visão geral; leitura das provas comparada ao rendimento
+das aulas; pontos fortes e pontos que precisam de reforço; plano objetivo para as próximas aulas.
+"""
+                            try:
+                                with st.spinner("Preparando análise pedagógica..."):
+                                    resposta_ia = modelo_ia.generate_content(prompt_ia)
+                                st.session_state[chave_resumo_ia] = resposta_ia.text
+                                st.success("✅ Resumo pedagógico gerado.")
+                            except Exception as e:
+                                st.error(f"Não foi possível gerar a análise: {e}")
+                    if st.session_state.get(chave_resumo_ia):
+                        st.markdown(st.session_state[chave_resumo_ia])
+                else:
+                    st.info("O resumo com IA fica disponível quando houver ao menos uma nota de prova no período escolhido.")
 
             else:
                 st.warning("Selecione uma aluna ou mude o filtro para ver os registros.")
