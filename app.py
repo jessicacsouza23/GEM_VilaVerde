@@ -350,10 +350,10 @@ def calcular_resumo_frequencia(registros, aluna):
     frequencia = int(((presentes + justificadas) / total) * 100) if total else 0
     return presentes, ausentes, justificadas, frequencia
 # Únicos tipos de lição de casa que entram na fila de correção da secretaria:
-# folha avulsa de Teoria e qualquer apostila enviada para casa. O sufixo
-# _Prof é aceito para que apostilas antigas, lançadas antes desta regra, também
-# possam ser corrigidas pela secretaria. Método e Solfejo nunca entram aqui.
-TIPOS_CORRECAO_SECRETARIA = ["Casa_Apostila", "Casa_Apostila_Teoria", "Casa_Apostila_Prof", "Casa_Teoria"]
+# apostila da aula de Prática e folha avulsa de Teoria quando a professora
+# escolhe explicitamente a Secretaria. Métodos de Prática, MSA de Solfejo e
+# qualquer outra lição são corrigidos pela professora.
+TIPOS_CORRECAO_SECRETARIA = ["Casa_Apostila", "Casa_Teoria"]
 
 # ==========================================
 # CATEGORIZAÇÃO DE LIÇÃO DE CASA (usada no painel da aluna e no relatório da
@@ -362,7 +362,7 @@ TIPOS_CORRECAO_SECRETARIA = ["Casa_Apostila", "Casa_Apostila_Teoria", "Casa_Apos
 def _categoria_licao_casa(tipo_bruto):
     if tipo_bruto == "Casa_MSA":
         return "Solfejo"
-    if tipo_bruto in ("Casa_Teoria", "Casa_Teoria_Prof", "Casa_Apostila_Teoria", "Casa_Apostila_Prof"):
+    if tipo_bruto in ("Casa_Teoria", "Casa_Teoria_Prof", "Casa_Apostila_Teoria", "Casa_Apostila_Teoria_Prof", "Casa_Apostila_Prof"):
         return "Teoria"
     if tipo_bruto == "Casa_Apostila":
         return "Prática"
@@ -371,7 +371,7 @@ def _categoria_licao_casa(tipo_bruto):
     return "Outra atividade"
 
 def _metodo_ou_material(tipo_bruto):
-    if tipo_bruto in ("Casa_Apostila", "Casa_Apostila_Teoria", "Casa_Apostila_Prof"):
+    if tipo_bruto in ("Casa_Apostila", "Casa_Apostila_Teoria", "Casa_Apostila_Teoria_Prof", "Casa_Apostila_Prof"):
         return "Apostila"
     if tipo_bruto.startswith("Casa_Metodo_"):
         return tipo_bruto.replace("Casa_Metodo_", "")
@@ -422,13 +422,21 @@ def _renderizar_pendencias_casa(pendentes_df, somente_proxima_aula=False):
             bloco_prof = bloco_disc[bloco_disc['Instrutora'] == professora].sort_values('_dt_tmp', ascending=False)
             for _, linha in bloco_prof.iterrows():
                 with st.container(border=True):
-                    if linha['_eh_atual']:
+                    status_linha = str(linha.get("Status") or "")
+                    obs_linha = str(linha.get("Observacao") or "").replace("Sec: ", "", 1).strip()
+                    if status_linha == "Resolvido":
+                        st.info("✅ Corrigida — observação disponível abaixo.")
+                    elif status_linha == "Resolvido com pendências":
+                        st.warning("⚠️ Corrigida com pendências.")
+                    elif linha['_eh_atual']:
                         st.info(f"📌 **Para a próxima aula** (lançada em {linha['Data']})")
                     elif not somente_proxima_aula:
                         st.warning(f"⚠️ **Atrasada de aula anterior** (lançada em {linha['Data']})")
                     if disciplina == "Prática":
                         st.write(f"**Método:** {linha['_material']}")
                     st.write(f"**Lição:** {linha.get('Licao_Casa', '---')}")
+                    if obs_linha:
+                        st.caption(f"📝 Observação: {obs_linha}")
 
 def db_tabela_licoes_feitas_existe():
     try:
@@ -1257,8 +1265,18 @@ if menu == "🏠 Secretaria":
                         if tipo_bruto.startswith("Casa_"):
                             lic_cs_casa = _valor_ou_none(r.get('Licao_Casa')) or "não especificada"
                             status_casa = _valor_ou_none(r.get('Status')) or "sem status"
-                            corrigida = status_casa in STATUS_OK_LICAO
-                            responsavel = "a própria professora" if tipo_bruto.endswith("_Prof") else "a secretaria"
+                            observacao_correcao = _valor_ou_none(r.get('Observacao'))
+                            responsavel = "a secretaria" if tipo_bruto in TIPOS_CORRECAO_SECRETARIA else "a própria professora"
+
+                            # Lição resolvida sem observação não é mais uma
+                            # pendência nem precisa poluir o relatório. Mantemos
+                            # visível somente o que ainda requer atenção ou uma
+                            # orientação escrita pela correção.
+                            mostrar_licao_relatorio = (
+                                status_casa != "Resolvido" or bool(observacao_correcao)
+                            )
+                            if not mostrar_licao_relatorio:
+                                continue
 
                             disciplina_casa = _categoria_licao_casa(tipo_bruto)
                             material_casa = _metodo_ou_material(tipo_bruto)
@@ -1268,12 +1286,19 @@ if menu == "🏠 Secretaria":
                             with st.container(border=True):
                                 st.markdown(f"**{rotulo_casa}**")
                                 st.write(f"**Conteúdo:** {lic_cs_casa}")
-                                if corrigida:
-                                    st.caption(f"Status da correção: {status_casa}")
+                                if status_casa == "Resolvido":
+                                    st.caption("✅ Corrigida e resolvida")
+                                elif status_casa == "Resolvido com pendências":
+                                    st.warning("⚠️ Corrigida com pendências — retomar o ponto indicado.")
                                 else:
-                                    st.warning(f"⏳ Ainda sem correção (quem corrige: {responsavel}) — status atual: {status_casa}")
-                            proxima_semana.append(f"{rotulo_casa}: {lic_cs_casa}")
+                                    st.warning(f"⏳ Ainda precisa de correção (quem corrige: {responsavel}) — status atual: {status_casa}")
+                                if observacao_correcao:
+                                    st.info(f"📝 Observação da correção: {observacao_correcao.replace('Sec: ', '', 1)}")
+                            if status_casa != "Resolvido":
+                                proxima_semana.append(f"{rotulo_casa}: {lic_cs_casa}")
                             texto_whatsapp += f"{rotulo_casa}: {lic_cs_casa} — status: {status_casa}\n"
+                            if observacao_correcao:
+                                texto_whatsapp += f"   📝 Obs da correção: {observacao_correcao.replace('Sec: ', '', 1)}\n"
                             continue
 
                         # --- DADOS DA PROFESSORA (Analise_...): onde moram as dificuldades,
@@ -1397,19 +1422,24 @@ if menu == "🏠 Secretaria":
                         st.markdown(f"<div style='background-color: #FEF9E7; padding: 10px; border-radius: 6px; margin-top: 8px; border-left: 4px solid #D4AC0D;'><b>⚠️ Faltando registro da professora:</b> {txt_faltando}</div>", unsafe_allow_html=True)
                         texto_whatsapp += f"⚠️ *Faltando registro da professora:* {txt_faltando}\n"
 
-                    # --- LIÇÕES DE CASA PENDENTES (todas em aberto, não só as de hoje) ---
+                    # --- LIÇÕES QUE EXIGEM AÇÃO/ATENÇÃO ---
+                    # "Resolvido" some da fila. Só permanece uma correção com
+                    # pendências, não resolvida, pendente, ou uma lição resolvida
+                    # que tenha recebido observação relevante.
                     if not df_historico.empty:
-                        mask_pend_sec = (
+                        casas_da_aluna = df_historico[
                             (df_historico['Aluna'] == aluna_v) &
-                            (df_historico['Tipo'].str.startswith("Casa_", na=False)) &
-                            (~df_historico['Status'].isin(STATUS_OK_LICAO))
-                        )
-                        pendentes_sec_aluna = df_historico[mask_pend_sec]
+                            (df_historico['Tipo'].str.startswith("Casa_", na=False))
+                        ].copy()
+                        pendentes_sec_aluna = casas_da_aluna[
+                            (casas_da_aluna['Status'] != "Resolvido") |
+                            (casas_da_aluna['Observacao'].fillna("").astype(str).str.strip() != "")
+                        ]
                     else:
                         pendentes_sec_aluna = pd.DataFrame()
 
                     if not pendentes_sec_aluna.empty:
-                        with st.expander(f"📋 Lições de casa pendentes ({len(pendentes_sec_aluna)})"):
+                        with st.expander(f"📋 Lições que exigem atenção ({len(pendentes_sec_aluna)})"):
                             _renderizar_pendencias_casa(pendentes_sec_aluna)
                         partes_pend_wpp = []
                         for _, linha_p in pendentes_sec_aluna.iterrows():
@@ -2057,7 +2087,8 @@ if menu == "🏠 Secretaria":
         
             # --- LÓGICA DE PENDÊNCIAS REAIS ---
             # Este painel exibe somente o que a secretaria realmente corrige:
-            # apostilas e folhas avulsas de Teoria. Solfejo não aparece aqui.
+            # apostila da Prática e folha avulsa de Teoria atribuída a ela.
+            # Métodos e Solfejo são sempre resolvidos pela professora.
             pendencias_reais = []
             if not df_historico.empty:
                 df_alu = df_historico[df_historico['Aluna'] == aluna].copy()
@@ -2131,7 +2162,7 @@ if menu == "🏠 Secretaria":
             # aqui é exclusivamente pra cadastrar algo que ainda não foi lançado.
             st.markdown("### ➕ Registrar Atividade Nova")
             st.caption("Use isso só para lançar uma lição que a professora não informou no sistema. Para corrigir o que já existe, use a lista de pendências acima.")
-            opcoes_cat = ["Apostila", "Teoria"]
+            opcoes_cat = ["Apostila (Prática)", "Folha Avulsa (Teoria)"]
             cat_sel = st.radio("Material:", opcoes_cat, horizontal=True, key="cat_corr_sec")
 
             with st.form("f_nova_atividade_v10", clear_on_submit=True):
@@ -2148,9 +2179,10 @@ if menu == "🏠 Secretaria":
                     if not det_lic:
                         st.error("⚠️ Informe a Lição/Página!")
                     else:
+                        tipo_nova_atividade = "Casa_Apostila" if cat_sel == "Apostila (Prática)" else "Casa_Teoria"
                         supabase.table("historico_geral").insert({
                             "Aluna": aluna, 
-                            "Tipo": f"Casa_{cat_sel}", 
+                            "Tipo": tipo_nova_atividade,
                             "Data": data_corr_str,
                             "Secretaria": sec_resp, 
                             "Licao_Casa": det_lic,
@@ -3193,11 +3225,10 @@ elif menu == "👩‍🏫 Minhas Aulas":
                             st.session_state.pop(chave_widget, None)
                     st.session_state["_contexto_registro_prof"] = contexto_registro
 
-                # Só folhas avulsas cuja própria professora escolheu corrigir
-                # aparecem aqui. Apostilas são da secretaria; Solfejo é
-                # corrigido em sala, dentro do registro da aula seguinte.
+                # A professora corrige as lições de Teoria que não foram
+                # atribuídas à Secretaria e também todo o MSA de Solfejo.
                 pends_disc = pd.DataFrame()
-                if tipo_aula == "Teoria" and not df_hist_local.empty:
+                if tipo_aula in ("Teoria", "Solfejo") and not df_hist_local.empty:
                     # Pega qualquer status que ainda não seja "ok" (Pendente,
                     # Devolvida, Não Realizada, etc.) — não só o literal
                     # "Pendente" — senão, quando a secretaria marca algo como
@@ -3211,13 +3242,20 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     if not pends_disc.empty:
                         pends_disc['_disciplina'] = pends_disc['Tipo'].apply(_categoria_licao_casa)
                         pends_disc = pends_disc[pends_disc['_disciplina'] == tipo_aula]
-                        pends_disc = pends_disc[pends_disc['Tipo'].str.endswith("_Prof")]
+                        if tipo_aula == "Teoria":
+                            pends_disc = pends_disc[pends_disc['Tipo'].isin([
+                                "Casa_Teoria_Prof", "Casa_Apostila_Teoria", "Casa_Apostila_Teoria_Prof"
+                            ])]
+                        else:
+                            pends_disc = pends_disc[pends_disc['Tipo'] == "Casa_MSA"]
 
                 if tipo_aula == "Teoria":
-                    st.markdown("### 📋 Folhas avulsas para você corrigir")
-                if tipo_aula == "Teoria" and pends_disc.empty:
-                    st.success("✅ Nenhuma folha avulsa pendente para você corrigir.")
-                elif tipo_aula == "Teoria":
+                    st.markdown("### 📋 Lições de Teoria para você corrigir")
+                elif tipo_aula == "Solfejo":
+                    st.markdown("### 📋 MSA para você corrigir")
+                if tipo_aula in ("Teoria", "Solfejo") and pends_disc.empty:
+                    st.success("✅ Nenhuma lição pendente para você corrigir.")
+                elif tipo_aula in ("Teoria", "Solfejo"):
                     for al in als_selecionadas:
                         pends_al = pends_disc[pends_disc['Aluna'] == al]
                         if pends_al.empty:
@@ -3545,9 +3583,9 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
                 # ============================================================
                 # TEORIA e SOLFEJO — aula de turma, dificuldade compartilhada.
-                # Teoria: lição de casa em Folha Avulsa (secretaria corrige, a
-                # não ser que a professora corrija ela mesma) ou Apostila
-                # alternativa (não entra na fila da secretaria).
+                # Teoria: apenas a folha avulsa pode ser enviada à Secretaria,
+                # quando a professora escolher isso. Apostila de Teoria e os
+                # demais materiais são corrigidos pela própria professora.
                 # Solfejo: trabalha com MSA, sem correção da secretaria.
                 # ============================================================
                 else:
@@ -3602,7 +3640,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
                     st.divider()
                     st.subheader("🏠 Lição de Casa")
-                    st.caption("📬 O que marcar com 📖 abaixo vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método) e não vai para a secretaria.")
+                    st.caption("📬 Apenas folha avulsa de Teoria marcada para a Secretaria entra na fila dela. Apostila de Teoria, métodos e MSA são corrigidos pela própria professora.")
                     tarefas_casa = {}
                     quem_corrige = None
                     casas_hoje = df_hist_local[
@@ -3612,24 +3650,26 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     ] if not df_hist_local.empty else pd.DataFrame()
 
                     if tipo_aula == "Teoria":
-                        casa_teoria_salva = casas_hoje[casas_hoje['Tipo'].isin(["Casa_Teoria", "Casa_Teoria_Prof", "Casa_Apostila_Teoria"])] if not casas_hoje.empty else pd.DataFrame()
+                        casa_teoria_salva = casas_hoje[casas_hoje['Tipo'].isin([
+                            "Casa_Teoria", "Casa_Teoria_Prof", "Casa_Apostila_Teoria", "Casa_Apostila_Teoria_Prof"
+                        ])] if not casas_hoje.empty else pd.DataFrame()
                         tipo_salvo = str(casa_teoria_salva.iloc[-1].get("Tipo") or "") if not casa_teoria_salva.empty else ""
                         tipo_casa_sel = st.radio("📖 Tipo de lição de casa:", ["Folha Avulsa", "Apostila"], horizontal=True,
                                                  index=1 if tipo_salvo == "Casa_Apostila_Teoria" else 0, key=f"tc_{d_sel['id']}")
                         conteudo_salvo = str(casa_teoria_salva.iloc[-1].get("Licao_Casa") or "") if not casa_teoria_salva.empty else ""
                         conteudo_casa = st.text_input(f"🏠 {tipo_casa_sel}:", value=conteudo_salvo, key=f"cc_{d_sel['id']}")
 
-                        # Apostila sempre é corrigida pela secretaria. A escolha fica
-                        # apenas para folha avulsa de Teoria, como combinado.
+                        # Só a folha avulsa pode ser destinada à Secretaria. A
+                        # apostila de Teoria é corrigida pela professora.
                         if tipo_casa_sel == "Apostila":
-                            st.caption("🏢 Apostilas enviadas para casa são corrigidas pela secretaria.")
-                            sufixo = ""
+                            st.caption("👩‍🏫 Apostila de Teoria: correção da própria professora em sala.")
+                            sufixo = "_Prof"
                         else:
                             quem_corrige = st.radio("Quem corrige a folha avulsa na próxima aula?", ["Secretaria", "Eu mesma (em sala)"], horizontal=True,
                                                      index=1 if tipo_salvo == "Casa_Teoria_Prof" else 0, key=f"qc_{d_sel['id']}")
                             sufixo = "" if quem_corrige == "Secretaria" else "_Prof"
                         # Mantém a disciplina no tipo salvo: apostila de Teoria
-                        # não se mistura com apostila de Prática nos relatórios.
+                        # não se mistura com a apostila de Prática da Secretaria.
                         base_tipo_casa = "Apostila_Teoria" if tipo_casa_sel == "Apostila" else "Teoria"
                         if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
                     else:  # Solfejo
