@@ -1973,7 +1973,22 @@ if menu == "🏠 Secretaria":
         sabados_cham = [dia for semana in calendar.Calendar().monthdatescalendar(ano_cham, mes_cham)
                          for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes_cham]
         data_ch_sel = st.selectbox("Selecione a Data:", [s.strftime("%d/%m/%Y") for s in sabados_cham], key="data_chamada_unica")
-        presenca_padrao = st.toggle("Marcar todas como Presente por padrão", value=True)
+
+        # A chamada é identificada pela data. Quando a data já foi salva,
+        # carregamos exatamente o que foi registrado; para uma data nova,
+        # todas as alunas começam como Presentes.
+        chamadas_salvas_dia = [
+            registro for registro in db_get_historico()
+            if registro.get("Data") == data_ch_sel and registro.get("Tipo") == "Chamada"
+        ]
+        chamada_por_aluna = {}
+        for registro in chamadas_salvas_dia:
+            if registro.get("Aluna"):
+                chamada_por_aluna[registro["Aluna"]] = registro
+        if chamada_por_aluna:
+            st.info("📌 Esta chamada já foi salva. Você pode conferir ou alterar os dados e salvar novamente.")
+        else:
+            st.caption("📌 Chamada nova: todas as alunas começam marcadas como Presente.")
 
         # Só lista quem de fato tinha aula agendada nesse sábado (escala do
         # rodízio já gerada), em vez de todas as alunas do sistema — assim não
@@ -1992,18 +2007,29 @@ if menu == "🏠 Secretaria":
             col1, col2, col3 = st.columns([2, 3, 3])
             col1.write(f"**{aluna}**")
             chave_status = f"status_{idx}_{aluna}_{data_ch_sel}"
-            status = col2.radio(f"Status {aluna}", ["Presente", "Ausente", "Justificada"], index=0 if presenca_padrao else 1, key=chave_status, horizontal=True, label_visibility="collapsed")
+            chamada_salva = chamada_por_aluna.get(aluna, {})
+            status_salvo = chamada_salva.get("Status")
+            opcoes_status = ["Presente", "Ausente", "Justificada"]
+            indice_status = opcoes_status.index(status_salvo) if status_salvo in opcoes_status else 0
+            status = col2.radio(
+                f"Status {aluna}", opcoes_status, index=indice_status,
+                key=chave_status, horizontal=True, label_visibility="collapsed"
+            )
             motivo = ""
             if status == "Justificada":
                 chave_motivo = f"motivo_{idx}_{aluna}_{data_ch_sel}"
-                motivo = col3.text_input("Motivo", key=chave_motivo, placeholder="Justificativa", label_visibility="collapsed")
+                motivo = col3.text_input(
+                    "Motivo", value=chamada_salva.get("Observacao") or "", key=chave_motivo,
+                    placeholder="Justificativa", label_visibility="collapsed"
+                )
             registros_chamada.append({"Aluna": aluna, "Status": status, "Motivo": motivo})
 
         if st.button("💾 SALVAR CHAMADA COMPLETA", use_container_width=True, type="primary"):
             novos_ch = [{"Data": data_ch_sel, "Aluna": r["Aluna"], "Tipo": "Chamada", "Status": r["Status"], "Observacao": r["Motivo"], "Licao_Atual": "Presença em Aula"} for r in registros_chamada]
             supabase.table("historico_geral").delete().eq("Data", data_ch_sel).eq("Tipo", "Chamada").execute()
             supabase.table("historico_geral").insert(novos_ch).execute()
-            st.success("✅ Chamada Salva!"); st.cache_data.clear()
+            st.cache_data.clear()
+            st.success("✅ Chamada salva para " + data_ch_sel + ".")
 
     # --- ABA 4: CONTROLE DE LIÇÕES E PENDÊNCIAS (ESTILO CONGELADO) ---
         with tab_licao:
