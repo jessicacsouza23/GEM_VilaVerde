@@ -1216,6 +1216,11 @@ if menu == "🏠 Secretaria":
                         if not linha_chamada.empty:
                             status_chamada_hoje = _valor_ou_none(linha_chamada.iloc[-1].get('Status'))
                     ausente_hoje = status_chamada_hoje in ("Ausente", "Justificada")
+                    # A presença fica sempre logo abaixo do nome da aluna,
+                    # inclusive quando a chamada ainda não foi preenchida.
+                    presenca_exibida = status_chamada_hoje or "Ainda não registrada"
+                    st.markdown(f"📍 **Presença:** {presenca_exibida}")
+                    texto_whatsapp += f"📍 Presença: {presenca_exibida}\n"
 
                     # Processar cada registro daquela aluna no dia
                     for _, r in dados_aluna.iterrows():
@@ -1231,9 +1236,6 @@ if menu == "🏠 Secretaria":
                         tipo = tipo_bruto.replace("Analise_", "").replace("Aula_", "").replace("Casa_", "").replace("_", " ")
 
                         if tipo_bruto == "Chamada":
-                            status = _valor_ou_none(r.get('Status')) or "não registrada"
-                            st.markdown(f"📍 **Presença:** {status}")
-                            texto_whatsapp += f"📍 Presença: {status}\n"
                             continue
 
                         if tipo_bruto == "Controle_Licao" or tipo == "Controle Licao":
@@ -3143,20 +3145,82 @@ elif menu == "👩‍🏫 Minhas Aulas":
             for al_aus in als_ausentes_hoje:
                 st.warning(f"❌ **{al_aus}** está marcada como **{status_chamada_hoje_prof.get(al_aus)}** hoje — não precisa enviar registro de aula dela.")
 
-            for al in als_presentes_hoje:
-                if st.checkbox(al, value=True, key=f"ch_{al}_{d_sel['id']}"):
-                    als_selecionadas.append(al)
+            # Nas aulas de turma a professora escolhe se aquele registro vale
+            # para todas, apenas para algumas, ou para uma aluna. Só as alunas
+            # escolhidas entram no salvamento; os registros das demais ficam
+            # intactos.
+            chaves_controle_selecao = set()
+            if d_sel.get("individual"):
+                als_selecionadas = als_presentes_hoje
+            elif als_presentes_hoje:
+                chave_modo_registro = f"modo_registro_{d_sel['id']}_{dt_str}"
+                chaves_controle_selecao.add(chave_modo_registro)
+                modo_registro_turma = st.radio(
+                    "Este registro será para:",
+                    ["Toda a turma presente", "Algumas alunas", "Uma aluna"],
+                    horizontal=True, key=chave_modo_registro
+                )
+                if modo_registro_turma == "Toda a turma presente":
+                    als_selecionadas = als_presentes_hoje
+                elif modo_registro_turma == "Algumas alunas":
+                    chave_alunas_registro = f"alunas_registro_{d_sel['id']}_{dt_str}"
+                    chaves_controle_selecao.add(chave_alunas_registro)
+                    als_selecionadas = st.multiselect(
+                        "Selecione as alunas:", als_presentes_hoje,
+                        key=chave_alunas_registro
+                    )
+                else:
+                    chave_aluna_registro = f"aluna_registro_{d_sel['id']}_{dt_str}"
+                    chaves_controle_selecao.add(chave_aluna_registro)
+                    als_selecionadas = [st.selectbox(
+                        "Selecione a aluna:", als_presentes_hoje,
+                        key=chave_aluna_registro
+                    )]
+
+            # Antes do formulário, a professora enxerga o que já foi salvo
+            # para cada aluna daquela aula. Isso deixa claro quem já recebeu
+            # registro e evita confundir uma anotação individual com a outra.
+            if not df_hist_local.empty:
+                registros_salvos_aula = df_hist_local[
+                    (df_hist_local['Aluna'].isin(als_ref)) &
+                    (df_hist_local['Data'] == dt_str) &
+                    (df_hist_local['Tipo'] == f"Analise_{d_sel['tipo']}")
+                ].copy()
+                if not registros_salvos_aula.empty:
+                    st.markdown("#### 📌 Registros já salvos nesta aula")
+                    for aluna_salva in als_ref:
+                        registros_aluna_salva = registros_salvos_aula[
+                            registros_salvos_aula['Aluna'] == aluna_salva
+                        ]
+                        if registros_aluna_salva.empty:
+                            continue
+                        for _, registro_salvo in registros_aluna_salva.iterrows():
+                            licao_salva = str(registro_salvo.get("Licao_Atual") or "Conteúdo não informado")
+                            difs_salvas = registro_salvo.get("Dificuldades") or []
+                            if not isinstance(difs_salvas, list):
+                                difs_salvas = [str(difs_salvas)]
+                            texto_difs = ", ".join(difs_salvas) if difs_salvas else "sem dificuldades registradas"
+                            st.caption(f"👤 **{aluna_salva}** — {licao_salva} · {texto_difs}")
+                            observacao_salva = str(registro_salvo.get("Observacao") or "").strip()
+                            if observacao_salva:
+                                st.caption(f"↳ Observação: {observacao_salva}")
+                            licao_casa_salva = str(registro_salvo.get("Licao_Casa") or "").strip()
+                            if licao_casa_salva and licao_casa_salva != "---":
+                                st.caption(f"↳ Registro/resultado: {licao_casa_salva}")
 
             if als_selecionadas:
                 tipo_aula = d_sel["tipo"]
                 # Ao trocar data, aula ou aluna, limpa apenas os widgets do
                 # registro anterior. Assim a tela recarrega os dados salvos da
                 # pessoa selecionada, sem misturar informações entre alunas.
-                contexto_registro = f"{d_sel['id']}|{dt_str}|{tipo_aula}|{als_selecionadas[0]}"
+                contexto_registro = f"{d_sel['id']}|{dt_str}|{tipo_aula}|{'|'.join(sorted(als_selecionadas))}"
                 if st.session_state.get("_contexto_registro_prof") != contexto_registro:
-                    sufixo_registro = f"_{d_sel['id']}"
                     for chave_widget in list(st.session_state.keys()):
-                        if str(chave_widget).endswith(sufixo_registro):
+                        # Limpa os campos do formulário da seleção anterior.
+                        # Os controles de seleção atuais são preservados para não
+                        # desfazer a escolha da professora durante este rerun.
+                        if (str(d_sel['id']) in str(chave_widget)
+                                and chave_widget not in chaves_controle_selecao):
                             st.session_state.pop(chave_widget, None)
                     st.session_state["_contexto_registro_prof"] = contexto_registro
 
