@@ -3237,39 +3237,37 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         else:
                             pends_disc = pends_disc[pends_disc['Tipo'] == "Casa_MSA"]
 
-                if tipo_aula == "Teoria":
-                    st.markdown("### 📋 Lições de Teoria para você corrigir")
-                elif tipo_aula == "Solfejo":
-                    st.markdown("### 📋 MSA para você corrigir")
-                if tipo_aula in ("Teoria", "Solfejo") and pends_disc.empty:
-                    st.success("✅ Nenhuma lição pendente para você corrigir.")
-                elif tipo_aula in ("Teoria", "Solfejo"):
-                    for al in als_selecionadas:
-                        pends_al = pends_disc[pends_disc['Aluna'] == al]
-                        if pends_al.empty:
-                            continue
-                        st.caption(f"👤 {al}")
-                        for _, p in pends_al.iterrows():
-                            with st.container(border=True):
-                                c_txt, c_acao = st.columns([2, 1])
-                                c_txt.write(f"📖 {p['Licao_Casa']}")
-                                key_id = f"pend_{p['id']}"
-                                resultado = c_acao.radio(
-                                    "Resultado:", ["Resolvido", "Resolvido com pendências", "Não resolvido"],
-                                    key=f"rd_{key_id}", horizontal=True
-                                )
-                                obs_correcao = st.text_area(
-                                    "Observações da professora:", value=str(p.get("Observacao") or ""),
-                                    key=f"obs_corr_{key_id}", placeholder="Opcional: registre orientações ou pontos a retomar."
-                                )
-                                if st.button("Salvar", key=f"btn_{key_id}"):
-                                    supabase.table("historico_geral").update({
-                                        "Status": resultado, "Observacao": obs_correcao.strip()
-                                    }).eq("id", p['id']).execute()
-                                    st.success("✅ Correção atualizada!")
-                                    st.cache_data.clear()
-                                    st.rerun()
-
+                if tipo_aula in ("Teoria", "Solfejo"):
+                    titulo_correcao = "📋 Lições de Teoria para você corrigir" if tipo_aula == "Teoria" else "📋 MSA para você corrigir"
+                    with st.expander(titulo_correcao, expanded=False):
+                        if pends_disc.empty:
+                            st.success("✅ Nenhuma lição pendente para você corrigir.")
+                        else:
+                            for al in als_selecionadas:
+                                pends_al = pends_disc[pends_disc['Aluna'] == al]
+                                if pends_al.empty:
+                                    continue
+                                st.caption(f"👤 {al}")
+                                for _, p in pends_al.iterrows():
+                                    with st.container(border=True):
+                                        c_txt, c_acao = st.columns([2, 1])
+                                        c_txt.write(f"📖 {p['Licao_Casa']}")
+                                        key_id = f"pend_{p['id']}"
+                                        resultado = c_acao.radio(
+                                            "Resultado:", ["Resolvido", "Resolvido com pendências", "Não resolvido"],
+                                            key=f"rd_{key_id}", horizontal=True
+                                        )
+                                        obs_correcao = st.text_area(
+                                            "Observações da professora:", value=str(p.get("Observacao") or ""),
+                                            key=f"obs_corr_{key_id}", placeholder="Opcional: registre orientações ou pontos a retomar."
+                                        )
+                                        if st.button("Salvar", key=f"btn_{key_id}"):
+                                            supabase.table("historico_geral").update({
+                                                "Status": resultado, "Observacao": obs_correcao.strip()
+                                            }).eq("id", p['id']).execute()
+                                            st.success("✅ Correção atualizada!")
+                                            st.cache_data.clear()
+                                            st.rerun()
                     st.divider()
                 metodos_filtrados = df_metodos_db[df_metodos_db['categoria'] == tipo_aula]['nome'].tolist() if not df_metodos_db.empty else []
                 st.markdown(f"### 📝 Registro: {tipo_aula}")
