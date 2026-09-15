@@ -3177,37 +3177,6 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         key=chave_aluna_registro
                     )]
 
-            # Antes do formulário, a professora enxerga o que já foi salvo
-            # para cada aluna daquela aula. Isso deixa claro quem já recebeu
-            # registro e evita confundir uma anotação individual com a outra.
-            if not df_hist_local.empty:
-                registros_salvos_aula = df_hist_local[
-                    (df_hist_local['Aluna'].isin(als_ref)) &
-                    (df_hist_local['Data'] == dt_str) &
-                    (df_hist_local['Tipo'] == f"Analise_{d_sel['tipo']}")
-                ].copy()
-                if not registros_salvos_aula.empty:
-                    st.markdown("#### 📌 Registros já salvos nesta aula")
-                    for aluna_salva in als_ref:
-                        registros_aluna_salva = registros_salvos_aula[
-                            registros_salvos_aula['Aluna'] == aluna_salva
-                        ]
-                        if registros_aluna_salva.empty:
-                            continue
-                        for _, registro_salvo in registros_aluna_salva.iterrows():
-                            licao_salva = str(registro_salvo.get("Licao_Atual") or "Conteúdo não informado")
-                            difs_salvas = registro_salvo.get("Dificuldades") or []
-                            if not isinstance(difs_salvas, list):
-                                difs_salvas = [str(difs_salvas)]
-                            texto_difs = ", ".join(difs_salvas) if difs_salvas else "sem dificuldades registradas"
-                            st.caption(f"👤 **{aluna_salva}** — {licao_salva} · {texto_difs}")
-                            observacao_salva = str(registro_salvo.get("Observacao") or "").strip()
-                            if observacao_salva:
-                                st.caption(f"↳ Observação: {observacao_salva}")
-                            licao_casa_salva = str(registro_salvo.get("Licao_Casa") or "").strip()
-                            if licao_casa_salva and licao_casa_salva != "---":
-                                st.caption(f"↳ Registro/resultado: {licao_casa_salva}")
-
             if als_selecionadas:
                 tipo_aula = d_sel["tipo"]
                 # Ao trocar data, aula ou aluna, limpa apenas os widgets do
