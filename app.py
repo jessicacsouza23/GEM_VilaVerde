@@ -1431,9 +1431,19 @@ if menu == "🏠 Secretaria":
                             (df_historico['Aluna'] == aluna_v) &
                             (df_historico['Tipo'].str.startswith("Casa_", na=False))
                         ].copy()
-                        pendentes_sec_aluna = casas_da_aluna[
-                            (casas_da_aluna['Status'] != "Resolvido") |
-                            (casas_da_aluna['Observacao'].fillna("").astype(str).str.strip() != "")
+                        # Para a próxima aula, só importa a última lição de
+                        # cada material. Por exemplo: ao lançar um novo MSA,
+                        # os MSAs antigos não devem continuar aparecendo junto.
+                        casas_da_aluna['_dt_casa'] = pd.to_datetime(
+                            casas_da_aluna['Data'], format='%d/%m/%Y', errors='coerce'
+                        )
+                        ultimas_casas = (
+                            casas_da_aluna.sort_values('_dt_casa')
+                            .drop_duplicates(subset=['Tipo'], keep='last')
+                        )
+                        pendentes_sec_aluna = ultimas_casas[
+                            (ultimas_casas['Status'] != "Resolvido") |
+                            (ultimas_casas['Observacao'].fillna("").astype(str).str.strip() != "")
                         ]
                     else:
                         pendentes_sec_aluna = pd.DataFrame()
@@ -3177,37 +3187,15 @@ elif menu == "👩‍🏫 Minhas Aulas":
             for al_aus in als_ausentes_hoje:
                 st.warning(f"❌ **{al_aus}** está marcada como **{status_chamada_hoje_prof.get(al_aus)}** hoje — não precisa enviar registro de aula dela.")
 
-            # Nas aulas de turma a professora escolhe se aquele registro vale
-            # para todas, apenas para algumas, ou para uma aluna. Só as alunas
-            # escolhidas entram no salvamento; os registros das demais ficam
-            # intactos.
+            # Cada aluna marcada entra no salvamento. A professora pode deixar
+            # todas marcadas para a turma toda ou desmarcar quem fará um
+            # registro separado; os dados das demais ficam intactos.
             chaves_controle_selecao = set()
-            if d_sel.get("individual"):
-                als_selecionadas = als_presentes_hoje
-            elif als_presentes_hoje:
-                chave_modo_registro = f"modo_registro_{d_sel['id']}_{dt_str}"
-                chaves_controle_selecao.add(chave_modo_registro)
-                modo_registro_turma = st.radio(
-                    "Este registro será para:",
-                    ["Toda a turma presente", "Algumas alunas", "Uma aluna"],
-                    horizontal=True, key=chave_modo_registro
-                )
-                if modo_registro_turma == "Toda a turma presente":
-                    als_selecionadas = als_presentes_hoje
-                elif modo_registro_turma == "Algumas alunas":
-                    chave_alunas_registro = f"alunas_registro_{d_sel['id']}_{dt_str}"
-                    chaves_controle_selecao.add(chave_alunas_registro)
-                    als_selecionadas = st.multiselect(
-                        "Selecione as alunas:", als_presentes_hoje,
-                        key=chave_alunas_registro
-                    )
-                else:
-                    chave_aluna_registro = f"aluna_registro_{d_sel['id']}_{dt_str}"
-                    chaves_controle_selecao.add(chave_aluna_registro)
-                    als_selecionadas = [st.selectbox(
-                        "Selecione a aluna:", als_presentes_hoje,
-                        key=chave_aluna_registro
-                    )]
+            for aluna_presente in als_presentes_hoje:
+                chave_checkbox_aluna = f"ch_{aluna_presente}_{d_sel['id']}_{dt_str}"
+                chaves_controle_selecao.add(chave_checkbox_aluna)
+                if st.checkbox(aluna_presente, value=True, key=chave_checkbox_aluna):
+                    als_selecionadas.append(aluna_presente)
 
             if als_selecionadas:
                 tipo_aula = d_sel["tipo"]
