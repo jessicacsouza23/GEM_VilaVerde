@@ -187,7 +187,52 @@ def db_salvar_folga_professoras(data_folga, coordenadora, professoras_folga, obs
     except Exception as e:
         return False, str(e)
 
-def renderizar_painel_folgas(prefixo, coordenadora, somente_edicao=False):
+def buscar_registros_faltantes_do_dia(data_str):
+    """Confere a escala e retorna os registros pedagógicos ainda ausentes.
+
+    É usado pela Secretaria e pela professora coordenadora. Ausências e
+    justificativas não entram como pendência de registro da professora.
+    """
+    escala = db_get_calendario().get(data_str, [])
+    if not escala:
+        return []
+    historico = pd.DataFrame(db_get_historico())
+    if historico.empty:
+        historico = pd.DataFrame(columns=["Aluna", "Data", "Tipo", "Status"])
+    registros_dia = historico[historico.get("Data", pd.Series(dtype=str)) == data_str]
+    faltantes = []
+    vistos = set()
+    for linha_escala in escala:
+        aluna = linha_escala.get("Aluna")
+        if not aluna:
+            continue
+        dados_aluna = registros_dia[registros_dia["Aluna"] == aluna]
+        chamada = dados_aluna[dados_aluna["Tipo"] == "Chamada"]
+        if not chamada.empty and str(chamada.iloc[-1].get("Status") or "") in ("Ausente", "Justificada"):
+            continue
+        tipos_salvos = set(str(tipo) for tipo in dados_aluna["Tipo"].dropna().tolist())
+        for horario in HORARIOS:
+            conteudo = str(linha_escala.get(horario, ""))
+            if "|" not in conteudo:
+                continue
+            conteudo_maiusculo = conteudo.upper()
+            if "SALA 8" in conteudo_maiusculo:
+                disciplina = "Teoria"
+            elif "SALA 9" in conteudo_maiusculo:
+                disciplina = "Solfejo"
+            elif conteudo_maiusculo.startswith("SALA"):
+                disciplina = "Prática"
+            else:
+                continue
+            professora = conteudo.split("|")[-1].strip()
+            chave = (aluna, disciplina, professora)
+            if chave in vistos or f"Analise_{disciplina}" in tipos_salvos:
+                continue
+            vistos.add(chave)
+            faltantes.append({"Professora": professora, "Aluna": aluna, "Disciplina": disciplina})
+    return faltantes
+
+def renderizar_painel_folgas(prefixo, coordenadora, somente_edicao=False, mostrar_verificacao=False):
     """Painel reutilizado pela Secretaria e pela professora coordenadora.
 
     A mesma data pode ser reaberta e salva novamente pelos dois acessos.
@@ -263,6 +308,35 @@ def renderizar_painel_folgas(prefixo, coordenadora, somente_edicao=False):
             st.rerun()
     elif somente_edicao:
         st.caption("Clique em “✏️ Editar” em uma folga cadastrada para abrir os campos.")
+
+    if mostrar_verificacao and mostrar_editor:
+        st.divider()
+        st.markdown("#### 🔎 Conferência de Registros do Sábado")
+        st.caption("Consulta a escala de aulas e mostra apenas os registros que ainda faltam ser preenchidos.")
+        chave_resultado = f"faltantes_coordenadora_{data_folga.isoformat()}"
+        if st.button("Verificar registros faltando", key=f"verificar_{chave_resultado}", use_container_width=True):
+            st.session_state[chave_resultado] = buscar_registros_faltantes_do_dia(
+                data_folga.strftime("%d/%m/%Y")
+            )
+        if chave_resultado in st.session_state:
+            registros_faltantes = st.session_state[chave_resultado]
+            if registros_faltantes:
+                df_faltantes = pd.DataFrame(registros_faltantes).sort_values(["Professora", "Aluna", "Disciplina"])
+                col_pendencias, col_professoras = st.columns(2)
+                col_pendencias.metric("Registros pendentes", len(df_faltantes))
+                col_professoras.metric("Professoras com pendência", df_faltantes["Professora"].nunique())
+                st.warning("⚠️ Registros ainda não preenchidos para este sábado.")
+                st.dataframe(
+                    df_faltantes,
+                    column_config={
+                        "Professora": st.column_config.TextColumn("👩‍🏫 Professora"),
+                        "Aluna": st.column_config.TextColumn("🎓 Aluna"),
+                        "Disciplina": st.column_config.TextColumn("🎼 Disciplina"),
+                    },
+                    use_container_width=True, hide_index=True
+                )
+            else:
+                st.success("✅ Todos os registros das alunas presentes foram preenchidos neste sábado.")
 
     st.divider()
     st.markdown("#### 📅 Folgas cadastradas no mês")
@@ -3292,7 +3366,7 @@ elif menu == "👑 Rodízio de Folgas":
     else:
         st.header("👑 Rodízio de Folgas")
         st.caption("Informe as professoras que estarão de folga em cada sábado. O Planejamento da Secretaria usará estas informações ao gerar o rodízio.")
-        renderizar_painel_folgas("folgas_coordenadora", nome_coordenadora)
+        renderizar_painel_folgas("folgas_coordenadora", nome_coordenadora, mostrar_verificacao=True)
 
 # ============================================================
 # MÓDULO PROFESSORA - V58 (INTEGRADO E CORRIGIDO)
