@@ -232,6 +232,47 @@ def buscar_registros_faltantes_do_dia(data_str):
             faltantes.append({"Professora": professora, "Aluna": aluna, "Disciplina": disciplina})
     return faltantes
 
+def renderizar_conferencia_registros_coordenadora():
+    """Consulta simples dos registros pendentes, isolada da edição de folgas."""
+    st.subheader("🔎 Registros Pendentes")
+    st.caption("Escolha o sábado e confira quem ainda não lançou o registro pedagógico.")
+    col_mes, col_ano = st.columns(2)
+    mes = col_mes.selectbox("Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="mes_conf_coord")
+    ano = col_ano.selectbox("Ano:", [datetime.now().year, datetime.now().year + 1], key="ano_conf_coord")
+    sabados = [
+        dia for semana in calendar.Calendar().monthdatescalendar(ano, mes)
+        for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes
+    ]
+    if not sabados:
+        st.info("Não há sábados nesse período.")
+        return
+    data_selecionada = st.selectbox(
+        "Sábado para conferir:", sabados, format_func=lambda d: d.strftime("%d/%m/%Y"), key="data_conf_coord"
+    )
+    chave_resultado = f"faltantes_coordenadora_{data_selecionada.isoformat()}"
+    if st.button("🔎 Verificar registros", key=f"verificar_{chave_resultado}", type="primary", use_container_width=True):
+        st.session_state[chave_resultado] = buscar_registros_faltantes_do_dia(data_selecionada.strftime("%d/%m/%Y"))
+    if chave_resultado not in st.session_state:
+        return
+    registros_faltantes = st.session_state[chave_resultado]
+    if not registros_faltantes:
+        st.success("✅ Todos os registros das alunas presentes foram preenchidos neste sábado.")
+        return
+    df_faltantes = pd.DataFrame(registros_faltantes).sort_values(["Professora", "Aluna", "Disciplina"])
+    col_pendencias, col_professoras = st.columns(2)
+    col_pendencias.metric("Registros pendentes", len(df_faltantes))
+    col_professoras.metric("Professoras com pendência", df_faltantes["Professora"].nunique())
+    st.warning("⚠️ Registros ainda não preenchidos para este sábado.")
+    st.dataframe(
+        df_faltantes,
+        column_config={
+            "Professora": st.column_config.TextColumn("👩‍🏫 Professora"),
+            "Aluna": st.column_config.TextColumn("🎓 Aluna"),
+            "Disciplina": st.column_config.TextColumn("🎼 Disciplina"),
+        },
+        use_container_width=True, hide_index=True
+    )
+
 def renderizar_painel_folgas(prefixo, coordenadora, somente_edicao=False, mostrar_verificacao=False):
     """Painel reutilizado pela Secretaria e pela professora coordenadora.
 
@@ -308,35 +349,6 @@ def renderizar_painel_folgas(prefixo, coordenadora, somente_edicao=False, mostra
             st.rerun()
     elif somente_edicao:
         st.caption("Clique em “✏️ Editar” em uma folga cadastrada para abrir os campos.")
-
-    if mostrar_verificacao and mostrar_editor:
-        st.divider()
-        st.markdown("#### 🔎 Conferência de Registros do Sábado")
-        st.caption("Consulta a escala de aulas e mostra apenas os registros que ainda faltam ser preenchidos.")
-        chave_resultado = f"faltantes_coordenadora_{data_folga.isoformat()}"
-        if st.button("Verificar registros faltando", key=f"verificar_{chave_resultado}", use_container_width=True):
-            st.session_state[chave_resultado] = buscar_registros_faltantes_do_dia(
-                data_folga.strftime("%d/%m/%Y")
-            )
-        if chave_resultado in st.session_state:
-            registros_faltantes = st.session_state[chave_resultado]
-            if registros_faltantes:
-                df_faltantes = pd.DataFrame(registros_faltantes).sort_values(["Professora", "Aluna", "Disciplina"])
-                col_pendencias, col_professoras = st.columns(2)
-                col_pendencias.metric("Registros pendentes", len(df_faltantes))
-                col_professoras.metric("Professoras com pendência", df_faltantes["Professora"].nunique())
-                st.warning("⚠️ Registros ainda não preenchidos para este sábado.")
-                st.dataframe(
-                    df_faltantes,
-                    column_config={
-                        "Professora": st.column_config.TextColumn("👩‍🏫 Professora"),
-                        "Aluna": st.column_config.TextColumn("🎓 Aluna"),
-                        "Disciplina": st.column_config.TextColumn("🎼 Disciplina"),
-                    },
-                    use_container_width=True, hide_index=True
-                )
-            else:
-                st.success("✅ Todos os registros das alunas presentes foram preenchidos neste sábado.")
 
     st.divider()
     st.markdown("#### 📅 Folgas cadastradas no mês")
@@ -3365,8 +3377,13 @@ elif menu == "👑 Rodízio de Folgas":
         st.error("Este acesso é exclusivo da professora definida como coordenadora pela Secretaria.")
     else:
         st.header("👑 Rodízio de Folgas")
-        st.caption("Informe as professoras que estarão de folga em cada sábado. O Planejamento da Secretaria usará estas informações ao gerar o rodízio.")
-        renderizar_painel_folgas("folgas_coordenadora", nome_coordenadora, mostrar_verificacao=True)
+        st.caption("Organize as folgas e acompanhe os registros das aulas do sábado.")
+        tab_folgas_coord, tab_registros_coord = st.tabs(["📅 Folgas", "🔎 Registros pendentes"])
+        with tab_folgas_coord:
+            st.caption("Informe as professoras de folga. O Planejamento da Secretaria usará estas informações ao gerar o rodízio.")
+            renderizar_painel_folgas("folgas_coordenadora", nome_coordenadora)
+        with tab_registros_coord:
+            renderizar_conferencia_registros_coordenadora()
 
 # ============================================================
 # MÓDULO PROFESSORA - V58 (INTEGRADO E CORRIGIDO)
