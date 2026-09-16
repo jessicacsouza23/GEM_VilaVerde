@@ -187,6 +187,94 @@ def db_salvar_folga_professoras(data_folga, coordenadora, professoras_folga, obs
     except Exception as e:
         return False, str(e)
 
+def renderizar_painel_folgas(prefixo, coordenadora):
+    """Painel reutilizado pela Secretaria e pela professora coordenadora.
+
+    A mesma data pode ser reaberta e salva novamente pelos dois acessos.
+    """
+    col_mes_folga, col_ano_folga = st.columns(2)
+    mes_folga = col_mes_folga.selectbox(
+        "Mês:", list(range(1, 13)), index=datetime.now().month - 1,
+        key=f"mes_{prefixo}"
+    )
+    ano_folga = col_ano_folga.selectbox(
+        "Ano:", [datetime.now().year, datetime.now().year + 1],
+        key=f"ano_{prefixo}"
+    )
+    sabados_folga = [
+        dia for semana in calendar.Calendar().monthdatescalendar(ano_folga, mes_folga)
+        for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes_folga
+    ]
+    if not sabados_folga:
+        st.info("Não há sábados nesse período.")
+        return
+
+    chave_data = f"data_{prefixo}"
+    data_para_editar = st.session_state.pop(f"editar_{prefixo}", None)
+    if data_para_editar:
+        try:
+            data_obj_editar = datetime.fromisoformat(data_para_editar).date()
+            if data_obj_editar in sabados_folga:
+                st.session_state.pop(chave_data, None)
+                st.session_state.pop(f"professoras_{prefixo}_{data_obj_editar.isoformat()}", None)
+                st.session_state.pop(f"observacao_{prefixo}_{data_obj_editar.isoformat()}", None)
+                indice_data = sabados_folga.index(data_obj_editar)
+            else:
+                indice_data = 0
+        except ValueError:
+            indice_data = 0
+    else:
+        indice_data = 0
+
+    mapa_folgas = db_get_folgas_professoras()
+    data_folga = st.selectbox(
+        "Sábado:", sabados_folga, index=indice_data,
+        format_func=lambda d: d.strftime("%d/%m/%Y"), key=chave_data
+    )
+    folga_salva = mapa_folgas.get(data_folga.isoformat(), {})
+    professoras_salvas = folga_salva.get("professoras") or []
+    if not isinstance(professoras_salvas, list):
+        professoras_salvas = []
+    professoras_folga = st.multiselect(
+        "Professoras de folga neste sábado:", PROFESSORAS_LISTA,
+        default=[p for p in professoras_salvas if p in PROFESSORAS_LISTA],
+        key=f"professoras_{prefixo}_{data_folga.isoformat()}"
+    )
+    observacao_folga = st.text_area(
+        "Observação opcional:", value=folga_salva.get("observacao") or "",
+        placeholder="Ex.: Missão Fraternal, folga geral, troca combinada.",
+        key=f"observacao_{prefixo}_{data_folga.isoformat()}"
+    )
+    if st.button("💾 Salvar folgas deste sábado", type="primary", use_container_width=True, key=f"salvar_{prefixo}_{data_folga.isoformat()}"):
+        ok, detalhe = db_salvar_folga_professoras(
+            data_folga, coordenadora, professoras_folga, observacao_folga
+        )
+        if ok:
+            st.success("✅ Folgas salvas.")
+            st.rerun()
+        else:
+            st.error("⚠️ Não foi possível salvar. Rode a migração `012_coordenacao_e_rodizio_folgas.sql` no SQL Editor do Supabase.")
+            st.caption(f"Detalhe técnico: {detalhe}")
+
+    st.divider()
+    st.markdown("#### 📅 Folgas cadastradas no mês")
+    encontrou_folga = False
+    for sabado in sabados_folga:
+        registro_folga = mapa_folgas.get(sabado.isoformat())
+        if not registro_folga:
+            continue
+        encontrou_folga = True
+        nomes_folga = registro_folga.get("professoras") or []
+        texto_nomes = ", ".join(nomes_folga) if nomes_folga else "Nenhuma professora de folga"
+        texto_obs = str(registro_folga.get("observacao") or "").strip()
+        col_texto, col_editar = st.columns([5, 1])
+        col_texto.write(f"**{sabado.strftime('%d/%m/%Y')}** — {texto_nomes}" + (f" · {texto_obs}" if texto_obs else ""))
+        if col_editar.button("✏️ Editar", key=f"editar_{prefixo}_{sabado.isoformat()}"):
+            st.session_state[f"editar_{prefixo}"] = sabado.isoformat()
+            st.rerun()
+    if not encontrou_folga:
+        st.caption("Nenhuma folga cadastrada neste mês ainda.")
+
 # --- 2. CONEXÃO IA COM ECONOMIA DE QUOTA (CACHE) ---
 @st.cache_resource(show_spinner=False)
 def inicializar_ia_economica():
@@ -2492,6 +2580,10 @@ if menu == "🏠 Secretaria":
 
                     if coordenadora_atual:
                         st.info(f"Coordenadora atual: **{coordenadora_atual}**. Ela poderá informar as folgas de cada sábado pelo login dela.")
+                        st.divider()
+                        st.subheader("📅 Rodízio de Folgas")
+                        st.caption("A Secretaria também pode consultar e editar as folgas já cadastradas.")
+                        renderizar_painel_folgas("folgas_secretaria", coordenadora_atual)
 
             # --- ABA 7: TURMAS E PESSOAS (CADASTRO) ---
             with tab_pessoas:
@@ -3132,62 +3224,7 @@ elif menu == "👑 Rodízio de Folgas":
     else:
         st.header("👑 Rodízio de Folgas")
         st.caption("Informe as professoras que estarão de folga em cada sábado. O Planejamento da Secretaria usará estas informações ao gerar o rodízio.")
-        col_mes_folga, col_ano_folga = st.columns(2)
-        mes_folga = col_mes_folga.selectbox(
-            "Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="mes_rodizio_folgas"
-        )
-        ano_folga = col_ano_folga.selectbox(
-            "Ano:", [datetime.now().year, datetime.now().year + 1], key="ano_rodizio_folgas"
-        )
-        sabados_folga = [
-            dia for semana in calendar.Calendar().monthdatescalendar(ano_folga, mes_folga)
-            for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes_folga
-        ]
-        mapa_folgas = db_get_folgas_professoras()
-
-        if not sabados_folga:
-            st.info("Não há sábados nesse período.")
-        else:
-            data_folga = st.selectbox("Sábado:", sabados_folga, format_func=lambda d: d.strftime("%d/%m/%Y"), key="data_rodizio_folgas")
-            folga_salva = mapa_folgas.get(data_folga.isoformat(), {})
-            professoras_salvas = folga_salva.get("professoras") or []
-            if not isinstance(professoras_salvas, list):
-                professoras_salvas = []
-            professoras_folga = st.multiselect(
-                "Professoras de folga neste sábado:", PROFESSORAS_LISTA,
-                default=[p for p in professoras_salvas if p in PROFESSORAS_LISTA],
-                key=f"professoras_folga_{data_folga.isoformat()}"
-            )
-            observacao_folga = st.text_area(
-                "Observação opcional:", value=folga_salva.get("observacao") or "",
-                placeholder="Ex.: Missão Fraternal, folga geral, troca combinada.",
-                key=f"observacao_folga_{data_folga.isoformat()}"
-            )
-            if st.button("💾 Salvar folgas deste sábado", type="primary", use_container_width=True):
-                ok, detalhe = db_salvar_folga_professoras(
-                    data_folga, nome_coordenadora, professoras_folga, observacao_folga
-                )
-                if ok:
-                    st.success("✅ Folgas salvas. A Secretaria verá essas ausências no Planejamento.")
-                    st.rerun()
-                else:
-                    st.error("⚠️ Não foi possível salvar. Rode a migração `012_coordenacao_e_rodizio_folgas.sql` no SQL Editor do Supabase.")
-                    st.caption(f"Detalhe técnico: {detalhe}")
-
-            st.divider()
-            st.markdown("#### 📅 Folgas já cadastradas no mês")
-            encontrou_folga = False
-            for sabado in sabados_folga:
-                registro_folga = mapa_folgas.get(sabado.isoformat())
-                if not registro_folga:
-                    continue
-                encontrou_folga = True
-                nomes_folga = registro_folga.get("professoras") or []
-                texto_nomes = ", ".join(nomes_folga) if nomes_folga else "Nenhuma professora de folga"
-                texto_obs = str(registro_folga.get("observacao") or "").strip()
-                st.write(f"**{sabado.strftime('%d/%m/%Y')}** — {texto_nomes}" + (f" · {texto_obs}" if texto_obs else ""))
-            if not encontrou_folga:
-                st.caption("Nenhuma folga cadastrada neste mês ainda.")
+        renderizar_painel_folgas("folgas_coordenadora", nome_coordenadora)
 
 # ============================================================
 # MÓDULO PROFESSORA - V58 (INTEGRADO E CORRIGIDO)
