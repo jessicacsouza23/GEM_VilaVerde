@@ -1334,36 +1334,61 @@ if menu == "🏠 Secretaria":
             # A conferência detalhada só roda quando a Secretaria pedir. Ela
             # usa a escala e os registros da data escolhida, sem misturar com
             # outros sábados ou com dados históricos.
-            if st.button("🔎 Ver registros de aula faltando", key=f"ver_faltantes_{data_visao}", use_container_width=True):
-                registros_faltantes = []
-                for aluna_faltante in alunas_da_escala_hoje:
-                    dados_aluna_faltante = df_dia[df_dia['Aluna'] == aluna_faltante]
-                    chamada_aluna = dados_aluna_faltante[dados_aluna_faltante['Tipo'] == "Chamada"]
-                    status_aluna = None
-                    if not chamada_aluna.empty:
-                        status_aluna = _valor_ou_none(chamada_aluna.iloc[-1].get("Status"))
-                    # Ausente/justificada não gera cobrança de registro de aula.
-                    if status_aluna in ("Ausente", "Justificada"):
-                        continue
+            chave_resultado_faltantes = f"resultado_faltantes_{data_visao}"
+            with st.container(border=True):
+                col_titulo_faltantes, col_botao_faltantes = st.columns([3, 1])
+                col_titulo_faltantes.markdown("#### 🔎 Conferência de Registros")
+                col_titulo_faltantes.caption("Verifique rapidamente quem ainda não lançou o registro pedagógico deste dia.")
+                consultar_faltantes = col_botao_faltantes.button(
+                    "Verificar agora", key=f"ver_faltantes_{data_visao}", use_container_width=True, type="primary"
+                )
 
-                    tipos_salvos = set(_valor_ou_none(tipo) for tipo in dados_aluna_faltante["Tipo"].tolist())
-                    for disciplina_faltante in ["Prática", "Teoria", "Solfejo"]:
-                        professora_faltante = _prof_escalada_para(aluna_faltante, disciplina_faltante)
-                        if (not professora_faltante or professora_faltante == SEM_PROFESSORA_DISPONIVEL
-                                or f"Analise_{disciplina_faltante}" in tipos_salvos):
+                if consultar_faltantes:
+                    registros_faltantes = []
+                    for aluna_faltante in alunas_da_escala_hoje:
+                        dados_aluna_faltante = df_dia[df_dia['Aluna'] == aluna_faltante]
+                        chamada_aluna = dados_aluna_faltante[dados_aluna_faltante['Tipo'] == "Chamada"]
+                        status_aluna = None
+                        if not chamada_aluna.empty:
+                            status_aluna = _valor_ou_none(chamada_aluna.iloc[-1].get("Status"))
+                        # Ausente/justificada não gera cobrança de registro de aula.
+                        if status_aluna in ("Ausente", "Justificada"):
                             continue
-                        registros_faltantes.append({
-                            "Professora": professora_faltante,
-                            "Aluna": aluna_faltante,
-                            "Disciplina": disciplina_faltante,
-                        })
 
-                st.markdown(f"#### 📋 Registros faltando em {data_visao}")
-                if registros_faltantes:
-                    st.warning(f"Há {len(registros_faltantes)} registro(s) de aula pendente(s).")
-                    st.dataframe(pd.DataFrame(registros_faltantes), use_container_width=True, hide_index=True)
-                else:
-                    st.success("✅ Não há registros de aula pendentes para as alunas presentes nessa data.")
+                        tipos_salvos = set(_valor_ou_none(tipo) for tipo in dados_aluna_faltante["Tipo"].tolist())
+                        for disciplina_faltante in ["Prática", "Teoria", "Solfejo"]:
+                            professora_faltante = _prof_escalada_para(aluna_faltante, disciplina_faltante)
+                            if (not professora_faltante or professora_faltante == SEM_PROFESSORA_DISPONIVEL
+                                    or f"Analise_{disciplina_faltante}" in tipos_salvos):
+                                continue
+                            registros_faltantes.append({
+                                "Professora": professora_faltante,
+                                "Aluna": aluna_faltante,
+                                "Disciplina": disciplina_faltante,
+                            })
+                    st.session_state[chave_resultado_faltantes] = registros_faltantes
+
+                if chave_resultado_faltantes in st.session_state:
+                    registros_faltantes = st.session_state[chave_resultado_faltantes]
+                    st.markdown(f"##### 📋 Resultado — {data_visao}")
+                    if registros_faltantes:
+                        df_faltantes = pd.DataFrame(registros_faltantes).sort_values(["Professora", "Aluna", "Disciplina"])
+                        qtd_professoras = df_faltantes["Professora"].nunique()
+                        metrica_pendencias, metrica_professoras = st.columns(2)
+                        metrica_pendencias.metric("Registros pendentes", len(df_faltantes))
+                        metrica_professoras.metric("Professoras com pendência", qtd_professoras)
+                        st.warning("⚠️ Confira os itens abaixo e peça o registro diretamente à professora responsável.")
+                        st.dataframe(
+                            df_faltantes,
+                            column_config={
+                                "Professora": st.column_config.TextColumn("👩‍🏫 Professora"),
+                                "Aluna": st.column_config.TextColumn("🎓 Aluna"),
+                                "Disciplina": st.column_config.TextColumn("🎼 Disciplina"),
+                            },
+                            use_container_width=True, hide_index=True
+                        )
+                    else:
+                        st.success("✅ Tudo certo! Não há registros de aula pendentes para as alunas presentes nessa data.")
 
             modo_exibicao_alunas = st.radio(
                 "Exibição das alunas:", ["Exibir detalhes", "Contrair todas"],
