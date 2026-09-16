@@ -187,7 +187,7 @@ def db_salvar_folga_professoras(data_folga, coordenadora, professoras_folga, obs
     except Exception as e:
         return False, str(e)
 
-def renderizar_painel_folgas(prefixo, coordenadora):
+def renderizar_painel_folgas(prefixo, coordenadora, somente_edicao=False):
     """Painel reutilizado pela Secretaria e pela professora coordenadora.
 
     A mesma data pode ser reaberta e salva novamente pelos dois acessos.
@@ -210,7 +210,8 @@ def renderizar_painel_folgas(prefixo, coordenadora):
         return
 
     chave_data = f"data_{prefixo}"
-    data_para_editar = st.session_state.pop(f"editar_{prefixo}", None)
+    chave_editor = f"editar_{prefixo}"
+    data_para_editar = st.session_state.get(chave_editor)
     if data_para_editar:
         try:
             data_obj_editar = datetime.fromisoformat(data_para_editar).date()
@@ -227,34 +228,41 @@ def renderizar_painel_folgas(prefixo, coordenadora):
         indice_data = 0
 
     mapa_folgas = db_get_folgas_professoras()
-    data_folga = st.selectbox(
-        "Sábado:", sabados_folga, index=indice_data,
-        format_func=lambda d: d.strftime("%d/%m/%Y"), key=chave_data
-    )
-    folga_salva = mapa_folgas.get(data_folga.isoformat(), {})
-    professoras_salvas = folga_salva.get("professoras") or []
-    if not isinstance(professoras_salvas, list):
-        professoras_salvas = []
-    professoras_folga = st.multiselect(
-        "Professoras de folga neste sábado:", PROFESSORAS_LISTA,
-        default=[p for p in professoras_salvas if p in PROFESSORAS_LISTA],
-        key=f"professoras_{prefixo}_{data_folga.isoformat()}"
-    )
-    observacao_folga = st.text_area(
-        "Observação opcional:", value=folga_salva.get("observacao") or "",
-        placeholder="Ex.: Missão Fraternal, folga geral, troca combinada.",
-        key=f"observacao_{prefixo}_{data_folga.isoformat()}"
-    )
-    if st.button("💾 Salvar folgas deste sábado", type="primary", use_container_width=True, key=f"salvar_{prefixo}_{data_folga.isoformat()}"):
-        ok, detalhe = db_salvar_folga_professoras(
-            data_folga, coordenadora, professoras_folga, observacao_folga
+    mostrar_editor = not somente_edicao or bool(data_para_editar)
+    if mostrar_editor:
+        data_folga = st.selectbox(
+            "Sábado:", sabados_folga, index=indice_data,
+            format_func=lambda d: d.strftime("%d/%m/%Y"), key=chave_data
         )
-        if ok:
-            st.success("✅ Folgas salvas.")
+        folga_salva = mapa_folgas.get(data_folga.isoformat(), {})
+        professoras_salvas = folga_salva.get("professoras") or []
+        if not isinstance(professoras_salvas, list):
+            professoras_salvas = []
+        professoras_folga = st.multiselect(
+            "Professoras de folga neste sábado:", PROFESSORAS_LISTA,
+            default=[p for p in professoras_salvas if p in PROFESSORAS_LISTA],
+            key=f"professoras_{prefixo}_{data_folga.isoformat()}"
+        )
+        observacao_folga = st.text_area(
+            "Observação opcional:", value=folga_salva.get("observacao") or "",
+            placeholder="Ex.: Missão Fraternal, folga geral, troca combinada.",
+            key=f"observacao_{prefixo}_{data_folga.isoformat()}"
+        )
+        if st.button("💾 Salvar folgas deste sábado", type="primary", use_container_width=True, key=f"salvar_{prefixo}_{data_folga.isoformat()}"):
+            ok, detalhe = db_salvar_folga_professoras(
+                data_folga, coordenadora, professoras_folga, observacao_folga
+            )
+            if ok:
+                st.success("✅ Folgas salvas.")
+                st.rerun()
+            else:
+                st.error("⚠️ Não foi possível salvar. Rode a migração `012_coordenacao_e_rodizio_folgas.sql` no SQL Editor do Supabase.")
+                st.caption(f"Detalhe técnico: {detalhe}")
+        if somente_edicao and st.button("Fechar edição", key=f"fechar_{prefixo}"):
+            st.session_state.pop(chave_editor, None)
             st.rerun()
-        else:
-            st.error("⚠️ Não foi possível salvar. Rode a migração `012_coordenacao_e_rodizio_folgas.sql` no SQL Editor do Supabase.")
-            st.caption(f"Detalhe técnico: {detalhe}")
+    elif somente_edicao:
+        st.caption("Clique em “✏️ Editar” em uma folga cadastrada para abrir os campos.")
 
     st.divider()
     st.markdown("#### 📅 Folgas cadastradas no mês")
@@ -270,7 +278,7 @@ def renderizar_painel_folgas(prefixo, coordenadora):
         col_texto, col_editar = st.columns([5, 1])
         col_texto.write(f"**{sabado.strftime('%d/%m/%Y')}** — {texto_nomes}" + (f" · {texto_obs}" if texto_obs else ""))
         if col_editar.button("✏️ Editar", key=f"editar_{prefixo}_{sabado.isoformat()}"):
-            st.session_state[f"editar_{prefixo}"] = sabado.isoformat()
+            st.session_state[chave_editor] = sabado.isoformat()
             st.rerun()
     if not encontrou_folga:
         st.caption("Nenhuma folga cadastrada neste mês ainda.")
@@ -1322,6 +1330,41 @@ if menu == "🏠 Secretaria":
         if alunas_da_escala_hoje:
             df_dia = df_historico[df_historico['Data'] == data_visao] if not df_historico.empty else pd.DataFrame()
             df_dia = _garantir_colunas(df_dia)
+
+            # A conferência detalhada só roda quando a Secretaria pedir. Ela
+            # usa a escala e os registros da data escolhida, sem misturar com
+            # outros sábados ou com dados históricos.
+            if st.button("🔎 Ver registros de aula faltando", key=f"ver_faltantes_{data_visao}", use_container_width=True):
+                registros_faltantes = []
+                for aluna_faltante in alunas_da_escala_hoje:
+                    dados_aluna_faltante = df_dia[df_dia['Aluna'] == aluna_faltante]
+                    chamada_aluna = dados_aluna_faltante[dados_aluna_faltante['Tipo'] == "Chamada"]
+                    status_aluna = None
+                    if not chamada_aluna.empty:
+                        status_aluna = _valor_ou_none(chamada_aluna.iloc[-1].get("Status"))
+                    # Ausente/justificada não gera cobrança de registro de aula.
+                    if status_aluna in ("Ausente", "Justificada"):
+                        continue
+
+                    tipos_salvos = set(_valor_ou_none(tipo) for tipo in dados_aluna_faltante["Tipo"].tolist())
+                    for disciplina_faltante in ["Prática", "Teoria", "Solfejo"]:
+                        professora_faltante = _prof_escalada_para(aluna_faltante, disciplina_faltante)
+                        if (not professora_faltante or professora_faltante == SEM_PROFESSORA_DISPONIVEL
+                                or f"Analise_{disciplina_faltante}" in tipos_salvos):
+                            continue
+                        registros_faltantes.append({
+                            "Professora": professora_faltante,
+                            "Aluna": aluna_faltante,
+                            "Disciplina": disciplina_faltante,
+                        })
+
+                st.markdown(f"#### 📋 Registros faltando em {data_visao}")
+                if registros_faltantes:
+                    st.warning(f"Há {len(registros_faltantes)} registro(s) de aula pendente(s).")
+                    st.dataframe(pd.DataFrame(registros_faltantes), use_container_width=True, hide_index=True)
+                else:
+                    st.success("✅ Não há registros de aula pendentes para as alunas presentes nessa data.")
+
             modo_exibicao_alunas = st.radio(
                 "Exibição das alunas:", ["Exibir detalhes", "Contrair todas"],
                 horizontal=True, key="modo_exibicao_relatorio_diario"
@@ -2583,7 +2626,7 @@ if menu == "🏠 Secretaria":
                         st.divider()
                         st.subheader("📅 Rodízio de Folgas")
                         st.caption("A Secretaria também pode consultar e editar as folgas já cadastradas.")
-                        renderizar_painel_folgas("folgas_secretaria", coordenadora_atual)
+                        renderizar_painel_folgas("folgas_secretaria", coordenadora_atual, somente_edicao=True)
 
             # --- ABA 7: TURMAS E PESSOAS (CADASTRO) ---
             with tab_pessoas:
