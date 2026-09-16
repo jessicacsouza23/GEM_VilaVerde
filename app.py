@@ -158,6 +158,35 @@ def db_get_secretarias_extra():
     except Exception:
         return []
 
+# ==========================================
+# COORDENAÇÃO DO GEM E RODÍZIO DE FOLGAS
+# ==========================================
+def db_get_coordenadora_gem():
+    """Retorna a professora escolhida pela Secretaria para coordenar o GEM."""
+    try:
+        res = supabase.table("config_coordenacao_gem").select("*").eq("id", 1).execute()
+        return (res.data or [None])[0]
+    except Exception:
+        return None
+
+def db_get_folgas_professoras():
+    """Retorna as folgas registradas por sábado, indexadas pela data ISO."""
+    try:
+        res = supabase.table("folgas_professoras").select("*").execute()
+        return {str(item.get("data")): item for item in (res.data or [])}
+    except Exception:
+        return {}
+
+def db_salvar_folga_professoras(data_folga, coordenadora, professoras_folga, observacao=""):
+    try:
+        supabase.table("folgas_professoras").upsert({
+            "data": data_folga.isoformat(), "coordenadora": coordenadora,
+            "professoras": professoras_folga, "observacao": observacao.strip()
+        }, on_conflict="data").execute()
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
 # --- 2. CONEXÃO IA COM ECONOMIA DE QUOTA (CACHE) ---
 @st.cache_resource(show_spinner=False)
 def inicializar_ia_economica():
@@ -1039,7 +1068,11 @@ if st.session_state.perfil == "Secretaria":
 elif st.session_state.get("tipo_usuario") == "aluna":
     menu = st.sidebar.radio("Navegação:", ["🎓 Minhas Lições", "📁 Documentos", "📝 Boletim", "💬 Mensagens"])
 else:
-    menu = st.sidebar.radio("Navegação:", ["👩‍🏫 Minhas Aulas", "📁 Envio de Documentos", "📝 Provas", "📊 Analítico IA", "💬 Mensagens"])
+    opcoes_professora = ["👩‍🏫 Minhas Aulas", "📁 Envio de Documentos", "📝 Provas", "📊 Analítico IA", "💬 Mensagens"]
+    coordenadora_configurada = db_get_coordenadora_gem()
+    if (coordenadora_configurada or {}).get("professora") == st.session_state.nome_logado:
+        opcoes_professora.insert(1, "👑 Rodízio de Folgas")
+    menu = st.sidebar.radio("Navegação:", opcoes_professora)
     
     
 if st.session_state.perfil == "Secretaria":
@@ -1061,8 +1094,8 @@ if menu == "🏠 Secretaria":
     if not df_historico.empty:
         df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
 
-    tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes, tab_pessoas = st.tabs([
-        "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros", "👥 Turmas e Pessoas"
+    tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes, tab_coord, tab_pessoas = st.tabs([
+        "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros", "👑 Coordenação", "👥 Turmas e Pessoas"
     ])
 
     # --- ABA 1: VISÃO GERAL DIÁRIA (TOTALIZADA) ---
@@ -1561,7 +1594,21 @@ if menu == "🏠 Secretaria":
                         ps_por_turma[turma_nome] = st.selectbox(f"Prof Solfejo — {turma_nome}", PROFESSORAS_LISTA, index=idx_default, key=f"ps_{turma_nome}")
                 st.caption("A professora acompanha a turma dela onde quer que ela caia no rodízio — mesmo se o horário mudar por causa de uma aula fixa.")
                 
-                folga_ativa = st.multiselect("Folgas (Professoras Ausentes):", PROFESSORAS_LISTA)
+                try:
+                    data_folga_iso = datetime.strptime(data_sel_str, "%d/%m/%Y").date().isoformat()
+                except ValueError:
+                    data_folga_iso = ""
+                folga_planejada = db_get_folgas_professoras().get(data_folga_iso, {})
+                folga_ativa = [
+                    professora for professora in (folga_planejada.get("professoras") or [])
+                    if professora in PROFESSORAS_LISTA
+                ]
+                if folga_ativa:
+                    st.warning(f"👑 Folgas informadas pela coordenadora: {', '.join(folga_ativa)}")
+                    if folga_planejada.get("observacao"):
+                        st.caption(f"Observação: {folga_planejada['observacao']}")
+                else:
+                    st.caption("👑 Nenhuma folga foi informada pela coordenadora para este sábado.")
                 professoras_saida = st.multiselect("Professoras com saída antecipada:", [p for p in PROFESSORAS_LISTA if p not in folga_ativa])
                 ultima_aula_prof = {}
                 for prof_saida in professoras_saida:
@@ -2417,7 +2464,36 @@ if menu == "🏠 Secretaria":
                     else:
                         st.success("✅ Tudo consistente! A memória do rodízio bate com a última escala salva de cada aluna.")
 
-            # --- ABA 6: TURMAS E PESSOAS (CADASTRO) ---
+            # --- ABA 6: COORDENAÇÃO DO GEM ---
+            with tab_coord:
+                st.subheader("👑 Coordenação do GEM")
+                st.caption("A Secretaria escolhe uma professora coordenadora. Só ela terá acesso ao Rodízio de Folgas no próprio login.")
+                if not PROFESSORAS_LISTA:
+                    st.warning("Cadastre ao menos uma professora antes de definir a coordenadora.")
+                else:
+                    configuracao_coord = db_get_coordenadora_gem() or {}
+                    coordenadora_atual = configuracao_coord.get("professora")
+                    indice_coord = PROFESSORAS_LISTA.index(coordenadora_atual) if coordenadora_atual in PROFESSORAS_LISTA else 0
+                    coordenadora_escolhida = st.selectbox(
+                        "Professora coordenadora do GEM:", PROFESSORAS_LISTA,
+                        index=indice_coord, key="professora_coordenadora_gem"
+                    )
+                    if st.button("💾 Salvar coordenadora", use_container_width=True, key="salvar_coordenadora_gem"):
+                        try:
+                            supabase.table("config_coordenacao_gem").upsert({
+                                "id": 1, "professora": coordenadora_escolhida,
+                                "updated_at": datetime.now().isoformat()
+                            }, on_conflict="id").execute()
+                            st.success(f"✅ {coordenadora_escolhida} agora é a coordenadora do GEM.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error("⚠️ A configuração de coordenação ainda não existe no banco. Rode a migração `012_coordenacao_e_rodizio_folgas.sql` no SQL Editor do Supabase.")
+                            st.caption(f"Detalhe técnico: {e}")
+
+                    if coordenadora_atual:
+                        st.info(f"Coordenadora atual: **{coordenadora_atual}**. Ela poderá informar as folgas de cada sábado pelo login dela.")
+
+            # --- ABA 7: TURMAS E PESSOAS (CADASTRO) ---
             with tab_pessoas:
                 sub_alunas, sub_profs, sub_secs = st.tabs(["🎀 Alunas e Turmas", "👩‍🏫 Professoras", "🔐 Secretarias"])
 
@@ -3044,6 +3120,74 @@ elif menu == "📝 Provas":
                             st.rerun()
                         except Exception as e:
                             st.error(f"Não foi possível salvar a nota: {e}")
+
+# ============================================================
+# RODÍZIO DE FOLGAS — APENAS PARA A PROFESSORA COORDENADORA
+# ============================================================
+elif menu == "👑 Rodízio de Folgas":
+    coordenadora_configurada = db_get_coordenadora_gem() or {}
+    nome_coordenadora = st.session_state.nome_logado
+    if coordenadora_configurada.get("professora") != nome_coordenadora:
+        st.error("Este acesso é exclusivo da professora definida como coordenadora pela Secretaria.")
+    else:
+        st.header("👑 Rodízio de Folgas")
+        st.caption("Informe as professoras que estarão de folga em cada sábado. O Planejamento da Secretaria usará estas informações ao gerar o rodízio.")
+        col_mes_folga, col_ano_folga = st.columns(2)
+        mes_folga = col_mes_folga.selectbox(
+            "Mês:", list(range(1, 13)), index=datetime.now().month - 1, key="mes_rodizio_folgas"
+        )
+        ano_folga = col_ano_folga.selectbox(
+            "Ano:", [datetime.now().year, datetime.now().year + 1], key="ano_rodizio_folgas"
+        )
+        sabados_folga = [
+            dia for semana in calendar.Calendar().monthdatescalendar(ano_folga, mes_folga)
+            for dia in semana if dia.weekday() == calendar.SATURDAY and dia.month == mes_folga
+        ]
+        mapa_folgas = db_get_folgas_professoras()
+
+        if not sabados_folga:
+            st.info("Não há sábados nesse período.")
+        else:
+            data_folga = st.selectbox("Sábado:", sabados_folga, format_func=lambda d: d.strftime("%d/%m/%Y"), key="data_rodizio_folgas")
+            folga_salva = mapa_folgas.get(data_folga.isoformat(), {})
+            professoras_salvas = folga_salva.get("professoras") or []
+            if not isinstance(professoras_salvas, list):
+                professoras_salvas = []
+            professoras_folga = st.multiselect(
+                "Professoras de folga neste sábado:", PROFESSORAS_LISTA,
+                default=[p for p in professoras_salvas if p in PROFESSORAS_LISTA],
+                key=f"professoras_folga_{data_folga.isoformat()}"
+            )
+            observacao_folga = st.text_area(
+                "Observação opcional:", value=folga_salva.get("observacao") or "",
+                placeholder="Ex.: Missão Fraternal, folga geral, troca combinada.",
+                key=f"observacao_folga_{data_folga.isoformat()}"
+            )
+            if st.button("💾 Salvar folgas deste sábado", type="primary", use_container_width=True):
+                ok, detalhe = db_salvar_folga_professoras(
+                    data_folga, nome_coordenadora, professoras_folga, observacao_folga
+                )
+                if ok:
+                    st.success("✅ Folgas salvas. A Secretaria verá essas ausências no Planejamento.")
+                    st.rerun()
+                else:
+                    st.error("⚠️ Não foi possível salvar. Rode a migração `012_coordenacao_e_rodizio_folgas.sql` no SQL Editor do Supabase.")
+                    st.caption(f"Detalhe técnico: {detalhe}")
+
+            st.divider()
+            st.markdown("#### 📅 Folgas já cadastradas no mês")
+            encontrou_folga = False
+            for sabado in sabados_folga:
+                registro_folga = mapa_folgas.get(sabado.isoformat())
+                if not registro_folga:
+                    continue
+                encontrou_folga = True
+                nomes_folga = registro_folga.get("professoras") or []
+                texto_nomes = ", ".join(nomes_folga) if nomes_folga else "Nenhuma professora de folga"
+                texto_obs = str(registro_folga.get("observacao") or "").strip()
+                st.write(f"**{sabado.strftime('%d/%m/%Y')}** — {texto_nomes}" + (f" · {texto_obs}" if texto_obs else ""))
+            if not encontrou_folga:
+                st.caption("Nenhuma folga cadastrada neste mês ainda.")
 
 # ============================================================
 # MÓDULO PROFESSORA - V58 (INTEGRADO E CORRIGIDO)
