@@ -945,7 +945,9 @@ def db_salvar_exercicios_registro(aluna, data_str, instrutora, disciplina, mater
         return False
 
 def _nome_seguro_arquivo(nome):
-    base = os.path.basename(nome)
+    # O Supabase Storage aceita chaves ASCII; nomes vindos do celular podem
+    # conter acentos, emoji e outros caracteres que geram InvalidKey.
+    base = unicodedata.normalize("NFKD", os.path.basename(nome)).encode("ascii", "ignore").decode("ascii")
     return "".join(c if c.isalnum() or c in ".-_" else "_" for c in base)
 
 
