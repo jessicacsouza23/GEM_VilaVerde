@@ -501,14 +501,13 @@ SECRETARIAS_LISTA = _secs_cadastradas or ["Esther", "Jéssica", "Larissa", "Lurd
 
 CATEGORIAS_LICAO = ["MSA (verde)", "MSA (preto)", "Caderno de pauta", "Apostila", "Folhas avulsas (teoria)"]
 # Situações usadas pela secretaria ao corrigir apostilas e folhas avulsas.
-# "Resolvido com pendências" encerra aquela correção, mas registra que a
-# aluna precisa retomar o conteúdo; "Não resolvido" mantém a atividade na fila.
+# "Resolvido com pendências" e "Não resolvido" mantêm a atividade na fila
+# até que uma nova correção seja marcada como "Resolvido".
 STATUS_LICAO = ["Pendente", "Resolvido", "Resolvido com pendências", "Não resolvido"]
 STATUS_OK_LICAO = [
-    "Resolvido", "Resolvido com pendências",
+    "Resolvido",
     # Compatibilidade com registros já existentes no banco.
     "Realizada", "Realizadas - sem pendência", "Realizada - sem pendência",
-    "Realizada - com dificuldades",
 ]
 
 # Critério ÚNICO de "aula sem dificuldade", usado tanto no Prontuário Individual
@@ -2488,7 +2487,7 @@ if menu == "🏠 Secretaria":
                                         "Resultado da correção:",
                                         ["Resolvido", "Resolvido com pendências", "Não resolvido"],
                                         key=f"st_{key_id}", horizontal=True,
-                                        help="'Não resolvido' mantém a atividade na lista; os demais encerram esta correção."
+                                    help="A lição só sai da lista quando for marcada como 'Resolvido'."
                                     )
                                     obs_res = st.text_area("Obs da Secretaria:", key=f"obs_{key_id}")
                                     
