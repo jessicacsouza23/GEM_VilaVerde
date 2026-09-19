@@ -968,7 +968,13 @@ def db_enviar_foto_aluna(arquivo):
         )
         return caminho, ""
     except Exception as e:
-        return None, str(e)
+        detalhe = str(e)
+        if "Bucket not found" in detalhe or "bucket not found" in detalhe.lower():
+            return None, (
+                "O armazenamento de fotos ainda não foi criado no Supabase. "
+                "Execute a migration 014_fotos_alunas.sql no SQL Editor e tente novamente."
+            )
+        return None, detalhe
 
 
 def db_url_foto_aluna(nome_aluna):
