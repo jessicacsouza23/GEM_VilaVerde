@@ -948,6 +948,50 @@ def _nome_seguro_arquivo(nome):
     base = os.path.basename(nome)
     return "".join(c if c.isalnum() or c in ".-_" else "_" for c in base)
 
+
+# ==========================================
+# FOTOS DAS ALUNAS
+# ==========================================
+def db_enviar_foto_aluna(arquivo):
+    """Envia uma foto e devolve o caminho salvo no Storage."""
+    if arquivo is None:
+        return None, "Selecione uma imagem primeiro."
+    extensao = os.path.splitext(arquivo.name or "")[1].lower()
+    if extensao not in {".jpg", ".jpeg", ".png", ".webp"}:
+        return None, "Envie uma imagem JPG, PNG ou WEBP."
+    try:
+        caminho = f"{uuid.uuid4().hex}_{_nome_seguro_arquivo(arquivo.name)}"
+        supabase.storage.from_("fotos_alunas").upload(
+            path=caminho,
+            file=arquivo.getvalue(),
+            file_options={"content-type": arquivo.type or "image/jpeg"},
+        )
+        return caminho, ""
+    except Exception as e:
+        return None, str(e)
+
+
+def db_url_foto_aluna(nome_aluna):
+    """Cria uma URL temporária para a foto da aluna, quando cadastrada."""
+    try:
+        aluna = next((a for a in db_get_alunas_todas() if a.get("nome") == nome_aluna), None)
+        caminho = aluna.get("foto_path") if aluna else None
+        if not caminho:
+            return None
+        resposta = supabase.storage.from_("fotos_alunas").create_signed_url(caminho, 3600)
+        return resposta.get("signedURL") or resposta.get("signedUrl")
+    except Exception:
+        return None
+
+
+def mostrar_foto_aluna(container, nome_aluna, largura=42):
+    """Mostra a foto cadastrada ou um avatar discreto, sem interromper a tela."""
+    url_foto = db_url_foto_aluna(nome_aluna)
+    if url_foto:
+        container.image(url_foto, width=largura)
+    else:
+        container.markdown("<div style='font-size:1.65rem; line-height:2rem'>👤</div>", unsafe_allow_html=True)
+
 # ==========================================
 # FUNÇÕES DE BANCO - RODÍZIO EM CÍRCULO (NOVO)
 # ==========================================
@@ -2336,7 +2380,9 @@ if menu == "🏠 Secretaria":
         
         for idx, aluna in enumerate(alunas_lista):
             col1, col2, col3 = st.columns([2, 3, 3])
-            col1.write(f"**{aluna}**")
+            col_foto, col_nome = col1.columns([1, 4])
+            mostrar_foto_aluna(col_foto, aluna)
+            col_nome.write(f"**{aluna}**")
             chave_status = f"status_{idx}_{aluna}_{data_ch_sel}"
             chamada_salva = chamada_por_aluna.get(aluna, {})
             status_salvo = chamada_salva.get("Status")
@@ -2758,6 +2804,11 @@ if menu == "🏠 Secretaria":
                         c3, c4 = st.columns(2)
                         login_nova_aluna = c3.text_input("Login de acesso (opcional):", placeholder="Ex: maria.s")
                         senha_nova_aluna = c4.text_input("Senha de acesso (opcional):", value="123")
+                        foto_nova_aluna = st.file_uploader(
+                            "Foto da aluna (opcional)", type=["jpg", "jpeg", "png", "webp"],
+                            key="foto_nova_aluna",
+                            help="A foto aparecerá na chamada e nas aulas das professoras."
+                        )
                         if st.form_submit_button("Adicionar Aluna", use_container_width=True):
                             turma_final = nova_turma_nome.strip() if turma_op == "+ Nova turma..." and nova_turma_nome else turma_op
                             if not nome_nova_aluna.strip():
@@ -2769,6 +2820,13 @@ if menu == "🏠 Secretaria":
                                         dados_nova_aluna["login"] = login_nova_aluna.strip().lower()
                                         dados_nova_aluna["senha"] = senha_nova_aluna
                                     supabase.table("alunas").insert(dados_nova_aluna).execute()
+                                    if foto_nova_aluna is not None:
+                                        caminho_foto, erro_foto = db_enviar_foto_aluna(foto_nova_aluna)
+                                        if caminho_foto:
+                                            (supabase.table("alunas").update({"foto_path": caminho_foto})
+                                             .eq("nome", nome_nova_aluna.strip()).execute())
+                                        else:
+                                            st.warning("A aluna foi criada, mas não foi possível salvar a foto: " + erro_foto)
                                     st.success(f"✅ {nome_nova_aluna} adicionada em {turma_final}!")
                                     st.cache_data.clear()
                                     st.rerun()
@@ -2819,6 +2877,30 @@ if menu == "🏠 Secretaria":
                                                       "```sql\nalter table alunas add column if not exists login text;\n"
                                                       "alter table alunas add column if not exists senha text;\n```")
                                             st.caption(f"Detalhe técnico: {e}")
+
+                                with st.expander(f"📷 Foto de {a['nome']}"):
+                                    foto_atual = db_url_foto_aluna(a["nome"])
+                                    if foto_atual:
+                                        st.image(foto_atual, width=130, caption="Foto atual")
+                                    else:
+                                        st.caption("Nenhuma foto cadastrada ainda.")
+                                    foto_substituta = st.file_uploader(
+                                        "Enviar ou trocar foto", type=["jpg", "jpeg", "png", "webp"],
+                                        key=f"foto_{a.get('id') or a['nome']}",
+                                    )
+                                    if st.button("💾 Salvar foto", key=f"salvar_foto_{a.get('id') or a['nome']}"):
+                                        caminho_foto, erro_foto = db_enviar_foto_aluna(foto_substituta)
+                                        if caminho_foto:
+                                            consulta_foto = supabase.table("alunas").update({"foto_path": caminho_foto})
+                                            if a.get("id"):
+                                                consulta_foto.eq("id", a["id"]).execute()
+                                            else:
+                                                consulta_foto.eq("nome", a["nome"]).execute()
+                                            st.cache_data.clear()
+                                            st.success("✅ Foto salva com sucesso!")
+                                            st.rerun()
+                                        else:
+                                            st.error("Não foi possível salvar a foto: " + erro_foto)
                     else:
                         st.info("Nenhuma aluna cadastrada ainda.")
 
@@ -3534,7 +3616,9 @@ elif menu == "👩‍🏫 Minhas Aulas":
             for aluna_presente in als_presentes_hoje:
                 chave_checkbox_aluna = f"ch_{aluna_presente}_{d_sel['id']}_{dt_str}"
                 chaves_controle_selecao.add(chave_checkbox_aluna)
-                if st.checkbox(aluna_presente, value=True, key=chave_checkbox_aluna):
+                col_foto_aluna, col_selecao_aluna = st.columns([1, 12])
+                mostrar_foto_aluna(col_foto_aluna, aluna_presente, largura=38)
+                if col_selecao_aluna.checkbox(aluna_presente, value=True, key=chave_checkbox_aluna):
                     als_selecionadas.append(aluna_presente)
 
             if als_selecionadas:
