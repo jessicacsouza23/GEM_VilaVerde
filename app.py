@@ -300,14 +300,20 @@ def renderizar_painel_folgas(prefixo, coordenadora, somente_edicao=False, mostra
 
     chave_data = f"data_{prefixo}"
     chave_editor = f"editar_{prefixo}"
+    chave_editor_carregado = f"editor_carregado_{prefixo}"
     data_para_editar = st.session_state.get(chave_editor)
     if data_para_editar:
         try:
             data_obj_editar = datetime.fromisoformat(data_para_editar).date()
             if data_obj_editar in sabados_folga:
-                st.session_state.pop(chave_data, None)
-                st.session_state.pop(f"professoras_{prefixo}_{data_obj_editar.isoformat()}", None)
-                st.session_state.pop(f"observacao_{prefixo}_{data_obj_editar.isoformat()}", None)
+                # Limpa os valores somente na primeira abertura do editor.
+                # Antes isso acontecia a cada rerun do Streamlit e desfazia a
+                # escolha feita pela Secretaria ou pela coordenadora.
+                if st.session_state.get(chave_editor_carregado) != data_para_editar:
+                    st.session_state.pop(chave_data, None)
+                    st.session_state.pop(f"professoras_{prefixo}_{data_obj_editar.isoformat()}", None)
+                    st.session_state.pop(f"observacao_{prefixo}_{data_obj_editar.isoformat()}", None)
+                    st.session_state[chave_editor_carregado] = data_para_editar
                 indice_data = sabados_folga.index(data_obj_editar)
             else:
                 indice_data = 0
@@ -349,6 +355,7 @@ def renderizar_painel_folgas(prefixo, coordenadora, somente_edicao=False, mostra
                 st.caption(f"Detalhe técnico: {detalhe}")
         if somente_edicao and st.button("Fechar edição", key=f"fechar_{prefixo}"):
             st.session_state.pop(chave_editor, None)
+            st.session_state.pop(chave_editor_carregado, None)
             st.rerun()
     elif somente_edicao:
         st.caption("Clique em “✏️ Editar” em uma folga cadastrada para abrir os campos.")
@@ -368,6 +375,7 @@ def renderizar_painel_folgas(prefixo, coordenadora, somente_edicao=False, mostra
         col_texto.write(f"**{sabado.strftime('%d/%m/%Y')}** — {texto_nomes}" + (f" · {texto_obs}" if texto_obs else ""))
         if col_editar.button("✏️ Editar", key=f"editar_{prefixo}_{sabado.isoformat()}"):
             st.session_state[chave_editor] = sabado.isoformat()
+            st.session_state.pop(chave_editor_carregado, None)
             st.rerun()
     if not encontrou_folga:
         st.caption("Nenhuma folga cadastrada neste mês ainda.")
