@@ -12,6 +12,9 @@ import html
 import os
 import re
 import uuid
+import base64
+import hashlib
+import hmac
 import streamlit as st
 import unicodedata
 import json
@@ -411,9 +414,69 @@ def db_validar_acesso(login, senha):
         # alunas continuam conseguindo entrar pelas tabelas já existentes.
         return None
 
+
+# A sessão normal do Streamlit existe somente enquanto a página está aberta.
+# Para sobreviver a atualizações/reaberturas, guardamos no endereço um token
+# assinado (sem senha) com validade limitada. A assinatura só pode ser criada
+# pelo servidor, usando GEM_SESSION_SECRET nas Secrets do Streamlit.
+SESSAO_DURACAO_DIAS = 14
+
+def _segredo_sessao():
+    try:
+        segredo = st.secrets.get("GEM_SESSION_SECRET", "")
+        return str(segredo).encode("utf-8") if segredo else None
+    except Exception:
+        return None
+
+
+def _aplicar_login(tipo_usuario, nome_logado, perfil):
+    st.session_state.autenticado = True
+    st.session_state.tipo_usuario = tipo_usuario
+    st.session_state.nome_logado = nome_logado
+    st.session_state.perfil = perfil
+
+    segredo = _segredo_sessao()
+    if not segredo:
+        return
+    dados = {
+        "tipo": tipo_usuario, "nome": nome_logado, "perfil": perfil,
+        "exp": int(time.time()) + SESSAO_DURACAO_DIAS * 24 * 60 * 60,
+    }
+    corpo = base64.urlsafe_b64encode(json.dumps(dados, separators=(",", ":")).encode()).decode().rstrip("=")
+    assinatura = hmac.new(segredo, corpo.encode(), hashlib.sha256).hexdigest()
+    st.query_params["gem_session"] = f"{corpo}.{assinatura}"
+
+
+def _restaurar_login_persistente():
+    """Restaura somente um token válido; nunca restaura senha pelo navegador."""
+    if st.session_state.get("autenticado"):
+        return
+    segredo = _segredo_sessao()
+    token = st.query_params.get("gem_session")
+    if not segredo or not token or not isinstance(token, str) or "." not in token:
+        return
+    corpo, assinatura = token.rsplit(".", 1)
+    assinatura_esperada = hmac.new(segredo, corpo.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(assinatura, assinatura_esperada):
+        return
+    try:
+        corpo += "=" * (-len(corpo) % 4)
+        dados = json.loads(base64.urlsafe_b64decode(corpo.encode()).decode())
+        if int(dados.get("exp", 0)) < int(time.time()):
+            del st.query_params["gem_session"]
+            return
+        tipo = dados.get("tipo")
+        if tipo not in {"secretaria", "professora", "aluna"}:
+            return
+        _aplicar_login(tipo, str(dados.get("nome") or ""), str(dados.get("perfil") or ""))
+    except Exception:
+        return
+
 def login_sistema():
     if "autenticado" not in st.session_state:
         st.session_state.autenticado = False
+
+    _restaurar_login_persistente()
 
     if not st.session_state.autenticado:
         st.title("🔐 GEM Vila Verde - Acesso Restrito")
@@ -423,10 +486,7 @@ def login_sistema():
             if st.form_submit_button("Entrar"):
                 conta_interna = db_validar_acesso(u, s)
                 if conta_interna and conta_interna.get("perfil") == "secretaria":
-                    st.session_state.autenticado = True
-                    st.session_state.perfil = "Secretaria"
-                    st.session_state.tipo_usuario = "secretaria"
-                    st.session_state.nome_logado = conta_interna.get("nome") or "Coordenação"
+                    _aplicar_login("secretaria", conta_interna.get("nome") or "Coordenação", "Secretaria")
                     st.rerun()
                 else:
                     # Login de secretaria é sempre único (u == "secretaria"); a lista de
@@ -437,10 +497,7 @@ def login_sistema():
                     match = next((p for p in profs if (p.get("login") or "").lower().strip() == u
                                   and p.get("senha") == s and p.get("ativo", True)), None)
                     if match:
-                        st.session_state.autenticado = True
-                        st.session_state.perfil = match["nome"]
-                        st.session_state.tipo_usuario = "professora"
-                        st.session_state.nome_logado = match["nome"]
+                        _aplicar_login("professora", match["nome"], match["nome"])
                         st.rerun()
                     else:
                         # Login de aluna — usa os campos "login"/"senha" cadastrados
@@ -449,10 +506,7 @@ def login_sistema():
                         match_al = next((a for a in alunas_login if (a.get("login") or "").lower().strip() == u
                                           and a.get("senha") == s and a.get("ativo", True)), None)
                         if match_al:
-                            st.session_state.autenticado = True
-                            st.session_state.perfil = match_al["nome"]
-                            st.session_state.tipo_usuario = "aluna"
-                            st.session_state.nome_logado = match_al["nome"]
+                            _aplicar_login("aluna", match_al["nome"], match_al["nome"])
                             st.rerun()
                         else:
                             st.error("❌ Usuário ou senha inválidos.")
@@ -1314,7 +1368,9 @@ if st.session_state.perfil == "Secretaria":
         st.rerun()
 
 if st.sidebar.button("Sair"):
-    st.session_state.autenticado = False
+    st.session_state.clear()
+    if "gem_session" in st.query_params:
+        del st.query_params["gem_session"]
     st.rerun()
 
 # ==========================================
@@ -3631,18 +3687,18 @@ elif menu == "👩‍🏫 Minhas Aulas":
             if als_selecionadas:
                 tipo_aula = d_sel["tipo"]
                 # Ao trocar data, aula ou aluna, limpa apenas os widgets do
-                # registro anterior. Assim a tela recarrega os dados salvos da
-                # pessoa selecionada, sem misturar informações entre alunas.
+                # registro anterior. Cada combinação recebe um identificador
+                # próprio; assim o Streamlit não reaproveita o valor visual de
+                # outra aluna/aula, embora o banco já estivesse correto.
                 contexto_registro = f"{d_sel['id']}|{dt_str}|{tipo_aula}|{'|'.join(sorted(als_selecionadas))}"
                 if st.session_state.get("_contexto_registro_prof") != contexto_registro:
-                    for chave_widget in list(st.session_state.keys()):
-                        # Limpa os campos do formulário da seleção anterior.
-                        # Os controles de seleção atuais são preservados para não
-                        # desfazer a escolha da professora durante este rerun.
-                        if (str(d_sel['id']) in str(chave_widget)
-                                and chave_widget not in chaves_controle_selecao):
-                            st.session_state.pop(chave_widget, None)
                     st.session_state["_contexto_registro_prof"] = contexto_registro
+
+                # A maioria dos widgets do registro usa d_sel['id'] na chave.
+                # Acrescentar o contexto completo evita que, ao trocar apenas a
+                # aluna marcada, o mesmo widget mostre conteúdo que ficou na
+                # memória da pessoa anterior.
+                d_sel["id"] = f"{d_sel['id']}_{hashlib.sha1(contexto_registro.encode()).hexdigest()[:12]}"
 
                 # A professora corrige as lições de Teoria que não foram
                 # atribuídas à Secretaria e também todo o MSA de Solfejo.
