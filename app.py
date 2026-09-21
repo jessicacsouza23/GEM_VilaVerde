@@ -349,6 +349,11 @@ def renderizar_painel_folgas(prefixo, coordenadora, somente_edicao=False, mostra
             )
             if ok:
                 st.success("✅ Folgas salvas.")
+                # No acesso da Secretaria o formulário só abre ao editar uma
+                # folga; depois de salvar, volta automaticamente à lista.
+                if somente_edicao:
+                    st.session_state.pop(chave_editor, None)
+                    st.session_state.pop(chave_editor_carregado, None)
                 st.rerun()
             else:
                 st.error("⚠️ Não foi possível salvar. Rode a migração `012_coordenacao_e_rodizio_folgas.sql` no SQL Editor do Supabase.")
