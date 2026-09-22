@@ -2794,7 +2794,7 @@ if menu == "🏠 Secretaria":
 
                 st.divider()
                 st.markdown("### 🔍 Verificar Consistência do Rodízio")
-                st.caption("Compara o que está de fato salvo nas escalas (calendário) com o que o sistema 'acha' que aconteceu (rodizio_ciclo e ultima_alocacao). Ajustes manuais na escala que não passaram pela sincronização automática aparecem aqui.")
+                st.caption("Confere somente o último rodízio gerado. As escalas anteriores são usadas apenas como referência para identificar repetições.")
 
                 if st.button("🔎 Rodar verificação", use_container_width=True):
                     cal_raw = supabase.table("calendario").select("*").execute().data or []
@@ -2833,6 +2833,7 @@ if menu == "🏠 Secretaria":
                         except Exception:
                             continue
                     itens_com_data.sort(key=lambda x: x[0])
+                    ultima_data_gerada = itens_com_data[-1][1] if itens_com_data else None
 
                     ultima_real = {}
                     for d_obj, data_str, escala in itens_com_data:
@@ -2843,6 +2844,8 @@ if menu == "🏠 Secretaria":
                     alocacao_atual = db_get_ultima_alocacao()
                     divergencias = []
                     for aluna, real in ultima_real.items():
+                        if real.get("data") != ultima_data_gerada:
+                            continue
                         registrado = alocacao_atual.get(aluna, {})
                         if registrado.get("professora") != real["professora"] or registrado.get("sala") != real["sala"]:
                             divergencias.append({
@@ -2936,11 +2939,20 @@ if menu == "🏠 Secretaria":
                                         problemas_roda.append({"Data": data_evento, "Aluna": aluna, "Regra": "Mesma professora no sábado seguinte", "Detalhe": f"{professora} foi repetida na prática anterior da aluna."})
                                     ultima_professora_aluna[aluna] = professora
 
-                    st.session_state["_diag_roda"] = problemas_roda
+                    # A auditoria percorre o histórico para saber a volta em
+                    # andamento, mas exibe somente problemas do último sábado.
+                    st.session_state["_diag_roda"] = [
+                        problema for problema in problemas_roda
+                        if problema.get("Data") == ultima_data_gerada
+                    ]
+                    st.session_state["_diag_ultima_data"] = ultima_data_gerada
 
                 if "_diag_divergencias" in st.session_state:
                     divergencias = st.session_state["_diag_divergencias"]
                     problemas_roda = st.session_state.get("_diag_roda", [])
+                    ultima_data_gerada = st.session_state.get("_diag_ultima_data")
+                    if ultima_data_gerada:
+                        st.caption(f"Último rodízio analisado: {ultima_data_gerada}")
                     if problemas_roda:
                         st.warning(f"⚠️ Auditoria da roda: {len(problemas_roda)} regra(s) quebrada(s) nas escalas salvas.")
                         st.dataframe(pd.DataFrame(problemas_roda), use_container_width=True, hide_index=True)
