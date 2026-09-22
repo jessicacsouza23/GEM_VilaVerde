@@ -15,6 +15,7 @@ import uuid
 import base64
 import hashlib
 import hmac
+import copy
 import streamlit as st
 import unicodedata
 import json
@@ -1106,6 +1107,95 @@ def db_salvar_ultima_alocacao(mapa_ultima):
     except Exception as e:
         st.error(f"Erro ao salvar última alocação: {e}")
 
+
+# Memória da roda por aluna. Diferente de "última alocação", ela guarda toda
+# a volta em andamento: professoras e salas já usadas antes de recomeçar.
+def db_get_memoria_rodizio():
+    try:
+        res = supabase.table("rodizio_memoria_alunas").select("*").execute()
+        memoria = {}
+        for item in (res.data or []):
+            memoria[item["aluna"]] = {
+                "professoras_vistas": item.get("professoras_vistas") or [],
+                "salas_vistas": item.get("salas_vistas") or [],
+                "ultima_professora": item.get("ultima_professora"),
+                "ultima_sala": item.get("ultima_sala"),
+            }
+        return memoria
+    except Exception:
+        return {}
+
+
+def db_salvar_memoria_rodizio(memoria):
+    try:
+        linhas = [
+            {
+                "aluna": aluna,
+                "professoras_vistas": dados.get("professoras_vistas") or [],
+                "salas_vistas": dados.get("salas_vistas") or [],
+                "ultima_professora": dados.get("ultima_professora"),
+                "ultima_sala": dados.get("ultima_sala"),
+                "updated_at": datetime.now().isoformat(),
+            }
+            for aluna, dados in memoria.items()
+        ]
+        if linhas:
+            supabase.table("rodizio_memoria_alunas").upsert(linhas, on_conflict="aluna").execute()
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def db_get_memoria_salas_professoras():
+    try:
+        res = supabase.table("rodizio_memoria_professoras").select("*").execute()
+        return {
+            item["professora"]: {
+                "salas_vistas": item.get("salas_vistas") or [],
+                "ultima_sala": item.get("ultima_sala"),
+            }
+            for item in (res.data or [])
+        }
+    except Exception:
+        return {}
+
+
+def db_salvar_memoria_salas_professoras(memoria):
+    try:
+        linhas = [
+            {"professora": professora, "salas_vistas": dados.get("salas_vistas") or [],
+             "ultima_sala": dados.get("ultima_sala"), "updated_at": datetime.now().isoformat()}
+            for professora, dados in memoria.items()
+        ]
+        if linhas:
+            supabase.table("rodizio_memoria_professoras").upsert(linhas, on_conflict="professora").execute()
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def db_get_professoras_fixas():
+    try:
+        res = supabase.table("professoras_fixas").select("*").execute()
+        return {str(item.get("aluna")).strip(): str(item.get("professora")).strip()
+                for item in (res.data or []) if item.get("aluna") and item.get("professora")}
+    except Exception:
+        return {}
+
+
+def db_salvar_professoras_fixas(mapa_fixas):
+    try:
+        # A tabela é somente a configuração atual, portanto a grade inteira
+        # substitui a anterior quando a Secretaria confirma a edição.
+        supabase.table("professoras_fixas").delete().neq("aluna", "").execute()
+        linhas = [{"aluna": aluna, "professora": professora, "updated_at": datetime.now().isoformat()}
+                  for aluna, professora in mapa_fixas.items()]
+        if linhas:
+            supabase.table("professoras_fixas").insert(linhas).execute()
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
 def sincronizar_ciclo_e_alocacao_da_escala(lista_escala, data_str):
     """Lê a escala como ela REALMENTE ficou salva (depois de qualquer edição
     manual) e atualiza rodizio_ciclo + ultima_alocacao a partir disso — assim
@@ -1909,7 +1999,11 @@ if menu == "🏠 Secretaria":
         lista_professoras = sorted(PROFESSORAS_LISTA)
     
         if 'df_fixas' not in st.session_state:
-            st.session_state.df_fixas = pd.DataFrame(columns=["Aluna", "Prof"])
+            fixas_salvas = db_get_professoras_fixas()
+            st.session_state.df_fixas = pd.DataFrame([
+                {"Aluna": aluna, "Prof": professora}
+                for aluna, professora in fixas_salvas.items()
+            ], columns=["Aluna", "Prof"])
     
         config_colunas = {
             "Aluna": st.column_config.SelectboxColumn("Nome da Aluna", options=todas_alunas, required=True),
@@ -1924,6 +2018,18 @@ if menu == "🏠 Secretaria":
             key="editor_fixas_v107"
         )
         st.session_state.df_fixas = df_fixas_editado
+
+        if st.button("💾 Salvar professoras fixas", use_container_width=True):
+            mapa_fixas_salvar = {}
+            for _, linha_fixa in df_fixas_editado.iterrows():
+                if pd.notna(linha_fixa.get("Aluna")) and pd.notna(linha_fixa.get("Prof")):
+                    mapa_fixas_salvar[str(linha_fixa["Aluna"]).strip()] = str(linha_fixa["Prof"]).strip()
+            ok_fixas, erro_fixas = db_salvar_professoras_fixas(mapa_fixas_salvar)
+            if ok_fixas:
+                st.success("✅ Professoras fixas salvas permanentemente.")
+            else:
+                st.error("Não foi possível salvar as professoras fixas. Rode a migration 015_rodizio_em_roda.sql no Supabase.")
+                st.caption(erro_fixas)
     
         st.divider()
     
@@ -1992,37 +2098,75 @@ if menu == "🏠 Secretaria":
                     universo_rodizio = sorted([a for a in todas_alunas_sistema
                                                 if str(a).strip().lower() not in dict_fixas])
 
-                    # 3. ESTADO DO CICLO (fila por professora) E ÚLTIMA ALOCAÇÃO (por aluna)
-                    estado_ciclo = db_get_rodizio_ciclo()
+                    # 3. MEMÓRIA DA RODA. Cada aluna percorre professoras e
+                    # salas separadamente; uma dupla fixa não entra na volta de
+                    # professoras, mas a aluna continua rodando pelas salas.
                     ultima_alocacao = db_get_ultima_alocacao()
+                    memoria_rodizio = db_get_memoria_rodizio()
+                    memoria_salas_professoras = db_get_memoria_salas_professoras()
+                    estado_ciclo = db_get_rodizio_ciclo()
+                    # Primeiro uso da regra nova: aproveita a última escala
+                    # antiga para impedir repetição já no próximo sábado.
+                    for aluna_anterior, dados_anteriores in ultima_alocacao.items():
+                        memoria_rodizio.setdefault(aluna_anterior, {
+                            "professoras_vistas": [dados_anteriores.get("professora")] if dados_anteriores.get("professora") else [],
+                            "salas_vistas": [dados_anteriores.get("sala")] if dados_anteriores.get("sala") else [],
+                            "ultima_professora": dados_anteriores.get("professora"),
+                            "ultima_sala": dados_anteriores.get("sala"),
+                        })
 
-                    def garantir_professora(p):
-                        if p not in estado_ciclo:
-                            estado_ciclo[p] = {"alunas_dadas": [], "ciclo_num": 1}
+                    def memoria_da_aluna(aluna):
+                        return memoria_rodizio.setdefault(aluna, {
+                            "professoras_vistas": [], "salas_vistas": [],
+                            "ultima_professora": None, "ultima_sala": None,
+                        })
 
-                    def escolher_professora_para_aluna(aluna, candidatos):
-                        """Escolhe, entre os candidatos disponíveis, uma professora que ainda
-                        não deu aula para 'aluna' no ciclo atual dela. Se TODAS as candidatas já
-                        deram aula pra essa aluna neste ciclo, reinicia o ciclo só das que
-                        completaram a volta (deram aula pra todo o universo)."""
-                        for p in candidatos:
-                            garantir_professora(p)
-                            # se essa professora já completou o círculo (deu aula pra todas), reinicia o ciclo dela
-                            if set(estado_ciclo[p]["alunas_dadas"]) >= set(universo_rodizio):
-                                estado_ciclo[p]["alunas_dadas"] = []
-                                estado_ciclo[p]["ciclo_num"] += 1
+                    def preparar_volta(aluna, participa_professoras=True):
+                        memoria = memoria_da_aluna(aluna)
+                        if participa_professoras and set(memoria["professoras_vistas"]) >= set(PROFESSORAS_LISTA):
+                            memoria["professoras_vistas"] = []
+                        salas_validas = {f"SALA {numero}" for numero in range(1, 8)}
+                        if set(memoria["salas_vistas"]) >= salas_validas:
+                            memoria["salas_vistas"] = []
+                        return memoria
 
-                        # prioridade 1: professoras que nunca deram aula pra essa aluna neste ciclo
-                        cand_1 = [p for p in candidatos if aluna not in estado_ciclo[p]["alunas_dadas"]]
-                        # prioridade 2: dentre essas, evita repetir a MESMA professora do sábado passado dessa aluna
-                        prof_sabado_passado = ultima_alocacao.get(aluna, {}).get("professora")
-                        cand_2 = [p for p in cand_1 if p != prof_sabado_passado]
+                    def registrar_volta(aluna, professora, sala, participa_professoras=True):
+                        memoria = memoria_da_aluna(aluna)
+                        if participa_professoras and professora not in memoria["professoras_vistas"]:
+                            memoria["professoras_vistas"].append(professora)
+                        if sala not in memoria["salas_vistas"]:
+                            memoria["salas_vistas"].append(sala)
+                        memoria["ultima_professora"] = professora
+                        memoria["ultima_sala"] = sala
 
-                        pool_final = cand_2 if cand_2 else (cand_1 if cand_1 else candidatos)
-                        # Escolha circular e determinística: entre as opções
-                        # permitidas, prioriza quem atendeu menos alunas no
-                        # ciclo atual. Não há sorteio no rodízio.
-                        return sorted(pool_final, key=lambda p: (len(estado_ciclo[p]["alunas_dadas"]), p))[0]
+                    def memoria_da_professora(professora):
+                        return memoria_salas_professoras.setdefault(professora, {
+                            "salas_vistas": [], "ultima_sala": None,
+                        })
+
+                    def preparar_volta_sala_professora(professora):
+                        memoria = memoria_da_professora(professora)
+                        if set(memoria["salas_vistas"]) >= {f"SALA {numero}" for numero in range(1, 8)}:
+                            memoria["salas_vistas"] = []
+                        return memoria
+
+                    def registrar_sala_professora(professora, sala):
+                        memoria = memoria_da_professora(professora)
+                        if sala not in memoria["salas_vistas"]:
+                            memoria["salas_vistas"].append(sala)
+                        memoria["ultima_sala"] = sala
+
+                    def preparar_volta_professora_alunas(professora):
+                        estado = estado_ciclo.setdefault(professora, {"alunas_dadas": [], "ciclo_num": 1})
+                        if set(estado["alunas_dadas"]) >= set(universo_rodizio):
+                            estado["alunas_dadas"] = []
+                            estado["ciclo_num"] += 1
+                        return estado
+
+                    def registrar_aluna_professora(professora, aluna):
+                        estado = preparar_volta_professora_alunas(professora)
+                        if aluna not in estado["alunas_dadas"]:
+                            estado["alunas_dadas"].append(aluna)
 
                     # 4. MAPEAMENTO INICIAL
                     mapa_final = {a: {"Aluna": a} for turma in TURMAS.values() for a in turma}
@@ -2161,60 +2305,74 @@ if menu == "🏠 Secretaria":
                         # --- B. PRÁTICA INDIVIDUAL (S1 A S7) ---
                         disponiveis_agora = [p for p in profs_horario if p not in [p_teoria, p_solfejo]]
                         alunas_na_pratica = list(TURMAS[t_pra])
-
                         salas_total = [f"SALA {s}" for s in range(1, 8)]
-                        registro_salas_profs = {p: s for p, s in registro_salas_profs.items() if p in disponiveis_agora}
+                        salas_usadas = set()
+                        profs_disponiveis = list(disponiveis_agora)
 
-                        for p in disponiveis_agora:
-                            if p not in registro_salas_profs:
-                                # tenta não repetir a sala que essa professora usou no sábado passado
-                                sala_passada = None
-                                for al_ant, dados_ant in ultima_alocacao.items():
-                                    if dados_ant.get("professora") == p:
-                                        sala_passada = dados_ant.get("sala")
-                                        break
-                                s_livres = [s for s in salas_total if s not in registro_salas_profs.values()]
-                                s_livres_pref = [s for s in s_livres if s != sala_passada] or s_livres
-                                if s_livres_pref:
-                                    registro_salas_profs[p] = sorted(s_livres_pref)[0]
+                        def escolher_sala(aluna, professora, participa_professoras):
+                            memoria = preparar_volta(aluna, participa_professoras)
+                            opcoes = [s for s in salas_total if s not in salas_usadas and s not in memoria["salas_vistas"]]
+                            if participa_professoras:
+                                memoria_prof = preparar_volta_sala_professora(professora)
+                                opcoes = [s for s in opcoes if s not in memoria_prof["salas_vistas"]
+                                          and s != memoria_prof.get("ultima_sala")]
+                            # Mesmo ao fechar uma volta, não volta imediatamente
+                            # para a última sala usada pela aluna.
+                            opcoes = [s for s in opcoes if s != memoria.get("ultima_sala")]
+                            return sorted(opcoes)[0] if opcoes else None
 
-                        # --- PASSO 1: ALOCAR FIXAS ---
+                        # PASSO 1 — FIXAS: a professora é reservada; somente a
+                        # sala da aluna continua circulando.
                         alunas_rodizio = []
-                        profs_disponiveis = [p for p in disponiveis_agora if p in registro_salas_profs]
-
                         for a in alunas_na_pratica:
-                            a_key = str(a).strip().lower()
-                            p_fixa = dict_fixas.get(a_key)
-
-                            if p_fixa and p_fixa in profs_disponiveis:
-                                s_f = registro_salas_profs.get(p_fixa)
-                                mapa_final[a][h] = f"{s_f} | {p_fixa}"
-                                profs_disponiveis.remove(p_fixa)
-                                novas_ultimas_alocacoes[a] = {"professora": p_fixa, "sala": s_f, "data": data_sel_str}
-                            elif p_fixa:
-                                # Nunca troca uma aluna fixa pelo rodízio. Caso
-                                # tenha ocorrido um conflito impossível, a
-                                # escala inteira é interrompida antes de salvar.
-                                erros_fixas_geracao.append(
-                                    f"Não foi possível reservar {p_fixa} para {a} no horário {h}."
-                                )
-                            else:
+                            p_fixa = dict_fixas.get(str(a).strip().lower())
+                            if not p_fixa:
                                 alunas_rodizio.append(a)
+                                continue
+                            if p_fixa not in profs_disponiveis:
+                                erros_fixas_geracao.append(f"Não foi possível reservar {p_fixa} para {a} no horário {h}.")
+                                continue
+                            s_f = escolher_sala(a, p_fixa, participa_professoras=False)
+                            if not s_f:
+                                erros_fixas_geracao.append(f"Não há sala disponível sem repetição para {a} no horário {h}.")
+                                continue
+                            mapa_final[a][h] = f"{s_f} | {p_fixa}"
+                            profs_disponiveis.remove(p_fixa)
+                            salas_usadas.add(s_f)
+                            registrar_volta(a, p_fixa, s_f, participa_professoras=False)
+                            novas_ultimas_alocacoes[a] = {"professora": p_fixa, "sala": s_f, "data": data_sel_str}
 
-                        # --- PASSO 2: RODÍZIO EM CÍRCULO (não repete até dar aula pra todas) ---
+                        # PASSO 2 — RODA DAS PRÁTICAS. Não existe fallback que
+                        # repita professora ou sala: se as prioridades tornarem
+                        # a volta impossível, a Secretaria recebe o conflito.
                         for a in sorted(alunas_rodizio):
-                            if profs_disponiveis:
-                                p_esc = escolher_professora_para_aluna(a, profs_disponiveis)
-                                s_e = registro_salas_profs.get(p_esc)
-                                mapa_final[a][h] = f"{s_e} | {p_esc}"
-                                profs_disponiveis.remove(p_esc)
-
-                                garantir_professora(p_esc)
-                                if a not in estado_ciclo[p_esc]["alunas_dadas"]:
-                                    estado_ciclo[p_esc]["alunas_dadas"].append(a)
-                                novas_ultimas_alocacoes[a] = {"professora": p_esc, "sala": s_e, "data": data_sel_str}
-                            else:
-                                mapa_final[a][h] = f"SECRETARIA | {a}"
+                            memoria = preparar_volta(a, participa_professoras=True)
+                            opcoes = []
+                            for professora in profs_disponiveis:
+                                memoria_professora = preparar_volta_professora_alunas(professora)
+                                if (professora in memoria["professoras_vistas"]
+                                        or professora == memoria.get("ultima_professora")
+                                        or a in memoria_professora["alunas_dadas"]):
+                                    continue
+                                sala = escolher_sala(a, professora, participa_professoras=True)
+                                if sala:
+                                    # Critério estável: alterna as professoras e
+                                    # mantém o resultado reproduzível.
+                                    opcoes.append((len(memoria["professoras_vistas"]), professora, sala))
+                            if not opcoes:
+                                erros_fixas_geracao.append(
+                                    f"A roda ainda não terminou para {a}, mas nenhuma professora/sala livre atende a regra no horário {h}. "
+                                    "Ajuste folgas, fixas ou Teoria/Solfejo; o sistema não repetiu automaticamente."
+                                )
+                                continue
+                            _, p_esc, s_e = sorted(opcoes, key=lambda x: (x[0], x[1], x[2]))[0]
+                            mapa_final[a][h] = f"{s_e} | {p_esc}"
+                            profs_disponiveis.remove(p_esc)
+                            salas_usadas.add(s_e)
+                            registrar_volta(a, p_esc, s_e, participa_professoras=True)
+                            registrar_sala_professora(p_esc, s_e)
+                            registrar_aluna_professora(p_esc, a)
+                            novas_ultimas_alocacoes[a] = {"professora": p_esc, "sala": s_e, "data": data_sel_str}
 
                     # Não salva uma escala que desrespeite professora fixa.
                     if erros_fixas_geracao:
@@ -2235,14 +2393,21 @@ if menu == "🏠 Secretaria":
                         # Prática, Teoria e Solfejo. A linha crua causava um bug ("Todas as
                         # alunas" aparecendo como se fosse professora) e só cobria Prática.
 
-                        # Persiste o estado do rodízio em círculo e a última alocação de cada aluna
+                        # Persiste as rodas completas (aluna–professora,
+                        # aluna–sala e professora–sala), além da referência da
+                        # última escala para auditoria.
+                        ok_memoria_alunas, erro_memoria_alunas = db_salvar_memoria_rodizio(memoria_rodizio)
+                        ok_memoria_profs, erro_memoria_profs = db_salvar_memoria_salas_professoras(memoria_salas_professoras)
+                        if not ok_memoria_alunas or not ok_memoria_profs:
+                            raise RuntimeError(erro_memoria_alunas or erro_memoria_profs or "Memória do rodízio não foi salva")
                         db_salvar_rodizio_ciclo(estado_ciclo)
                         db_salvar_ultima_alocacao(novas_ultimas_alocacoes)
 
-                        st.success("Rodízio em círculo gerado! Nenhuma professora repete aluna até dar aula pra todas.")
+                        st.success("✅ Rodízio em roda gerado sem repetir professora ou sala antes de completar a volta.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
+                        st.caption("Se a mensagem citar uma tabela inexistente, rode a migration 015_rodizio_em_roda.sql no Supabase.")
                     
             # --- MURAL E EDITOR FINAL CONTINUAM ABAIXO... ---
                     
