@@ -2102,9 +2102,108 @@ if menu == "🏠 Secretaria":
                     ultima_alocacao = db_get_ultima_alocacao()
                     estado_ciclo = db_get_rodizio_ciclo()
 
+                    # A memória precisa refletir a escala que ficou de fato no
+                    # calendário (inclusive alterações manuais), e não somente
+                    # a última geração automática.  Assim conseguimos escolher
+                    # a alternativa que menos repete professora/aluna/sala.
+                    salas_pratica = [f"SALA {s}" for s in range(1, 8)]
+                    professoras_da_roda = list(PROFESSORAS_LISTA)
+                    memoria_alunas = {
+                        a: {"professoras": [], "salas": [], "ultima_professora": None}
+                        for a in todas_alunas_sistema
+                    }
+                    memoria_salas_professoras = {
+                        p: [] for p in professoras_da_roda
+                    }
+
+                    def _data_calendario(valor):
+                        try:
+                            return datetime.strptime(str(valor), "%d/%m/%Y").date()
+                        except (TypeError, ValueError):
+                            return datetime.min.date()
+
+                    def _registrar_na_roda(aluna, professora, sala):
+                        """Atualiza uma roda e a reinicia somente após completá-la."""
+                        if aluna not in memoria_alunas:
+                            memoria_alunas[aluna] = {"professoras": [], "salas": [], "ultima_professora": None}
+                        memoria = memoria_alunas[aluna]
+                        if len(set(memoria["salas"])) >= len(salas_pratica):
+                            memoria["salas"] = []
+                        if len(set(memoria["professoras"])) >= len(professoras_da_roda):
+                            memoria["professoras"] = []
+                        if sala not in memoria["salas"]:
+                            memoria["salas"].append(sala)
+                        if professora not in memoria["professoras"]:
+                            memoria["professoras"].append(professora)
+                        memoria["ultima_professora"] = professora
+
+                        memoria_prof = memoria_salas_professoras.setdefault(professora, [])
+                        if len(set(memoria_prof)) >= len(salas_pratica):
+                            memoria_salas_professoras[professora] = []
+                            memoria_prof = memoria_salas_professoras[professora]
+                        if sala not in memoria_prof:
+                            memoria_prof.append(sala)
+
+                    # Reconstrói a roda até o sábado imediatamente anterior ao
+                    # que está sendo gerado. A escala da própria data é ignorada
+                    # para permitir gerar novamente sem ela contaminar a escolha.
+                    try:
+                        calendarios_anteriores = supabase.table("calendario").select("id, escala").execute().data or []
+                    except Exception:
+                        calendarios_anteriores = []
+                    for calendario_antigo in sorted(calendarios_anteriores, key=lambda x: _data_calendario(x.get("id"))):
+                        if _data_calendario(calendario_antigo.get("id")) >= _data_calendario(data_sel_str):
+                            continue
+                        for linha_antiga in (calendario_antigo.get("escala") or []):
+                            aluna_antiga = linha_antiga.get("Aluna")
+                            if not aluna_antiga:
+                                continue
+                            for chave_antiga, valor_antigo in linha_antiga.items():
+                                if chave_antiga == "Aluna" or "|" not in str(valor_antigo):
+                                    continue
+                                sala_antiga, professora_antiga = [p.strip() for p in str(valor_antigo).split("|", 1)]
+                                if sala_antiga in salas_pratica and professora_antiga in professoras_da_roda:
+                                    _registrar_na_roda(aluna_antiga, professora_antiga, sala_antiga)
+
                     def garantir_professora(p):
                         if p not in estado_ciclo:
                             estado_ciclo[p] = {"alunas_dadas": [], "ciclo_num": 1}
+
+                    def escolher_par_para_aluna(aluna, professoras_livres, salas_livres):
+                        """Escolhe o par professora/sala de menor impacto na roda.
+
+                        A repetição da professora do sábado anterior é a última
+                        saída. Depois vêm as repetições na roda da aluna e, por
+                        fim, a repetição de sala da professora.
+                        """
+                        memoria = memoria_alunas.setdefault(
+                            aluna, {"professoras": [], "salas": [], "ultima_professora": None}
+                        )
+                        alternativas = []
+                        existe_professora_nova = any(p not in memoria["professoras"] for p in professoras_livres)
+                        existe_sala_nova = any(s not in memoria["salas"] for s in salas_livres)
+                        existe_sem_repeticao_imediata = any(
+                            p != memoria.get("ultima_professora") for p in professoras_livres
+                        )
+                        for professora in professoras_livres:
+                            for sala in salas_livres:
+                                score = (
+                                    # Nunca repete a professora do sábado anterior
+                                    # se houver qualquer outra professora livre.
+                                    int(existe_sem_repeticao_imediata and professora == memoria.get("ultima_professora")),
+                                    # Mantém a roda professora → aluna aberta.
+                                    int(existe_professora_nova and professora in memoria["professoras"]),
+                                    # Mantém a roda de salas da aluna aberta.
+                                    int(existe_sala_nova and sala in memoria["salas"]),
+                                    # Também faz a professora circular pelas salas.
+                                    int(sala in memoria_salas_professoras.get(professora, [])),
+                                    len(estado_ciclo.get(professora, {}).get("alunas_dadas", [])),
+                                    professora,
+                                    sala,
+                                )
+                                alternativas.append((score, professora, sala))
+                        _, professora, sala = min(alternativas, key=lambda item: item[0])
+                        return professora, sala
 
                     def escolher_professora_para_aluna(aluna, candidatos):
                         for p in candidatos:
@@ -2260,22 +2359,32 @@ if menu == "🏠 Secretaria":
                         # --- B. PRÁTICA INDIVIDUAL (S1 A S7) ---
                         disponiveis_agora = [p for p in profs_horario if p not in [p_teoria, p_solfejo]]
                         alunas_na_pratica = list(TURMAS[t_pra])
-                        salas_total = [f"SALA {s}" for s in range(1, 8)]
-                        registro_salas_profs = {p: s for p, s in registro_salas_profs.items() if p in disponiveis_agora}
-                        for p in disponiveis_agora:
-                            if p not in registro_salas_profs:
-                                sala_passada = next((d.get("sala") for d in ultima_alocacao.values() if d.get("professora") == p), None)
-                                salas_livres = [s for s in salas_total if s not in registro_salas_profs.values()]
-                                registro_salas_profs[p] = sorted([s for s in salas_livres if s != sala_passada] or salas_livres)[0]
-
+                        # Salas são decididas junto com a professora, e não mais
+                        # fixadas para ela o sábado inteiro. Isso permite que as
+                        # duas rodas (da aluna e da professora) avancem de verdade.
+                        salas_livres = list(salas_pratica)
                         alunas_rodizio = []
-                        profs_disponiveis = [p for p in disponiveis_agora if p in registro_salas_profs]
+                        profs_disponiveis = list(disponiveis_agora)
                         for a in alunas_na_pratica:
                             p_fixa = dict_fixas.get(str(a).strip().lower())
                             if p_fixa and p_fixa in profs_disponiveis:
-                                sala_fixa = registro_salas_profs[p_fixa]
+                                # A professora é fixa, mas a sala continua rodando
+                                # para que a aluna não fique sempre no mesmo lugar.
+                                memoria_fixa = memoria_alunas.setdefault(
+                                    a, {"professoras": [], "salas": [], "ultima_professora": None}
+                                )
+                                sala_fixa = min(
+                                    salas_livres,
+                                    key=lambda sala: (
+                                        int(sala in memoria_fixa["salas"] and len(set(memoria_fixa["salas"])) < len(salas_pratica)),
+                                        int(sala in memoria_salas_professoras.get(p_fixa, [])),
+                                        sala,
+                                    ),
+                                )
                                 mapa_final[a][h] = f"{sala_fixa} | {p_fixa}"
                                 profs_disponiveis.remove(p_fixa)
+                                salas_livres.remove(sala_fixa)
+                                _registrar_na_roda(a, p_fixa, sala_fixa)
                                 novas_ultimas_alocacoes[a] = {"professora": p_fixa, "sala": sala_fixa, "data": data_sel_str}
                             elif p_fixa:
                                 erros_fixas_geracao.append(f"Não foi possível reservar {p_fixa} para {a} no horário {h}.")
@@ -2283,14 +2392,15 @@ if menu == "🏠 Secretaria":
                                 alunas_rodizio.append(a)
 
                         for a in sorted(alunas_rodizio):
-                            if profs_disponiveis:
-                                p_esc = escolher_professora_para_aluna(a, profs_disponiveis)
-                                sala_escolhida = registro_salas_profs[p_esc]
+                            if profs_disponiveis and salas_livres:
+                                p_esc, sala_escolhida = escolher_par_para_aluna(a, profs_disponiveis, salas_livres)
                                 mapa_final[a][h] = f"{sala_escolhida} | {p_esc}"
                                 profs_disponiveis.remove(p_esc)
+                                salas_livres.remove(sala_escolhida)
                                 garantir_professora(p_esc)
                                 if a not in estado_ciclo[p_esc]["alunas_dadas"]:
                                     estado_ciclo[p_esc]["alunas_dadas"].append(a)
+                                _registrar_na_roda(a, p_esc, sala_escolhida)
                                 novas_ultimas_alocacoes[a] = {"professora": p_esc, "sala": sala_escolhida, "data": data_sel_str}
                             else:
                                 mapa_final[a][h] = f"SECRETARIA | {a}"
