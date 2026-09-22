@@ -2855,8 +2855,95 @@ if menu == "🏠 Secretaria":
                     st.session_state["_diag_divergencias"] = divergencias
                     st.session_state["_diag_itens_com_data"] = itens_com_data
 
+                    # 3. Auditoria pedagógica da roda, usando as escalas reais
+                    # em ordem cronológica — não a memória técnica do app.
+                    fixas_auditoria = {
+                        str(linha["Aluna"]).strip().lower(): str(linha["Prof"]).strip()
+                        for _, linha in df_fixas_editado.iterrows()
+                        if pd.notna(linha.get("Aluna")) and pd.notna(linha.get("Prof"))
+                    }
+                    todas_alunas_auditoria = sorted([a for turma in TURMAS.values() for a in turma])
+                    alunas_da_roda = {a for a in todas_alunas_auditoria if a.strip().lower() not in fixas_auditoria}
+                    vistas_por_professora = {}
+                    salas_por_professora = {}
+                    salas_por_aluna = {}
+                    ultima_professora_aluna = {}
+                    salas_da_professora_no_dia = set()
+                    problemas_roda = []
+
+                    for _, data_evento, escala_evento in itens_com_data:
+                        ocupacao_horario = {}
+                        for linha in escala_evento:
+                            aluna = linha.get("Aluna")
+                            if not aluna:
+                                continue
+                            for horario in HORARIOS[1:]:
+                                texto = str(linha.get(horario, ""))
+                                if "|" not in texto:
+                                    continue
+                                sala = texto.split("|")[0].strip().upper()
+                                professora = texto.split("|")[-1].strip()
+                                if (not sala.startswith("SALA") or "SALA 8" in sala or "SALA 9" in sala
+                                        or "SECRETARIA" in sala or not professora):
+                                    continue
+
+                                chave_horario = (data_evento, horario)
+                                ocupacao_horario.setdefault(chave_horario, {"professoras": set(), "salas": set()})
+                                if professora in ocupacao_horario[chave_horario]["professoras"]:
+                                    problemas_roda.append({"Data": data_evento, "Aluna": aluna, "Regra": "Professora em duplicidade", "Detalhe": f"{professora} aparece em duas práticas no mesmo horário."})
+                                if sala in ocupacao_horario[chave_horario]["salas"]:
+                                    problemas_roda.append({"Data": data_evento, "Aluna": aluna, "Regra": "Sala em duplicidade", "Detalhe": f"{sala} aparece com mais de uma aluna no mesmo horário."})
+                                ocupacao_horario[chave_horario]["professoras"].add(professora)
+                                ocupacao_horario[chave_horario]["salas"].add(sala)
+
+                                fixa = fixas_auditoria.get(str(aluna).strip().lower())
+                                if fixa and professora != fixa:
+                                    problemas_roda.append({"Data": data_evento, "Aluna": aluna, "Regra": "Professora fixa", "Detalhe": f"Deveria estar com {fixa}, mas está com {professora}."})
+
+                                salas_aluna = salas_por_aluna.setdefault(aluna, [])
+                                if set(salas_aluna) >= {f"SALA {n}" for n in range(1, 8)}:
+                                    salas_aluna.clear()
+                                if sala in salas_aluna:
+                                    problemas_roda.append({"Data": data_evento, "Aluna": aluna, "Regra": "Sala repetida para a aluna", "Detalhe": f"{sala} foi repetida antes de a aluna circular todas as salas."})
+                                else:
+                                    salas_aluna.append(sala)
+
+                                if not fixa:
+                                    vistas = vistas_por_professora.setdefault(professora, [])
+                                    if set(vistas) >= alunas_da_roda:
+                                        vistas.clear()
+                                    if aluna in vistas:
+                                        problemas_roda.append({"Data": data_evento, "Aluna": aluna, "Regra": "Aluna repetida para a professora", "Detalhe": f"{professora} voltou para a aluna antes de concluir a própria roda."})
+                                    else:
+                                        vistas.append(aluna)
+
+                                    # A mesma professora pode ficar na mesma sala
+                                    # ao longo do mesmo sábado; a roda de salas é
+                                    # comparada entre sábados, não entre horários
+                                    # consecutivos daquela manhã.
+                                    chave_sala_prof_dia = (data_evento, professora, sala)
+                                    if chave_sala_prof_dia not in salas_da_professora_no_dia:
+                                        salas_da_professora_no_dia.add(chave_sala_prof_dia)
+                                        salas_prof = salas_por_professora.setdefault(professora, [])
+                                        if set(salas_prof) >= {f"SALA {n}" for n in range(1, 8)}:
+                                            salas_prof.clear()
+                                        if sala in salas_prof:
+                                            problemas_roda.append({"Data": data_evento, "Aluna": aluna, "Regra": "Sala repetida para a professora", "Detalhe": f"{professora} voltou para {sala} antes de concluir a roda de salas."})
+                                        else:
+                                            salas_prof.append(sala)
+
+                                    if ultima_professora_aluna.get(aluna) == professora:
+                                        problemas_roda.append({"Data": data_evento, "Aluna": aluna, "Regra": "Mesma professora no sábado seguinte", "Detalhe": f"{professora} foi repetida na prática anterior da aluna."})
+                                    ultima_professora_aluna[aluna] = professora
+
+                    st.session_state["_diag_roda"] = problemas_roda
+
                 if "_diag_divergencias" in st.session_state:
                     divergencias = st.session_state["_diag_divergencias"]
+                    problemas_roda = st.session_state.get("_diag_roda", [])
+                    if problemas_roda:
+                        st.warning(f"⚠️ Auditoria da roda: {len(problemas_roda)} regra(s) quebrada(s) nas escalas salvas.")
+                        st.dataframe(pd.DataFrame(problemas_roda), use_container_width=True, hide_index=True)
                     if divergencias:
                         st.warning(f"⚠️ {len(divergencias)} divergência(s) encontrada(s):")
                         st.dataframe(pd.DataFrame(divergencias), use_container_width=True, hide_index=True)
@@ -2905,8 +2992,8 @@ if menu == "🏠 Secretaria":
                             del st.session_state["_diag_divergencias"]
                             st.cache_data.clear()
                             st.rerun()
-                    else:
-                        st.success("✅ Tudo consistente! A memória do rodízio bate com a última escala salva de cada aluna.")
+                    elif not problemas_roda:
+                        st.success("✅ Rodízio consistente: memória técnica e regras de professoras, alunas e salas foram verificadas.")
 
             # --- ABA 6: COORDENAÇÃO DO GEM ---
             with tab_coord:
