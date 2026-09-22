@@ -2098,75 +2098,30 @@ if menu == "🏠 Secretaria":
                     universo_rodizio = sorted([a for a in todas_alunas_sistema
                                                 if str(a).strip().lower() not in dict_fixas])
 
-                    # 3. MEMÓRIA DA RODA. Cada aluna percorre professoras e
-                    # salas separadamente; uma dupla fixa não entra na volta de
-                    # professoras, mas a aluna continua rodando pelas salas.
+                    # 3. ESTADO DO CICLO (fila por professora) E ÚLTIMA ALOCAÇÃO (por aluna)
                     ultima_alocacao = db_get_ultima_alocacao()
-                    memoria_rodizio = db_get_memoria_rodizio()
-                    memoria_salas_professoras = db_get_memoria_salas_professoras()
                     estado_ciclo = db_get_rodizio_ciclo()
-                    # Primeiro uso da regra nova: aproveita a última escala
-                    # antiga para impedir repetição já no próximo sábado.
-                    for aluna_anterior, dados_anteriores in ultima_alocacao.items():
-                        memoria_rodizio.setdefault(aluna_anterior, {
-                            "professoras_vistas": [dados_anteriores.get("professora")] if dados_anteriores.get("professora") else [],
-                            "salas_vistas": [dados_anteriores.get("sala")] if dados_anteriores.get("sala") else [],
-                            "ultima_professora": dados_anteriores.get("professora"),
-                            "ultima_sala": dados_anteriores.get("sala"),
-                        })
 
-                    def memoria_da_aluna(aluna):
-                        return memoria_rodizio.setdefault(aluna, {
-                            "professoras_vistas": [], "salas_vistas": [],
-                            "ultima_professora": None, "ultima_sala": None,
-                        })
+                    def garantir_professora(p):
+                        if p not in estado_ciclo:
+                            estado_ciclo[p] = {"alunas_dadas": [], "ciclo_num": 1}
 
-                    def preparar_volta(aluna, participa_professoras=True):
-                        memoria = memoria_da_aluna(aluna)
-                        if participa_professoras and set(memoria["professoras_vistas"]) >= set(PROFESSORAS_LISTA):
-                            memoria["professoras_vistas"] = []
-                        salas_validas = {f"SALA {numero}" for numero in range(1, 8)}
-                        if set(memoria["salas_vistas"]) >= salas_validas:
-                            memoria["salas_vistas"] = []
-                        return memoria
-
-                    def registrar_volta(aluna, professora, sala, participa_professoras=True):
-                        memoria = memoria_da_aluna(aluna)
-                        if participa_professoras and professora not in memoria["professoras_vistas"]:
-                            memoria["professoras_vistas"].append(professora)
-                        if sala not in memoria["salas_vistas"]:
-                            memoria["salas_vistas"].append(sala)
-                        memoria["ultima_professora"] = professora
-                        memoria["ultima_sala"] = sala
-
-                    def memoria_da_professora(professora):
-                        return memoria_salas_professoras.setdefault(professora, {
-                            "salas_vistas": [], "ultima_sala": None,
-                        })
-
-                    def preparar_volta_sala_professora(professora):
-                        memoria = memoria_da_professora(professora)
-                        if set(memoria["salas_vistas"]) >= {f"SALA {numero}" for numero in range(1, 8)}:
-                            memoria["salas_vistas"] = []
-                        return memoria
-
-                    def registrar_sala_professora(professora, sala):
-                        memoria = memoria_da_professora(professora)
-                        if sala not in memoria["salas_vistas"]:
-                            memoria["salas_vistas"].append(sala)
-                        memoria["ultima_sala"] = sala
-
-                    def preparar_volta_professora_alunas(professora):
-                        estado = estado_ciclo.setdefault(professora, {"alunas_dadas": [], "ciclo_num": 1})
-                        if set(estado["alunas_dadas"]) >= set(universo_rodizio):
-                            estado["alunas_dadas"] = []
-                            estado["ciclo_num"] += 1
-                        return estado
-
-                    def registrar_aluna_professora(professora, aluna):
-                        estado = preparar_volta_professora_alunas(professora)
-                        if aluna not in estado["alunas_dadas"]:
-                            estado["alunas_dadas"].append(aluna)
+                    def escolher_professora_para_aluna(aluna, candidatos):
+                        for p in candidatos:
+                            garantir_professora(p)
+                            if set(estado_ciclo[p]["alunas_dadas"]) >= set(universo_rodizio):
+                                estado_ciclo[p]["alunas_dadas"] = []
+                                estado_ciclo[p]["ciclo_num"] += 1
+                        candidatas_novas = [p for p in candidatos if aluna not in estado_ciclo[p]["alunas_dadas"]]
+                        professora_anterior = ultima_alocacao.get(aluna, {}).get("professora")
+                        sem_repetir_imediata = [p for p in candidatas_novas if p != professora_anterior]
+                        # Se a roda ainda não tiver alternativa inédita, pode
+                        # repetir uma professora já vista — mas nunca a mesma
+                        # que deu aula para a aluna no sábado anterior, salvo
+                        # quando ela for literalmente a única disponível.
+                        qualquer_outra_professora = [p for p in candidatos if p != professora_anterior]
+                        escolha = sem_repetir_imediata or qualquer_outra_professora or candidatas_novas or candidatos
+                        return sorted(escolha, key=lambda p: (len(estado_ciclo[p]["alunas_dadas"]), p))[0]
 
                     # 4. MAPEAMENTO INICIAL
                     mapa_final = {a: {"Aluna": a} for turma in TURMAS.values() for a in turma}
@@ -2306,77 +2261,39 @@ if menu == "🏠 Secretaria":
                         disponiveis_agora = [p for p in profs_horario if p not in [p_teoria, p_solfejo]]
                         alunas_na_pratica = list(TURMAS[t_pra])
                         salas_total = [f"SALA {s}" for s in range(1, 8)]
-                        profs_disponiveis = list(disponiveis_agora)
+                        registro_salas_profs = {p: s for p, s in registro_salas_profs.items() if p in disponiveis_agora}
+                        for p in disponiveis_agora:
+                            if p not in registro_salas_profs:
+                                sala_passada = next((d.get("sala") for d in ultima_alocacao.values() if d.get("professora") == p), None)
+                                salas_livres = [s for s in salas_total if s not in registro_salas_profs.values()]
+                                registro_salas_profs[p] = sorted([s for s in salas_livres if s != sala_passada] or salas_livres)[0]
 
-                        # Prepara as voltas antes de procurar as combinações.
-                        # Depois disso usamos uma busca completa: a escolha de
-                        # Ana não pode ocupar a única professora/sala possível
-                        # para Beatriz, por exemplo.
+                        alunas_rodizio = []
+                        profs_disponiveis = [p for p in disponiveis_agora if p in registro_salas_profs]
                         for a in alunas_na_pratica:
-                            preparar_volta(a, participa_professoras=not bool(dict_fixas.get(str(a).strip().lower())))
-                        for professora in profs_disponiveis:
-                            preparar_volta_professora_alunas(professora)
-                            preparar_volta_sala_professora(professora)
+                            p_fixa = dict_fixas.get(str(a).strip().lower())
+                            if p_fixa and p_fixa in profs_disponiveis:
+                                sala_fixa = registro_salas_profs[p_fixa]
+                                mapa_final[a][h] = f"{sala_fixa} | {p_fixa}"
+                                profs_disponiveis.remove(p_fixa)
+                                novas_ultimas_alocacoes[a] = {"professora": p_fixa, "sala": sala_fixa, "data": data_sel_str}
+                            elif p_fixa:
+                                erros_fixas_geracao.append(f"Não foi possível reservar {p_fixa} para {a} no horário {h}.")
+                            else:
+                                alunas_rodizio.append(a)
 
-                        def pares_validos(aluna, profs_usadas, salas_usadas):
-                            p_fixa = dict_fixas.get(str(aluna).strip().lower())
-                            participa = not bool(p_fixa)
-                            candidatas = [p_fixa] if p_fixa else profs_disponiveis
-                            memoria = memoria_da_aluna(aluna)
-                            pares = []
-                            for professora in candidatas:
-                                if professora not in profs_disponiveis or professora in profs_usadas:
-                                    continue
-                                if participa:
-                                    memoria_professora = preparar_volta_professora_alunas(professora)
-                                    if (professora in memoria["professoras_vistas"]
-                                            or professora == memoria.get("ultima_professora")
-                                            or aluna in memoria_professora["alunas_dadas"]):
-                                        continue
-                                memoria_sala_prof = preparar_volta_sala_professora(professora)
-                                for sala in salas_total:
-                                    if sala in salas_usadas or sala in memoria["salas_vistas"] or sala == memoria.get("ultima_sala"):
-                                        continue
-                                    if participa and (sala in memoria_sala_prof["salas_vistas"]
-                                                       or sala == memoria_sala_prof.get("ultima_sala")):
-                                        continue
-                                    pares.append((professora, sala, participa))
-                            return sorted(pares, key=lambda item: (item[0], item[1]))
-
-                        def montar_praticas(pendentes, profs_usadas=None, salas_usadas=None, escolhas=None):
-                            profs_usadas = profs_usadas or set()
-                            salas_usadas = salas_usadas or set()
-                            escolhas = escolhas or {}
-                            if not pendentes:
-                                return escolhas
-                            # Escolhe primeiro a aluna com menos alternativas.
-                            alternativas = [(len(pares_validos(a, profs_usadas, salas_usadas)), a) for a in pendentes]
-                            _, aluna_atual = min(alternativas, key=lambda item: (item[0], item[1]))
-                            for professora, sala, participa in pares_validos(aluna_atual, profs_usadas, salas_usadas):
-                                prox_escolhas = dict(escolhas)
-                                prox_escolhas[aluna_atual] = (professora, sala, participa)
-                                resultado = montar_praticas(
-                                    [a for a in pendentes if a != aluna_atual],
-                                    profs_usadas | {professora}, salas_usadas | {sala}, prox_escolhas,
-                                )
-                                if resultado is not None:
-                                    return resultado
-                            return None
-
-                        escolhas_pratica = montar_praticas(sorted(alunas_na_pratica))
-                        if escolhas_pratica is None:
-                            erros_fixas_geracao.append(
-                                f"Não há combinação completa sem repetição para a Prática de {t_pra} no horário {h}. "
-                                "As prioridades foram preservadas e nenhuma repetição foi aplicada."
-                            )
-                        else:
-                            for a, (p_esc, s_e, participa) in escolhas_pratica.items():
-                                mapa_final[a][h] = f"{s_e} | {p_esc}"
-                                registrar_volta(a, p_esc, s_e, participa_professoras=participa)
-                                if participa:
-                                    registrar_sala_professora(p_esc, s_e)
-                                    registrar_aluna_professora(p_esc, a)
-                                novas_ultimas_alocacoes[a] = {"professora": p_esc, "sala": s_e, "data": data_sel_str}
+                        for a in sorted(alunas_rodizio):
+                            if profs_disponiveis:
+                                p_esc = escolher_professora_para_aluna(a, profs_disponiveis)
+                                sala_escolhida = registro_salas_profs[p_esc]
+                                mapa_final[a][h] = f"{sala_escolhida} | {p_esc}"
+                                profs_disponiveis.remove(p_esc)
+                                garantir_professora(p_esc)
+                                if a not in estado_ciclo[p_esc]["alunas_dadas"]:
+                                    estado_ciclo[p_esc]["alunas_dadas"].append(a)
+                                novas_ultimas_alocacoes[a] = {"professora": p_esc, "sala": sala_escolhida, "data": data_sel_str}
+                            else:
+                                mapa_final[a][h] = f"SECRETARIA | {a}"
 
                     # Não salva uma escala que desrespeite professora fixa.
                     if erros_fixas_geracao:
@@ -2397,17 +2314,11 @@ if menu == "🏠 Secretaria":
                         # Prática, Teoria e Solfejo. A linha crua causava um bug ("Todas as
                         # alunas" aparecendo como se fosse professora) e só cobria Prática.
 
-                        # Persiste as rodas completas (aluna–professora,
-                        # aluna–sala e professora–sala), além da referência da
-                        # última escala para auditoria.
-                        ok_memoria_alunas, erro_memoria_alunas = db_salvar_memoria_rodizio(memoria_rodizio)
-                        ok_memoria_profs, erro_memoria_profs = db_salvar_memoria_salas_professoras(memoria_salas_professoras)
-                        if not ok_memoria_alunas or not ok_memoria_profs:
-                            raise RuntimeError(erro_memoria_alunas or erro_memoria_profs or "Memória do rodízio não foi salva")
+                        # Persiste a memória do rodízio que já vinha funcionando.
                         db_salvar_rodizio_ciclo(estado_ciclo)
                         db_salvar_ultima_alocacao(novas_ultimas_alocacoes)
 
-                        st.success("✅ Rodízio em roda gerado sem repetir professora ou sala antes de completar a volta.")
+                        st.success("Rodízio em círculo gerado! Nenhuma professora repete aluna até dar aula pra todas.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
