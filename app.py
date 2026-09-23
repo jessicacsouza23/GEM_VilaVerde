@@ -611,7 +611,12 @@ def calcular_classificacao_desempenho(registros):
     return "🥉", "Bronze", score, True
 
 def calcular_resumo_frequencia(registros, aluna):
-    """Retorna presença, ausências, justificadas e frequência da aluna."""
+    """Retorna presença, ausências, justificadas e frequência ponderada.
+
+    Presença vale 100%, falta justificada vale 50% e ausência não
+    justificada vale 0%. Assim a justificativa é considerada, sem fazer a
+    frequência permanecer em 100% quando a aluna não esteve na aula.
+    """
     if registros.empty or "Tipo" not in registros.columns:
         return 0, 0, 0, 0
     chamadas = registros[
@@ -625,8 +630,13 @@ def calcular_resumo_frequencia(registros, aluna):
     ausentes = int((chamadas["Status"] == "Ausente").sum())
     justificadas = int((chamadas["Status"] == "Justificada").sum())
     total = len(chamadas)
-    frequencia = int(((presentes + justificadas) / total) * 100) if total else 0
+    frequencia = round(((presentes + (justificadas * 0.5)) / total) * 100, 1) if total else 0
     return presentes, ausentes, justificadas, frequencia
+
+
+def formatar_percentual(valor):
+    """Exibe 87.5% sem deixar 100.0% visualmente carregado."""
+    return f"{float(valor):.1f}".rstrip("0").rstrip(".") + "%"
 # Únicos tipos de lição de casa que entram na fila de correção da secretaria:
 # apostila da aula de Prática e folha avulsa de Teoria quando a professora
 # escolhe explicitamente a Secretaria. Métodos de Prática, MSA de Solfejo e
@@ -3490,9 +3500,10 @@ elif menu == "🎓 Minhas Lições":
         df_desempenho_aluna, minha_aluna
     )
     col_freq, col_falta, col_just = st.columns(3)
-    col_freq.metric("📅 Frequência", f"{frequencia_aluna}%")
+    col_freq.metric("📅 Frequência ponderada", formatar_percentual(frequencia_aluna))
     col_falta.metric("❌ Ausências", faltas_aluna)
     col_just.metric("📝 Justificadas", justificadas_aluna)
+    st.caption("Presença vale 100%, falta justificada 50% e ausência sem justificativa 0%.")
     st.subheader("⭐ Meu desempenho")
     st.caption("Sua estrela nos últimos 30 dias, calculada pela mesma regra do Quadro de Desempenho.")
     cols_estrelas = st.columns(3)
@@ -3663,7 +3674,7 @@ elif menu == "📝 Boletim":
     media_html = f"{media_notas:.1f}" if media_notas is not None else "Aguardando"
     st.markdown(f"""
     <div class="boletim-resumo">
-      <div class="boletim-resumo-item">📅 Frequência<b>{frequencia_boletim}%</b></div>
+      <div class="boletim-resumo-item">📅 Frequência ponderada<b>{formatar_percentual(frequencia_boletim)}</b></div>
       <div class="boletim-resumo-item">🎵 Média das notas<b>{media_html}</b></div>
       <div class="boletim-resumo-item">❌ Faltas<b>{faltas_boletim} ausência(s) · {justificadas_boletim} justificada(s)</b></div>
     </div>
@@ -4692,7 +4703,10 @@ elif menu == "📊 Analítico IA":
                 # --- 1. RESUMO DE DESEMPENHO (DASHBOARD) ---
                 st.subheader(f"📈 Resumo de Desempenho - {aluna_sel}")
                 k1, k2, k3, k4, k5 = st.columns(5)
-                k1.metric("Frequência", f"{int((v_pres+v_just)/len(resumo_dias)*100) if len(resumo_dias)>0 else 0}%")
+                frequencia_ponderada_analitico = round(
+                    ((v_pres + (v_just * 0.5)) / len(resumo_dias)) * 100, 1
+                ) if len(resumo_dias) > 0 else 0
+                k1.metric("Frequência ponderada", formatar_percentual(frequencia_ponderada_analitico))
                 k2.metric("Aulas/Chamadas", len(resumo_dias))
                 k3.metric("Faltas (N/J)", f"{v_falt} / {v_just}")
                 k4.metric("Aproveitamento", f"{aprov_valor}%")
@@ -5079,7 +5093,7 @@ Não invente fatos, não faça diagnósticos clínicos e não use tom punitivo.
 
 Aluna: {aluna_sel}
 Período: {data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}
-Frequência: {int((v_pres + v_just) / len(resumo_dias) * 100) if len(resumo_dias) else 0}%,
+Frequência ponderada: {formatar_percentual(frequencia_ponderada_analitico)},
 {v_falt} ausência(s), {v_just} justificada(s).
 Desempenho nas aulas: {resumo_disciplinas_ia}
 Notas das provas: {notas_detalhadas_ia}
