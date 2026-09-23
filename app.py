@@ -113,7 +113,7 @@ def gerar_pdf_relatorio_diario(data_relatorio, texto_relatorio):
     return buffer.getvalue()
 
 # --- 1. CONFIGURAÇÕES INICIAIS ---
-st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", layout="wide")
+st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", page_icon="🎼", layout="wide")
 
 # ============================================================
 # FUNÇÃO DE SUPORTE - BUSCA MÉTODOS CADASTRADOS
