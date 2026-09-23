@@ -1526,7 +1526,7 @@ if eh_login_professora:
            botão circular sobre a foto, sem a área/legenda padrão de upload. */
         section[data-testid="stSidebar"] [data-testid="stFileUploader"] {
             width: 28px !important; min-width: 28px !important;
-            margin: 0 !important; transform: translate(-2px, 145px) !important;
+            margin: 0 !important; transform: translate(-53px, 145px) !important;
             position: relative !important; z-index: 5 !important;
         }
         section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
