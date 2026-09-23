@@ -113,7 +113,23 @@ def gerar_pdf_relatorio_diario(data_relatorio, texto_relatorio):
     return buffer.getvalue()
 
 # --- 1. CONFIGURAÇÕES INICIAIS ---
-st.set_page_config(page_title="GEM Vila Verde - Gestão 2026", page_icon="🎼", layout="wide")
+def _icone_inicial_do_gem():
+    """Lê a logo salva antes de montar a página, para o favicon ser nativo."""
+    try:
+        cliente_icone = create_client(url, key)
+        imagem_bytes = cliente_icone.storage.from_("logo_gem").download("logo_atual")
+        imagem = Image.open(io.BytesIO(imagem_bytes))
+        imagem.load()
+        return imagem
+    except Exception:
+        return "🎼"
+
+
+st.set_page_config(
+    page_title="GEM Vila Verde - Gestão 2026",
+    page_icon=_icone_inicial_do_gem(),
+    layout="wide",
+)
 
 # ============================================================
 # FUNÇÃO DE SUPORTE - BUSCA MÉTODOS CADASTRADOS
@@ -1564,8 +1580,6 @@ calendario_db = {item.get('id'): item.get('escala', []) for item in calendario_r
 # calendario_db = db_get_calendario()
 
 # --- 5. INTERFACE E NAVEGAÇÃO ---
-logo_gem_para_aba = db_url_logo_gem()
-aplicar_logo_como_icone_da_aba(logo_gem_para_aba)
 eh_login_professora = st.session_state.get("tipo_usuario") == "professora"
 if eh_login_professora:
     # Perfil da professora no menu lateral: a foto fica acima do nome para
@@ -1647,7 +1661,7 @@ elif st.session_state.perfil == "Secretaria":
         <style>
         section[data-testid="stSidebar"] [data-testid="stFileUploader"] {
             width: 28px !important; min-width: 28px !important; margin: 0 !important;
-            transform: translate(-80px, 38px) !important; position: relative !important; z-index: 5 !important;
+            transform: translate(-80px, 110px) !important; position: relative !important; z-index: 5 !important;
         }
         section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
             min-height: 28px !important; height: 28px !important; padding: 0 !important; border: 0 !important; background: transparent !important;
