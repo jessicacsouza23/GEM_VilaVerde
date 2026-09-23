@@ -1541,16 +1541,16 @@ if eh_login_professora:
             padding: 0 !important; box-sizing: border-box !important; overflow: hidden !important;
             border-radius: 999px !important; font-size: 0 !important;
             display: flex !important; align-items: center !important; justify-content: center !important;
-            border: 2px solid #ffffff !important; background: #475569 !important;
-            box-shadow: 0 1px 4px rgba(15, 23, 42, .35) !important;
+            border: 1.5px solid #ff6b6b !important; background: #ffffff !important;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, .18) !important;
             color: transparent !important;
         }
         section[data-testid="stSidebar"] [data-testid="stFileUploader"] button * {
             display: none !important;
         }
         section[data-testid="stSidebar"] [data-testid="stFileUploader"] button::after {
-            content: "✎"; display: block; font-family: Arial, sans-serif; font-size: 17px;
-            font-weight: 700; color: #ffffff; line-height: 1; transform: translate(0, -1px);
+            content: "+"; display: block; font-family: Arial, sans-serif; font-size: 21px;
+            font-weight: 400; color: #ff5a5f; line-height: 1; transform: translate(0, -1px);
         }
         </style>
     """, unsafe_allow_html=True)
