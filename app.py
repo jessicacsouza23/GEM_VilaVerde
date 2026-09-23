@@ -1525,19 +1525,19 @@ if eh_login_professora:
         /* Há somente este seletor de arquivo no menu lateral. Ele vira um
            botão circular sobre a foto, sem a área/legenda padrão de upload. */
         section[data-testid="stSidebar"] [data-testid="stFileUploader"] {
-            width: 34px !important; min-width: 34px !important;
-            margin: 0 !important; transform: translate(-48px, 116px) !important;
+            width: 28px !important; min-width: 28px !important;
+            margin: 0 !important; transform: translate(-42px, 100px) !important;
             position: relative !important; z-index: 5 !important;
         }
         section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
-            min-height: 34px !important; height: 34px !important; padding: 0 !important;
+            min-height: 28px !important; height: 28px !important; padding: 0 !important;
             border: 0 !important; background: transparent !important;
         }
         section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"] {
             display: none !important;
         }
         section[data-testid="stSidebar"] [data-testid="stFileUploader"] button {
-            min-width: 31px !important; width: 31px !important; height: 31px !important;
+            min-width: 26px !important; width: 26px !important; height: 26px !important;
             padding: 0 !important; box-sizing: border-box !important; overflow: hidden !important;
             border-radius: 999px !important; font-size: 0 !important;
             display: flex !important; align-items: center !important; justify-content: center !important;
@@ -1549,7 +1549,7 @@ if eh_login_professora:
             display: none !important;
         }
         section[data-testid="stSidebar"] [data-testid="stFileUploader"] button::after {
-            content: "✎"; display: block; font-family: Arial, sans-serif; font-size: 20px;
+            content: "✎"; display: block; font-family: Arial, sans-serif; font-size: 17px;
             font-weight: 700; color: #ffffff; line-height: 1; transform: translate(0, -1px);
         }
         </style>
