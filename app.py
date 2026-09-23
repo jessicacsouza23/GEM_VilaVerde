@@ -1517,7 +1517,7 @@ if eh_login_professora:
     # Perfil da professora no menu lateral: a foto fica acima do nome para
     # identificação rápida, sem ocupar espaço do painel de trabalho.
     col_lateral_esq, col_lateral_foto, col_lateral_dir = st.sidebar.columns([1, 2, 1])
-    mostrar_foto_professora(col_lateral_foto, st.session_state.nome_logado, largura=104)
+    mostrar_foto_professora(col_lateral_foto, st.session_state.nome_logado, largura=120)
     if col_lateral_dir.button("✏️", key="abrir_edicao_foto_professora", help="Editar minha foto de perfil"):
         st.session_state["editar_foto_perfil_professora_aberto"] = not st.session_state.get(
             "editar_foto_perfil_professora_aberto", False
