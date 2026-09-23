@@ -1518,36 +1518,52 @@ if eh_login_professora:
     # identificação rápida, sem ocupar espaço do painel de trabalho.
     col_lateral_esq, col_lateral_foto, col_lateral_dir = st.sidebar.columns([1, 2, 1])
     mostrar_foto_professora(col_lateral_foto, st.session_state.nome_logado, largura=120)
-    if col_lateral_dir.button("✏️", key="abrir_edicao_foto_professora", help="Editar minha foto de perfil"):
-        st.session_state["editar_foto_perfil_professora_aberto"] = not st.session_state.get(
-            "editar_foto_perfil_professora_aberto", False
-        )
+    # O próprio lápis é o seletor de arquivo: clicar nele abre diretamente a
+    # pasta de imagens, como em um perfil de rede social.
+    col_lateral_dir.markdown("""
+        <style>
+        section[data-testid="stSidebar"] .st-key-editar_foto_perfil_professora [data-testid="stFileUploaderDropzone"] {
+            min-height: 0 !important; padding: 0 !important; border: 0 !important;
+            background: transparent !important;
+        }
+        section[data-testid="stSidebar"] .st-key-editar_foto_perfil_professora [data-testid="stFileUploaderDropzoneInstructions"] {
+            display: none !important;
+        }
+        section[data-testid="stSidebar"] .st-key-editar_foto_perfil_professora button {
+            min-width: 31px !important; width: 31px !important; height: 31px !important;
+            padding: 0 !important; border-radius: 50% !important; font-size: 0 !important;
+            border: 1px solid #cbd5e1 !important; background: #ffffff !important;
+        }
+        section[data-testid="stSidebar"] .st-key-editar_foto_perfil_professora button::after {
+            content: "✏️"; font-size: 15px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    foto_perfil_prof = col_lateral_dir.file_uploader(
+        "Editar foto", type=["jpg", "jpeg", "png", "webp"],
+        key="editar_foto_perfil_professora", label_visibility="collapsed",
+    )
+    if foto_perfil_prof is not None:
+        assinatura_foto = hashlib.sha256(foto_perfil_prof.getvalue()).hexdigest()
+        if st.session_state.get("ultima_foto_enviada_professora") != assinatura_foto:
+            caminho_perfil_prof, erro_perfil_prof = db_enviar_foto_professora(foto_perfil_prof)
+            if caminho_perfil_prof:
+                try:
+                    supabase.table("professoras").update({"foto_path": caminho_perfil_prof}).eq(
+                        "nome", st.session_state.nome_logado
+                    ).execute()
+                    st.cache_data.clear()
+                    st.session_state["ultima_foto_enviada_professora"] = assinatura_foto
+                    st.toast("✅ Foto de perfil atualizada!")
+                    st.rerun()
+                except Exception as e:
+                    st.error("Não foi possível salvar a foto: " + str(e))
+            else:
+                st.error("Não foi possível salvar a foto: " + erro_perfil_prof)
     st.sidebar.markdown(
         f"<h3 style='text-align:center; font-size:1.65rem; margin:8px 0 14px;'>{html.escape(str(st.session_state.nome_logado))}</h3>",
         unsafe_allow_html=True,
     )
-    if st.session_state.get("editar_foto_perfil_professora_aberto", False):
-        with st.sidebar.container(border=True):
-            st.caption("📷 Trocar foto de perfil")
-            foto_perfil_prof = st.file_uploader(
-                "Escolha uma imagem", type=["jpg", "jpeg", "png", "webp"],
-                key="editar_foto_perfil_professora",
-            )
-            if st.button("💾 Salvar foto", key="salvar_foto_perfil_professora", use_container_width=True):
-                caminho_perfil_prof, erro_perfil_prof = db_enviar_foto_professora(foto_perfil_prof)
-                if caminho_perfil_prof:
-                    try:
-                        supabase.table("professoras").update({"foto_path": caminho_perfil_prof}).eq(
-                            "nome", st.session_state.nome_logado
-                        ).execute()
-                        st.cache_data.clear()
-                        st.session_state["editar_foto_perfil_professora_aberto"] = False
-                        st.success("✅ Foto de perfil atualizada!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error("Não foi possível salvar a foto: " + str(e))
-                else:
-                    st.error("Não foi possível salvar a foto: " + erro_perfil_prof)
 else:
     st.sidebar.title(f"👋 {st.session_state.nome_logado}")
 
