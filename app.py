@@ -1059,13 +1059,63 @@ def db_url_foto_aluna(nome_aluna):
         return None
 
 
-def mostrar_foto_aluna(container, nome_aluna, largura=42):
+def mostrar_foto_aluna(container, nome_aluna, largura=56):
     """Mostra a foto cadastrada ou um avatar discreto, sem interromper a tela."""
     url_foto = db_url_foto_aluna(nome_aluna)
     if url_foto:
         container.image(url_foto, width=largura)
     else:
-        container.markdown("<div style='font-size:1.65rem; line-height:2rem'>👤</div>", unsafe_allow_html=True)
+        container.markdown(
+            f"<div style='font-size:{max(1.65, largura / 28):.2f}rem; line-height:{largura}px'>👤</div>",
+            unsafe_allow_html=True,
+        )
+
+
+# ==========================================
+# FOTOS DAS PROFESSORAS
+# ==========================================
+def db_enviar_foto_professora(arquivo):
+    if arquivo is None:
+        return None, "Selecione uma imagem primeiro."
+    extensao = os.path.splitext(arquivo.name or "")[1].lower()
+    if extensao not in {".jpg", ".jpeg", ".png", ".webp"}:
+        return None, "Envie uma imagem JPG, PNG ou WEBP."
+    try:
+        caminho = f"{uuid.uuid4().hex}_{_nome_seguro_arquivo(arquivo.name)}"
+        supabase.storage.from_("fotos_professoras").upload(
+            path=caminho,
+            file=arquivo.getvalue(),
+            file_options={"content-type": arquivo.type or "image/jpeg"},
+        )
+        return caminho, ""
+    except Exception as e:
+        detalhe = str(e)
+        if "Bucket not found" in detalhe or "bucket not found" in detalhe.lower():
+            return None, "O armazenamento de fotos das professoras ainda não foi criado. Execute a migration 016_fotos_professoras.sql no Supabase."
+        return None, detalhe
+
+
+def db_url_foto_professora(nome_professora):
+    try:
+        professora = next((p for p in db_get_professoras_todas() if p.get("nome") == nome_professora), None)
+        caminho = professora.get("foto_path") if professora else None
+        if not caminho:
+            return None
+        resposta = supabase.storage.from_("fotos_professoras").create_signed_url(caminho, 3600)
+        return resposta.get("signedURL") or resposta.get("signedUrl")
+    except Exception:
+        return None
+
+
+def mostrar_foto_professora(container, nome_professora, largura=96):
+    url_foto = db_url_foto_professora(nome_professora)
+    if url_foto:
+        container.image(url_foto, width=largura)
+    else:
+        container.markdown(
+            f"<div style='font-size:{max(1.65, largura / 28):.2f}rem; line-height:{largura}px'>👩‍🏫</div>",
+            unsafe_allow_html=True,
+        )
 
 # ==========================================
 # FUNÇÕES DE BANCO - RODÍZIO EM CÍRCULO (NOVO)
@@ -2645,9 +2695,9 @@ if menu == "🏠 Secretaria":
         registros_chamada = []
         
         for idx, aluna in enumerate(alunas_lista):
-            col1, col2, col3 = st.columns([2, 3, 3])
-            col_foto, col_nome = col1.columns([1, 4])
-            mostrar_foto_aluna(col_foto, aluna)
+            col1, col2, col3 = st.columns([2.5, 3, 3])
+            col_foto, col_nome = col1.columns([1.2, 4])
+            mostrar_foto_aluna(col_foto, aluna, largura=64)
             col_nome.write(f"**{aluna}**")
             chave_status = f"status_{idx}_{aluna}_{data_ch_sel}"
             chamada_salva = chamada_por_aluna.get(aluna, {})
@@ -3313,6 +3363,30 @@ if menu == "🏠 Secretaria":
                                 if c4.button(acao, key=f"tgp_{p['nome']}"):
                                     supabase.table("professoras").update({"ativo": not p.get("ativo", True)}).eq("nome", p["nome"]).execute()
                                     st.cache_data.clear(); st.rerun()
+
+                                with st.expander(f"📷 Foto de perfil de {p['nome']}"):
+                                    foto_prof_atual = db_url_foto_professora(p["nome"])
+                                    if foto_prof_atual:
+                                        st.image(foto_prof_atual, width=150, caption="Foto atual")
+                                    else:
+                                        st.caption("Nenhuma foto cadastrada ainda.")
+                                    foto_prof_nova = st.file_uploader(
+                                        "Enviar ou trocar foto", type=["jpg", "jpeg", "png", "webp"],
+                                        key=f"foto_prof_{p.get('id') or p['nome']}",
+                                    )
+                                    if st.button("💾 Salvar foto de perfil", key=f"salvar_foto_prof_{p.get('id') or p['nome']}"):
+                                        caminho_prof, erro_prof = db_enviar_foto_professora(foto_prof_nova)
+                                        if caminho_prof:
+                                            consulta_prof = supabase.table("professoras").update({"foto_path": caminho_prof})
+                                            if p.get("id"):
+                                                consulta_prof.eq("id", p["id"]).execute()
+                                            else:
+                                                consulta_prof.eq("nome", p["nome"]).execute()
+                                            st.cache_data.clear()
+                                            st.success("✅ Foto de perfil salva com sucesso!")
+                                            st.rerun()
+                                        else:
+                                            st.error("Não foi possível salvar a foto: " + erro_prof)
                     else:
                         st.info("Nenhuma professora cadastrada ainda.")
 
@@ -3404,8 +3478,10 @@ if menu == "🏠 Secretaria":
 # MÓDULO ALUNA - LIÇÕES PENDENTES + CONTROLE DE ESTUDO DIÁRIO
 # ============================================================
 elif menu == "🎓 Minhas Lições":
-    st.header(f"🎓 Olá, {st.session_state.nome_logado}!")
     minha_aluna = st.session_state.nome_logado
+    col_avatar_aluna, col_titulo_aluna = st.columns([1, 10])
+    mostrar_foto_aluna(col_avatar_aluna, minha_aluna, largura=112)
+    col_titulo_aluna.header(f"🎓 Olá, {minha_aluna}!")
 
     # A mesma classificação do Quadro de Desempenho, mas apresentada apenas
     # para a própria aluna e com o período padrão de 30 dias.
@@ -3836,7 +3912,10 @@ elif menu == "👑 Rodízio de Folgas":
 # MÓDULO PROFESSORA - V58 (INTEGRADO E CORRIGIDO)
 # ============================================================
 elif menu == "👩‍🏫 Minhas Aulas":
-    st.header(f"👩‍🏫 Painel da Professora: {st.session_state.nome_logado}")
+    nome_professora_logada = st.session_state.nome_logado
+    col_avatar_prof, col_titulo_prof = st.columns([1, 10])
+    mostrar_foto_professora(col_avatar_prof, nome_professora_logada, largura=104)
+    col_titulo_prof.header(f"👩‍🏫 Painel da Professora: {nome_professora_logada}")
     
     # Definição das Tabs
     tab_aula, tab_config = st.tabs(["📝 Registro de Aula", "⚙️ Configurar Métodos"])
@@ -3982,7 +4061,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                 chave_checkbox_aluna = f"ch_{aluna_presente}_{d_sel['id']}_{dt_str}"
                 chaves_controle_selecao.add(chave_checkbox_aluna)
                 col_foto_aluna, col_selecao_aluna = st.columns([1, 12])
-                mostrar_foto_aluna(col_foto_aluna, aluna_presente, largura=38)
+                mostrar_foto_aluna(col_foto_aluna, aluna_presente, largura=62)
                 if col_selecao_aluna.checkbox(aluna_presente, value=True, key=chave_checkbox_aluna):
                     als_selecionadas.append(aluna_presente)
 
