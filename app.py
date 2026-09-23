@@ -177,7 +177,8 @@ def db_get_coordenadora_gem():
 def db_url_logo_gem():
     """Logo visual compartilhada do GEM, administrada pela Secretaria."""
     try:
-        config = db_get_coordenadora_gem() or {}
+        res = supabase.table("config_visual_gem").select("logo_path").eq("id", 1).execute()
+        config = (res.data or [{}])[0]
         caminho = config.get("logo_path")
         if not caminho:
             return None
@@ -199,7 +200,7 @@ def db_enviar_logo_gem(arquivo):
             path=caminho, file=arquivo.getvalue(),
             file_options={"content-type": arquivo.type or "image/png"},
         )
-        supabase.table("config_coordenacao_gem").upsert(
+        supabase.table("config_visual_gem").upsert(
             {"id": 1, "logo_path": caminho, "updated_at": datetime.now().isoformat()},
             on_conflict="id",
         ).execute()
@@ -207,7 +208,9 @@ def db_enviar_logo_gem(arquivo):
     except Exception as e:
         detalhe = str(e)
         if "Bucket not found" in detalhe or "bucket not found" in detalhe.lower():
-            return None, "O armazenamento da logo ainda não foi criado. Execute a migration 017_logo_gem.sql no Supabase."
+            return None, "O armazenamento da logo ainda não foi criado. Execute a migration 018_logo_gem_config_independente.sql no Supabase."
+        if "config_visual_gem" in detalhe:
+            return None, "A configuração da logo ainda não foi criada. Execute a migration 018_logo_gem_config_independente.sql no Supabase."
         return None, detalhe
 
 def db_get_folgas_professoras():
