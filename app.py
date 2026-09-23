@@ -1520,22 +1520,34 @@ if eh_login_professora:
     mostrar_foto_professora(col_lateral_foto, st.session_state.nome_logado, largura=120)
     # O próprio lápis é o seletor de arquivo: clicar nele abre diretamente a
     # pasta de imagens, como em um perfil de rede social.
-    col_lateral_dir.markdown("""
+    st.sidebar.markdown("""
         <style>
-        section[data-testid="stSidebar"] .st-key-editar_foto_perfil_professora [data-testid="stFileUploaderDropzone"] {
-            min-height: 0 !important; padding: 0 !important; border: 0 !important;
-            background: transparent !important;
+        /* Há somente este seletor de arquivo no menu lateral. Ele vira um
+           botão circular sobre a foto, sem a área/legenda padrão de upload. */
+        section[data-testid="stSidebar"] [data-testid="stFileUploader"] {
+            width: 34px !important; min-width: 34px !important;
+            margin-left: -31px !important; margin-top: 78px !important;
+            position: relative !important; z-index: 5 !important;
         }
-        section[data-testid="stSidebar"] .st-key-editar_foto_perfil_professora [data-testid="stFileUploaderDropzoneInstructions"] {
+        section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
+            min-height: 34px !important; height: 34px !important; padding: 0 !important;
+            border: 0 !important; background: transparent !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"] {
             display: none !important;
         }
-        section[data-testid="stSidebar"] .st-key-editar_foto_perfil_professora button {
+        section[data-testid="stSidebar"] [data-testid="stFileUploader"] button {
             min-width: 31px !important; width: 31px !important; height: 31px !important;
             padding: 0 !important; border-radius: 50% !important; font-size: 0 !important;
-            border: 1px solid #cbd5e1 !important; background: #ffffff !important;
+            border: 2px solid #ffffff !important; background: #334155 !important;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, .35) !important;
+            color: transparent !important;
         }
-        section[data-testid="stSidebar"] .st-key-editar_foto_perfil_professora button::after {
-            content: "✏️"; font-size: 15px;
+        section[data-testid="stSidebar"] [data-testid="stFileUploader"] button * {
+            display: none !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stFileUploader"] button::after {
+            content: "✏"; font-size: 15px; color: #ffffff; line-height: 27px;
         }
         </style>
     """, unsafe_allow_html=True)
