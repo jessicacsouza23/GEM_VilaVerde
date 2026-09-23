@@ -1576,7 +1576,7 @@ if eh_login_professora:
             else:
                 st.error("Não foi possível salvar a foto: " + erro_perfil_prof)
     st.sidebar.markdown(
-        f"<h3 style='text-align:center; font-size:1.85rem; margin:1px 0 14px;'>{html.escape(str(st.session_state.nome_logado))}</h3>",
+        f"<h3 style='text-align:center; font-size:1.85rem; margin:-13px 0 14px;'>{html.escape(str(st.session_state.nome_logado))}</h3>",
         unsafe_allow_html=True,
     )
 else:
