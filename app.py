@@ -173,6 +173,43 @@ def db_get_coordenadora_gem():
     except Exception:
         return None
 
+
+def db_url_logo_gem():
+    """Logo visual compartilhada do GEM, administrada pela Secretaria."""
+    try:
+        config = db_get_coordenadora_gem() or {}
+        caminho = config.get("logo_path")
+        if not caminho:
+            return None
+        resposta = supabase.storage.from_("logo_gem").create_signed_url(caminho, 3600)
+        return resposta.get("signedURL") or resposta.get("signedUrl")
+    except Exception:
+        return None
+
+
+def db_enviar_logo_gem(arquivo):
+    if arquivo is None:
+        return None, "Selecione uma imagem primeiro."
+    extensao = os.path.splitext(arquivo.name or "")[1].lower()
+    if extensao not in {".jpg", ".jpeg", ".png", ".webp"}:
+        return None, "Envie uma imagem JPG, PNG ou WEBP."
+    try:
+        caminho = f"{uuid.uuid4().hex}_{_nome_seguro_arquivo(arquivo.name)}"
+        supabase.storage.from_("logo_gem").upload(
+            path=caminho, file=arquivo.getvalue(),
+            file_options={"content-type": arquivo.type or "image/png"},
+        )
+        supabase.table("config_coordenacao_gem").upsert(
+            {"id": 1, "logo_path": caminho, "updated_at": datetime.now().isoformat()},
+            on_conflict="id",
+        ).execute()
+        return caminho, ""
+    except Exception as e:
+        detalhe = str(e)
+        if "Bucket not found" in detalhe or "bucket not found" in detalhe.lower():
+            return None, "O armazenamento da logo ainda não foi criado. Execute a migration 017_logo_gem.sql no Supabase."
+        return None, detalhe
+
 def db_get_folgas_professoras():
     """Retorna as folgas registradas por sábado, indexadas pela data ISO."""
     try:
@@ -1582,6 +1619,52 @@ if eh_login_professora:
         f"<h3 style='text-align:center; font-size:1.85rem; margin:-13px 0 14px;'>{html.escape(str(st.session_state.nome_logado))}</h3>",
         unsafe_allow_html=True,
     )
+elif st.session_state.perfil == "Secretaria":
+    col_logo_esq, col_logo_gem, col_logo_dir = st.sidebar.columns([0.4, 3.2, 0.4])
+    logo_gem_url = db_url_logo_gem()
+    if logo_gem_url:
+        col_logo_gem.image(logo_gem_url, width=160)
+    else:
+        col_logo_gem.markdown("<div style='font-size:7rem; line-height:160px; text-align:center;'>🎼</div>", unsafe_allow_html=True)
+    st.sidebar.markdown("""
+        <style>
+        section[data-testid="stSidebar"] [data-testid="stFileUploader"] {
+            width: 28px !important; min-width: 28px !important; margin: 0 !important;
+            transform: translate(-53px, 145px) !important; position: relative !important; z-index: 5 !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
+            min-height: 28px !important; height: 28px !important; padding: 0 !important; border: 0 !important; background: transparent !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"] { display: none !important; }
+        section[data-testid="stSidebar"] [data-testid="stFileUploader"] button {
+            min-width: 26px !important; width: 26px !important; height: 26px !important; padding: 0 !important;
+            box-sizing: border-box !important; overflow: hidden !important; border-radius: 999px !important; font-size: 0 !important;
+            display: flex !important; align-items: center !important; justify-content: center !important;
+            border: 1.5px solid #ff6b6b !important; background: #ffffff !important; box-shadow: 0 1px 4px rgba(15, 23, 42, .18) !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stFileUploader"] button * { display: none !important; }
+        section[data-testid="stSidebar"] [data-testid="stFileUploader"] button::after {
+            content: "+"; display: block; font-family: Arial, sans-serif; font-size: 21px; font-weight: 400; color: #ff5a5f; line-height: 1; transform: translate(0, -1px);
+        }
+        section[data-testid="stSidebar"] [data-testid="stImage"] img { display: block !important; margin-left: auto !important; margin-right: auto !important; }
+        </style>
+    """, unsafe_allow_html=True)
+    logo_nova_gem = col_logo_dir.file_uploader(
+        "Trocar logo", type=["jpg", "jpeg", "png", "webp"],
+        key="trocar_logo_gem", label_visibility="collapsed",
+    )
+    if logo_nova_gem is not None:
+        assinatura_logo = hashlib.sha256(logo_nova_gem.getvalue()).hexdigest()
+        if st.session_state.get("ultima_logo_enviada_gem") != assinatura_logo:
+            _, erro_logo = db_enviar_logo_gem(logo_nova_gem)
+            if not erro_logo:
+                st.cache_data.clear()
+                st.session_state["ultima_logo_enviada_gem"] = assinatura_logo
+                st.toast("✅ Logo do GEM atualizada!")
+                st.rerun()
+            else:
+                st.error("Não foi possível salvar a logo: " + erro_logo)
+    st.sidebar.markdown("<h3 style='text-align:center; font-size:1.85rem; margin:-13px 0 14px;'>Coordenação</h3>", unsafe_allow_html=True)
 else:
     st.sidebar.title(f"👋 {st.session_state.nome_logado}")
 
