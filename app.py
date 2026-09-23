@@ -1516,7 +1516,7 @@ eh_login_professora = st.session_state.get("tipo_usuario") == "professora"
 if eh_login_professora:
     # Perfil da professora no menu lateral: a foto fica acima do nome para
     # identificação rápida, sem ocupar espaço do painel de trabalho.
-    col_lateral_esq, col_lateral_foto, col_lateral_dir = st.sidebar.columns([0.25, 3.2, 0.55])
+    col_lateral_esq, col_lateral_foto, col_lateral_dir = st.sidebar.columns([0.4, 3.2, 0.4])
     mostrar_foto_professora(col_lateral_foto, st.session_state.nome_logado, largura=160)
     # O próprio lápis é o seletor de arquivo: clicar nele abre diretamente a
     # pasta de imagens, como em um perfil de rede social.
@@ -1526,7 +1526,7 @@ if eh_login_professora:
            botão circular sobre a foto, sem a área/legenda padrão de upload. */
         section[data-testid="stSidebar"] [data-testid="stFileUploader"] {
             width: 28px !important; min-width: 28px !important;
-            margin: 0 !important; transform: translate(-42px, 100px) !important;
+            margin: 0 !important; transform: translate(-2px, 145px) !important;
             position: relative !important; z-index: 5 !important;
         }
         section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
@@ -1551,6 +1551,9 @@ if eh_login_professora:
         section[data-testid="stSidebar"] [data-testid="stFileUploader"] button::after {
             content: "+"; display: block; font-family: Arial, sans-serif; font-size: 21px;
             font-weight: 400; color: #ff5a5f; line-height: 1; transform: translate(0, -1px);
+        }
+        section[data-testid="stSidebar"] [data-testid="stImage"] img {
+            display: block !important; margin-left: auto !important; margin-right: auto !important;
         }
         </style>
     """, unsafe_allow_html=True)
