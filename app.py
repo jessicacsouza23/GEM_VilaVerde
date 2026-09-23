@@ -204,6 +204,27 @@ def db_enviar_logo_gem(arquivo):
             return None, "O armazenamento da logo ainda não foi criado. Execute a migration 018_logo_gem_config_independente.sql no Supabase."
         return None, detalhe
 
+
+def aplicar_logo_como_icone_da_aba(url_logo):
+    """Atualiza o favicon da aba com a logo atual, sem novo deploy."""
+    if not url_logo:
+        return
+    url_com_cache = f"{url_logo}{'&' if '?' in url_logo else '?'}gem_logo={int(time.time())}"
+    script = f"""
+    <script>
+      try {{
+        const doc = window.parent.document;
+        let icon = doc.querySelector("link[rel='icon']");
+        if (!icon) {{
+          icon = doc.createElement('link'); icon.rel = 'icon'; doc.head.appendChild(icon);
+        }}
+        icon.type = 'image/png';
+        icon.href = {json.dumps(url_com_cache)};
+      }} catch (e) {{ console.debug('Logo da aba não pôde ser atualizada.', e); }}
+    </script>
+    """
+    components.html(script, height=0, width=0)
+
 def db_get_folgas_professoras():
     """Retorna as folgas registradas por sábado, indexadas pela data ISO."""
     try:
@@ -1543,6 +1564,8 @@ calendario_db = {item.get('id'): item.get('escala', []) for item in calendario_r
 # calendario_db = db_get_calendario()
 
 # --- 5. INTERFACE E NAVEGAÇÃO ---
+logo_gem_para_aba = db_url_logo_gem()
+aplicar_logo_como_icone_da_aba(logo_gem_para_aba)
 eh_login_professora = st.session_state.get("tipo_usuario") == "professora"
 if eh_login_professora:
     # Perfil da professora no menu lateral: a foto fica acima do nome para
@@ -1617,14 +1640,14 @@ elif st.session_state.perfil == "Secretaria":
     col_logo_esq, col_logo_gem, col_logo_dir = st.sidebar.columns([0.4, 3.2, 0.4])
     logo_gem_url = db_url_logo_gem()
     if logo_gem_url:
-        col_logo_gem.image(logo_gem_url, width=160)
+        col_logo_gem.image(logo_gem_url, width=200)
     else:
         col_logo_gem.markdown("<div style='font-size:7rem; line-height:160px; text-align:center;'>🎼</div>", unsafe_allow_html=True)
     st.sidebar.markdown("""
         <style>
         section[data-testid="stSidebar"] [data-testid="stFileUploader"] {
             width: 28px !important; min-width: 28px !important; margin: 0 !important;
-            transform: translate(-53px, 145px) !important; position: relative !important; z-index: 5 !important;
+            transform: translate(-80px, 38px) !important; position: relative !important; z-index: 5 !important;
         }
         section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
             min-height: 28px !important; height: 28px !important; padding: 0 !important; border: 0 !important; background: transparent !important;
