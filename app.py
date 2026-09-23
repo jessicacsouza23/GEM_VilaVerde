@@ -1538,8 +1538,10 @@ if eh_login_professora:
         }
         section[data-testid="stSidebar"] [data-testid="stFileUploader"] button {
             min-width: 31px !important; width: 31px !important; height: 31px !important;
-            padding: 0 !important; border-radius: 50% !important; font-size: 0 !important;
-            border: 2px solid #ffffff !important; background: #334155 !important;
+            padding: 0 !important; box-sizing: border-box !important; overflow: hidden !important;
+            border-radius: 999px !important; font-size: 0 !important;
+            display: flex !important; align-items: center !important; justify-content: center !important;
+            border: 2px solid #ffffff !important; background: #475569 !important;
             box-shadow: 0 1px 4px rgba(15, 23, 42, .35) !important;
             color: transparent !important;
         }
@@ -1547,7 +1549,8 @@ if eh_login_professora:
             display: none !important;
         }
         section[data-testid="stSidebar"] [data-testid="stFileUploader"] button::after {
-            content: "✏"; font-size: 15px; color: #ffffff; line-height: 27px;
+            content: "✎"; display: block; font-family: Arial, sans-serif; font-size: 20px;
+            font-weight: 700; color: #ffffff; line-height: 1; transform: translate(0, -1px);
         }
         </style>
     """, unsafe_allow_html=True)
