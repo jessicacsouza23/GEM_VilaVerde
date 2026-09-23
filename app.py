@@ -175,14 +175,11 @@ def db_get_coordenadora_gem():
 
 
 def db_url_logo_gem():
-    """Logo visual compartilhada do GEM, administrada pela Secretaria."""
+    """Logo visual única do GEM, administrada pelo login da Secretaria."""
     try:
-        res = supabase.table("config_visual_gem").select("logo_path").eq("id", 1).execute()
-        config = (res.data or [{}])[0]
-        caminho = config.get("logo_path")
-        if not caminho:
-            return None
-        resposta = supabase.storage.from_("logo_gem").create_signed_url(caminho, 3600)
+        # Há uma única logo para o GEM; não precisamos de tabela nem de uma
+        # coordenadora para descobrir onde ela está salva.
+        resposta = supabase.storage.from_("logo_gem").create_signed_url("logo_atual", 3600)
         return resposta.get("signedURL") or resposta.get("signedUrl")
     except Exception:
         return None
@@ -195,22 +192,16 @@ def db_enviar_logo_gem(arquivo):
     if extensao not in {".jpg", ".jpeg", ".png", ".webp"}:
         return None, "Envie uma imagem JPG, PNG ou WEBP."
     try:
-        caminho = f"{uuid.uuid4().hex}_{_nome_seguro_arquivo(arquivo.name)}"
+        caminho = "logo_atual"
         supabase.storage.from_("logo_gem").upload(
             path=caminho, file=arquivo.getvalue(),
-            file_options={"content-type": arquivo.type or "image/png"},
+            file_options={"content-type": arquivo.type or "image/png", "upsert": "true"},
         )
-        supabase.table("config_visual_gem").upsert(
-            {"id": 1, "logo_path": caminho, "updated_at": datetime.now().isoformat()},
-            on_conflict="id",
-        ).execute()
         return caminho, ""
     except Exception as e:
         detalhe = str(e)
         if "Bucket not found" in detalhe or "bucket not found" in detalhe.lower():
             return None, "O armazenamento da logo ainda não foi criado. Execute a migration 018_logo_gem_config_independente.sql no Supabase."
-        if "config_visual_gem" in detalhe:
-            return None, "A configuração da logo ainda não foi criada. Execute a migration 018_logo_gem_config_independente.sql no Supabase."
         return None, detalhe
 
 def db_get_folgas_professoras():
