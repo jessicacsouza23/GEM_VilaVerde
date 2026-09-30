@@ -440,8 +440,8 @@ def _configurar_modelo_para_geracao(modelo):
     return config, blocos, individuais, coletivas, individuais_atividades, turmas
 
 
-def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, professoras_saida, mapa_fixas,
-                                      professoras_coletivas=None):
+def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, saidas_antecipadas, mapa_fixas,
+                                      professoras_coletivas=None, turma_inicio_teoria=None):
     """Gera uma escala nova sem alterar o formato ou a memória das escalas antigas.
 
     Turmas percorrem as atividades coletivas e o atendimento individual. Cada
@@ -463,6 +463,7 @@ def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, pr
 
     habilitadas = config.get("professoras_habilitadas") or {}
     professoras_coletivas = professoras_coletivas or {}
+    saidas_antecipadas = saidas_antecipadas or {}
     professoras_disponiveis = [p for p in PROFESSORAS_LISTA if p not in professoras_folga]
     todas_alunas = [a for turma in turmas for a in TURMAS.get(turma, [])]
     memoria = {a: {"professoras": [], "salas": [], "ultima": None} for a in todas_alunas}
@@ -498,13 +499,28 @@ def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, pr
     erros = []
     usar_fixas = bool(config.get("usar_professoras_fixas"))
     mesma_prof = bool(config.get("mesma_professora_nos_componentes", True))
+    posicoes = atividades_coletivas + ["__individual__"]
+    indice_teoria = next((i for i, atividade in enumerate(posicoes) if limpar_texto(atividade) == "TEORIA"), None)
+    deslocamento_inicial = 0
+    if turma_inicio_teoria in turmas and indice_teoria is not None:
+        deslocamento_inicial = (indice_teoria - turmas.index(turma_inicio_teoria)) % len(posicoes)
     for indice, bloco in enumerate(blocos):
         horario = _horario_modelo(bloco, indice)
         # Cada turma ocupa uma posição diferente e, depois, gira uma casa.
-        posicoes = atividades_coletivas + ["__individual__"]
-        for indice_turma, turma in enumerate(turmas):
-            posicao = posicoes[(indice_turma + indice) % len(posicoes)]
+        # As coletivas são sempre posicionadas primeiro. Assim, a professora
+        # escolhida para Canto/Teoria não é tomada indevidamente pelo rodízio
+        # individual do mesmo bloco.
+        alocacoes_bloco = [
+            (turma, posicoes[(indice_turma + deslocamento_inicial + indice) % len(posicoes)])
+            for indice_turma, turma in enumerate(turmas)
+        ]
+        alocacoes_bloco.sort(key=lambda item: item[1] == "__individual__")
+        for turma, posicao in alocacoes_bloco:
             alunas = TURMAS.get(turma, [])
+            indisponiveis_neste_bloco = {
+                professora for professora, ultimo_horario in saidas_antecipadas.items()
+                if ultimo_horario and [ _horario_modelo(b, i) for i, b in enumerate(blocos) ].index(ultimo_horario) < indice
+            }
             if posicao != "__individual__":
                 ocupadas = {
                     str(valor).split("|", 1)[1].strip()
@@ -512,7 +528,7 @@ def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, pr
                     if "|" in str(valor)
                 }
                 candidatas = [p for p in habilitadas.get(posicao, professoras_disponiveis)
-                              if p in professoras_disponiveis and p not in professoras_saida and p not in ocupadas]
+                              if p in professoras_disponiveis and p not in indisponiveis_neste_bloco and p not in ocupadas]
                 professora_escolhida = (professoras_coletivas.get(posicao) or {}).get(turma)
                 if professora_escolhida:
                     if professora_escolhida not in candidatas:
@@ -542,7 +558,7 @@ def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, pr
                 if mesma_prof:
                     for componente in componentes_individuais:
                         habilitadas_individuais &= set(habilitadas.get(componente, PROFESSORAS_LISTA))
-                livres = [p for p in professoras_disponiveis if p in habilitadas_individuais and p not in ocupadas and p not in professoras_saida]
+                livres = [p for p in professoras_disponiveis if p in habilitadas_individuais and p not in ocupadas and p not in indisponiveis_neste_bloco]
                 if len(livres) < len(alunas):
                     erros.append(f"Faltam professoras livres para o atendimento individual de {turma} no {horario}.")
                     continue
@@ -2694,6 +2710,20 @@ if menu == "🏠 Secretaria":
                                 )
                     st.caption("A professora acompanha essa turma quando ela chegar à atividade, mesmo que o bloco de horário mude.")
 
+                turma_inicio_teoria = None
+                tem_teoria_modelo = any(limpar_texto(atividade) == "TEORIA" for atividade in coletivas_modelo)
+                if tem_teoria_modelo and turmas_modelo:
+                    escolher_inicio_teoria = st.checkbox(
+                        "Escolher qual turma começa em Teoria?", value=False,
+                        key=f"escolher_inicio_teoria_{data_sel_str}",
+                        help="Desmarcado: o sistema define a rotação inicial. Marcado: você escolhe a turma que estará em Teoria no primeiro bloco.",
+                    )
+                    if escolher_inicio_teoria:
+                        turma_inicio_teoria = st.selectbox(
+                            "Turma que começa em Teoria no primeiro bloco:", turmas_modelo,
+                            key=f"turma_inicio_teoria_{data_sel_str}",
+                        )
+
                 try:
                     folga_data_iso = data_modelo_sel.isoformat()
                 except Exception:
@@ -2702,12 +2732,22 @@ if menu == "🏠 Secretaria":
                 folgas_modelo = [p for p in (folga_modelo.get("professoras") or []) if p in PROFESSORAS_LISTA]
                 if folgas_modelo:
                     st.warning("👑 Folgas informadas: " + ", ".join(folgas_modelo))
-                saida_modelo = st.multiselect(
-                    "Professoras indisponíveis neste sábado:",
+                professoras_saida_modelo = st.multiselect(
+                    "Professoras com saída antecipada:",
                     [p for p in PROFESSORAS_LISTA if p not in folgas_modelo],
-                    key=f"indisponiveis_modelo_{data_sel_str}",
-                    help="Use para ausências pontuais. As folgas da coordenadora já aparecem automaticamente.",
+                    key=f"saidas_modelo_{data_sel_str}",
+                    help="A professora continua disponível até o bloco informado abaixo. Folgas da coordenadora já são consideradas para o sábado inteiro.",
                 )
+                horarios_modelo = [_horario_modelo(bloco, indice) for indice, bloco in enumerate(blocos_modelo)]
+                saidas_antecipadas_modelo = {}
+                for professora_saida in professoras_saida_modelo:
+                    opcoes_ultimo_bloco = horarios_modelo[:-1]
+                    if opcoes_ultimo_bloco:
+                        saidas_antecipadas_modelo[professora_saida] = st.selectbox(
+                            f"Último bloco disponível — {professora_saida}:", opcoes_ultimo_bloco,
+                            index=len(opcoes_ultimo_bloco) - 1,
+                            key=f"ultimo_bloco_modelo_{data_sel_str}_{professora_saida}",
+                        )
                 usar_fixas_modelo = False
                 if configuracao_modelo.get("usar_professoras_fixas"):
                     usar_fixas_modelo = st.checkbox(
@@ -2725,8 +2765,8 @@ if menu == "🏠 Secretaria":
                     configuracao_modelo["usar_professoras_fixas"] = usar_fixas_modelo
                     modelo_geracao = dict(modelo_da_data, configuracao=configuracao_modelo)
                     lista_modelo, erros_modelo = gerar_escala_modelo_configuravel(
-                        modelo_geracao, data_sel_str, folgas_modelo, saida_modelo, fixas_modelo,
-                        professoras_coletivas_modelo,
+                        modelo_geracao, data_sel_str, folgas_modelo, saidas_antecipadas_modelo, fixas_modelo,
+                        professoras_coletivas_modelo, turma_inicio_teoria,
                     )
                     if erros_modelo:
                         st.error("⚠️ O rodízio não foi salvo. Ajuste o modelo ou as disponibilidades:")
