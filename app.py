@@ -419,7 +419,10 @@ def _horario_modelo(bloco, indice):
 
 def nome_area_exibicao(nome):
     """Nome pedagógico usado na interface; preserva dados antigos de Canto."""
-    return "Solfejo Melódico" if limpar_texto(nome) == "CANTO" else str(nome or "").strip()
+    nome_normalizado = limpar_texto(nome)
+    if nome_normalizado in ("CANTO", "SOLFEJO MELODICO"):
+        return "Solfejo Melódico"
+    return str(nome or "").strip()
 
 
 def horarios_da_escala(escala):
