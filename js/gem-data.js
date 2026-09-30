@@ -194,11 +194,13 @@
   async function dadosRodizio(dataIso) {
     const banco = await obterCliente();
     const data = dataBr(dataIso);
-    const [modelos, alunas, professoras, calendario, folgas] = await Promise.all([
+    const [modelos, alunas, professoras, calendario, historicoEscalas, fixas, folgas] = await Promise.all([
       banco.from("modelos_logistica").select("*").order("vigencia_inicio", { ascending: false }),
       banco.from("alunas").select("nome,turma,ativo").order("nome"),
       banco.from("professoras").select("nome,ativo").order("nome"),
       banco.from("calendario").select("id,escala,modelo_logistica_id").eq("id", data).maybeSingle(),
+      banco.from("calendario").select("id,escala").order("id", { ascending: true }),
+      banco.from("professoras_fixas").select("aluna,professora"),
       banco.from("folgas_professoras").select("*").eq("data", dataIso).maybeSingle()
     ]);
     const falha = [modelos, alunas, professoras, calendario].find((resultado) => resultado.error)?.error;
@@ -209,7 +211,8 @@
       (turmas[turma] ||= []).push(aluna.nome);
     });
     Object.values(turmas).forEach((lista) => lista.sort());
-    return { data, modelos: modelos.data || [], turmas, professoras: (professoras.data || []).filter((professora) => professora.ativo !== false).map((professora) => professora.nome), escala: calendario.data?.escala || [], modeloEscala: calendario.data?.modelo_logistica_id || null, folga: folgas.data || null };
+    const mapaFixas = Object.fromEntries((fixas.data || []).map((item) => [normalizar(item.aluna), item.professora]));
+    return { data, modelos: modelos.data || [], turmas, professoras: (professoras.data || []).filter((professora) => professora.ativo !== false).map((professora) => professora.nome), escala: calendario.data?.escala || [], escalasAnteriores: historicoEscalas.data || [], modeloEscala: calendario.data?.modelo_logistica_id || null, fixas: mapaFixas, folga: folgas.data || null };
   }
 
   function modeloParaData(modelos, dataIso) {
@@ -219,5 +222,15 @@
     }).sort((a, b) => String(b.vigencia_inicio).localeCompare(String(a.vigencia_inicio)))[0] || null;
   }
 
-  window.GemData = { carregarIdentidade, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dataBr };
+  async function salvarRodizio(dataIso, modeloId, escala) {
+    const banco = await obterCliente();
+    const data = dataBr(dataIso);
+    const { data: existente, error: consultaErro } = await banco.from("calendario").select("id").eq("id", data).maybeSingle();
+    if (consultaErro) throw new Error("Não foi possível conferir a escala existente.");
+    if (existente) throw new Error("Já existe um rodízio salvo nesta data. Ele não foi substituído.");
+    const { error } = await banco.from("calendario").insert({ id: data, escala, modelo_logistica_id: modeloId });
+    if (error) throw new Error(`Não foi possível salvar o rodízio: ${error.message}`);
+  }
+
+  window.GemData = { carregarIdentidade, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, salvarRodizio, dataBr, normalizar };
 })();
