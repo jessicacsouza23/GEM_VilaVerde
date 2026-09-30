@@ -501,19 +501,29 @@ def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, sa
     mesma_prof = bool(config.get("mesma_professora_nos_componentes", True))
     posicoes = atividades_coletivas + ["__individual__"]
     indice_teoria = next((i for i, atividade in enumerate(posicoes) if limpar_texto(atividade) == "TEORIA"), None)
-    deslocamento_inicial = 0
+    inicio_manual = {}
     if turma_inicio_teoria in turmas and indice_teoria is not None:
-        deslocamento_inicial = (indice_teoria - turmas.index(turma_inicio_teoria)) % len(posicoes)
+        # Ex.: escolhendo Turma 3 em Teoria, a sequência inicial fica
+        # T1=Canto, T2=Individual, T3=Teoria. Depois cada uma avança na
+        # roda normal Canto → Teoria → Individual.
+        ordem_a_partir_da_teoria = [posicoes[indice_teoria]] + [p for p in posicoes if p not in (posicoes[indice_teoria], "__individual__")] + ["__individual__"]
+        indice_turma_teoria = turmas.index(turma_inicio_teoria)
+        for indice_turma, turma in enumerate(turmas):
+            inicio_manual[turma] = ordem_a_partir_da_teoria[(indice_turma - indice_turma_teoria) % len(posicoes)]
     for indice, bloco in enumerate(blocos):
         horario = _horario_modelo(bloco, indice)
         # Cada turma ocupa uma posição diferente e, depois, gira uma casa.
         # As coletivas são sempre posicionadas primeiro. Assim, a professora
         # escolhida para Canto/Teoria não é tomada indevidamente pelo rodízio
         # individual do mesmo bloco.
-        alocacoes_bloco = [
-            (turma, posicoes[(indice_turma + deslocamento_inicial + indice) % len(posicoes)])
-            for indice_turma, turma in enumerate(turmas)
-        ]
+        alocacoes_bloco = []
+        for indice_turma, turma in enumerate(turmas):
+            if inicio_manual:
+                posicao_inicial = inicio_manual[turma]
+                posicao = posicoes[(posicoes.index(posicao_inicial) + indice) % len(posicoes)]
+            else:
+                posicao = posicoes[(indice_turma + indice) % len(posicoes)]
+            alocacoes_bloco.append((turma, posicao))
         alocacoes_bloco.sort(key=lambda item: item[1] == "__individual__")
         for turma, posicao in alocacoes_bloco:
             alunas = TURMAS.get(turma, [])
@@ -570,7 +580,10 @@ def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, sa
                     candidatas = [fixa] if fixa else list(profs_livres)
                     candidatas = [p for p in candidatas if p in profs_livres]
                     if not candidatas or not salas_livres:
-                        erros.append(f"Não foi possível alocar {aluna} em {horario}; verifique fixas, folgas e salas.")
+                        if fixa:
+                            erros.append(f"Não foi possível alocar {aluna} — {turma} em {horario}: a professora fixa {fixa} já está ocupada, de folga ou saiu mais cedo.")
+                        else:
+                            erros.append(f"Não foi possível alocar {aluna} — {turma} em {horario}; verifique professoras, folgas e salas.")
                         continue
                     mem = memoria[aluna]
                     def pontuar(par):
@@ -2713,16 +2726,54 @@ if menu == "🏠 Secretaria":
                 turma_inicio_teoria = None
                 tem_teoria_modelo = any(limpar_texto(atividade) == "TEORIA" for atividade in coletivas_modelo)
                 if tem_teoria_modelo and turmas_modelo:
-                    escolher_inicio_teoria = st.checkbox(
-                        "Escolher qual turma começa em Teoria?", value=False,
-                        key=f"escolher_inicio_teoria_{data_sel_str}",
-                        help="Desmarcado: o sistema define a rotação inicial. Marcado: você escolhe a turma que estará em Teoria no primeiro bloco.",
+                    escolher_rotacao = st.checkbox(
+                        "Definir manualmente a rotação das turmas?", value=False,
+                        key=f"escolher_rotacao_{data_sel_str}",
+                        help="Desmarcado: o sistema decide a rotação inicial. Marcado: você escolhe um ponto de partida.",
                     )
-                    if escolher_inicio_teoria:
-                        turma_inicio_teoria = st.selectbox(
-                            "Turma que começa em Teoria no primeiro bloco:", turmas_modelo,
-                            key=f"turma_inicio_teoria_{data_sel_str}",
+                    if escolher_rotacao:
+                        criterio_rotacao = st.radio(
+                            "O que deseja definir?",
+                            ["Turma que começa em Teoria", "Turma que fica no último bloco de Prática + Solfejo"],
+                            horizontal=True, key=f"criterio_rotacao_{data_sel_str}",
                         )
+                        if criterio_rotacao == "Turma que começa em Teoria":
+                            turma_inicio_teoria = st.selectbox(
+                                "Turma que começa em Teoria no primeiro bloco:", turmas_modelo,
+                                key=f"turma_inicio_teoria_{data_sel_str}",
+                            )
+                        else:
+                            turma_ultimo_individual = st.selectbox(
+                                "Turma no último bloco de Prática + Solfejo:", turmas_modelo,
+                                key=f"turma_ultimo_individual_{data_sel_str}",
+                            )
+                            # No ciclo de três atividades, a turma anterior à
+                            # escolhida começa em Teoria. Ex.: T1 no individual
+                            # final ⇒ T3 começa em Teoria.
+                            turma_inicio_teoria = turmas_modelo[(turmas_modelo.index(turma_ultimo_individual) - 1) % len(turmas_modelo)]
+                            st.caption(f"Para isso acontecer, **{turma_inicio_teoria}** começará em Teoria no primeiro bloco.")
+                    # A prévia usa a mesma rotação aplicada ao gerar. Assim a
+                    # Secretaria confere onde cada turma cairá antes de salvar.
+                    posicoes_previa = list(coletivas_modelo) + ["Prática + Solfejo"]
+                    indice_teoria_previa = next((i for i, atividade in enumerate(posicoes_previa) if limpar_texto(atividade) == "TEORIA"), 0)
+                    inicio_manual_previa = {}
+                    if turma_inicio_teoria in turmas_modelo:
+                        ordem_a_partir_da_teoria = [posicoes_previa[indice_teoria_previa]] + [p for p in posicoes_previa if p not in (posicoes_previa[indice_teoria_previa], "Prática + Solfejo")] + ["Prática + Solfejo"]
+                        indice_turma_teoria = turmas_modelo.index(turma_inicio_teoria)
+                        for indice_turma, turma_previa in enumerate(turmas_modelo):
+                            inicio_manual_previa[turma_previa] = ordem_a_partir_da_teoria[(indice_turma - indice_turma_teoria) % len(posicoes_previa)]
+                    linhas_previa = []
+                    for indice_bloco, bloco_previa in enumerate(blocos_modelo):
+                        linha_previa = {"Bloco": _horario_modelo(bloco_previa, indice_bloco)}
+                        for indice_turma, turma_previa in enumerate(turmas_modelo):
+                            if inicio_manual_previa:
+                                atividade_inicial = inicio_manual_previa[turma_previa]
+                                linha_previa[turma_previa] = posicoes_previa[(posicoes_previa.index(atividade_inicial) + indice_bloco) % len(posicoes_previa)]
+                            else:
+                                linha_previa[turma_previa] = posicoes_previa[(indice_turma + indice_bloco) % len(posicoes_previa)]
+                        linhas_previa.append(linha_previa)
+                    with st.expander("👀 Ver prévia da rotação das turmas", expanded=True):
+                        st.dataframe(pd.DataFrame(linhas_previa), use_container_width=True, hide_index=True)
 
                 try:
                     folga_data_iso = data_modelo_sel.isoformat()
