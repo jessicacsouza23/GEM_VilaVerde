@@ -3926,8 +3926,9 @@ if menu == "🏠 Secretaria":
                         if ok_modelo:
                             st.success("✅ Modelo salvo como rascunho. Nenhuma escala existente foi modificada.")
                         else:
-                            st.error("Não foi possível salvar o modelo. Execute a migration 019_modelos_logistica.sql no Supabase.")
-                            st.caption(retorno_modelo)
+                            st.error("Não foi possível salvar o modelo no Supabase.")
+                            st.info("Execute as migrations 019 e 020, nessa ordem. Se já executou, abra o detalhe abaixo: ele informa exatamente se é tabela ausente, coluna ausente ou permissão.")
+                            st.code(str(retorno_modelo), language="text")
 
                 modelos_existentes = db_get_modelos_logistica()
                 if modelos_existentes:
