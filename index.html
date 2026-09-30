@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#e94b6a">
+  <meta name="description" content="GEM Vila Verde — gestão musical.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+  <title>GEM Vila Verde</title>
+</head>
+<body>
+  <main id="login-screen" class="login-screen">
+    <section class="login-card" aria-labelledby="titulo-login">
+      <div class="brand-mark" aria-hidden="true">𝄞</div>
+      <p class="eyebrow">GEM MUSICAL</p>
+      <h1 id="titulo-login">Vila Verde</h1>
+      <p class="login-copy">Entre com os dados da sua conta. O sistema identifica seu GEM e suas permissões automaticamente.</p>
+      <label for="nome">Usuário ou e-mail</label>
+      <input id="nome" autocomplete="username" placeholder="Digite seu usuário ou e-mail">
+      <label for="senha">Senha</label>
+      <input id="senha" type="password" autocomplete="current-password" placeholder="Sua senha">
+      <button id="entrar" type="button">Entrar</button>
+      <p id="login-error" class="login-error hidden" role="alert"></p>
+      <p class="small-note">Professoras, alunas e Secretarias entram por aqui. O acesso mestre usa os mesmos campos e é reconhecido automaticamente.</p>
+    </section>
+  </main>
+
+  <div id="app-screen" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><span>𝄞</span><strong>GEM<br>Vila Verde</strong></div>
+      <div class="profile"><div class="avatar" id="avatar">G</div><strong id="profile-name">Coordenação</strong><span id="profile-role">Secretaria</span></div>
+      <nav id="navigation" aria-label="Navegação principal"></nav>
+      <button class="logout" id="sair" type="button">Sair</button>
+    </aside>
+    <section class="main-content">
+      <header class="topbar"><button class="menu-button" id="menu-button" aria-label="Abrir menu">☰</button><div><p class="eyebrow">GEM VILA VERDE</p><h1 id="page-title">Visão geral</h1></div><div class="topbar-actions"><button class="install-app hidden" id="install-app" type="button">Instalar aplicativo</button><div class="status"><span></span> Nova interface paralela</div></div></header>
+      <div id="page-content"></div>
+    </section>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/gem-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

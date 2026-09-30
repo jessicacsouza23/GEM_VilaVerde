@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="116" fill="#e94b6a"/>
+  <path fill="#fff" d="M345 97v232.7c-13.2-9.8-31-15.7-50.7-15.7-42.5 0-76.3 27.1-76.3 60.6 0 33.4 33.8 60.4 76.3 60.4s76.4-27 76.4-60.4V199.1l83-20.7V286c-13.3-9.9-31-15.8-50.8-15.8-42.5 0-76.3 27-76.3 60.5s33.8 60.5 76.3 60.5 76.4-27 76.4-60.5V119.3L345 97z"/>
+  <text x="256" y="478" text-anchor="middle" font-family="Arial, sans-serif" font-size="44" font-weight="700" fill="#fff">GEM</text>
+</svg>

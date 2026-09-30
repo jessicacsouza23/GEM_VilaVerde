@@ -1,0 +1,12 @@
+{
+  "name": "GEM Vila Verde",
+  "short_name": "GEM Vila Verde",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f7f8fc",
+  "theme_color": "#e94b6a",
+  "description": "Gestão do GEM Vila Verde.",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
