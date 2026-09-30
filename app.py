@@ -400,6 +400,15 @@ def db_modelo_logistica_para_data(data_obj):
     return max(candidatos, key=lambda item: item[0])[1] if candidatos else modelo_legado()
 
 
+def db_modelo_logistica_tem_escalas(modelo_id):
+    """Indica se a versão já foi usada por alguma escala salva."""
+    try:
+        resposta = supabase.table("calendario").select("id").eq("modelo_logistica_id", modelo_id).limit(1).execute()
+        return bool(resposta.data)
+    except Exception:
+        return False
+
+
 def _horario_modelo(bloco, indice):
     """Nome estável de coluna para uma escala criada por um modelo novo."""
     inicio = str(bloco.get("Início") or bloco.get("inicio") or "").strip()
@@ -3863,7 +3872,19 @@ if menu == "🏠 Secretaria":
 
                 modelo_vigente_hoje = db_modelo_logistica_para_data(datetime.now().date())
                 st.info(f"Modelo vigente hoje: **{modelo_vigente_hoje.get('nome')}**")
-                st.markdown("#### Montar um novo modelo")
+                modelos_para_edicao = db_get_modelos_logistica()
+                opcoes_modelo_edicao = {"➕ Criar um novo modelo": None}
+                for item_modelo in modelos_para_edicao:
+                    opcoes_modelo_edicao[f"✏️ {item_modelo.get('nome')} — {status_exibicao_modelo(item_modelo).title()}"] = item_modelo
+                escolha_modelo = st.selectbox("O que deseja fazer?", list(opcoes_modelo_edicao.keys()), key="escolha_modelo_logistica")
+                modelo_em_edicao = opcoes_modelo_edicao[escolha_modelo]
+                config_edicao = (modelo_em_edicao or {}).get("configuracao") or {}
+                modelo_ja_usado = bool(modelo_em_edicao and db_modelo_logistica_tem_escalas(modelo_em_edicao.get("id")))
+                if modelo_em_edicao and modelo_ja_usado:
+                    st.warning("Este modelo já possui escalas salvas. Ao salvar, será criada uma nova revisão para as datas futuras; nada anterior será modificado.")
+                elif modelo_em_edicao:
+                    st.info("Este modelo ainda não gerou escalas. Ao salvar, suas configurações serão atualizadas diretamente.")
+                st.markdown("#### " + ("Editar modelo" if modelo_em_edicao else "Montar um novo modelo"))
                 st.caption("Os valores abaixo são apenas um ponto de partida. Todos podem ser alterados pela Secretaria antes de salvar.")
                 salas_padrao = ([{"Sala": f"SALA {n}", "Uso": "Individual", "Área": "Prática + Solfejo", "Ativa": True} for n in range(1, 8)] +
                                 [{"Sala": "SALA 8", "Uso": "Turma", "Área": "Teoria", "Ativa": True},
@@ -3881,54 +3902,74 @@ if menu == "🏠 Secretaria":
                 ]
                 turmas_modelo = [{"Turma": turma, "Alunas cadastradas": len(alunas), "Capacidade planejada": len(alunas), "Ativa no modelo": True}
                                   for turma, alunas in TURMAS.items()]
+                # Ao editar, os próprios dados já cadastrados substituem os
+                # exemplos iniciais. Cada modelo recebe chaves próprias para
+                # o Streamlit não reaproveitar campos de outro modelo.
+                if config_edicao:
+                    blocos_padrao = config_edicao.get("blocos") or blocos_padrao
+                    salas_padrao = config_edicao.get("salas") or salas_padrao
+                    atividades_padrao = config_edicao.get("atividades") or atividades_padrao
+                    turmas_modelo = config_edicao.get("turmas") or turmas_modelo
+                chave_edicao = (modelo_em_edicao or {}).get("id") or "novo"
+                nome_inicial = (modelo_em_edicao or {}).get("nome") or "Próximo bimestre — Solfejo individual"
+                if modelo_ja_usado:
+                    nome_inicial += " — revisão"
+                try:
+                    data_inicial = datetime.fromisoformat(str((modelo_em_edicao or {}).get("vigencia_inicio"))[:10]).date()
+                except ValueError:
+                    data_inicial = datetime.now().date() + timedelta(days=7)
+                if modelo_ja_usado:
+                    data_inicial = max(data_inicial, datetime.now().date() + timedelta(days=7))
 
-                with st.form("form_modelo_logistica_completo"):
-                    nome_modelo = st.text_input("Nome do modelo:", value="Próximo bimestre — Solfejo individual")
-                    vigencia_modelo = st.date_input("Começa a valer em:", value=datetime.now().date() + timedelta(days=7))
+                with st.form(f"form_modelo_logistica_completo_{chave_edicao}"):
+                    nome_modelo = st.text_input("Nome do modelo:", value=nome_inicial)
+                    vigencia_modelo = st.date_input("Começa a valer em:", value=data_inicial)
 
                     st.markdown("**1. Blocos de horário**")
                     blocos_editados = st.data_editor(pd.DataFrame(blocos_padrao), num_rows="dynamic", use_container_width=True,
                         column_config={"Bloco": st.column_config.TextColumn(required=True), "Início": st.column_config.TextColumn(required=True), "Fim": st.column_config.TextColumn(required=True)},
-                        key="modelo_blocos_editados")
+                        key=f"modelo_blocos_editados_{chave_edicao}")
                     st.caption("Use o formato 08:50. Você pode incluir ou remover blocos.")
 
                     st.markdown("**2. Turmas que participam deste modelo**")
                     turmas_editadas = st.data_editor(pd.DataFrame(turmas_modelo), num_rows="dynamic", use_container_width=True, hide_index=True,
                         disabled=["Alunas cadastradas"],
                         column_config={"Turma": st.column_config.TextColumn(required=True), "Alunas cadastradas": st.column_config.NumberColumn(), "Capacidade planejada": st.column_config.NumberColumn(min_value=1), "Ativa no modelo": st.column_config.CheckboxColumn()},
-                        key="modelo_turmas_editadas")
+                        key=f"modelo_turmas_editadas_{chave_edicao}")
                     st.caption("Você pode adicionar turmas planejadas aqui. Depois, vincule as alunas reais em “Turmas e Pessoas”.")
 
                     st.markdown("**3. Salas e capacidade**")
                     salas_editadas = st.data_editor(pd.DataFrame(salas_padrao), num_rows="dynamic", use_container_width=True,
                         column_config={"Sala": st.column_config.TextColumn(required=True), "Uso": st.column_config.SelectboxColumn(options=["Individual", "Turma"], required=True), "Área": st.column_config.TextColumn(), "Ativa": st.column_config.CheckboxColumn()},
-                        key="modelo_salas_editadas")
+                        key=f"modelo_salas_editadas_{chave_edicao}")
 
                     st.markdown("**4. Atividades e duração**")
                     atividades_editadas = st.data_editor(pd.DataFrame(atividades_padrao), num_rows="dynamic", use_container_width=True,
                         column_config={"Atividade": st.column_config.TextColumn(required=True), "Formato": st.column_config.SelectboxColumn(options=["Turma", "Individual"], required=True), "Duração (min)": st.column_config.NumberColumn(min_value=1, max_value=180, required=True), "Sala sugerida": st.column_config.TextColumn()},
-                        key="modelo_atividades_editadas")
+                        key=f"modelo_atividades_editadas_{chave_edicao}")
 
                     st.markdown("**5. Professoras habilitadas por área**")
                     habilitadas = {}
                     for area_habilitada in ["Canto", "Teoria", "Solfejo", "Prática"]:
                         habilitadas[area_habilitada] = st.multiselect(
-                            area_habilitada, PROFESSORAS_LISTA, default=PROFESSORAS_LISTA,
-                            key=f"modelo_habilitadas_{area_habilitada}",
+                            area_habilitada, PROFESSORAS_LISTA,
+                            default=(config_edicao.get("professoras_habilitadas") or {}).get(area_habilitada, PROFESSORAS_LISTA),
+                            key=f"modelo_habilitadas_{area_habilitada}_{chave_edicao}",
                         )
 
                     st.markdown("**6. Professoras fixas**")
                     usar_professoras_fixas = st.checkbox(
-                        "Este modelo usa professoras fixas?", value=False,
+                        "Este modelo usa professoras fixas?", value=bool(config_edicao.get("usar_professoras_fixas", False)),
                         help="As alunas e professoras fixas serão escolhidas somente na geração do rodízio.",
                     )
 
                     st.markdown("**7. Regras do rodízio individual**")
-                    regra_nao_repetir_aluna = st.checkbox("Não repetir professora para a mesma aluna antes de completar a roda", value=True)
-                    regra_nao_repetir_sala = st.checkbox("Não repetir sala para a aluna antes de completar a roda", value=True)
-                    regra_nao_repetir_imediata = st.checkbox("Evitar a mesma professora da semana anterior", value=True)
-                    mesma_professora_componentes = st.checkbox("A mesma professora atende Solfejo e Prática no bloco", value=True)
-                    salvar_modelo = st.form_submit_button("💾 Salvar modelo como rascunho", use_container_width=True)
+                    regras_edicao = config_edicao.get("regras_rodizio") or {}
+                    regra_nao_repetir_aluna = st.checkbox("Não repetir professora para a mesma aluna antes de completar a roda", value=regras_edicao.get("nao_repetir_aluna", True))
+                    regra_nao_repetir_sala = st.checkbox("Não repetir sala para a aluna antes de completar a roda", value=regras_edicao.get("nao_repetir_sala", True))
+                    regra_nao_repetir_imediata = st.checkbox("Evitar a mesma professora da semana anterior", value=regras_edicao.get("nao_repetir_imediata", True))
+                    mesma_professora_componentes = st.checkbox("A mesma professora atende Solfejo e Prática no bloco", value=config_edicao.get("mesma_professora_nos_componentes", True))
+                    salvar_modelo = st.form_submit_button("💾 Salvar revisão" if modelo_ja_usado else "💾 Salvar modelo", use_container_width=True)
 
                 if salvar_modelo:
                     salas_ativas = salas_editadas[salas_editadas["Ativa"] == True].to_dict("records")
@@ -3952,11 +3993,17 @@ if menu == "🏠 Secretaria":
                             "regras_rodizio": {"nao_repetir_aluna": regra_nao_repetir_aluna, "nao_repetir_sala": regra_nao_repetir_sala, "nao_repetir_imediata": regra_nao_repetir_imediata},
                             "mesma_professora_nos_componentes": mesma_professora_componentes,
                         }
+                        # Uma versão que já gerou escala nunca é alterada: a
+                        # edição cria outra versão, protegendo o histórico.
+                        id_para_salvar = None if modelo_ja_usado else (modelo_em_edicao or {}).get("id")
+                        status_para_salvar = "rascunho" if modelo_ja_usado else (modelo_em_edicao or {}).get("status", "rascunho")
                         ok_modelo, retorno_modelo = db_salvar_modelo_logistica(
-                            nome_modelo, vigencia_modelo, modelo_config, status="rascunho"
+                            nome_modelo, vigencia_modelo, modelo_config,
+                            status=status_para_salvar, modelo_id=id_para_salvar,
                         )
                         if ok_modelo:
-                            st.success("✅ Modelo salvo como rascunho. Nenhuma escala existente foi modificada.")
+                            mensagem_salva = "✅ Nova revisão salva como rascunho. Nenhuma escala existente foi modificada." if modelo_ja_usado else "✅ Modelo salvo."
+                            st.success(mensagem_salva)
                         else:
                             st.error("Não foi possível salvar o modelo no Supabase.")
                             st.info("Execute as migrations 019 e 020, nessa ordem. Se já executou, abra o detalhe abaixo: ele informa exatamente se é tabela ausente, coluna ausente ou permissão.")
