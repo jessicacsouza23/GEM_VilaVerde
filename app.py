@@ -3401,8 +3401,15 @@ if menu == "🏠 Secretaria":
                             bg = cores["SECRETARIA"]
 
                         alunas_gp = grupos[local_prof]
-                        if h_col == HORARIOS[0] and "TODAS" in local_up:
+                        if "TODAS" in local_up:
                             text_alunas = "Todas as alunas"
+                        elif ("SALA 8" in local_up or "SALA 9" in local_up) and not _e_alocacao_individual_em_sala_coletiva(local_prof):
+                            # Teoria e Solfejo Melódico são aulas por turma.
+                            # No mural, mostramos somente a turma, nunca a
+                            # relação de alunas que a compõem.
+                            turmas_coletivas = sorted({mapa_turmas_historico.get(a) for a in alunas_gp
+                                                       if mapa_turmas_historico.get(a)})
+                            text_alunas = " + ".join(turmas_coletivas) or "Turma"
                         else:
                             # A escala antiga pode conter uma aluna que foi
                             # desativada depois. Ela continua pertencendo à

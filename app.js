@@ -104,7 +104,7 @@ function tabelaDaEscala(escala) {
   return `<div class="table-wrap"><table class="scale-table"><thead><tr><th>Aluna</th>${horarios.map((horario) => `<th>${escapeHtml(horario)}</th>`).join("")}</tr></thead><tbody>${escala.map((linha) => `<tr><th>${escapeHtml(linha.Aluna)}</th>${horarios.map((horario) => `<td>${escapeHtml(linha[horario] || "—")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 
-function muralRodizio(escala, data) {
+function muralRodizio(escala, data, turmaPorAluna = {}) {
   if (!escala?.length) return `<div class="empty">Ainda não existe rodízio salvo para esta data.</div>`;
   const horarios = [...new Set(escala.flatMap((linha) => Object.keys(linha).filter((chave) => !["Aluna", "_detalhes"].includes(chave))))];
   const cores = { "SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", "SALA 4": "#fee2e2", "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5", "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7" };
@@ -123,8 +123,9 @@ function muralRodizio(escala, data) {
       if (/SALA 8/i.test(localMaiusculo) && !detalhe.individual) titulo += " (Teoria)";
       if (/SALA 9/i.test(localMaiusculo) && !detalhe.individual) titulo += ` (${detalhe.tipo === "Solfejo" ? "Solfejo" : "Solfejo Melódico"})`;
       if (localMaiusculo.startsWith("SECRETARIA")) titulo = "ATIVIDADE COM AS SECRETARIAS";
-      const turmas = [...new Set(linhas.map((linha) => linha._detalhes?.[horario]?.turma).filter(Boolean))];
-      const pessoas = linhas.length > 1 && turmas.length ? turmas.join(" + ") : linhas.map((linha) => linha.Aluna).join(" + ");
+      const turmas = [...new Set(linhas.map((linha) => linha._detalhes?.[horario]?.turma || turmaPorAluna[linha.Aluna]).filter(Boolean))];
+      const coletiva = (/SALA 8|SALA 9/i.test(localMaiusculo) && !detalhe.individual);
+      const pessoas = localMaiusculo.includes("TODAS") ? "Todas as alunas" : coletiva ? (turmas.join(" + ") || "Turma") : linhas.map((linha) => linha.Aluna).join(" + ");
       const cor = Object.entries(cores).find(([sala]) => localMaiusculo.includes(sala))?.[1] || "#fff";
       return `<article class="mural-card" style="--mural-bg:${cor}"><strong>${escapeHtml(titulo)}</strong><span>${escapeHtml(pessoas)}</span></article>`;
     }).join("");
@@ -250,7 +251,8 @@ async function renderRodizio(content) {
     try {
       const base = await window.GemData.dadosRodizio($("#rodizio-data").value);
       const modelo = base.modeloEscala ? base.modelos.find((item) => item.id === base.modeloEscala) : window.GemData.modeloParaData(base.modelos, $("#rodizio-data").value);
-      if (base.escala.length) { area.innerHTML = `${resumoModelo(modelo, base.turmas)}<div class="section-title"><h2>📸 Mural para print</h2><p>Este sábado está protegido: nenhuma geração substituirá esta escala.</p></div>${muralRodizio(base.escala, window.GemData.dataBr($("#rodizio-data").value))}`; return; }
+      const turmaPorAluna = Object.fromEntries(Object.entries(base.turmas).flatMap(([turma, alunas]) => alunas.map((aluna) => [aluna, turma])));
+      if (base.escala.length) { area.innerHTML = `${resumoModelo(modelo, base.turmas)}<div class="section-title"><h2>📸 Mural para print</h2><p>Este sábado está protegido: nenhuma geração substituirá esta escala.</p></div>${muralRodizio(base.escala, window.GemData.dataBr($("#rodizio-data").value), turmaPorAluna)}`; return; }
       if (!modelo) { area.innerHTML = `<div class="action-error">Não há modelo logístico vigente para esta data. Programe um modelo na Logística antes de gerar.</div>`; return; }
       const dados = dadosDoModelo(modelo, base.turmas);
       const folgas = base.folga?.professoras?.length ? base.folga.professoras.join(", ") : "Nenhuma folga informada";
@@ -270,8 +272,8 @@ async function renderRodizio(content) {
         const resultado = gerarEscalaModelo(base, modelo, { data: $("#rodizio-data").value, coletivas, saidas, turmaInicioTeoria, usarFixas: Boolean($("#usar-fixas")?.checked) });
         const destino = $("#resultado-rodizio");
         if (resultado.erros.length) { destino.innerHTML = `<div class="action-error"><strong>O rodízio não foi salvo.</strong><br>${resultado.erros.map((erro) => `• ${escapeHtml(erro)}`).join("<br>")}</div>`; return; }
-        destino.innerHTML = `<div class="action-ok">Prévia gerada. Confira antes de salvar.</div>${muralRodizio(resultado.escala, window.GemData.dataBr($("#rodizio-data").value))}<button id="salvar-rodizio" class="primary-action full-action" type="button">Salvar rodízio deste sábado</button>`;
-        $("#salvar-rodizio").addEventListener("click", async () => { const botao = $("#salvar-rodizio"); botao.disabled = true; try { await window.GemData.salvarRodizio($("#rodizio-data").value, modelo.id, resultado.escala); destino.innerHTML = `<div class="action-ok">Rodízio salvo com sucesso. A escala está protegida como histórico.</div>${muralRodizio(resultado.escala, window.GemData.dataBr($("#rodizio-data").value))}`; } catch (erro) { botao.disabled = false; destino.insertAdjacentHTML("afterbegin", `<div class="action-error">${escapeHtml(erro.message)}</div>`); } });
+        destino.innerHTML = `<div class="action-ok">Prévia gerada. Confira antes de salvar.</div>${muralRodizio(resultado.escala, window.GemData.dataBr($("#rodizio-data").value), turmaPorAluna)}<button id="salvar-rodizio" class="primary-action full-action" type="button">Salvar rodízio deste sábado</button>`;
+        $("#salvar-rodizio").addEventListener("click", async () => { const botao = $("#salvar-rodizio"); botao.disabled = true; try { await window.GemData.salvarRodizio($("#rodizio-data").value, modelo.id, resultado.escala); destino.innerHTML = `<div class="action-ok">Rodízio salvo com sucesso. A escala está protegida como histórico.</div>${muralRodizio(resultado.escala, window.GemData.dataBr($("#rodizio-data").value), turmaPorAluna)}`; } catch (erro) { botao.disabled = false; destino.insertAdjacentHTML("afterbegin", `<div class="action-error">${escapeHtml(erro.message)}</div>`); } });
       });
     } catch (error) { area.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
