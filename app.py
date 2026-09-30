@@ -5198,12 +5198,27 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     if not pend_metodo_ref.empty:
                                         pend_metodo_ref['_dt_tmp'] = pd.to_datetime(pend_metodo_ref['Data'], format='%d/%m/%Y', errors='coerce')
                                         licao_anterior = str(pend_metodo_ref.sort_values('_dt_tmp', ascending=False).iloc[0].get('Licao_Casa') or '').strip()
+                                elif mat == "Apostila" and not df_hist_local.empty:
+                                    # A Secretaria faz a correção da Apostila,
+                                    # mas a professora precisa enxergar qual
+                                    # foi a última lição passada para orientar a
+                                    # aluna e conferir o contexto da aula.
+                                    casa_apostila_ref = df_hist_local[
+                                        (df_hist_local['Aluna'] == als_selecionadas[0]) &
+                                        (df_hist_local['Tipo'] == "Casa_Apostila") &
+                                        (df_hist_local['Data'] != dt_str)
+                                    ].copy()
+                                    if not casa_apostila_ref.empty:
+                                        casa_apostila_ref['_dt_tmp'] = pd.to_datetime(casa_apostila_ref['Data'], format='%d/%m/%Y', errors='coerce')
+                                        licao_anterior = str(casa_apostila_ref.sort_values('_dt_tmp', ascending=False).iloc[0].get('Licao_Casa') or '').strip()
                                 if mat != "Apostila":
                                     st.markdown("**📋 Correção da lição de casa**")
                                     if licao_anterior:
                                         st.info(f"🎼 **Método:** {mat}  \n📖 **Lição que está sendo conferida:** {licao_anterior}")
                                     else:
                                         st.caption(f"Nenhuma lição de casa pendente encontrada para o método {mat}.")
+                                elif licao_anterior:
+                                    st.info(f"📖 **Última lição de casa da Apostila:** {licao_anterior}  \nA correção é acompanhada pela Secretaria.")
 
                                 difs_db_m = dados_mat.get('Dificuldades', []) or []
                                 if mat != "Apostila":
@@ -5270,7 +5285,18 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
                             st.subheader("🏠 Lição de Casa para a próxima aula")
                             st.caption("📬 O que marcar com 📖 vai para a fila de correção da secretaria. O que marcar com 🎼 é só acompanhamento seu (método) — mas precisa preencher, não é opcional.")
-                            apostila_casa = st.text_input("📖 Apostila (página/lição — vai para a secretaria):", key=f"aph_{d_sel['id']}")
+                            chave_apostila_casa = f"aph_{d_sel['id']}"
+                            # Ao abrir novamente a mesma aula, mostra a lição
+                            # de Apostila que a professora já havia passado.
+                            if chave_apostila_casa not in st.session_state and not df_hist_local.empty:
+                                apostila_salva = df_hist_local[
+                                    (df_hist_local['Aluna'] == als_selecionadas[0]) &
+                                    (df_hist_local['Data'] == dt_str) &
+                                    (df_hist_local['Tipo'] == "Casa_Apostila")
+                                ]
+                                if not apostila_salva.empty:
+                                    st.session_state[chave_apostila_casa] = str(apostila_salva.iloc[-1].get("Licao_Casa") or "")
+                            apostila_casa = st.text_input("📖 Apostila (página/lição — vai para a secretaria):", key=chave_apostila_casa)
 
                             metodos_do_dia = [m for m in materiais_hoje if m != "Apostila"]
                             paginas_metodo_casa = {}
