@@ -431,7 +431,8 @@ def _configurar_modelo_para_geracao(modelo):
     return config, blocos, individuais, coletivas, individuais_atividades, turmas
 
 
-def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, professoras_saida, mapa_fixas):
+def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, professoras_saida, mapa_fixas,
+                                      professoras_coletivas=None):
     """Gera uma escala nova sem alterar o formato ou a memória das escalas antigas.
 
     Turmas percorrem as atividades coletivas e o atendimento individual. Cada
@@ -452,6 +453,7 @@ def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, pr
             return None, [f"{turma} tem {len(TURMAS[turma])} alunas, mas há apenas {len(salas_individuais)} salas individuais ativas."]
 
     habilitadas = config.get("professoras_habilitadas") or {}
+    professoras_coletivas = professoras_coletivas or {}
     professoras_disponiveis = [p for p in PROFESSORAS_LISTA if p not in professoras_folga]
     todas_alunas = [a for turma in turmas for a in TURMAS.get(turma, [])]
     memoria = {a: {"professoras": [], "salas": [], "ultima": None} for a in todas_alunas}
@@ -502,6 +504,12 @@ def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, pr
                 }
                 candidatas = [p for p in habilitadas.get(posicao, professoras_disponiveis)
                               if p in professoras_disponiveis and p not in professoras_saida and p not in ocupadas]
+                professora_escolhida = (professoras_coletivas.get(posicao) or {}).get(turma)
+                if professora_escolhida:
+                    if professora_escolhida not in candidatas:
+                        erros.append(f"{professora_escolhida} não está disponível para {posicao} de {turma} no {horario}. Ajuste a escolha, as folgas ou as habilitações.")
+                        continue
+                    candidatas = [professora_escolhida]
                 if not candidatas:
                     erros.append(f"Não há professora disponível/habilitada para {posicao} no {horario}.")
                     continue
@@ -2654,6 +2662,29 @@ if menu == "🏠 Secretaria":
                 _, blocos_modelo, salas_modelo, coletivas_modelo, componentes_modelo, turmas_modelo = _configurar_modelo_para_geracao(modelo_da_data)
                 st.caption(f"{len(blocos_modelo)} bloco(s) · {len(turmas_modelo)} turma(s) ativa(s) · {len(salas_modelo)} sala(s) individual(is) · atividades coletivas: {', '.join(coletivas_modelo) or '—'} · atendimento individual: {', '.join(componentes_modelo) or '—'}.")
 
+                # A Secretaria define quem acompanha cada turma nas atividades
+                # coletivas, da mesma forma que já fazia no modelo antigo.
+                professoras_coletivas_modelo = {}
+                habilitadas_modelo = configuracao_modelo.get("professoras_habilitadas") or {}
+                if coletivas_modelo and turmas_modelo:
+                    st.markdown("#### 👩‍🏫 Professoras das aulas por turma")
+                    colunas_coletivas = st.columns(len(coletivas_modelo))
+                    for indice_atividade, atividade_coletiva in enumerate(coletivas_modelo):
+                        professoras_coletivas_modelo[atividade_coletiva] = {}
+                        opcoes_atividade = [p for p in habilitadas_modelo.get(atividade_coletiva, PROFESSORAS_LISTA) if p in PROFESSORAS_LISTA]
+                        if not opcoes_atividade:
+                            colunas_coletivas[indice_atividade].warning(f"Nenhuma professora habilitada para {atividade_coletiva}.")
+                            continue
+                        with colunas_coletivas[indice_atividade]:
+                            st.write(f"**{atividade_coletiva}**")
+                            for indice_turma, turma_modelo in enumerate(turmas_modelo):
+                                professoras_coletivas_modelo[atividade_coletiva][turma_modelo] = st.selectbox(
+                                    f"Prof. {atividade_coletiva} — {turma_modelo}", opcoes_atividade,
+                                    index=indice_turma % len(opcoes_atividade),
+                                    key=f"prof_modelo_{data_sel_str}_{atividade_coletiva}_{turma_modelo}",
+                                )
+                    st.caption("A professora acompanha essa turma quando ela chegar à atividade, mesmo que o bloco de horário mude.")
+
                 try:
                     folga_data_iso = data_modelo_sel.isoformat()
                 except Exception:
@@ -2685,7 +2716,8 @@ if menu == "🏠 Secretaria":
                     configuracao_modelo["usar_professoras_fixas"] = usar_fixas_modelo
                     modelo_geracao = dict(modelo_da_data, configuracao=configuracao_modelo)
                     lista_modelo, erros_modelo = gerar_escala_modelo_configuravel(
-                        modelo_geracao, data_sel_str, folgas_modelo, saida_modelo, fixas_modelo
+                        modelo_geracao, data_sel_str, folgas_modelo, saida_modelo, fixas_modelo,
+                        professoras_coletivas_modelo,
                     )
                     if erros_modelo:
                         st.error("⚠️ O rodízio não foi salvo. Ajuste o modelo ou as disponibilidades:")
@@ -2702,10 +2734,10 @@ if menu == "🏠 Secretaria":
                         except Exception as e:
                             st.error("Não foi possível salvar o novo modelo de escala. Execute as migrations 019 e 020 no Supabase.")
                             st.caption(str(e))
-                # Não executa o gerador legado abaixo para esta data.
-                st.stop()
+                # Não executa o gerador legado abaixo para esta data. Não
+                # usamos st.stop(): ele interromperia as demais abas da página.
     
-            if data_sel_str not in calendario_db:
+            if data_sel_str not in calendario_db and modelo_da_data.get("id") == MODELO_LEGADO_ID:
                 st.info(f"Nenhuma escala encontrada para {data_sel_str}. Configure e gere abaixo.")
                 lista_turmas_ord = list(TURMAS.keys())
                 col_t, col_s = st.columns(2)
@@ -3096,8 +3128,8 @@ if menu == "🏠 Secretaria":
                     
             # --- MURAL E EDITOR FINAL CONTINUAM ABAIXO... ---
                     
-           # --- ABA 2: PLANEJAMENTO (V108 - EXPORTAÇÃO EM IMAGEM ÚNICA) ---
-            else:
+            # --- ABA 2: PLANEJAMENTO (V108 - EXPORTAÇÃO EM IMAGEM ÚNICA) ---
+            elif data_sel_str in calendario_db:
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
                 # Metadados do modelo identificam Solfejo/Prática para os
                 # registros, mas não devem poluir o editor visual da Secretaria.
