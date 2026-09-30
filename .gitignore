@@ -1,0 +1,3 @@
+# Configuração local do Supabase. A chave pública é carregada no navegador,
+# mas este arquivo fica fora do controle de versão para evitar cópias acidentais.
+js/supabase-config.js
