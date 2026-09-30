@@ -3506,44 +3506,104 @@ if menu == "🏠 Secretaria":
 
                 modelo_vigente_hoje = db_modelo_logistica_para_data(datetime.now().date())
                 st.info(f"Modelo vigente hoje: **{modelo_vigente_hoje.get('nome')}**")
-                st.markdown("#### Novo modelo: Solfejo individual + Prática")
-                st.caption("São 3 blocos de 45 minutos. Canto e Teoria permanecem por turma; cada aluna recebe 15 min de Solfejo e 30 min de Prática individual.")
+                st.markdown("#### Montar um novo modelo")
+                st.caption("Os valores abaixo são apenas um ponto de partida. Todos podem ser alterados pela Secretaria antes de salvar.")
+                salas_padrao = ([{"Sala": f"SALA {n}", "Uso": "Individual", "Área": "Prática + Solfejo", "Ativa": True} for n in range(1, 8)] +
+                                [{"Sala": "SALA 8", "Uso": "Turma", "Área": "Teoria", "Ativa": True},
+                                 {"Sala": "SALA 9", "Uso": "Turma", "Área": "Canto", "Ativa": True}])
+                blocos_padrao = [
+                    {"Bloco": "Bloco 1", "Início": "08:50", "Fim": "09:35"},
+                    {"Bloco": "Bloco 2", "Início": "09:40", "Fim": "10:25"},
+                    {"Bloco": "Bloco 3", "Início": "10:30", "Fim": "11:15"},
+                ]
+                atividades_padrao = [
+                    {"Atividade": "Canto", "Formato": "Turma", "Duração (min)": 45, "Sala sugerida": "SALA 9"},
+                    {"Atividade": "Teoria", "Formato": "Turma", "Duração (min)": 45, "Sala sugerida": "SALA 8"},
+                    {"Atividade": "Solfejo", "Formato": "Individual", "Duração (min)": 15, "Sala sugerida": "Salas individuais"},
+                    {"Atividade": "Prática", "Formato": "Individual", "Duração (min)": 30, "Sala sugerida": "Salas individuais"},
+                ]
+                turmas_modelo = [{"Turma": turma, "Alunas cadastradas": len(alunas), "Ativa no modelo": True}
+                                  for turma, alunas in TURMAS.items()]
+                fixas_modelo = pd.DataFrame([
+                    {"Aluna": aluna, "Professora fixa": professora}
+                    for aluna, professora in db_get_professoras_fixas().items()
+                ], columns=["Aluna", "Professora fixa"])
 
-                with st.form("form_modelo_solfejo_individual"):
-                    nome_modelo = st.text_input("Nome do modelo:", value="Solfejo individual — próximo bimestre")
+                with st.form("form_modelo_logistica_completo"):
+                    nome_modelo = st.text_input("Nome do modelo:", value="Próximo bimestre — Solfejo individual")
                     vigencia_modelo = st.date_input("Começa a valer em:", value=datetime.now().date() + timedelta(days=7))
-                    c_capacidade, c_componentes = st.columns(2)
-                    qtd_salas_individuais = c_capacidade.number_input(
-                        "Quantidade de salas individuais:", min_value=1, max_value=30, value=7,
-                        help="A capacidade simultânea acompanha este número. Adicione salas futuras sem precisar mudar código.",
-                    )
-                    mesma_professora_componentes = c_componentes.checkbox(
-                        "A mesma professora atende Solfejo e Prática", value=True,
-                    )
-                    st.write("**Blocos propostos**")
-                    c_b1, c_b2, c_b3 = st.columns(3)
-                    inicio_b1 = c_b1.time_input("Bloco 1", value=datetime.strptime("08:50", "%H:%M").time())
-                    inicio_b2 = c_b2.time_input("Bloco 2", value=datetime.strptime("09:40", "%H:%M").time())
-                    inicio_b3 = c_b3.time_input("Bloco 3", value=datetime.strptime("10:30", "%H:%M").time())
-                    salvar_modelo = st.form_submit_button("💾 Salvar como rascunho", use_container_width=True)
+
+                    st.markdown("**1. Blocos de horário**")
+                    blocos_editados = st.data_editor(pd.DataFrame(blocos_padrao), num_rows="dynamic", use_container_width=True,
+                        column_config={"Bloco": st.column_config.TextColumn(required=True), "Início": st.column_config.TextColumn(required=True), "Fim": st.column_config.TextColumn(required=True)},
+                        key="modelo_blocos_editados")
+                    st.caption("Use o formato 08:50. Você pode incluir ou remover blocos.")
+
+                    st.markdown("**2. Turmas que participam deste modelo**")
+                    turmas_editadas = st.data_editor(pd.DataFrame(turmas_modelo), use_container_width=True, hide_index=True,
+                        disabled=["Turma", "Alunas cadastradas"], key="modelo_turmas_editadas")
+                    st.caption("Para incluir, remover ou mover alunas entre turmas, use a aba “Turmas e Pessoas”.")
+
+                    st.markdown("**3. Salas e capacidade**")
+                    salas_editadas = st.data_editor(pd.DataFrame(salas_padrao), num_rows="dynamic", use_container_width=True,
+                        column_config={"Sala": st.column_config.TextColumn(required=True), "Uso": st.column_config.SelectboxColumn(options=["Individual", "Turma"], required=True), "Área": st.column_config.TextColumn(), "Ativa": st.column_config.CheckboxColumn()},
+                        key="modelo_salas_editadas")
+
+                    st.markdown("**4. Atividades e duração**")
+                    atividades_editadas = st.data_editor(pd.DataFrame(atividades_padrao), num_rows="dynamic", use_container_width=True,
+                        column_config={"Atividade": st.column_config.TextColumn(required=True), "Formato": st.column_config.SelectboxColumn(options=["Turma", "Individual"], required=True), "Duração (min)": st.column_config.NumberColumn(min_value=1, max_value=180, required=True), "Sala sugerida": st.column_config.TextColumn()},
+                        key="modelo_atividades_editadas")
+
+                    st.markdown("**5. Professoras habilitadas por área**")
+                    habilitadas = {}
+                    for area_habilitada in ["Canto", "Teoria", "Solfejo", "Prática"]:
+                        habilitadas[area_habilitada] = st.multiselect(
+                            area_habilitada, PROFESSORAS_LISTA, default=PROFESSORAS_LISTA,
+                            key=f"modelo_habilitadas_{area_habilitada}",
+                        )
+
+                    st.markdown("**6. Professoras fixas neste modelo**")
+                    fixas_editadas = st.data_editor(fixas_modelo, num_rows="dynamic", use_container_width=True,
+                        column_config={"Aluna": st.column_config.SelectboxColumn(options=ALUNAS_LISTA, required=True), "Professora fixa": st.column_config.SelectboxColumn(options=PROFESSORAS_LISTA, required=True)},
+                        key="modelo_fixas_editadas")
+
+                    st.markdown("**7. Regras do rodízio individual**")
+                    regra_nao_repetir_aluna = st.checkbox("Não repetir professora para a mesma aluna antes de completar a roda", value=True)
+                    regra_nao_repetir_sala = st.checkbox("Não repetir sala para a aluna antes de completar a roda", value=True)
+                    regra_nao_repetir_imediata = st.checkbox("Evitar a mesma professora da semana anterior", value=True)
+                    mesma_professora_componentes = st.checkbox("A mesma professora atende Solfejo e Prática no bloco", value=True)
+                    salvar_modelo = st.form_submit_button("💾 Salvar modelo como rascunho", use_container_width=True)
 
                 if salvar_modelo:
-                    modelo_config = modelo_solfejo_individual_padrao()
-                    modelo_config["blocos"] = [
-                        {"nome": "Bloco 1", "inicio": inicio_b1.strftime("%H:%M"), "fim": "09:35"},
-                        {"nome": "Bloco 2", "inicio": inicio_b2.strftime("%H:%M"), "fim": "10:25"},
-                        {"nome": "Bloco 3", "inicio": inicio_b3.strftime("%H:%M"), "fim": "11:15"},
-                    ]
-                    modelo_config["atendimento_individual"]["salas"] = [f"SALA {n}" for n in range(1, int(qtd_salas_individuais) + 1)]
-                    modelo_config["atendimento_individual"]["mesma_professora_nos_componentes"] = mesma_professora_componentes
-                    ok_modelo, retorno_modelo = db_salvar_modelo_logistica(
-                        nome_modelo, vigencia_modelo, modelo_config, status="rascunho"
-                    )
-                    if ok_modelo:
-                        st.success("✅ Modelo salvo como rascunho. Nenhuma escala existente foi modificada.")
+                    salas_ativas = salas_editadas[salas_editadas["Ativa"] == True].to_dict("records")
+                    salas_individuais = [r["Sala"].strip() for r in salas_ativas if r.get("Uso") == "Individual" and str(r.get("Sala", "")).strip()]
+                    erros_modelo = []
+                    if not nome_modelo.strip(): erros_modelo.append("Informe um nome para o modelo.")
+                    if blocos_editados.empty: erros_modelo.append("Cadastre ao menos um bloco de horário.")
+                    if not salas_individuais: erros_modelo.append("Cadastre ao menos uma sala individual ativa.")
+                    if atividades_editadas.empty: erros_modelo.append("Cadastre as atividades do modelo.")
+                    if erros_modelo:
+                        for erro_modelo in erros_modelo: st.error("⚠️ " + erro_modelo)
                     else:
-                        st.error("Não foi possível salvar o modelo. Execute a migration 019_modelos_logistica.sql no Supabase.")
-                        st.caption(retorno_modelo)
+                        modelo_config = {
+                            "modo": "configuravel",
+                            "blocos": blocos_editados.fillna("").to_dict("records"),
+                            "turmas": turmas_editadas.fillna("").to_dict("records"),
+                            "salas": salas_ativas,
+                            "atividades": atividades_editadas.fillna("").to_dict("records"),
+                            "professoras_habilitadas": habilitadas,
+                            "professoras_fixas": fixas_editadas.dropna(how="all").fillna("").to_dict("records"),
+                            "regras_rodizio": {"nao_repetir_aluna": regra_nao_repetir_aluna, "nao_repetir_sala": regra_nao_repetir_sala, "nao_repetir_imediata": regra_nao_repetir_imediata},
+                            "mesma_professora_nos_componentes": mesma_professora_componentes,
+                        }
+                        ok_modelo, retorno_modelo = db_salvar_modelo_logistica(
+                            nome_modelo, vigencia_modelo, modelo_config, status="rascunho"
+                        )
+                        if ok_modelo:
+                            st.success("✅ Modelo salvo como rascunho. Nenhuma escala existente foi modificada.")
+                        else:
+                            st.error("Não foi possível salvar o modelo. Execute a migration 019_modelos_logistica.sql no Supabase.")
+                            st.caption(retorno_modelo)
 
                 modelos_existentes = db_get_modelos_logistica()
                 if modelos_existentes:
@@ -3551,11 +3611,11 @@ if menu == "🏠 Secretaria":
                     st.markdown("#### Modelos cadastrados")
                     for modelo_item in modelos_existentes:
                         config_item = modelo_item.get("configuracao") or {}
-                        individual_item = config_item.get("atendimento_individual") or {}
-                        salas_item = individual_item.get("salas") or []
+                        salas_item = [s for s in (config_item.get("salas") or []) if s.get("Uso") == "Individual"]
+                        atividades_item = config_item.get("atividades") or []
                         with st.container(border=True):
                             st.write(f"**{modelo_item.get('nome')}** — {modelo_item.get('status', 'rascunho').title()}")
-                            st.caption(f"Vigência prevista: {modelo_item.get('vigencia_inicio')} · {len(salas_item)} sala(s) individual(is)")
+                            st.caption(f"Vigência prevista: {modelo_item.get('vigencia_inicio')} · {len(salas_item)} sala(s) individual(is) · {len(atividades_item)} atividade(s)")
                             if modelo_item.get("status") == "rascunho":
                                 st.info("Rascunho preservado. A ativação será liberada junto ao novo gerador de escalas, para que nenhuma data receba uma logística incompleta.")
                 else:
