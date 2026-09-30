@@ -434,6 +434,27 @@ def horarios_da_escala(escala):
     return horas or list(HORARIOS)
 
 
+def mapa_aluna_turma_historica():
+    """Retorna a última turma conhecida também para alunas desativadas.
+
+    O rodízio e a chamada já salvos são um retrato daquele sábado. Por isso,
+    telas que consultam uma escala antiga não podem depender somente de
+    ``TURMAS``, que contém apenas alunas ativas para a geração dos próximos
+    rodízios.
+    """
+    mapa = {aluna: turma for turma, alunas in TURMAS.items() for aluna in alunas}
+    try:
+        for aluna in db_get_alunas_todas():
+            nome = str(aluna.get("nome") or "").strip()
+            turma = str(aluna.get("turma") or "").strip()
+            if nome and turma:
+                mapa[nome] = turma
+    except Exception:
+        # A escala continua utilizável mesmo se a consulta complementar falhar.
+        pass
+    return mapa
+
+
 def _configurar_modelo_para_geracao(modelo):
     """Transforma o JSON editável da Secretaria em dados seguros para o rodízio."""
     config = modelo.get("configuracao") or {}
@@ -3329,6 +3350,7 @@ if menu == "🏠 Secretaria":
                 cores = {"SALA 1": "#dbeafe", "SALA 2": "#dcfce7", "SALA 3": "#fef9c3", "SALA 4": "#fee2e2",
                          "SALA 5": "#f3e8ff", "SALA 6": "#ccfbf1", "SALA 7": "#e0f2fe", "SALA 8": "#ffedd5",
                          "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"}
+                mapa_turmas_historico = mapa_aluna_turma_historica()
 
                 colunas_html = ""
                 for idx, h_col in enumerate(horarios_da_escala(calendario_db[data_sel_str])):
@@ -3382,8 +3404,12 @@ if menu == "🏠 Secretaria":
                         if h_col == HORARIOS[0] and "TODAS" in local_up:
                             text_alunas = "Todas as alunas"
                         else:
-                            presentes = [t for t, lista in TURMAS.items() if any(a in alunas_gp for a in lista)]
-                            text_alunas = " + ".join(sorted(presentes)) if len(alunas_gp) > 1 else alunas_gp[0]
+                            # A escala antiga pode conter uma aluna que foi
+                            # desativada depois. Ela continua pertencendo à
+                            # turma histórica para fins de mural e relatório.
+                            presentes = sorted({mapa_turmas_historico.get(a) for a in alunas_gp
+                                                if mapa_turmas_historico.get(a)})
+                            text_alunas = " + ".join(presentes) if len(alunas_gp) > 1 else alunas_gp[0]
 
                         cards_html += f'''<div style="background-color:{bg}; border:2px solid #000; padding:10px; margin-bottom:10px; border-radius:10px;">
                             <b style="font-size:16px; color:#000; display:block; line-height:1.2;">{local_exibicao}</b>
@@ -4996,9 +5022,10 @@ elif menu == "👩‍🏫 Minhas Aulas":
         cal_db = db_get_calendario()
         n_bus = limpar_texto(instr_sel).lower().strip()
 
-        # O calendário só guarda o nome da aluna, nunca a turma dela — descobrimos
-        # a turma a partir do mapa TURMAS (aluna -> nome da turma).
-        aluna_para_turma = {a: t for t, lst in TURMAS.items() for a in lst}
+        # O calendário só guarda o nome da aluna. Para escalas já salvas,
+        # incluímos também as alunas desativadas, preservando a turma que elas
+        # tinham no sábado do rodízio; elas não entram em novas escalas.
+        aluna_para_turma = mapa_aluna_turma_historica()
 
         aulas_listagem = []
         vistos_turma = set()
