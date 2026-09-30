@@ -259,6 +259,109 @@ def db_salvar_folga_professoras(data_folga, coordenadora, professoras_folga, obs
     except Exception as e:
         return False, str(e)
 
+
+# ==========================================
+# MODELOS DE LOGÍSTICA DE AULA (VERSIONADOS)
+# ==========================================
+MODELO_LEGADO_ID = "legado-4-blocos"
+
+
+def modelo_legado():
+    """Representa a logística já existente, sem converter dados antigos."""
+    return {
+        "id": MODELO_LEGADO_ID,
+        "nome": "Modelo atual — 4 blocos",
+        "vigencia_inicio": None,
+        "status": "legado",
+        "configuracao": {
+            "blocos": [
+                {"nome": "Aula 1", "inicio": "08:50", "fim": "09:30"},
+                {"nome": "Aula 2", "inicio": "09:35", "fim": "10:05"},
+                {"nome": "Aula 3", "inicio": "10:10", "fim": "10:40"},
+                {"nome": "Aula 4", "inicio": "10:45", "fim": "11:15"},
+            ],
+            "salas_individuais": [f"SALA {n}" for n in range(1, 8)],
+            "salas_coletivas": {"Teoria": "SALA 8", "Solfejo": "SALA 9"},
+        },
+    }
+
+
+def modelo_solfejo_individual_padrao():
+    """Rascunho inicial configurável pela Secretaria, sem ativar por padrão."""
+    return {
+        "modo": "solfejo_individual",
+        "blocos": [
+            {"nome": "Bloco 1", "inicio": "08:50", "fim": "09:35"},
+            {"nome": "Bloco 2", "inicio": "09:40", "fim": "10:25"},
+            {"nome": "Bloco 3", "inicio": "10:30", "fim": "11:15"},
+        ],
+        "atividades_turma": [
+            {"nome": "Canto", "sala": "SALA 9", "modo": "turma"},
+            {"nome": "Teoria", "sala": "SALA 8", "modo": "turma"},
+        ],
+        "atendimento_individual": {
+            "nome": "Prática + Solfejo individual",
+            "componentes": [
+                {"nome": "Solfejo", "duracao_min": 15},
+                {"nome": "Prática", "duracao_min": 30},
+            ],
+            "salas": [f"SALA {n}" for n in range(1, 8)],
+            "mesma_professora_nos_componentes": True,
+        },
+    }
+
+
+@st.cache_data(ttl=30)
+def db_get_modelos_logistica():
+    try:
+        res = supabase.table("modelos_logistica").select("*").order("vigencia_inicio", desc=True).execute()
+        return res.data or []
+    except Exception:
+        return []
+
+
+def db_salvar_modelo_logistica(nome, vigencia_inicio, configuracao, status="rascunho", modelo_id=None):
+    try:
+        dados = {
+            "id": modelo_id or str(uuid.uuid4()),
+            "nome": nome.strip(),
+            "vigencia_inicio": vigencia_inicio.isoformat(),
+            "status": status,
+            "configuracao": configuracao,
+            "updated_at": datetime.now().isoformat(),
+        }
+        supabase.table("modelos_logistica").upsert(dados, on_conflict="id").execute()
+        st.cache_data.clear()
+        return True, dados["id"]
+    except Exception as e:
+        return False, str(e)
+
+
+def db_ativar_modelo_logistica(modelo_id):
+    """Ativa somente o modelo escolhido; históricos continuam sem alteração."""
+    try:
+        supabase.table("modelos_logistica").update({"status": "arquivado"}).eq("status", "ativo").execute()
+        supabase.table("modelos_logistica").update({"status": "ativo", "updated_at": datetime.now().isoformat()}).eq("id", modelo_id).execute()
+        st.cache_data.clear()
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def db_modelo_logistica_para_data(data_obj):
+    """Escolhe a versão vigente sem reinterpretar nenhuma data anterior."""
+    candidatos = []
+    for modelo in db_get_modelos_logistica():
+        if modelo.get("status") != "ativo" or not modelo.get("vigencia_inicio"):
+            continue
+        try:
+            inicio = datetime.fromisoformat(str(modelo["vigencia_inicio"])[:10]).date()
+            if inicio <= data_obj:
+                candidatos.append((inicio, modelo))
+        except ValueError:
+            continue
+    return max(candidatos, key=lambda item: item[0])[1] if candidatos else modelo_legado()
+
 def buscar_registros_faltantes_do_dia(data_str):
     """Confere a escala e retorna os registros pedagógicos ainda ausentes.
 
@@ -1732,8 +1835,8 @@ if menu == "🏠 Secretaria":
     if not df_historico.empty:
         df_historico['dt_obj'] = pd.to_datetime(df_historico['Data'], format='%d/%m/%Y', errors='coerce')
 
-    tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes, tab_coord, tab_pessoas = st.tabs([
-        "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros", "👑 Coordenação", "👥 Turmas e Pessoas"
+    tab_consolidado, tab_plan, tab_cham, tab_licao, tab_ajustes, tab_coord, tab_logistica, tab_pessoas = st.tabs([
+        "📊 Visão Geral Diária", "🗓️ Planejamento", "📍 Chamada", "📝 Controle de Lições", "🛠️ Ajustar Registros", "👑 Coordenação", "🧭 Logística", "👥 Turmas e Pessoas"
     ])
 
     # --- ABA 1: VISÃO GERAL DIÁRIA (TOTALIZADA) ---
@@ -3396,7 +3499,69 @@ if menu == "🏠 Secretaria":
                         st.caption("A Secretaria também pode consultar e editar as folgas já cadastradas.")
                         renderizar_painel_folgas("folgas_secretaria", coordenadora_atual, somente_edicao=True)
 
-            # --- ABA 7: TURMAS E PESSOAS (CADASTRO) ---
+            # --- ABA 7: LOGÍSTICA VERSIONADA ---
+            with tab_logistica:
+                st.subheader("🧭 Logística das aulas")
+                st.caption("Modelos são versões. Criar ou editar um modelo nunca altera escalas nem registros de sábados anteriores.")
+
+                modelo_vigente_hoje = db_modelo_logistica_para_data(datetime.now().date())
+                st.info(f"Modelo vigente hoje: **{modelo_vigente_hoje.get('nome')}**")
+                st.markdown("#### Novo modelo: Solfejo individual + Prática")
+                st.caption("São 3 blocos de 45 minutos. Canto e Teoria permanecem por turma; cada aluna recebe 15 min de Solfejo e 30 min de Prática individual.")
+
+                with st.form("form_modelo_solfejo_individual"):
+                    nome_modelo = st.text_input("Nome do modelo:", value="Solfejo individual — próximo bimestre")
+                    vigencia_modelo = st.date_input("Começa a valer em:", value=datetime.now().date() + timedelta(days=7))
+                    c_capacidade, c_componentes = st.columns(2)
+                    qtd_salas_individuais = c_capacidade.number_input(
+                        "Quantidade de salas individuais:", min_value=1, max_value=30, value=7,
+                        help="A capacidade simultânea acompanha este número. Adicione salas futuras sem precisar mudar código.",
+                    )
+                    mesma_professora_componentes = c_componentes.checkbox(
+                        "A mesma professora atende Solfejo e Prática", value=True,
+                    )
+                    st.write("**Blocos propostos**")
+                    c_b1, c_b2, c_b3 = st.columns(3)
+                    inicio_b1 = c_b1.time_input("Bloco 1", value=datetime.strptime("08:50", "%H:%M").time())
+                    inicio_b2 = c_b2.time_input("Bloco 2", value=datetime.strptime("09:40", "%H:%M").time())
+                    inicio_b3 = c_b3.time_input("Bloco 3", value=datetime.strptime("10:30", "%H:%M").time())
+                    salvar_modelo = st.form_submit_button("💾 Salvar como rascunho", use_container_width=True)
+
+                if salvar_modelo:
+                    modelo_config = modelo_solfejo_individual_padrao()
+                    modelo_config["blocos"] = [
+                        {"nome": "Bloco 1", "inicio": inicio_b1.strftime("%H:%M"), "fim": "09:35"},
+                        {"nome": "Bloco 2", "inicio": inicio_b2.strftime("%H:%M"), "fim": "10:25"},
+                        {"nome": "Bloco 3", "inicio": inicio_b3.strftime("%H:%M"), "fim": "11:15"},
+                    ]
+                    modelo_config["atendimento_individual"]["salas"] = [f"SALA {n}" for n in range(1, int(qtd_salas_individuais) + 1)]
+                    modelo_config["atendimento_individual"]["mesma_professora_nos_componentes"] = mesma_professora_componentes
+                    ok_modelo, retorno_modelo = db_salvar_modelo_logistica(
+                        nome_modelo, vigencia_modelo, modelo_config, status="rascunho"
+                    )
+                    if ok_modelo:
+                        st.success("✅ Modelo salvo como rascunho. Nenhuma escala existente foi modificada.")
+                    else:
+                        st.error("Não foi possível salvar o modelo. Execute a migration 019_modelos_logistica.sql no Supabase.")
+                        st.caption(retorno_modelo)
+
+                modelos_existentes = db_get_modelos_logistica()
+                if modelos_existentes:
+                    st.divider()
+                    st.markdown("#### Modelos cadastrados")
+                    for modelo_item in modelos_existentes:
+                        config_item = modelo_item.get("configuracao") or {}
+                        individual_item = config_item.get("atendimento_individual") or {}
+                        salas_item = individual_item.get("salas") or []
+                        with st.container(border=True):
+                            st.write(f"**{modelo_item.get('nome')}** — {modelo_item.get('status', 'rascunho').title()}")
+                            st.caption(f"Vigência prevista: {modelo_item.get('vigencia_inicio')} · {len(salas_item)} sala(s) individual(is)")
+                            if modelo_item.get("status") == "rascunho":
+                                st.info("Rascunho preservado. A ativação será liberada junto ao novo gerador de escalas, para que nenhuma data receba uma logística incompleta.")
+                else:
+                    st.caption("Ainda não há modelos novos cadastrados. O sistema continua no modelo atual de 4 blocos.")
+
+            # --- ABA 8: TURMAS E PESSOAS (CADASTRO) ---
             with tab_pessoas:
                 sub_alunas, sub_profs, sub_secs = st.tabs(["🎀 Alunas e Turmas", "👩‍🏫 Professoras", "🔐 Secretarias"])
 
