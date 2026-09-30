@@ -5069,7 +5069,13 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     vistos_turma.add(id_turma)
                                 else:
                                     continue
-                            aulas_listagem.append({"label": label, "id": id_unica, "h": h, "tipo": tipo, "al": reg.get("Aluna"), "tr": turma_aluna, "loc": sala, "individual": individual_na_sala_coletiva or detalhe_horario.get("individual") or tipo == "Prática"})
+                            aulas_listagem.append({"label": label, "id": id_unica, "h": h, "tipo": tipo,
+                                                   "al": reg.get("Aluna"), "tr": turma_aluna, "loc": sala,
+                                                   # Guarda a composição que realmente ficou salva
+                                                   # nesta escala. Assim, desativar uma aluna depois
+                                                   # não a remove da chamada/registro de um sábado antigo.
+                                                   "conteudo_escala": cont,
+                                                   "individual": individual_na_sala_coletiva or detalhe_horario.get("individual") or tipo == "Prática"})
 
         # --- LÓGICA DE EXIBIÇÃO DE FOLGA ---
         if not aulas_listagem:
@@ -5103,7 +5109,16 @@ elif menu == "👩‍🏫 Minhas Aulas":
             st.divider()
             
             # Chamada e Pendências
-            als_ref = [d_sel["al"]] if d_sel.get("individual") else TURMAS.get(d_sel["tr"], [d_sel["al"]])
+            if d_sel.get("individual"):
+                als_ref = [d_sel["al"]]
+            else:
+                # A lista vem da própria escala da data selecionada, em vez
+                # de TURMAS (que só contém alunas ativas). Isso mantém uma
+                # aluna desativada visível para a professora nos dias em que
+                # ela efetivamente participou da aula.
+                als_ref = [str(reg.get("Aluna")) for reg in cal_db.get(dt_str, [])
+                           if reg.get("Aluna") and str(reg.get(d_sel["h"], "")) == str(d_sel.get("conteudo_escala", ""))]
+                als_ref = list(dict.fromkeys(als_ref)) or [d_sel["al"]]
             als_selecionadas = []
             df_hist_local = pd.DataFrame(db_get_historico())
 
