@@ -320,7 +320,7 @@ def db_get_modelos_logistica():
         return []
 
 
-def db_salvar_modelo_logistica(nome, vigencia_inicio, configuracao, status="rascunho", modelo_id=None):
+def db_salvar_modelo_logistica(nome, vigencia_inicio, configuracao, status="rascunho", modelo_id=None, vigencia_fim=None):
     try:
         dados = {
             "id": modelo_id or str(uuid.uuid4()),
@@ -330,6 +330,8 @@ def db_salvar_modelo_logistica(nome, vigencia_inicio, configuracao, status="rasc
             "configuracao": configuracao,
             "updated_at": datetime.now().isoformat(),
         }
+        if vigencia_fim:
+            dados["vigencia_fim"] = vigencia_fim.isoformat() if hasattr(vigencia_fim, "isoformat") else vigencia_fim
         supabase.table("modelos_logistica").upsert(dados, on_conflict="id").execute()
         st.cache_data.clear()
         return True, dados["id"]
@@ -337,30 +339,243 @@ def db_salvar_modelo_logistica(nome, vigencia_inicio, configuracao, status="rasc
         return False, str(e)
 
 
-def db_ativar_modelo_logistica(modelo_id):
-    """Ativa somente o modelo escolhido; históricos continuam sem alteração."""
+def db_programar_modelo_logistica(modelo_id):
+    """Agenda o início de um modelo sem encerrar o histórico anterior."""
     try:
-        supabase.table("modelos_logistica").update({"status": "arquivado"}).eq("status", "ativo").execute()
-        supabase.table("modelos_logistica").update({"status": "ativo", "updated_at": datetime.now().isoformat()}).eq("id", modelo_id).execute()
+        supabase.table("modelos_logistica").update({"status": "programado", "updated_at": datetime.now().isoformat()}).eq("id", modelo_id).execute()
         st.cache_data.clear()
         return True, ""
     except Exception as e:
         return False, str(e)
 
 
+def db_cancelar_programacao_modelo(modelo_id):
+    try:
+        supabase.table("modelos_logistica").update({"status": "rascunho", "updated_at": datetime.now().isoformat()}).eq("id", modelo_id).execute()
+        st.cache_data.clear()
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def db_encerrar_modelo_logistica(modelo_id, data_fim):
+    """Encerra somente novas escalas a partir do dia seguinte à data final."""
+    try:
+        supabase.table("modelos_logistica").update({
+            "vigencia_fim": data_fim.isoformat(), "status": "encerrado", "updated_at": datetime.now().isoformat()
+        }).eq("id", modelo_id).execute()
+        st.cache_data.clear()
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def status_exibicao_modelo(modelo, data_referencia=None):
+    """Status visual calculado pela data, mesmo que o banco guarde 'programado'."""
+    hoje = data_referencia or datetime.now().date()
+    status = modelo.get("status", "rascunho")
+    if status == "programado":
+        try:
+            if datetime.fromisoformat(str(modelo.get("vigencia_inicio"))[:10]).date() <= hoje:
+                return "vigente"
+        except ValueError:
+            pass
+    return status
+
+
 def db_modelo_logistica_para_data(data_obj):
     """Escolhe a versão vigente sem reinterpretar nenhuma data anterior."""
     candidatos = []
     for modelo in db_get_modelos_logistica():
-        if modelo.get("status") != "ativo" or not modelo.get("vigencia_inicio"):
+        if modelo.get("status") not in ("programado", "vigente", "encerrado") or not modelo.get("vigencia_inicio"):
             continue
         try:
             inicio = datetime.fromisoformat(str(modelo["vigencia_inicio"])[:10]).date()
-            if inicio <= data_obj:
+            fim_str = modelo.get("vigencia_fim")
+            fim = datetime.fromisoformat(str(fim_str)[:10]).date() if fim_str else None
+            if inicio <= data_obj and (fim is None or data_obj <= fim):
                 candidatos.append((inicio, modelo))
         except ValueError:
             continue
     return max(candidatos, key=lambda item: item[0])[1] if candidatos else modelo_legado()
+
+
+def _horario_modelo(bloco, indice):
+    """Nome estável de coluna para uma escala criada por um modelo novo."""
+    inicio = str(bloco.get("Início") or bloco.get("inicio") or "").strip()
+    fim = str(bloco.get("Fim") or bloco.get("fim") or "").strip()
+    nome = str(bloco.get("Bloco") or bloco.get("nome") or f"Bloco {indice + 1}").strip()
+    return f"{inicio} - {fim} ({nome})" if inicio and fim else nome
+
+
+def horarios_da_escala(escala):
+    """Lê as colunas de horários da própria escala, inclusive modelos futuros."""
+    if not escala:
+        return list(HORARIOS)
+    primeira = next((linha for linha in escala if isinstance(linha, dict)), {})
+    horas = [chave for chave in primeira if chave not in ("Aluna", "_detalhes")]
+    return horas or list(HORARIOS)
+
+
+def _configurar_modelo_para_geracao(modelo):
+    """Transforma o JSON editável da Secretaria em dados seguros para o rodízio."""
+    config = modelo.get("configuracao") or {}
+    blocos = [b for b in config.get("blocos", []) if str(b.get("Início") or b.get("inicio") or "").strip()]
+    salas = [s for s in config.get("salas", []) if s.get("Ativa", True)]
+    individuais = [str(s.get("Sala") or "").strip() for s in salas if str(s.get("Uso") or "").lower() == "individual" and str(s.get("Sala") or "").strip()]
+    coletivas = {str(a.get("Atividade") or "").strip(): str(a.get("Sala sugerida") or "").strip()
+                  for a in config.get("atividades", []) if str(a.get("Formato") or "").lower() == "turma"}
+    atividades = config.get("atividades", [])
+    individuais_atividades = [str(a.get("Atividade") or "").strip() for a in atividades if str(a.get("Formato") or "").lower() == "individual"]
+    turmas = [str(t.get("Turma") or "").strip() for t in config.get("turmas", []) if t.get("Ativa no modelo", True) and str(t.get("Turma") or "").strip() in TURMAS]
+    return config, blocos, individuais, coletivas, individuais_atividades, turmas
+
+
+def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, professoras_saida, mapa_fixas):
+    """Gera uma escala nova sem alterar o formato ou a memória das escalas antigas.
+
+    Turmas percorrem as atividades coletivas e o atendimento individual. Cada
+    bloco individual pode conter mais de um componente (ex.: Solfejo e Prática)
+    e os dois aparecerão separadamente para a professora registrar.
+    """
+    config, blocos, salas_individuais, salas_coletivas, componentes_individuais, turmas = _configurar_modelo_para_geracao(modelo)
+    regras = config.get("regras_rodizio") or {}
+    if not blocos or not turmas or not salas_individuais or not componentes_individuais:
+        return None, ["Complete no modelo os blocos, as turmas ativas, as salas individuais e as atividades individuais."]
+    atividades_coletivas = [nome for nome in salas_coletivas if nome]
+    if len(atividades_coletivas) + 1 > len(blocos):
+        return None, ["O modelo possui mais atividades simultâneas do que blocos disponíveis."]
+    if len(turmas) > len(atividades_coletivas) + 1:
+        return None, ["Há mais turmas ativas do que posições de atividade por bloco. Cadastre mais atividades coletivas ou ajuste as turmas."]
+    for turma in turmas:
+        if len(TURMAS.get(turma, [])) > len(salas_individuais):
+            return None, [f"{turma} tem {len(TURMAS[turma])} alunas, mas há apenas {len(salas_individuais)} salas individuais ativas."]
+
+    habilitadas = config.get("professoras_habilitadas") or {}
+    professoras_disponiveis = [p for p in PROFESSORAS_LISTA if p not in professoras_folga]
+    todas_alunas = [a for turma in turmas for a in TURMAS.get(turma, [])]
+    memoria = {a: {"professoras": [], "salas": [], "ultima": None} for a in todas_alunas}
+    # Reconstrói apenas a memória de rodízio das alocações individuais já salvas.
+    try:
+        anteriores = supabase.table("calendario").select("id, escala").execute().data or []
+    except Exception:
+        anteriores = []
+    for anterior in anteriores:
+        try:
+            if datetime.strptime(str(anterior.get("id")), "%d/%m/%Y").date() >= datetime.strptime(data_sel_str, "%d/%m/%Y").date():
+                continue
+        except ValueError:
+            continue
+        for linha in anterior.get("escala") or []:
+            aluna = linha.get("Aluna")
+            if aluna not in memoria:
+                continue
+            detalhes = linha.get("_detalhes") or {}
+            for hora, valor in linha.items():
+                if hora in ("Aluna", "_detalhes") or "|" not in str(valor):
+                    continue
+                detalhe = detalhes.get(hora) or {}
+                if not detalhe.get("individual") and not any(sala in str(valor) for sala in salas_individuais):
+                    continue
+                sala, prof = [x.strip() for x in str(valor).split("|", 1)]
+                if sala in salas_individuais:
+                    memoria[aluna]["professoras"].append(prof)
+                    memoria[aluna]["salas"].append(sala)
+                    memoria[aluna]["ultima"] = prof
+
+    escala = {a: {"Aluna": a, "_detalhes": {}} for a in todas_alunas}
+    erros = []
+    usar_fixas = bool(config.get("usar_professoras_fixas"))
+    mesma_prof = bool(config.get("mesma_professora_nos_componentes", True))
+    for indice, bloco in enumerate(blocos):
+        horario = _horario_modelo(bloco, indice)
+        # Cada turma ocupa uma posição diferente e, depois, gira uma casa.
+        posicoes = atividades_coletivas + ["__individual__"]
+        for indice_turma, turma in enumerate(turmas):
+            posicao = posicoes[(indice_turma + indice) % len(posicoes)]
+            alunas = TURMAS.get(turma, [])
+            if posicao != "__individual__":
+                ocupadas = {
+                    str(valor).split("|", 1)[1].strip()
+                    for outra in escala.values() for valor in [outra.get(horario, "")]
+                    if "|" in str(valor)
+                }
+                candidatas = [p for p in habilitadas.get(posicao, professoras_disponiveis)
+                              if p in professoras_disponiveis and p not in professoras_saida and p not in ocupadas]
+                if not candidatas:
+                    erros.append(f"Não há professora disponível/habilitada para {posicao} no {horario}.")
+                    continue
+                professora = candidatas[indice % len(candidatas)]
+                sala = salas_coletivas[posicao]
+                for aluna in alunas:
+                    escala[aluna][horario] = f"{sala} | {professora}"
+                    escala[aluna]["_detalhes"][horario] = {"tipo": posicao, "individual": False, "turma": turma}
+                professoras_disponiveis_no_bloco = []
+            else:
+                ocupadas = set()
+                # Professoras já usadas nas atividades coletivas deste bloco.
+                for outra in escala.values():
+                    valor = str(outra.get(horario, ""))
+                    if "|" in valor:
+                        ocupadas.add(valor.split("|", 1)[1].strip())
+                # Quando a mesma professora atende os componentes, ela precisa
+                # estar habilitada em todos eles; se forem separadas no futuro,
+                # a Secretaria poderá cadastrar as habilitações de cada área.
+                habilitadas_individuais = set(PROFESSORAS_LISTA)
+                if mesma_prof:
+                    for componente in componentes_individuais:
+                        habilitadas_individuais &= set(habilitadas.get(componente, PROFESSORAS_LISTA))
+                livres = [p for p in professoras_disponiveis if p in habilitadas_individuais and p not in ocupadas and p not in professoras_saida]
+                if len(livres) < len(alunas):
+                    erros.append(f"Faltam professoras livres para o atendimento individual de {turma} no {horario}.")
+                    continue
+                salas_livres = list(salas_individuais)
+                profs_livres = list(livres)
+                alocacoes_individuais = []
+                for aluna in alunas:
+                    fixa = mapa_fixas.get(str(aluna).strip().lower()) if usar_fixas else None
+                    candidatas = [fixa] if fixa else list(profs_livres)
+                    candidatas = [p for p in candidatas if p in profs_livres]
+                    if not candidatas or not salas_livres:
+                        erros.append(f"Não foi possível alocar {aluna} em {horario}; verifique fixas, folgas e salas.")
+                        continue
+                    mem = memoria[aluna]
+                    def pontuar(par):
+                        prof, sala = par
+                        return (
+                            int(regras.get("nao_repetir_imediata", True) and len(candidatas) > 1 and prof == mem["ultima"]),
+                            int(regras.get("nao_repetir_aluna", True) and len(set(mem["professoras"])) < len(PROFESSORAS_LISTA) and prof in mem["professoras"]),
+                            int(regras.get("nao_repetir_sala", True) and len(set(mem["salas"])) < len(salas_individuais) and sala in mem["salas"]),
+                            prof, sala,
+                        )
+                    professora, sala = min(((p, s) for p in candidatas for s in salas_livres), key=pontuar)
+                    escala[aluna][horario] = f"{sala} | {professora}"
+                    escala[aluna]["_detalhes"][horario] = {
+                        "tipo": "Prática + Solfejo" if len(componentes_individuais) > 1 else componentes_individuais[0],
+                        "componentes": componentes_individuais,
+                        "individual": True,
+                        "turma": turma,
+                        "mesma_professora_componentes": mesma_prof,
+                    }
+                    alocacoes_individuais.append((aluna, sala, professora))
+                    profs_livres.remove(professora)
+                    salas_livres.remove(sala)
+                    mem["professoras"].append(professora)
+                    mem["salas"].append(sala)
+                    mem["ultima"] = professora
+                # Se a Secretaria optar por separar as professoras, as aulas
+                # continuam no mesmo bloco, mas a segunda componente recebe a
+                # professora da aluna seguinte. Assim ninguém fica em dois
+                # atendimentos simultâneos e as duas agendas aparecem certas.
+                if not mesma_prof and len(alocacoes_individuais) > 1:
+                    professoras_pratica = [item[2] for item in alocacoes_individuais]
+                    professoras_solfejo = professoras_pratica[1:] + professoras_pratica[:1]
+                    for (aluna, sala, professora_pratica), professora_solfejo in zip(alocacoes_individuais, professoras_solfejo):
+                        escala[aluna][horario] = f"{sala} | Solfejo: {professora_solfejo} · Prática: {professora_pratica}"
+                        escala[aluna]["_detalhes"][horario]["professoras_componentes"] = {
+                            "Solfejo": professora_solfejo, "Prática": professora_pratica
+                        }
+    return list(escala.values()), list(dict.fromkeys(erros))
 
 def buscar_registros_faltantes_do_dia(data_str):
     """Confere a escala e retorna os registros pedagógicos ainda ausentes.
@@ -386,25 +601,37 @@ def buscar_registros_faltantes_do_dia(data_str):
         if not chamada.empty and str(chamada.iloc[-1].get("Status") or "") in ("Ausente", "Justificada"):
             continue
         tipos_salvos = set(str(tipo) for tipo in dados_aluna["Tipo"].dropna().tolist())
-        for horario in HORARIOS:
+        detalhes_linha = linha_escala.get("_detalhes") or {}
+        for horario in horarios_da_escala(escala):
             conteudo = str(linha_escala.get(horario, ""))
             if "|" not in conteudo:
                 continue
+            detalhe = detalhes_linha.get(horario) or {}
             conteudo_maiusculo = conteudo.upper()
-            if "SALA 8" in conteudo_maiusculo:
+            if detalhe.get("componentes"):
+                disciplinas = [str(item) for item in detalhe.get("componentes") if str(item).strip()]
+            elif detalhe.get("tipo"):
+                disciplinas = [str(detalhe.get("tipo"))]
+            elif "SALA 8" in conteudo_maiusculo:
                 disciplina = "Teoria"
+                disciplinas = [disciplina]
             elif "SALA 9" in conteudo_maiusculo:
                 disciplina = "Solfejo"
+                disciplinas = [disciplina]
             elif conteudo_maiusculo.startswith("SALA"):
                 disciplina = "Prática"
+                disciplinas = [disciplina]
             else:
                 continue
-            professora = conteudo.split("|")[-1].strip()
-            chave = (aluna, disciplina, professora)
-            if chave in vistos or f"Analise_{disciplina}" in tipos_salvos:
-                continue
-            vistos.add(chave)
-            faltantes.append({"Professora": professora, "Aluna": aluna, "Disciplina": disciplina})
+            professoras_componentes = detalhe.get("professoras_componentes") or {}
+            professora_padrao = conteudo.split("|")[-1].strip()
+            for disciplina in disciplinas:
+                professora = str(professoras_componentes.get(disciplina) or professora_padrao).strip()
+                chave = (aluna, disciplina, professora)
+                if chave in vistos or f"Analise_{disciplina}" in tipos_salvos:
+                    continue
+                vistos.add(chave)
+                faltantes.append({"Professora": professora, "Aluna": aluna, "Disciplina": disciplina})
     return faltantes
 
 def renderizar_conferencia_registros_coordenadora():
@@ -870,7 +1097,7 @@ def _renderizar_pendencias_casa(pendentes_df, somente_proxima_aula=False):
 
     icones_disciplina = {"Prática": "🎹", "Teoria": "📚", "Solfejo": "🔊", "Outra atividade": "📖"}
 
-    for disciplina in ["Prática", "Teoria", "Solfejo", "Outra atividade"]:
+    for disciplina in ["Prática", "Teoria", "Solfejo", "Canto", "Outra atividade"]:
         bloco_disc = pendentes_df[pendentes_df['_disciplina'] == disciplina]
         if bloco_disc.empty:
             continue
@@ -954,7 +1181,7 @@ def _renderizar_licoes_aluna_com_historico(licoes_df, aluna, feitas):
         atuais_ids = {str(pendentes.loc[idx].get("id")) for idx in indice_atual if pd.notna(idx)}
 
     st.caption("Marcar como **Feito** é apenas seu controle pessoal. A lição continua no histórico e a professora registra o acompanhamento na aula.")
-    for disciplina in ["Prática", "Teoria", "Solfejo", "Outra atividade"]:
+    for disciplina in ["Prática", "Teoria", "Solfejo", "Canto", "Outra atividade"]:
         bloco = licoes_df[licoes_df["_disciplina"] == disciplina].sort_values("_dt_tmp", ascending=False)
         if bloco.empty:
             continue
@@ -1124,6 +1351,16 @@ def db_save_historico(dados):
 def db_atualizar_ou_criar_historico(dados, registro_id=None):
     """Atualiza o registro do dia quando ele já existe; evita duplicatas ao editar."""
     try:
+        # Registros do novo formato recebem a versão de logística apenas como
+        # referência. Registros antigos continuam sem esse campo e não sofrem
+        # qualquer reinterpretação.
+        data_registro = str(dados.get("Data") or "")
+        try:
+            modelo_registro = db_modelo_logistica_para_data(datetime.strptime(data_registro, "%d/%m/%Y").date())
+            if modelo_registro.get("id") != MODELO_LEGADO_ID:
+                dados = dict(dados, modelo_logistica_id=modelo_registro.get("id"))
+        except (TypeError, ValueError):
+            pass
         if registro_id:
             return supabase.table("historico_geral").update(dados).eq("id", registro_id).execute()
         return supabase.table("historico_geral").insert(dados).execute()
@@ -1885,22 +2122,31 @@ if menu == "🏠 Secretaria":
             for reg in escala_do_dia_relatorio:
                 if limpar_texto(reg.get("Aluna", "")) != aluna_norm:
                     continue
-                for h in HORARIOS:
+                detalhes_reg = reg.get("_detalhes") or {}
+                for h in horarios_da_escala(escala_do_dia_relatorio):
                     cont = str(reg.get(h, ""))
                     if "|" not in cont:
                         continue
+                    detalhe_h = detalhes_reg.get(h) or {}
+                    if tipo_desejado in (detalhe_h.get("componentes") or []):
+                        return str((detalhe_h.get("professoras_componentes") or {}).get(tipo_desejado) or cont.split("|")[-1]).strip()
+                    if detalhe_h.get("tipo"):
+                        tipo_cont = str(detalhe_h.get("tipo"))
+                    else:
+                        tipo_cont = None
                     cont_up = cont.upper()
-                    if "SALA 8" in cont_up:
-                        tipo_cont = "Teoria"
-                    elif "SALA 9" in cont_up:
-                        tipo_cont = "Solfejo"
-                    elif cont_up.startswith("SALA"):
-                        tipo_cont = "Prática"
-                    elif cont_up.startswith("SECRETARIA"):
+                    if not tipo_cont:
+                        if "SALA 8" in cont_up:
+                            tipo_cont = "Teoria"
+                        elif "SALA 9" in cont_up:
+                            tipo_cont = "Solfejo"
+                        elif cont_up.startswith("SALA"):
+                            tipo_cont = "Prática"
+                    if not tipo_cont and cont_up.startswith("SECRETARIA"):
                         if tipo_desejado == "Prática":
                             return SEM_PROFESSORA_DISPONIVEL
                         continue
-                    else:
+                    if not tipo_cont:
                         continue
                     if tipo_cont == tipo_desejado:
                         return cont.split("|")[-1].strip()
@@ -2001,7 +2247,7 @@ if menu == "🏠 Secretaria":
                             continue
 
                         tipos_salvos = set(_valor_ou_none(tipo) for tipo in dados_aluna_faltante["Tipo"].tolist())
-                        for disciplina_faltante in ["Prática", "Teoria", "Solfejo"]:
+                        for disciplina_faltante in ["Prática", "Teoria", "Solfejo", "Canto"]:
                             professora_faltante = _prof_escalada_para(aluna_faltante, disciplina_faltante)
                             if (not professora_faltante or professora_faltante == SEM_PROFESSORA_DISPONIVEL
                                     or f"Analise_{disciplina_faltante}" in tipos_salvos):
@@ -2214,7 +2460,7 @@ if menu == "🏠 Secretaria":
                     tipos_registrados_hoje = set(_valor_ou_none(t) for t in dados_aluna['Tipo'].tolist())
                     faltando_lista = []
                     sem_professora_lista = []
-                    for disciplina in ["Prática", "Teoria", "Solfejo"]:
+                    for disciplina in ["Prática", "Teoria", "Solfejo", "Canto"]:
                         prof_esc_disc = _prof_escalada_para(aluna_v, disciplina)
                         if not prof_esc_disc or f"Analise_{disciplina}" in tipos_registrados_hoje:
                             continue
@@ -2393,6 +2639,71 @@ if menu == "🏠 Secretaria":
         if sabados:
             data_sel_str = st.selectbox("Selecione o Sábado:", [s.strftime("%d/%m/%Y") for s in sabados])
             calendario_db = db_get_calendario()
+
+            # Um modelo novo só entra na geração de datas a partir da sua
+            # vigência. O bloco legado abaixo permanece intacto para qualquer
+            # sábado anterior, inclusive quando ainda há registros pendentes.
+            try:
+                data_modelo_sel = datetime.strptime(data_sel_str, "%d/%m/%Y").date()
+            except ValueError:
+                data_modelo_sel = datetime.now().date()
+            modelo_da_data = db_modelo_logistica_para_data(data_modelo_sel)
+            if data_sel_str not in calendario_db and modelo_da_data.get("id") != MODELO_LEGADO_ID:
+                st.info(f"🧭 Esta data usa o modelo **{modelo_da_data.get('nome')}**. As escalas anteriores continuam no modelo de 4 blocos.")
+                configuracao_modelo = modelo_da_data.get("configuracao") or {}
+                _, blocos_modelo, salas_modelo, coletivas_modelo, componentes_modelo, turmas_modelo = _configurar_modelo_para_geracao(modelo_da_data)
+                st.caption(f"{len(blocos_modelo)} bloco(s) · {len(turmas_modelo)} turma(s) ativa(s) · {len(salas_modelo)} sala(s) individual(is) · atividades coletivas: {', '.join(coletivas_modelo) or '—'} · atendimento individual: {', '.join(componentes_modelo) or '—'}.")
+
+                try:
+                    folga_data_iso = data_modelo_sel.isoformat()
+                except Exception:
+                    folga_data_iso = ""
+                folga_modelo = db_get_folgas_professoras().get(folga_data_iso, {})
+                folgas_modelo = [p for p in (folga_modelo.get("professoras") or []) if p in PROFESSORAS_LISTA]
+                if folgas_modelo:
+                    st.warning("👑 Folgas informadas: " + ", ".join(folgas_modelo))
+                saida_modelo = st.multiselect(
+                    "Professoras indisponíveis neste sábado:",
+                    [p for p in PROFESSORAS_LISTA if p not in folgas_modelo],
+                    key=f"indisponiveis_modelo_{data_sel_str}",
+                    help="Use para ausências pontuais. As folgas da coordenadora já aparecem automaticamente.",
+                )
+                usar_fixas_modelo = False
+                if configuracao_modelo.get("usar_professoras_fixas"):
+                    usar_fixas_modelo = st.checkbox(
+                        "Usar professoras fixas neste rodízio?", value=True,
+                        key=f"usar_fixas_modelo_{data_sel_str}",
+                    )
+                if st.button("🚀 GERAR RODÍZIO DO MODELO", use_container_width=True, type="primary"):
+                    fixas_modelo = {}
+                    if usar_fixas_modelo and not df_fixas_editado.empty:
+                        for _, fixa in df_fixas_editado.iterrows():
+                            if pd.notna(fixa.get("Aluna")) and pd.notna(fixa.get("Prof")):
+                                fixas_modelo[str(fixa["Aluna"]).strip().lower()] = str(fixa["Prof"]).strip()
+                    # O checkbox existe apenas nesta geração; a versão do
+                    # modelo continua reutilizável para o próximo bimestre.
+                    configuracao_modelo["usar_professoras_fixas"] = usar_fixas_modelo
+                    modelo_geracao = dict(modelo_da_data, configuracao=configuracao_modelo)
+                    lista_modelo, erros_modelo = gerar_escala_modelo_configuravel(
+                        modelo_geracao, data_sel_str, folgas_modelo, saida_modelo, fixas_modelo
+                    )
+                    if erros_modelo:
+                        st.error("⚠️ O rodízio não foi salvo. Ajuste o modelo ou as disponibilidades:")
+                        for erro_modelo in erros_modelo:
+                            st.write("• " + erro_modelo)
+                    else:
+                        try:
+                            supabase.table("calendario").upsert({
+                                "id": data_sel_str, "escala": lista_modelo,
+                                "modelo_logistica_id": modelo_da_data.get("id"),
+                            }).execute()
+                            st.success("✅ Rodízio do novo modelo gerado e salvo. Cada atendimento de Solfejo e Prática aparecerá separadamente para registro.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error("Não foi possível salvar o novo modelo de escala. Execute as migrations 019 e 020 no Supabase.")
+                            st.caption(str(e))
+                # Não executa o gerador legado abaixo para esta data.
+                st.stop()
     
             if data_sel_str not in calendario_db:
                 st.info(f"Nenhuma escala encontrada para {data_sel_str}. Configure e gere abaixo.")
@@ -2788,6 +3099,14 @@ if menu == "🏠 Secretaria":
            # --- ABA 2: PLANEJAMENTO (V108 - EXPORTAÇÃO EM IMAGEM ÚNICA) ---
             else:
                 df_escala = pd.DataFrame(calendario_db[data_sel_str])
+                # Metadados do modelo identificam Solfejo/Prática para os
+                # registros, mas não devem poluir o editor visual da Secretaria.
+                detalhes_escala = {
+                    str(linha.get("Aluna")): linha.get("_detalhes") or {}
+                    for linha in calendario_db[data_sel_str]
+                }
+                if "_detalhes" in df_escala.columns:
+                    df_escala = df_escala.drop(columns=["_detalhes"])
                 
                 st.markdown(f"### 📸 Mural para Print - {data_sel_str}")
 
@@ -2799,7 +3118,7 @@ if menu == "🏠 Secretaria":
                          "SALA 9": "#e0e7ff", "SECRETARIA": "#fef3c7"}
 
                 colunas_html = ""
-                for idx, h_col in enumerate(HORARIOS):
+                for idx, h_col in enumerate(horarios_da_escala(calendario_db[data_sel_str])):
                     cards_html = ""
                     grupos = {}
                     for _, r in df_escala.iterrows():
@@ -2941,6 +3260,8 @@ if menu == "🏠 Secretaria":
                     lista_ajustada = _marcar_praticas_manuais_em_salas_coletivas(
                         df_editado_final.to_dict('records'), df_escala.to_dict('records')
                     )
+                    for linha_ajustada in lista_ajustada:
+                        linha_ajustada["_detalhes"] = detalhes_escala.get(str(linha_ajustada.get("Aluna")), {})
                     supabase.table("calendario").upsert({"id": data_sel_str, "escala": lista_ajustada}).execute()
                     # Sincroniza a memória do rodízio com o que ficou salvo de verdade,
                     # pra ajuste manual não se perder e não repetir errado no próximo sábado.
@@ -3339,12 +3660,16 @@ if menu == "🏠 Secretaria":
                             aluna = linha.get("Aluna")
                             if not aluna:
                                 continue
-                            for horario in HORARIOS[1:]:
+                            detalhes_evento = linha.get("_detalhes") or {}
+                            for horario in horarios_da_escala(escala_evento):
                                 texto = str(linha.get(horario, ""))
                                 if "|" not in texto:
                                     continue
+                                detalhe_evento = detalhes_evento.get(horario) or {}
                                 sala = texto.split("|")[0].strip().upper()
                                 professora = texto.split("|")[-1].strip()
+                                if detalhe_evento.get("individual"):
+                                    professora = str((detalhe_evento.get("professoras_componentes") or {}).get("Prática") or professora).strip()
                                 if (not sala.startswith("SALA") or "SALA 8" in sala or "SALA 9" in sala
                                         or "SECRETARIA" in sala or not professora):
                                     continue
@@ -3522,12 +3847,8 @@ if menu == "🏠 Secretaria":
                     {"Atividade": "Solfejo", "Formato": "Individual", "Duração (min)": 15, "Sala sugerida": "Salas individuais"},
                     {"Atividade": "Prática", "Formato": "Individual", "Duração (min)": 30, "Sala sugerida": "Salas individuais"},
                 ]
-                turmas_modelo = [{"Turma": turma, "Alunas cadastradas": len(alunas), "Ativa no modelo": True}
+                turmas_modelo = [{"Turma": turma, "Alunas cadastradas": len(alunas), "Capacidade planejada": len(alunas), "Ativa no modelo": True}
                                   for turma, alunas in TURMAS.items()]
-                fixas_modelo = pd.DataFrame([
-                    {"Aluna": aluna, "Professora fixa": professora}
-                    for aluna, professora in db_get_professoras_fixas().items()
-                ], columns=["Aluna", "Professora fixa"])
 
                 with st.form("form_modelo_logistica_completo"):
                     nome_modelo = st.text_input("Nome do modelo:", value="Próximo bimestre — Solfejo individual")
@@ -3540,9 +3861,11 @@ if menu == "🏠 Secretaria":
                     st.caption("Use o formato 08:50. Você pode incluir ou remover blocos.")
 
                     st.markdown("**2. Turmas que participam deste modelo**")
-                    turmas_editadas = st.data_editor(pd.DataFrame(turmas_modelo), use_container_width=True, hide_index=True,
-                        disabled=["Turma", "Alunas cadastradas"], key="modelo_turmas_editadas")
-                    st.caption("Para incluir, remover ou mover alunas entre turmas, use a aba “Turmas e Pessoas”.")
+                    turmas_editadas = st.data_editor(pd.DataFrame(turmas_modelo), num_rows="dynamic", use_container_width=True, hide_index=True,
+                        disabled=["Alunas cadastradas"],
+                        column_config={"Turma": st.column_config.TextColumn(required=True), "Alunas cadastradas": st.column_config.NumberColumn(), "Capacidade planejada": st.column_config.NumberColumn(min_value=1), "Ativa no modelo": st.column_config.CheckboxColumn()},
+                        key="modelo_turmas_editadas")
+                    st.caption("Você pode adicionar turmas planejadas aqui. Depois, vincule as alunas reais em “Turmas e Pessoas”.")
 
                     st.markdown("**3. Salas e capacidade**")
                     salas_editadas = st.data_editor(pd.DataFrame(salas_padrao), num_rows="dynamic", use_container_width=True,
@@ -3562,10 +3885,11 @@ if menu == "🏠 Secretaria":
                             key=f"modelo_habilitadas_{area_habilitada}",
                         )
 
-                    st.markdown("**6. Professoras fixas neste modelo**")
-                    fixas_editadas = st.data_editor(fixas_modelo, num_rows="dynamic", use_container_width=True,
-                        column_config={"Aluna": st.column_config.SelectboxColumn(options=ALUNAS_LISTA, required=True), "Professora fixa": st.column_config.SelectboxColumn(options=PROFESSORAS_LISTA, required=True)},
-                        key="modelo_fixas_editadas")
+                    st.markdown("**6. Professoras fixas**")
+                    usar_professoras_fixas = st.checkbox(
+                        "Este modelo usa professoras fixas?", value=False,
+                        help="As alunas e professoras fixas serão escolhidas somente na geração do rodízio.",
+                    )
 
                     st.markdown("**7. Regras do rodízio individual**")
                     regra_nao_repetir_aluna = st.checkbox("Não repetir professora para a mesma aluna antes de completar a roda", value=True)
@@ -3592,7 +3916,7 @@ if menu == "🏠 Secretaria":
                             "salas": salas_ativas,
                             "atividades": atividades_editadas.fillna("").to_dict("records"),
                             "professoras_habilitadas": habilitadas,
-                            "professoras_fixas": fixas_editadas.dropna(how="all").fillna("").to_dict("records"),
+                            "usar_professoras_fixas": usar_professoras_fixas,
                             "regras_rodizio": {"nao_repetir_aluna": regra_nao_repetir_aluna, "nao_repetir_sala": regra_nao_repetir_sala, "nao_repetir_imediata": regra_nao_repetir_imediata},
                             "mesma_professora_nos_componentes": mesma_professora_componentes,
                         }
@@ -3614,10 +3938,39 @@ if menu == "🏠 Secretaria":
                         salas_item = [s for s in (config_item.get("salas") or []) if s.get("Uso") == "Individual"]
                         atividades_item = config_item.get("atividades") or []
                         with st.container(border=True):
-                            st.write(f"**{modelo_item.get('nome')}** — {modelo_item.get('status', 'rascunho').title()}")
-                            st.caption(f"Vigência prevista: {modelo_item.get('vigencia_inicio')} · {len(salas_item)} sala(s) individual(is) · {len(atividades_item)} atividade(s)")
+                            status_visual = status_exibicao_modelo(modelo_item)
+                            st.write(f"**{modelo_item.get('nome')}** — {status_visual.title()}")
+                            periodo_fim = modelo_item.get("vigencia_fim") or "sem data final"
+                            st.caption(f"Vigência: {modelo_item.get('vigencia_inicio')} até {periodo_fim} · {len(salas_item)} sala(s) individual(is) · {len(atividades_item)} atividade(s)")
+                            modelo_id_item = modelo_item.get("id")
                             if modelo_item.get("status") == "rascunho":
-                                st.info("Rascunho preservado. A ativação será liberada junto ao novo gerador de escalas, para que nenhuma data receba uma logística incompleta.")
+                                if st.button("📅 Programar início", key=f"programar_modelo_{modelo_id_item}", use_container_width=True):
+                                    ok_prog, erro_prog = db_programar_modelo_logistica(modelo_id_item)
+                                    if ok_prog:
+                                        st.success("✅ Modelo programado. Ele só será usado nas escalas geradas a partir da data de vigência.")
+                                        st.rerun()
+                                    else:
+                                        st.error("Não foi possível programar: " + erro_prog)
+                            elif modelo_item.get("status") == "programado" and status_visual == "programado":
+                                if st.button("↩️ Cancelar programação", key=f"cancelar_modelo_{modelo_id_item}", use_container_width=True):
+                                    ok_cancelar, erro_cancelar = db_cancelar_programacao_modelo(modelo_id_item)
+                                    if ok_cancelar:
+                                        st.success("Programação cancelada; o modelo voltou a rascunho.")
+                                        st.rerun()
+                                    else:
+                                        st.error("Não foi possível cancelar: " + erro_cancelar)
+                            elif status_visual == "vigente":
+                                data_final_modelo = st.date_input(
+                                    "Encerrar este modelo em:", value=datetime.now().date(),
+                                    min_value=datetime.now().date(), key=f"fim_modelo_{modelo_id_item}",
+                                )
+                                if st.button("⏹️ Encerrar na data informada", key=f"encerrar_modelo_{modelo_id_item}", use_container_width=True):
+                                    ok_encerrar, erro_encerrar = db_encerrar_modelo_logistica(modelo_id_item, data_final_modelo)
+                                    if ok_encerrar:
+                                        st.success("✅ Modelo encerrado para novas escalas. O histórico continua preservado.")
+                                        st.rerun()
+                                    else:
+                                        st.error("Não foi possível encerrar: " + erro_encerrar)
                 else:
                     st.caption("Ainda não há modelos novos cadastrados. O sistema continua no modelo atual de 4 blocos.")
 
@@ -4122,7 +4475,7 @@ elif menu == "📁 Envio de Documentos":
             # Sem formulário: o destino precisa atualizar a tela imediatamente
             # para mostrar o seletor de turma ou de aluna.
             with st.container():
-                disciplina_gab = st.selectbox("Disciplina", ["Prática", "Teoria", "Solfejo"])
+                disciplina_gab = st.selectbox("Disciplina", ["Prática", "Teoria", "Solfejo", "Canto"])
                 destinos_documento = ["Uso interno", "Enviar para uma turma", "Enviar para uma aluna"]
                 destino_documento = st.radio("Destino do documento:", destinos_documento, horizontal=True)
                 turma_gab, aluna_documento = None, None
@@ -4163,7 +4516,7 @@ elif menu == "📁 Envio de Documentos":
 
     gabaritos = db_get_gabaritos()
     if gabaritos:
-        disciplinas_filtro = ["Todas"] + ["Prática", "Teoria", "Solfejo"]
+        disciplinas_filtro = ["Todas"] + ["Prática", "Teoria", "Solfejo", "Canto"]
         filtro_disc = st.selectbox("Filtrar por disciplina", disciplinas_filtro)
         for gab in gabaritos:
             if filtro_disc != "Todas" and gab.get("disciplina") != filtro_disc:
@@ -4352,7 +4705,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
             df_metodos_db,
             column_config={
                 "nome": st.column_config.TextColumn("Nome do Método", help="Ex: Kohler, Burgmüller, MSA", required=True),
-                "categoria": st.column_config.SelectboxColumn("Área", options=["Prática", "Teoria", "Solfejo"], required=True)
+                "categoria": st.column_config.SelectboxColumn("Área", options=["Prática", "Teoria", "Solfejo", "Canto"], required=True)
             },
             num_rows="dynamic",
             use_container_width=True,
@@ -4390,7 +4743,8 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
         if dt_str in cal_db:
             for reg in cal_db[dt_str]:
-                for h in HORARIOS:
+                detalhes_registro = reg.get("_detalhes") or {}
+                for h in horarios_da_escala(cal_db[dt_str]):
                     cont = str(reg.get(h, ""))
                     # O horário da Igreja normalmente é coletivo. Se a
                     # Secretaria preencher uma sala/professora manualmente para
@@ -4398,28 +4752,35 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     if h == HORARIOS[0] and "TODAS" in cont.upper():
                         continue
                     if cont and n_bus in limpar_texto(cont).lower():
-                        tipo = ("Teoria" if "SALA 8" in cont.upper()
-                                else "Solfejo" if "SALA 9" in cont.upper() else "Prática")
-                        individual_na_sala_coletiva = _e_alocacao_individual_em_sala_coletiva(cont)
-                        sala = cont.split('|')[0].strip()
-                        if individual_na_sala_coletiva:
-                            disciplina_sala = "Teoria" if tipo == "Teoria" else "Solfejo"
-                            sala = re.sub(r"\(PR[ÁA]TICA\)", f"({disciplina_sala})", sala, flags=re.IGNORECASE)
-                        turma_aluna = aluna_para_turma.get(reg.get("Aluna"))
-                        
-                        if tipo == "Prática" or individual_na_sala_coletiva:
-                            icone = "🎹" if tipo == "Prática" else "📚" if tipo == "Teoria" else "🔊"
-                            label = f"{icone} {h} | {reg.get('Aluna')} — {tipo} ({sala})"
-                            id_unica = f"{h}_I_{reg.get('Aluna')}"
-                        else:
-                            id_turma = f"{h}_{tipo}_{turma_aluna}"
-                            if id_turma not in vistos_turma:
-                                label = f"📚 {h} | {tipo} - {turma_aluna} ({sala})"
-                                id_unica = id_turma
-                                vistos_turma.add(id_turma)
-                            else: continue
-                        
-                        aulas_listagem.append({"label": label, "id": id_unica, "h": h, "tipo": tipo, "al": reg.get("Aluna"), "tr": turma_aluna, "loc": sala, "individual": individual_na_sala_coletiva or tipo == "Prática"})
+                        detalhe_horario = detalhes_registro.get(h) or {}
+                        componentes = detalhe_horario.get("componentes") if detalhe_horario.get("individual") else None
+                        tipos_da_linha = componentes or [detalhe_horario.get("tipo") or ("Teoria" if "SALA 8" in cont.upper()
+                                else "Solfejo" if "SALA 9" in cont.upper() else "Prática")]
+                        professoras_componentes = detalhe_horario.get("professoras_componentes") or {}
+                        if professoras_componentes:
+                            tipos_da_linha = [tipo for tipo in tipos_da_linha
+                                               if n_bus == limpar_texto(professoras_componentes.get(tipo, "")).lower().strip()]
+                        for tipo in tipos_da_linha:
+                            tipo = str(tipo).strip()
+                            individual_na_sala_coletiva = _e_alocacao_individual_em_sala_coletiva(cont)
+                            sala = cont.split('|')[0].strip()
+                            if individual_na_sala_coletiva:
+                                disciplina_sala = "Teoria" if tipo == "Teoria" else "Solfejo"
+                                sala = re.sub(r"\(PR[ÁA]TICA\)", f"({disciplina_sala})", sala, flags=re.IGNORECASE)
+                            turma_aluna = aluna_para_turma.get(reg.get("Aluna"))
+                            if tipo == "Prática" or individual_na_sala_coletiva or detalhe_horario.get("individual"):
+                                icone = "🎹" if tipo == "Prática" else "📚" if tipo == "Teoria" else "🎤" if tipo == "Canto" else "🔊"
+                                label = f"{icone} {h} | {reg.get('Aluna')} — {tipo} ({sala})"
+                                id_unica = f"{h}_I_{reg.get('Aluna')}_{tipo}"
+                            else:
+                                id_turma = f"{h}_{tipo}_{turma_aluna}"
+                                if id_turma not in vistos_turma:
+                                    label = f"📚 {h} | {tipo} - {turma_aluna} ({sala})"
+                                    id_unica = id_turma
+                                    vistos_turma.add(id_turma)
+                                else:
+                                    continue
+                            aulas_listagem.append({"label": label, "id": id_unica, "h": h, "tipo": tipo, "al": reg.get("Aluna"), "tr": turma_aluna, "loc": sala, "individual": individual_na_sala_coletiva or detalhe_horario.get("individual") or tipo == "Prática"})
 
         # --- LÓGICA DE EXIBIÇÃO DE FOLGA ---
         if not aulas_listagem:
@@ -4946,16 +5307,22 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         # não se mistura com a apostila de Prática da Secretaria.
                         base_tipo_casa = "Apostila_Teoria" if tipo_casa_sel == "Apostila" else "Teoria"
                         if conteudo_casa: tarefas_casa[f"{base_tipo_casa}{sufixo}"] = conteudo_casa
-                    else:  # Solfejo
+                    elif tipo_aula == "Solfejo":
                         st.info("🔊 Solfejo é corrigido pela professora em sala. Registre o conteúdo dado hoje e a lição para estudo até a próxima aula; não será enviado à secretaria.")
                         casa_solfejo_salva = casas_hoje[casas_hoje['Tipo'] == "Casa_MSA"] if not casas_hoje.empty else pd.DataFrame()
                         conteudo_solfejo_salvo = str(casa_solfejo_salva.iloc[-1].get("Licao_Casa") or "") if not casa_solfejo_salva.empty else ""
                         conteudo_casa = st.text_input("🎼 Lição de casa para a próxima aula:", value=conteudo_solfejo_salvo, key=f"cc_{d_sel['id']}", placeholder="Ex.: MSA, exercício ou página para estudar")
                         if conteudo_casa: tarefas_casa["MSA"] = conteudo_casa
+                    else:  # Canto (solfejo melódico)
+                        st.info("🎤 Canto é uma aula de turma. Se houver estudo para casa, registre-o aqui; ele ficará no histórico da aluna.")
+                        casa_canto_salva = casas_hoje[casas_hoje['Tipo'] == "Casa_Canto"] if not casas_hoje.empty else pd.DataFrame()
+                        conteudo_canto_salvo = str(casa_canto_salva.iloc[-1].get("Licao_Casa") or "") if not casa_canto_salva.empty else ""
+                        conteudo_casa = st.text_input("🎤 Estudo para a próxima aula:", value=conteudo_canto_salvo, key=f"cc_{d_sel['id']}", placeholder="Ex.: vocalize, música ou trecho para praticar")
+                        if conteudo_casa: tarefas_casa["Canto"] = conteudo_casa
 
                     # Método — sempre precisa informar a lição de casa (não é opcional),
                     # só não entra na correção da secretaria.
-                    if metodos_filtrados and tipo_aula != "Solfejo":
+                    if metodos_filtrados and tipo_aula not in ("Solfejo", "Canto"):
                         metodo_casa_sel = st.selectbox("🎼 Método:", metodos_filtrados, key=f"met_casa_{d_sel['id']}")
                         metodo_casa_pag = st.text_input(f"🎼 Lição de casa — {metodo_casa_sel}:", key=f"met_pag_{d_sel['id']}")
                     else:
@@ -4965,7 +5332,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     if st.button("💾 SALVAR E CONGELAR ANÁLISE", use_container_width=True, key=f"btnsalvar_{d_sel['id']}"):
                         if not mat_focado:
                             st.error("Informe o material usado hoje antes de salvar.")
-                        elif metodos_filtrados and tipo_aula != "Solfejo" and not metodo_casa_pag.strip():
+                        elif metodos_filtrados and tipo_aula not in ("Solfejo", "Canto") and not metodo_casa_pag.strip():
                             st.error(f"⚠️ Preencha a lição de casa do método ({metodo_casa_sel}). Não é opcional.")
                         else:
                             if metodo_casa_sel and metodo_casa_pag:
@@ -5171,7 +5538,7 @@ elif menu == "📊 Analítico IA":
                 )
                 if notas_periodo:
                     linhas_comparacao = []
-                    for disciplina_cmp in ["Prática", "Teoria", "Solfejo"]:
+                    for disciplina_cmp in ["Prática", "Teoria", "Solfejo", "Canto"]:
                         notas_disc = [float(n["nota"]) for n in notas_periodo if n.get("disciplina") == disciplina_cmp]
                         regs_disc = pedag_rows[pedag_rows["Tipo"] == f"Analise_{disciplina_cmp}"]
                         if regs_disc.empty and not notas_disc:
@@ -5395,7 +5762,7 @@ elif menu == "📊 Analítico IA":
                 # DISCIPLINA (não um número só misturando tudo) — só considera
                 # aulas de fato analisadas (Analise_...) nesse período.
                 resumo_disciplinas = []
-                for disciplina_r in ["Prática", "Teoria", "Solfejo"]:
+                for disciplina_r in ["Prática", "Teoria", "Solfejo", "Canto"]:
                     rows_disc = pedag_rows[pedag_rows['Tipo'] == f"Analise_{disciplina_r}"]
                     total_disc = len(rows_disc)
                     if total_disc == 0:
@@ -5553,7 +5920,7 @@ das aulas; pontos fortes e pontos que precisam de reforço; plano objetivo para 
             linhas_quadro = []
             for al in ALUNAS_LISTA:
                 linha = {"Aluna": al}
-                for materia in ["Prática", "Teoria", "Solfejo"]:
+                for materia in ["Prática", "Teoria", "Solfejo", "Canto"]:
                     regs = df_periodo_q[(df_periodo_q['Aluna'] == al) & (df_periodo_q['Tipo'] == f"Analise_{materia}")].copy()
                     icone, nome_medalha, score_final, tem_dados = calcular_classificacao_desempenho(regs)
                     linha[materia] = f"{icone} {nome_medalha}" + (f" ({score_final}%)" if tem_dados else " (sem registros)")
