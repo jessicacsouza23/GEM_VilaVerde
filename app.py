@@ -291,12 +291,12 @@ def modelo_solfejo_individual_padrao():
     return {
         "modo": "solfejo_individual",
         "blocos": [
-            {"nome": "Aula 1", "inicio": "08:50", "fim": "09:35"},
-            {"nome": "Aula 2", "inicio": "09:40", "fim": "10:25"},
-            {"nome": "Aula 3", "inicio": "10:30", "fim": "11:15"},
+            {"nome": "Bloco 1", "inicio": "08:50", "fim": "09:35"},
+            {"nome": "Bloco 2", "inicio": "09:40", "fim": "10:25"},
+            {"nome": "Bloco 3", "inicio": "10:30", "fim": "11:15"},
         ],
         "atividades_turma": [
-            {"nome": "Solfejo Melodico", "sala": "SALA 9", "modo": "turma"},
+            {"nome": "Solfejo Melódico", "sala": "SALA 9", "modo": "turma"},
             {"nome": "Teoria", "sala": "SALA 8", "modo": "turma"},
         ],
         "atendimento_individual": {
@@ -417,6 +417,11 @@ def _horario_modelo(bloco, indice):
     return f"{inicio} - {fim} ({nome})" if inicio and fim else nome
 
 
+def nome_area_exibicao(nome):
+    """Nome pedagógico usado na interface; preserva dados antigos de Canto."""
+    return "Solfejo Melódico" if limpar_texto(nome) == "CANTO" else str(nome or "").strip()
+
+
 def horarios_da_escala(escala):
     """Lê as colunas de horários da própria escala, inclusive modelos futuros."""
     if not escala:
@@ -432,10 +437,10 @@ def _configurar_modelo_para_geracao(modelo):
     blocos = [b for b in config.get("blocos", []) if str(b.get("Início") or b.get("inicio") or "").strip()]
     salas = [s for s in config.get("salas", []) if s.get("Ativa", True)]
     individuais = [str(s.get("Sala") or "").strip() for s in salas if str(s.get("Uso") or "").lower() == "individual" and str(s.get("Sala") or "").strip()]
-    coletivas = {str(a.get("Atividade") or "").strip(): str(a.get("Sala sugerida") or "").strip()
+    coletivas = {nome_area_exibicao(a.get("Atividade")): str(a.get("Sala sugerida") or "").strip()
                   for a in config.get("atividades", []) if str(a.get("Formato") or "").lower() == "turma"}
     atividades = config.get("atividades", [])
-    individuais_atividades = [str(a.get("Atividade") or "").strip() for a in atividades if str(a.get("Formato") or "").lower() == "individual"]
+    individuais_atividades = [nome_area_exibicao(a.get("Atividade")) for a in atividades if str(a.get("Formato") or "").lower() == "individual"]
     turmas = [str(t.get("Turma") or "").strip() for t in config.get("turmas", []) if t.get("Ativa no modelo", True) and str(t.get("Turma") or "").strip() in TURMAS]
     return config, blocos, individuais, coletivas, individuais_atividades, turmas
 
@@ -537,7 +542,8 @@ def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, sa
                     for outra in escala.values() for valor in [outra.get(horario, "")]
                     if "|" in str(valor)
                 }
-                candidatas = [p for p in habilitadas.get(posicao, professoras_disponiveis)
+                habilitadas_da_area = habilitadas.get(posicao) or (habilitadas.get("Canto") if posicao == "Solfejo Melódico" else None) or professoras_disponiveis
+                candidatas = [p for p in habilitadas_da_area
                               if p in professoras_disponiveis and p not in indisponiveis_neste_bloco and p not in ocupadas]
                 professora_escolhida = (professoras_coletivas.get(posicao) or {}).get(turma)
                 if professora_escolhida:
@@ -1094,6 +1100,8 @@ TIPOS_CORRECAO_SECRETARIA = ["Casa_Apostila", "Casa_Teoria"]
 def _categoria_licao_casa(tipo_bruto):
     if tipo_bruto == "Casa_MSA":
         return "Solfejo"
+    if tipo_bruto == "Casa_Canto":
+        return "Solfejo Melódico"
     if tipo_bruto in ("Casa_Teoria", "Casa_Teoria_Prof", "Casa_Apostila_Teoria", "Casa_Apostila_Teoria_Prof", "Casa_Apostila_Prof"):
         return "Teoria"
     if tipo_bruto == "Casa_Apostila":
@@ -1109,6 +1117,8 @@ def _metodo_ou_material(tipo_bruto):
         return tipo_bruto.replace("Casa_Metodo_", "")
     if tipo_bruto == "Casa_MSA":
         return "MSA"
+    if tipo_bruto == "Casa_Canto":
+        return "Solfejo Melódico"
     if tipo_bruto in ("Casa_Teoria", "Casa_Teoria_Prof"):
         return "Folha Avulsa"
     return "Atividade"
@@ -2709,7 +2719,8 @@ if menu == "🏠 Secretaria":
                     colunas_coletivas = st.columns(len(coletivas_modelo))
                     for indice_atividade, atividade_coletiva in enumerate(coletivas_modelo):
                         professoras_coletivas_modelo[atividade_coletiva] = {}
-                        opcoes_atividade = [p for p in habilitadas_modelo.get(atividade_coletiva, PROFESSORAS_LISTA) if p in PROFESSORAS_LISTA]
+                        opcoes_habilitadas = habilitadas_modelo.get(atividade_coletiva) or (habilitadas_modelo.get("Canto") if atividade_coletiva == "Solfejo Melódico" else None) or PROFESSORAS_LISTA
+                        opcoes_atividade = [p for p in opcoes_habilitadas if p in PROFESSORAS_LISTA]
                         if not opcoes_atividade:
                             colunas_coletivas[indice_atividade].warning(f"Nenhuma professora habilitada para {atividade_coletiva}.")
                             continue
@@ -3270,6 +3281,14 @@ if menu == "🏠 Secretaria":
                             continue
 
                         local_exibicao = local_prof
+                        # Escalas novas guardam o tipo real da aula. Isso evita
+                        # chamar toda Sala 9 de Solfejo quando ela é a aula de
+                        # Solfejo Melódico.
+                        tipo_da_sala = next((
+                            (linha.get("_detalhes") or {}).get(h_col, {}).get("tipo")
+                            for linha in calendario_db[data_sel_str]
+                            if str(linha.get(h_col, "")) == local_prof
+                        ), None)
                         if local_up.startswith("SECRETARIA"):
                             local_exibicao = "ATIVIDADE COM AS SECRETARIAS"
                         elif _e_alocacao_individual_em_sala_coletiva(local_prof):
@@ -3278,7 +3297,7 @@ if menu == "🏠 Secretaria":
                         if "SALA 8" in local_up and not _e_alocacao_individual_em_sala_coletiva(local_prof):
                             local_exibicao = f"{local_prof} (Teoria)"
                         elif "SALA 9" in local_up and not _e_alocacao_individual_em_sala_coletiva(local_prof):
-                            local_exibicao = f"{local_prof} (Solfejo)"
+                            local_exibicao = f"{local_prof} ({nome_area_exibicao(tipo_da_sala) if tipo_da_sala else 'Solfejo'})"
 
                         bg = "#ffffff"
                         for sala, cor in cores.items():
@@ -3998,8 +4017,8 @@ if menu == "🏠 Secretaria":
                 # o Streamlit não reaproveitar campos de outro modelo.
                 if config_edicao:
                     blocos_padrao = config_edicao.get("blocos") or blocos_padrao
-                    salas_padrao = config_edicao.get("salas") or salas_padrao
-                    atividades_padrao = config_edicao.get("atividades") or atividades_padrao
+                    salas_padrao = [dict(sala, **{"Área": nome_area_exibicao(sala.get("Área"))}) for sala in (config_edicao.get("salas") or salas_padrao)]
+                    atividades_padrao = [dict(atividade, **{"Atividade": nome_area_exibicao(atividade.get("Atividade"))}) for atividade in (config_edicao.get("atividades") or atividades_padrao)]
                     turmas_modelo = config_edicao.get("turmas") or turmas_modelo
                 chave_edicao = (modelo_em_edicao or {}).get("id") or "novo"
                 nome_inicial = (modelo_em_edicao or {}).get("nome") or "Próximo bimestre — Solfejo individual"
@@ -4044,7 +4063,9 @@ if menu == "🏠 Secretaria":
                     for area_habilitada in ["Solfejo Melódico", "Teoria", "Solfejo", "Prática"]:
                         habilitadas[area_habilitada] = st.multiselect(
                             area_habilitada, PROFESSORAS_LISTA,
-                            default=(config_edicao.get("professoras_habilitadas") or {}).get(area_habilitada, PROFESSORAS_LISTA),
+                            default=((config_edicao.get("professoras_habilitadas") or {}).get(area_habilitada)
+                                     or ((config_edicao.get("professoras_habilitadas") or {}).get("Canto") if area_habilitada == "Solfejo Melódico" else None)
+                                     or PROFESSORAS_LISTA),
                             key=f"modelo_habilitadas_{area_habilitada}_{chave_edicao}",
                         )
 
@@ -5484,12 +5505,12 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         conteudo_solfejo_salvo = str(casa_solfejo_salva.iloc[-1].get("Licao_Casa") or "") if not casa_solfejo_salva.empty else ""
                         conteudo_casa = st.text_input("🎼 Lição de casa para a próxima aula:", value=conteudo_solfejo_salvo, key=f"cc_{d_sel['id']}", placeholder="Ex.: MSA, exercício ou página para estudar")
                         if conteudo_casa: tarefas_casa["MSA"] = conteudo_casa
-                    else:  # Solfejo Melódico (solfejo melódico)
-                        st.info("🎤 Canto é uma aula de turma. Se houver estudo para casa, registre-o aqui; ele ficará no histórico da aluna.")
+                    else:  # Solfejo Melódico
+                        st.info("🎤 Solfejo Melódico é uma aula de turma. Se houver estudo para casa, registre-o aqui; ele ficará no histórico da aluna.")
                         casa_canto_salva = casas_hoje[casas_hoje['Tipo'] == "Casa_Canto"] if not casas_hoje.empty else pd.DataFrame()
                         conteudo_canto_salvo = str(casa_canto_salva.iloc[-1].get("Licao_Casa") or "") if not casa_canto_salva.empty else ""
                         conteudo_casa = st.text_input("🎤 Estudo para a próxima aula:", value=conteudo_canto_salvo, key=f"cc_{d_sel['id']}", placeholder="Ex.: vocalize, música ou trecho para praticar")
-                        if conteudo_casa: tarefas_casa["Solfejo Melódico"] = conteudo_casa
+                        if conteudo_casa: tarefas_casa["Canto"] = conteudo_casa
 
                     # Método — sempre precisa informar a lição de casa (não é opcional),
                     # só não entra na correção da secretaria.
