@@ -291,12 +291,12 @@ def modelo_solfejo_individual_padrao():
     return {
         "modo": "solfejo_individual",
         "blocos": [
-            {"nome": "Bloco 1", "inicio": "08:50", "fim": "09:35"},
-            {"nome": "Bloco 2", "inicio": "09:40", "fim": "10:25"},
-            {"nome": "Bloco 3", "inicio": "10:30", "fim": "11:15"},
+            {"nome": "Aula 1", "inicio": "08:50", "fim": "09:35"},
+            {"nome": "Aula 2", "inicio": "09:40", "fim": "10:25"},
+            {"nome": "Aula 3", "inicio": "10:30", "fim": "11:15"},
         ],
         "atividades_turma": [
-            {"nome": "Canto", "sala": "SALA 9", "modo": "turma"},
+            {"nome": "Solfejo Melodico", "sala": "SALA 9", "modo": "turma"},
             {"nome": "Teoria", "sala": "SALA 8", "modo": "turma"},
         ],
         "atendimento_individual": {
@@ -1143,7 +1143,7 @@ def _renderizar_pendencias_casa(pendentes_df, somente_proxima_aula=False):
 
     icones_disciplina = {"Prática": "🎹", "Teoria": "📚", "Solfejo": "🔊", "Outra atividade": "📖"}
 
-    for disciplina in ["Prática", "Teoria", "Solfejo", "Canto", "Outra atividade"]:
+    for disciplina in ["Prática", "Teoria", "Solfejo", "Solfejo Melódico", "Outra atividade"]:
         bloco_disc = pendentes_df[pendentes_df['_disciplina'] == disciplina]
         if bloco_disc.empty:
             continue
@@ -1227,7 +1227,7 @@ def _renderizar_licoes_aluna_com_historico(licoes_df, aluna, feitas):
         atuais_ids = {str(pendentes.loc[idx].get("id")) for idx in indice_atual if pd.notna(idx)}
 
     st.caption("Marcar como **Feito** é apenas seu controle pessoal. A lição continua no histórico e a professora registra o acompanhamento na aula.")
-    for disciplina in ["Prática", "Teoria", "Solfejo", "Canto", "Outra atividade"]:
+    for disciplina in ["Prática", "Teoria", "Solfejo", "Solfejo Melódico", "Outra atividade"]:
         bloco = licoes_df[licoes_df["_disciplina"] == disciplina].sort_values("_dt_tmp", ascending=False)
         if bloco.empty:
             continue
@@ -2293,7 +2293,7 @@ if menu == "🏠 Secretaria":
                             continue
 
                         tipos_salvos = set(_valor_ou_none(tipo) for tipo in dados_aluna_faltante["Tipo"].tolist())
-                        for disciplina_faltante in ["Prática", "Teoria", "Solfejo", "Canto"]:
+                        for disciplina_faltante in ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"]:
                             professora_faltante = _prof_escalada_para(aluna_faltante, disciplina_faltante)
                             if (not professora_faltante or professora_faltante == SEM_PROFESSORA_DISPONIVEL
                                     or f"Analise_{disciplina_faltante}" in tipos_salvos):
@@ -2506,7 +2506,7 @@ if menu == "🏠 Secretaria":
                     tipos_registrados_hoje = set(_valor_ou_none(t) for t in dados_aluna['Tipo'].tolist())
                     faltando_lista = []
                     sem_professora_lista = []
-                    for disciplina in ["Prática", "Teoria", "Solfejo", "Canto"]:
+                    for disciplina in ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"]:
                         prof_esc_disc = _prof_escalada_para(aluna_v, disciplina)
                         if not prof_esc_disc or f"Analise_{disciplina}" in tipos_registrados_hoje:
                             continue
@@ -3979,14 +3979,14 @@ if menu == "🏠 Secretaria":
                 st.caption("Os valores abaixo são apenas um ponto de partida. Todos podem ser alterados pela Secretaria antes de salvar.")
                 salas_padrao = ([{"Sala": f"SALA {n}", "Uso": "Individual", "Área": "Prática + Solfejo", "Ativa": True} for n in range(1, 8)] +
                                 [{"Sala": "SALA 8", "Uso": "Turma", "Área": "Teoria", "Ativa": True},
-                                 {"Sala": "SALA 9", "Uso": "Turma", "Área": "Canto", "Ativa": True}])
+                                 {"Sala": "SALA 9", "Uso": "Turma", "Área": "Solfejo Melódico", "Ativa": True}])
                 blocos_padrao = [
                     {"Bloco": "Bloco 1", "Início": "08:50", "Fim": "09:35"},
                     {"Bloco": "Bloco 2", "Início": "09:40", "Fim": "10:25"},
                     {"Bloco": "Bloco 3", "Início": "10:30", "Fim": "11:15"},
                 ]
                 atividades_padrao = [
-                    {"Atividade": "Canto", "Formato": "Turma", "Duração (min)": 45, "Sala sugerida": "SALA 9"},
+                    {"Atividade": "Solfejo Melódico", "Formato": "Turma", "Duração (min)": 45, "Sala sugerida": "SALA 9"},
                     {"Atividade": "Teoria", "Formato": "Turma", "Duração (min)": 45, "Sala sugerida": "SALA 8"},
                     {"Atividade": "Solfejo", "Formato": "Individual", "Duração (min)": 15, "Sala sugerida": "Salas individuais"},
                     {"Atividade": "Prática", "Formato": "Individual", "Duração (min)": 30, "Sala sugerida": "Salas individuais"},
@@ -4041,7 +4041,7 @@ if menu == "🏠 Secretaria":
 
                     st.markdown("**5. Professoras habilitadas por área**")
                     habilitadas = {}
-                    for area_habilitada in ["Canto", "Teoria", "Solfejo", "Prática"]:
+                    for area_habilitada in ["Solfejo Melódico", "Teoria", "Solfejo", "Prática"]:
                         habilitadas[area_habilitada] = st.multiselect(
                             area_habilitada, PROFESSORAS_LISTA,
                             default=(config_edicao.get("professoras_habilitadas") or {}).get(area_habilitada, PROFESSORAS_LISTA),
@@ -4646,7 +4646,7 @@ elif menu == "📁 Envio de Documentos":
             # Sem formulário: o destino precisa atualizar a tela imediatamente
             # para mostrar o seletor de turma ou de aluna.
             with st.container():
-                disciplina_gab = st.selectbox("Disciplina", ["Prática", "Teoria", "Solfejo", "Canto"])
+                disciplina_gab = st.selectbox("Disciplina", ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"])
                 destinos_documento = ["Uso interno", "Enviar para uma turma", "Enviar para uma aluna"]
                 destino_documento = st.radio("Destino do documento:", destinos_documento, horizontal=True)
                 turma_gab, aluna_documento = None, None
@@ -4687,7 +4687,7 @@ elif menu == "📁 Envio de Documentos":
 
     gabaritos = db_get_gabaritos()
     if gabaritos:
-        disciplinas_filtro = ["Todas"] + ["Prática", "Teoria", "Solfejo", "Canto"]
+        disciplinas_filtro = ["Todas"] + ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"]
         filtro_disc = st.selectbox("Filtrar por disciplina", disciplinas_filtro)
         for gab in gabaritos:
             if filtro_disc != "Todas" and gab.get("disciplina") != filtro_disc:
@@ -4876,7 +4876,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
             df_metodos_db,
             column_config={
                 "nome": st.column_config.TextColumn("Nome do Método", help="Ex: Kohler, Burgmüller, MSA", required=True),
-                "categoria": st.column_config.SelectboxColumn("Área", options=["Prática", "Teoria", "Solfejo", "Canto"], required=True)
+                "categoria": st.column_config.SelectboxColumn("Área", options=["Prática", "Teoria", "Solfejo", "Solfejo Melódico"], required=True)
             },
             num_rows="dynamic",
             use_container_width=True,
@@ -4940,7 +4940,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                 sala = re.sub(r"\(PR[ÁA]TICA\)", f"({disciplina_sala})", sala, flags=re.IGNORECASE)
                             turma_aluna = aluna_para_turma.get(reg.get("Aluna"))
                             if tipo == "Prática" or individual_na_sala_coletiva or detalhe_horario.get("individual"):
-                                icone = "🎹" if tipo == "Prática" else "📚" if tipo == "Teoria" else "🎤" if tipo == "Canto" else "🔊"
+                                icone = "🎹" if tipo == "Prática" else "📚" if tipo == "Teoria" else "🎤" if tipo == "Solfejo Melódico" else "🔊"
                                 label = f"{icone} {h} | {reg.get('Aluna')} — {tipo} ({sala})"
                                 id_unica = f"{h}_I_{reg.get('Aluna')}_{tipo}"
                             else:
@@ -5484,16 +5484,16 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         conteudo_solfejo_salvo = str(casa_solfejo_salva.iloc[-1].get("Licao_Casa") or "") if not casa_solfejo_salva.empty else ""
                         conteudo_casa = st.text_input("🎼 Lição de casa para a próxima aula:", value=conteudo_solfejo_salvo, key=f"cc_{d_sel['id']}", placeholder="Ex.: MSA, exercício ou página para estudar")
                         if conteudo_casa: tarefas_casa["MSA"] = conteudo_casa
-                    else:  # Canto (solfejo melódico)
+                    else:  # Solfejo Melódico (solfejo melódico)
                         st.info("🎤 Canto é uma aula de turma. Se houver estudo para casa, registre-o aqui; ele ficará no histórico da aluna.")
                         casa_canto_salva = casas_hoje[casas_hoje['Tipo'] == "Casa_Canto"] if not casas_hoje.empty else pd.DataFrame()
                         conteudo_canto_salvo = str(casa_canto_salva.iloc[-1].get("Licao_Casa") or "") if not casa_canto_salva.empty else ""
                         conteudo_casa = st.text_input("🎤 Estudo para a próxima aula:", value=conteudo_canto_salvo, key=f"cc_{d_sel['id']}", placeholder="Ex.: vocalize, música ou trecho para praticar")
-                        if conteudo_casa: tarefas_casa["Canto"] = conteudo_casa
+                        if conteudo_casa: tarefas_casa["Solfejo Melódico"] = conteudo_casa
 
                     # Método — sempre precisa informar a lição de casa (não é opcional),
                     # só não entra na correção da secretaria.
-                    if metodos_filtrados and tipo_aula not in ("Solfejo", "Canto"):
+                    if metodos_filtrados and tipo_aula not in ("Solfejo", "Solfejo Melódico"):
                         metodo_casa_sel = st.selectbox("🎼 Método:", metodos_filtrados, key=f"met_casa_{d_sel['id']}")
                         metodo_casa_pag = st.text_input(f"🎼 Lição de casa — {metodo_casa_sel}:", key=f"met_pag_{d_sel['id']}")
                     else:
@@ -5503,7 +5503,7 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     if st.button("💾 SALVAR E CONGELAR ANÁLISE", use_container_width=True, key=f"btnsalvar_{d_sel['id']}"):
                         if not mat_focado:
                             st.error("Informe o material usado hoje antes de salvar.")
-                        elif metodos_filtrados and tipo_aula not in ("Solfejo", "Canto") and not metodo_casa_pag.strip():
+                        elif metodos_filtrados and tipo_aula not in ("Solfejo", "Solfejo Melódico") and not metodo_casa_pag.strip():
                             st.error(f"⚠️ Preencha a lição de casa do método ({metodo_casa_sel}). Não é opcional.")
                         else:
                             if metodo_casa_sel and metodo_casa_pag:
@@ -5709,7 +5709,7 @@ elif menu == "📊 Analítico IA":
                 )
                 if notas_periodo:
                     linhas_comparacao = []
-                    for disciplina_cmp in ["Prática", "Teoria", "Solfejo", "Canto"]:
+                    for disciplina_cmp in ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"]:
                         notas_disc = [float(n["nota"]) for n in notas_periodo if n.get("disciplina") == disciplina_cmp]
                         regs_disc = pedag_rows[pedag_rows["Tipo"] == f"Analise_{disciplina_cmp}"]
                         if regs_disc.empty and not notas_disc:
@@ -5933,7 +5933,7 @@ elif menu == "📊 Analítico IA":
                 # DISCIPLINA (não um número só misturando tudo) — só considera
                 # aulas de fato analisadas (Analise_...) nesse período.
                 resumo_disciplinas = []
-                for disciplina_r in ["Prática", "Teoria", "Solfejo", "Canto"]:
+                for disciplina_r in ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"]:
                     rows_disc = pedag_rows[pedag_rows['Tipo'] == f"Analise_{disciplina_r}"]
                     total_disc = len(rows_disc)
                     if total_disc == 0:
@@ -6091,7 +6091,7 @@ das aulas; pontos fortes e pontos que precisam de reforço; plano objetivo para 
             linhas_quadro = []
             for al in ALUNAS_LISTA:
                 linha = {"Aluna": al}
-                for materia in ["Prática", "Teoria", "Solfejo", "Canto"]:
+                for materia in ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"]:
                     regs = df_periodo_q[(df_periodo_q['Aluna'] == al) & (df_periodo_q['Tipo'] == f"Analise_{materia}")].copy()
                     icone, nome_medalha, score_final, tem_dados = calcular_classificacao_desempenho(regs)
                     linha[materia] = f"{icone} {nome_medalha}" + (f" ({score_final}%)" if tem_dados else " (sem registros)")
