@@ -630,6 +630,73 @@ def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, sa
                         escala[aluna]["_detalhes"][horario]["professoras_componentes"] = {
                             "Solfejo": professora_solfejo, "Prática": professora_pratica
                         }
+
+    # Salas fixas por sábado: depois de definir quem atende cada aluna, colore
+    # as professoras por sala. Professoras que atuam no individual no mesmo
+    # bloco recebem salas diferentes; quando voltarem ao individual em outro
+    # bloco, reencontram exatamente a mesma sala.
+    professoras_por_bloco = {}
+    for linha in escala.values():
+        detalhes_linha = linha.get("_detalhes") or {}
+        for horario, detalhe in detalhes_linha.items():
+            if not detalhe.get("individual"):
+                continue
+            valor = str(linha.get(horario, ""))
+            professoras_componentes = detalhe.get("professoras_componentes") or {}
+            professora = str(professoras_componentes.get("Prática") or (valor.split("|", 1)[1].strip() if "|" in valor else "")).strip()
+            if professora:
+                professoras_por_bloco.setdefault(professora, set()).add(horario)
+
+    professoras_individuais = list(professoras_por_bloco)
+    vizinhas = {professora: set() for professora in professoras_individuais}
+    for professoras_no_mesmo_horario in [
+        [professora for professora, blocos_prof in professoras_por_bloco.items() if horario in blocos_prof]
+        for horario in [_horario_modelo(bloco, indice) for indice, bloco in enumerate(blocos)]
+    ]:
+        for professora in professoras_no_mesmo_horario:
+            vizinhas[professora].update(set(professoras_no_mesmo_horario) - {professora})
+
+    # A preferência de sala muda a cada sábado, ajudando a roda a circular de
+    # uma semana para outra sem quebrar a estabilidade dentro do mesmo dia.
+    try:
+        deslocamento_salas = datetime.strptime(data_sel_str, "%d/%m/%Y").toordinal() % len(salas_individuais)
+    except ValueError:
+        deslocamento_salas = 0
+    ordem_salas = salas_individuais[deslocamento_salas:] + salas_individuais[:deslocamento_salas]
+    sala_por_professora = {}
+
+    def _atribuir_salas(indice_prof=0, ordem_professoras=None):
+        ordem_professoras = ordem_professoras or sorted(professoras_individuais, key=lambda p: (-len(vizinhas[p]), p))
+        if indice_prof >= len(ordem_professoras):
+            return True
+        professora = ordem_professoras[indice_prof]
+        salas_ocupadas = {sala_por_professora[vizinha] for vizinha in vizinhas[professora] if vizinha in sala_por_professora}
+        for sala in ordem_salas:
+            if sala in salas_ocupadas:
+                continue
+            sala_por_professora[professora] = sala
+            if _atribuir_salas(indice_prof + 1, ordem_professoras):
+                return True
+            sala_por_professora.pop(professora, None)
+        return False
+
+    if professoras_individuais and not _atribuir_salas():
+        erros.append("Não foi possível manter salas fixas para as professoras no individual. Revise a quantidade de salas e as professoras disponíveis.")
+    elif sala_por_professora:
+        for linha in escala.values():
+            detalhes_linha = linha.get("_detalhes") or {}
+            for horario, detalhe in detalhes_linha.items():
+                if not detalhe.get("individual"):
+                    continue
+                valor = str(linha.get(horario, ""))
+                professoras_componentes = detalhe.get("professoras_componentes") or {}
+                professora_pratica = str(professoras_componentes.get("Prática") or (valor.split("|", 1)[1].strip() if "|" in valor else "")).strip()
+                sala_fixa = sala_por_professora.get(professora_pratica)
+                if not sala_fixa:
+                    continue
+                detalhe["sala_fixa_professora"] = sala_fixa
+                sufixo = valor.split("|", 1)[1].strip() if "|" in valor else professora_pratica
+                linha[horario] = f"{sala_fixa} | {sufixo}"
     return list(escala.values()), list(dict.fromkeys(erros))
 
 def buscar_registros_faltantes_do_dia(data_str):
@@ -5081,8 +5148,8 @@ elif menu == "👩‍🏫 Minhas Aulas":
                         else:
                             pends_disc = pends_disc[pends_disc['Tipo'] == "Casa_MSA"]
 
-                if tipo_aula in ("Teoria", "Solfejo"):
-                    titulo_correcao = "📋 Lições de Teoria para você corrigir" if tipo_aula == "Teoria" else "📋 MSA para você corrigir"
+                if tipo_aula == "Teoria":
+                    titulo_correcao = "📋 Lições de Teoria para você corrigir"
                     with st.expander(titulo_correcao, expanded=False):
                         if pends_disc.empty:
                             st.success("✅ Nenhuma lição pendente para você corrigir.")
@@ -5115,6 +5182,18 @@ elif menu == "👩‍🏫 Minhas Aulas":
                     st.divider()
                 metodos_filtrados = df_metodos_db[df_metodos_db['categoria'] == tipo_aula]['nome'].tolist() if not df_metodos_db.empty else []
                 st.markdown(f"### 📝 Registro: {tipo_aula}")
+
+                if tipo_aula == "Solfejo":
+                    if pends_disc.empty:
+                        st.caption("📖 Nenhum MSA pendente para corrigir nesta aula.")
+                    else:
+                        with st.container(border=True):
+                            st.markdown("**📖 MSA que será corrigido neste registro**")
+                            for al in als_selecionadas:
+                                licoes_aluna = pends_disc[pends_disc["Aluna"] == al]
+                                for _, licao in licoes_aluna.iterrows():
+                                    st.write(f"• **{al}:** {licao.get('Licao_Casa')}")
+                            st.caption("Registre abaixo o material, as dificuldades e as observações da correção. Ao salvar, o MSA será baixado aqui mesmo.")
 
 
                 # ============================================================
@@ -5573,6 +5652,19 @@ elif menu == "👩‍🏫 Minhas Aulas":
                                     "Licao_Casa": "---", "Dificuldades": difs_sel,
                                     "Observacao": obs_geral, "Status": status_analise
                                 }, analise_existente.iloc[-1].get("id") if not analise_existente.empty else None)
+                                # O MSA é corrigido no próprio Registro de
+                                # Solfejo. Ao salvar, a pendência anterior é
+                                # baixada; se a professora marcar que a aluna
+                                # não realizou as atividades, ela continua em
+                                # aberto para a próxima aula.
+                                if tipo_aula == "Solfejo" and not pends_disc.empty:
+                                    nao_realizou_msa = any("NÃO REALIZOU" in limpar_texto(dificuldade) for dificuldade in difs_sel)
+                                    status_msa = "Não resolvido" if nao_realizou_msa else "Resolvido"
+                                    for _, msa_pendente in pends_disc[pends_disc["Aluna"] == al_f].iterrows():
+                                        supabase.table("historico_geral").update({
+                                            "Status": status_msa,
+                                            "Observacao": obs_geral.strip(),
+                                        }).eq("id", msa_pendente["id"]).execute()
                                 for mat_nome, conteudo in tarefas_casa.items():
                                     if conteudo:
                                         # Toda lição de casa nasce "Pendente" — ela só será
