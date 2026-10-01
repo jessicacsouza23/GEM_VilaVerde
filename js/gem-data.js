@@ -228,6 +228,27 @@
     return { historico: historico.data || [], alunas: alunas.data || [], avaliacoes: avaliacoes.data || [], notas: notas.data || [], estudos: estudos.error ? [] : estudos.data || [] };
   }
 
+  async function dadosCorrecoesLicoes() {
+    const banco = await obterCliente();
+    const [historico, alunas, secretarias] = await Promise.all([
+      banco.from("historico_geral").select("*").in("Tipo", ["Casa_Apostila", "Casa_Teoria"]).order("id", { ascending: false }),
+      banco.from("alunas").select("*").order("nome"),
+      banco.from("secretarias").select("*").order("nome")
+    ]);
+    if (historico.error || alunas.error) throw new Error(`Não foi possível carregar as correções: ${(historico.error || alunas.error).message || "verifique as permissões."}`);
+    return { historico: historico.data || [], alunas: alunas.data || [], secretarias: secretarias.error ? [] : secretarias.data || [] };
+  }
+
+  async function atualizarCorrecaoLicao(id, { status, observacao, secretaria, data }) {
+    const banco = await obterCliente(); const { error } = await banco.from("historico_geral").update({ Status: status, Observacao: observacao ? `Sec: ${observacao}` : "", Secretaria: secretaria, Data: data }).eq("id", id);
+    if (error) throw new Error("Não foi possível atualizar a correção.");
+  }
+
+  async function criarCorrecaoLicao({ aluna, tipo, licao, status, observacao, secretaria, data }) {
+    const banco = await obterCliente(); const { error } = await banco.from("historico_geral").insert({ Aluna: aluna, Tipo: tipo, Data: data, Secretaria: secretaria, Licao_Casa: licao, Status: status, Observacao: observacao || "" });
+    if (error) throw new Error("Não foi possível registrar a atividade.");
+  }
+
   async function dadosLogistica() {
     const banco = await obterCliente(); const { data, error } = await banco.from("modelos_logistica").select("*").order("vigencia_inicio", { ascending: false });
     if (error) throw new Error(`Não foi possível carregar modelos: ${error.message || "execute a migration de logística."}`); return data || [];
@@ -420,5 +441,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosVisaoGeral, dadosPessoas, salvarPessoa, dadosDocumentos, enviarDocumento, urlDocumento, dadosProvas, criarProva, dadosAnalitico, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosVisaoGeral, dadosPessoas, salvarPessoa, dadosDocumentos, enviarDocumento, urlDocumento, dadosProvas, criarProva, dadosAnalitico, dadosCorrecoesLicoes, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();

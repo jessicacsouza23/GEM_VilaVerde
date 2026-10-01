@@ -1,6 +1,6 @@
 const navByRole = {
   Master: ["GEMs", "Usuários mestres", "Visão da plataforma"],
-  Secretaria: ["Visão geral", "Planejamento e rodízio", "Turmas e pessoas", "Chamada", "Relatórios", "Analítico", "Documentos", "Provas", "Logística"],
+  Secretaria: ["Visão geral", "Planejamento e rodízio", "Turmas e pessoas", "Chamada", "Correção de lições", "Relatórios", "Analítico", "Documentos", "Provas", "Logística"],
   Professora: ["Minhas aulas", "Envio de documentos", "Provas", "Analítico IA", "Mensagens"],
   Aluna: ["Minhas lições", "Boletim", "Documentos", "Mensagens"]
 };
@@ -27,7 +27,7 @@ function renderNavigation() {
 }
 
 function iconFor(page) {
-  return ({ "GEMs":"🏫", "Usuários mestres":"🔐", "Visão da plataforma":"🌐", "Visão geral":"🏠", "Planejamento e rodízio":"🗓️", "Turmas e pessoas":"👥", "Chamada":"✅", "Relatórios":"📊", "Analítico":"📈", "Documentos":"📁", "Provas":"📝", "Logística":"⚙️", "Minhas aulas":"👩‍🏫", "Envio de documentos":"📤", "Analítico IA":"📈", "Mensagens":"💬", "Minhas lições":"🎼", "Boletim":"🎓" }[page] || "•");
+  return ({ "GEMs":"🏫", "Usuários mestres":"🔐", "Visão da plataforma":"🌐", "Visão geral":"🏠", "Planejamento e rodízio":"🗓️", "Turmas e pessoas":"👥", "Chamada":"✅", "Correção de lições":"📋", "Relatórios":"📊", "Analítico":"📈", "Documentos":"📁", "Provas":"📝", "Logística":"⚙️", "Minhas aulas":"👩‍🏫", "Envio de documentos":"📤", "Analítico IA":"📈", "Mensagens":"💬", "Minhas lições":"🎼", "Boletim":"🎓" }[page] || "•");
 }
 
 function scheduleMarkup() {
@@ -287,6 +287,23 @@ async function renderRelatorios(content) {
   $("#gerar-relatorio").addEventListener("click", carregar); await carregar();
 }
 
+async function renderCorrecoesLicoes(content) {
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">SECRETARIA</p><h2>Correção de lições</h2><p>Este painel corrige somente Apostila da Prática e Folha Avulsa de Teoria. MSA, métodos e Solfejo continuam sendo corrigidos pela professora na aula seguinte.</p></section><section class="panel"><div class="analytics-filters"><label>Aluna<select id="correcao-aluna"></select></label><label>Responsável da Secretaria<select id="correcao-secretaria"></select></label><label>Data da conferência<input id="correcao-data" type="date" value="${new Date().toISOString().slice(0, 10)}"></label><button id="atualizar-correcoes" class="primary-action" type="button">Consultar pendências</button></div><div id="pendencias-licoes"><div class="empty">Carregando lições...</div></div></section><section class="panel"><h2>➕ Registrar atividade nova</h2><p class="hint">Use somente se a professora não lançou a lição no sistema.</p><div class="form-grid"><select id="nova-licao-tipo"><option value="Casa_Apostila">Apostila — Prática</option><option value="Casa_Teoria">Folha Avulsa — Teoria</option></select><input id="nova-licao-conteudo" placeholder="Lição / página, ex.: Lição 05, pág. 12"><select id="nova-licao-status"><option>Pendente</option><option>Resolvido</option><option>Resolvido com pendências</option><option>Não resolvido</option></select><input id="nova-licao-obs" placeholder="Observações técnicas / dicas"><button id="criar-licao-secretaria" class="primary-action" type="button">Salvar atividade</button></div><div id="correcao-feedback"></div></section>`;
+  const base = await window.GemData.dadosCorrecoesLicoes(); const alunas = base.alunas.filter((aluna) => aluna.ativo !== false).map((aluna) => aluna.nome), secretarias = base.secretarias.filter((item) => item.ativo !== false).map((item) => item.nome);
+  $("#correcao-aluna").innerHTML = alunas.map((aluna) => `<option value="${escapeHtml(aluna)}">${escapeHtml(aluna)}</option>`).join(""); $("#correcao-secretaria").innerHTML = (secretarias.length ? secretarias : [state.name]).map((nome) => `<option value="${escapeHtml(nome)}">${escapeHtml(nome)}</option>`).join("");
+  const dataBr = (iso) => { const [ano, mes, dia] = String(iso).split("-"); return ano ? `${dia}/${mes}/${ano}` : iso; };
+  const dataOrdenavel = (valor) => { const [dia, mes, ano] = String(valor || "").split("/"); return ano ? `${ano}${mes}${dia}` : "00000000"; };
+  const atualizar = () => {
+    const aluna = $("#correcao-aluna").value, porLicao = new Map();
+    base.historico.filter((item) => item.Aluna === aluna).sort((a, b) => dataOrdenavel(a.Data).localeCompare(dataOrdenavel(b.Data)) || Number(a.id || 0) - Number(b.id || 0)).forEach((item) => porLicao.set(`${item.Tipo}|${item.Licao_Casa}`, item));
+    const pendentes = [...porLicao.values()].filter((item) => !["Resolvido", "Realizada", "Realizadas - sem pendência", "Realizada - sem pendência"].includes(item.Status)); const destino = $("#pendencias-licoes");
+    destino.innerHTML = pendentes.length ? `<div class="pending-title">🚨 Atividades pendentes para ${escapeHtml(aluna)}</div>${pendentes.map((item, indice) => `<article class="pending-card"><div><h3>${item.Tipo === "Casa_Apostila" ? "🎼 Apostila (Prática)" : "📘 Folha Avulsa (Teoria)"}</h3><p><strong>${escapeHtml(item.Licao_Casa || "Lição não informada")}</strong></p><p class="hint">Lançada em ${escapeHtml(item.Data || "—")} · Status atual: ${escapeHtml(item.Status || "Pendente")}</p></div><div class="pending-action"><label>Resultado<select data-status-correcao="${indice}"><option ${item.Status === "Resolvido" ? "selected" : ""}>Resolvido</option><option ${item.Status === "Resolvido com pendências" ? "selected" : ""}>Resolvido com pendências</option><option ${item.Status === "Não resolvido" ? "selected" : ""}>Não resolvido</option></select></label><label>Observação da Secretaria<textarea data-obs-correcao="${indice}" placeholder="Escreva a observação da correção">${escapeHtml(String(item.Observacao || "").replace(/^Sec:\s*/i, ""))}</textarea></label><button data-salvar-correcao="${indice}" class="primary-action" type="button">Atualizar status</button></div></article>`).join("")}` : `<div class="action-ok">✅ Nenhuma pendência de Apostila ou Teoria para esta aluna.</div>`;
+    destino.querySelectorAll("[data-salvar-correcao]").forEach((botao) => botao.addEventListener("click", async () => { const indice = Number(botao.dataset.salvarCorrecao), item = pendentes[indice]; try { await window.GemData.atualizarCorrecaoLicao(item.id, { status: destino.querySelector(`[data-status-correcao="${indice}"]`).value, observacao: destino.querySelector(`[data-obs-correcao="${indice}"]`).value.trim(), secretaria: $("#correcao-secretaria").value, data: dataBr($("#correcao-data").value) }); const posicao = base.historico.findIndex((registro) => String(registro.id) === String(item.id)); if (posicao >= 0) base.historico[posicao] = { ...base.historico[posicao], Status: destino.querySelector(`[data-status-correcao="${indice}"]`).value }; atualizar(); } catch (error) { destino.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); } }));
+  };
+  $("#atualizar-correcoes").addEventListener("click", atualizar); atualizar();
+  $("#criar-licao-secretaria").addEventListener("click", async () => { const feedback = $("#correcao-feedback"), licao = $("#nova-licao-conteudo").value.trim(); if (!licao) { feedback.innerHTML = `<div class="action-error">Informe a lição ou página.</div>`; return; } try { await window.GemData.criarCorrecaoLicao({ aluna: $("#correcao-aluna").value, tipo: $("#nova-licao-tipo").value, licao, status: $("#nova-licao-status").value, observacao: $("#nova-licao-obs").value.trim(), secretaria: $("#correcao-secretaria").value, data: dataBr($("#correcao-data").value) }); feedback.innerHTML = `<div class="action-ok">Atividade registrada.</div>`; } catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; } });
+}
+
 async function renderAnalitico(content) {
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO PEDAGÓGICO</p><h2>Analítico e desempenho</h2><p>Indicadores calculados somente a partir dos registros, chamadas, lições e notas já existentes no GEM.</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-analise="prontuario">Prontuário individual</button><button class="tab-action" data-analise="quadro">Quadro de desempenho</button><button class="tab-action" data-analise="boletim">Boletim</button></div><div class="analytics-filters"><label>De<input id="analise-inicio" type="date"></label><label>Até<input id="analise-fim" type="date"></label><label id="analise-aluna-wrap">Aluna<select id="analise-aluna"></select></label><button id="atualizar-analise" class="primary-action" type="button">Atualizar</button></div><div id="analise-conteudo"><div class="empty">Carregando indicadores...</div></div></section>`;
   const dados = await window.GemData.dadosAnalitico();
@@ -452,6 +469,10 @@ async function renderPage() {
   }
   if (state.role === "Secretaria" && state.page === "Chamada") {
     await renderChamada(content);
+    return;
+  }
+  if (state.role === "Secretaria" && state.page === "Correção de lições") {
+    try { await renderCorrecoesLicoes(content); } catch (error) { content.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
     return;
   }
   if (state.page === "Visão geral" || state.page === "Minhas aulas" || state.page === "Minhas lições") {
