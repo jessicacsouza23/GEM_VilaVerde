@@ -54,7 +54,17 @@ async function renderMinhasAulas(content) {
     try {
       const aulas = await window.GemData.agendaProfessora(state.name, $("#agenda-data").value);
       if (!aulas.length) { lista.innerHTML = `<div class="empty">Nenhuma aula encontrada para você nesta data.</div>`; return; }
-      lista.innerHTML = aulas.map((aula) => `<article class="agenda-card"><h3>${escapeHtml(aula.horario)} · ${escapeHtml(aula.tipo)}</h3><p><strong>${escapeHtml(aula.local)}</strong></p><p>${aula.individual ? `Aluna: ${escapeHtml(aula.alunas[0] || "—")}` : `Alunas: ${escapeHtml(aula.alunas.join(", "))}`}</p><span class="agenda-tag">${aula.individual ? "Aula individual" : `Turma ${escapeHtml(aula.turma || "")}`}</span></article>`).join("");
+      lista.innerHTML = aulas.map((aula, indice) => `<article class="agenda-card"><h3>${escapeHtml(aula.horario)} · ${escapeHtml(aula.tipo)}</h3><p><strong>${escapeHtml(aula.local)}</strong></p><p>${aula.individual ? `Aluna: ${escapeHtml(aula.alunas[0] || "—")}` : `Alunas: ${escapeHtml(aula.alunas.join(", "))}`}</p><span class="agenda-tag">${aula.individual ? "Aula individual" : `Turma ${escapeHtml(aula.turma || "")}`}</span><details class="registro-aula"><summary>📝 Registrar esta aula</summary><label>Aluna<select data-registro-aluna="${indice}">${aula.alunas.map((aluna) => `<option>${escapeHtml(aluna)}</option>`).join("")}</select></label><label>Conteúdo trabalhado<input data-registro-conteudo="${indice}" placeholder="Ex.: MSA, apostila, técnica..."></label><label>Lição de casa<input data-registro-casa="${indice}" placeholder="O que a aluna deverá preparar"></label><label>Dificuldades (separe por vírgula)<input data-registro-dificuldades="${indice}" placeholder="Ex.: ritmo, postura"></label><label>Observações<textarea data-registro-observacao="${indice}" rows="3"></textarea></label><button class="primary-action" data-salvar-registro="${indice}" type="button">Salvar registro</button><span data-retorno-registro="${indice}"></span></details></article>`).join("");
+      lista.querySelectorAll("button[data-salvar-registro]").forEach((botao) => botao.addEventListener("click", async () => {
+        const indice = Number(botao.dataset.salvarRegistro), aula = aulas[indice];
+        const retorno = lista.querySelector(`[data-retorno-registro="${indice}"]`);
+        botao.disabled = true;
+        try {
+          await window.GemData.salvarRegistroAula({ data: $("#agenda-data").value, aluna: lista.querySelector(`[data-registro-aluna="${indice}"]`).value, tipo: aula.tipo, instrutora: state.name, licaoAtual: lista.querySelector(`[data-registro-conteudo="${indice}"]`).value, licaoCasa: lista.querySelector(`[data-registro-casa="${indice}"]`).value, dificuldades: lista.querySelector(`[data-registro-dificuldades="${indice}"]`).value.split(",").map((item) => item.trim()).filter(Boolean), observacao: lista.querySelector(`[data-registro-observacao="${indice}"]`).value, status: "Realizada" });
+          retorno.textContent = " Registro salvo.";
+          retorno.className = "registro-ok";
+        } catch (erro) { retorno.textContent = ` ${erro.message}`; retorno.className = "registro-erro"; botao.disabled = false; }
+      }));
     } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
   $("#carregar-agenda").addEventListener("click", carregar);

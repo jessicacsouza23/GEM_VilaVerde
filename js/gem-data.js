@@ -306,6 +306,28 @@
     return data || null;
   }
 
+  async function salvarRegistroAula(registro) {
+    const banco = await obterCliente();
+    const data = dataBr(registro.data);
+    const tipo = `Analise_${registro.tipo}`;
+    const { error: apagarErro } = await banco.from("historico_geral").delete()
+      .eq("Data", data).eq("Aluna", registro.aluna).eq("Tipo", tipo);
+    if (apagarErro) throw new Error("Não foi possível atualizar o registro anterior desta aula.");
+    const linha = {
+      Data: data,
+      Aluna: registro.aluna,
+      Tipo: tipo,
+      Instrutora: registro.instrutora,
+      Licao_Atual: registro.licaoAtual || "",
+      Licao_Casa: registro.licaoCasa || "",
+      Dificuldades: registro.dificuldades || [],
+      Observacao: registro.observacao || "",
+      Status: registro.status || "Realizada"
+    };
+    const { error } = await banco.from("historico_geral").insert(linha);
+    if (error) throw new Error("Não foi possível salvar o registro da aula.");
+  }
+
   async function salvarFolgas(dataIso, professoras, observacao, responsavel) {
     const banco = await obterCliente();
     const linha = { data: dataIso, professoras: professoras || [], observacao: observacao || "" };
@@ -314,5 +336,43 @@
     if (error) throw new Error("Não foi possível salvar as folgas.");
   }
 
-  window.GemData = { carregarIdentidade, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, salvarRodizio, dadosChamada, salvarChamada, dadosVisaoGeral, dadosPessoas, atualizarAtivoPessoa, dadosLicoesSecretaria, dadosFolgas, salvarFolgas, dataBr, normalizar };
+  async function dadosLogistica() {
+    const banco = await obterCliente();
+    const [modelos, alunas, professoras] = await Promise.all([
+      banco.from("modelos_logistica").select("*").order("vigencia_inicio", { ascending: false }),
+      banco.from("alunas").select("nome,turma,ativo").order("turma").order("nome"),
+      banco.from("professoras").select("nome,ativo").order("nome")
+    ]);
+    const falha = [modelos, alunas, professoras].find((resultado) => resultado.error)?.error;
+    if (falha) throw new Error(`Não foi possível carregar a logística: ${falha.message}`);
+    return { modelos: modelos.data || [], alunas: alunas.data || [], professoras: professoras.data || [] };
+  }
+
+  async function salvarModeloLogistica(modelo) {
+    const banco = await obterCliente();
+    const linha = { nome: modelo.nome, vigencia_inicio: modelo.vigencia_inicio, configuracao: modelo.configuracao, status: modelo.status || "rascunho" };
+    if (modelo.id) {
+      const { data: escalas, error: erroEscalas } = await banco.from("calendario").select("id").eq("modelo_logistica_id", modelo.id).limit(1);
+      if (erroEscalas) throw new Error("Não foi possível verificar se este modelo já gerou rodízios.");
+      if (!escalas?.length) {
+        const { error } = await banco.from("modelos_logistica").update(linha).eq("id", modelo.id);
+        if (error) throw new Error("Não foi possível atualizar o modelo.");
+        return { revisao: false };
+      }
+      linha.status = "rascunho";
+    }
+    const { error } = await banco.from("modelos_logistica").insert(linha);
+    if (error) throw new Error("Não foi possível salvar a revisão do modelo.");
+    return { revisao: Boolean(modelo.id) };
+  }
+
+  async function alterarStatusModelo(id, status, vigenciaFim = null) {
+    const banco = await obterCliente();
+    const dados = { status };
+    if (vigenciaFim) dados.vigencia_fim = vigenciaFim;
+    const { error } = await banco.from("modelos_logistica").update(dados).eq("id", id);
+    if (error) throw new Error("Não foi possível alterar o status do modelo.");
+  }
+
+  window.GemData = { carregarIdentidade, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, salvarRodizio, dadosChamada, salvarChamada, dadosVisaoGeral, dadosPessoas, atualizarAtivoPessoa, dadosLicoesSecretaria, dadosFolgas, salvarFolgas, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, salvarRegistroAula, dataBr, normalizar };
 })();
