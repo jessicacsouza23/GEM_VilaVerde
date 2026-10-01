@@ -241,7 +241,13 @@
     ]);
     if (erroEscala || erroHistorico) throw new Error("Não foi possível carregar a chamada desta data.");
     const alunas = [...new Set((calendario?.escala || []).map((linha) => linha.Aluna).filter(Boolean))].sort();
-    return { alunas, chamadas: historico || [] };
+    const { data: perfis } = alunas.length ? await banco.from("alunas").select("nome,foto_path").in("nome", alunas) : { data: [] };
+    const fotos = {};
+    await Promise.all((perfis || []).filter((aluna) => aluna.foto_path).map(async (aluna) => {
+      const { data: arquivo } = await banco.storage.from("fotos_alunas").createSignedUrl(aluna.foto_path, 3600);
+      if (arquivo?.signedUrl) fotos[aluna.nome] = arquivo.signedUrl;
+    }));
+    return { alunas, chamadas: historico || [], fotos };
   }
 
   async function salvarChamada(dataIso, registros) {

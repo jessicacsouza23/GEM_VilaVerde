@@ -470,7 +470,7 @@ def _configurar_modelo_para_geracao(modelo):
 
 
 def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, saidas_antecipadas, mapa_fixas,
-                                      professoras_coletivas=None, turma_inicio_teoria=None):
+                                      professoras_coletivas=None, turma_inicio_teoria=None, rotacao_inicial=None):
     """Gera uma escala nova sem alterar o formato ou a memória das escalas antigas.
 
     Turmas percorrem as atividades coletivas e o atendimento individual. Cada
@@ -531,7 +531,17 @@ def gerar_escala_modelo_configuravel(modelo, data_sel_str, professoras_folga, sa
     posicoes = atividades_coletivas + ["__individual__"]
     indice_teoria = next((i for i, atividade in enumerate(posicoes) if limpar_texto(atividade) == "TEORIA"), None)
     inicio_manual = {}
-    if turma_inicio_teoria in turmas and indice_teoria is not None:
+    # A Secretaria pode organizar cada turma no primeiro bloco. Essa é a
+    # forma mais clara de montar uma rodada: a partir daí, todas avançam uma
+    # posição a cada bloco, sem ocupar a mesma atividade simultaneamente.
+    rotacao_inicial = rotacao_inicial or {}
+    if rotacao_inicial:
+        valores_rotacao = [rotacao_inicial.get(turma) for turma in turmas]
+        if (any(posicao not in posicoes for posicao in valores_rotacao)
+                or len(set(valores_rotacao)) != len(turmas)):
+            return None, ["Na rotação manual, cada turma deve começar em uma atividade diferente."]
+        inicio_manual = {turma: rotacao_inicial[turma] for turma in turmas}
+    elif turma_inicio_teoria in turmas and indice_teoria is not None:
         # Ex.: escolhendo Turma 3 em Teoria, a sequência inicial fica
         # T1=Canto, T2=Individual, T3=Teoria. Depois cada uma avança na
         # roda normal Canto → Teoria → Individual.
@@ -2826,50 +2836,39 @@ if menu == "🏠 Secretaria":
                     st.caption("A professora acompanha essa turma quando ela chegar à atividade, mesmo que o bloco de horário mude.")
 
                 turma_inicio_teoria = None
-                tem_teoria_modelo = any(limpar_texto(atividade) == "TEORIA" for atividade in coletivas_modelo)
-                if tem_teoria_modelo and turmas_modelo:
+                rotacao_inicial_modelo = {}
+                if turmas_modelo:
                     escolher_rotacao = st.checkbox(
                         "Definir manualmente a rotação das turmas?", value=False,
                         key=f"escolher_rotacao_{data_sel_str}",
-                        help="Desmarcado: o sistema decide a rotação inicial. Marcado: você escolhe um ponto de partida.",
+                        help="Marcado: escolha onde CADA turma começa no primeiro bloco. Depois a roda segue automaticamente.",
                     )
-                    if escolher_rotacao:
-                        criterio_rotacao = st.radio(
-                            "O que deseja definir?",
-                            ["Turma que começa em Teoria", "Turma que fica no último bloco de Prática + Solfejo"],
-                            horizontal=True, key=f"criterio_rotacao_{data_sel_str}",
-                        )
-                        if criterio_rotacao == "Turma que começa em Teoria":
-                            turma_inicio_teoria = st.selectbox(
-                                "Turma que começa em Teoria no primeiro bloco:", turmas_modelo,
-                                key=f"turma_inicio_teoria_{data_sel_str}",
-                            )
-                        else:
-                            turma_ultimo_individual = st.selectbox(
-                                "Turma no último bloco de Prática + Solfejo:", turmas_modelo,
-                                key=f"turma_ultimo_individual_{data_sel_str}",
-                            )
-                            # No ciclo de três atividades, a turma anterior à
-                            # escolhida começa em Teoria. Ex.: T1 no individual
-                            # final ⇒ T3 começa em Teoria.
-                            turma_inicio_teoria = turmas_modelo[(turmas_modelo.index(turma_ultimo_individual) - 1) % len(turmas_modelo)]
-                            st.caption(f"Para isso acontecer, **{turma_inicio_teoria}** começará em Teoria no primeiro bloco.")
-                    # A prévia usa a mesma rotação aplicada ao gerar. Assim a
-                    # Secretaria confere onde cada turma cairá antes de salvar.
                     posicoes_previa = list(coletivas_modelo) + ["Prática + Solfejo"]
-                    indice_teoria_previa = next((i for i, atividade in enumerate(posicoes_previa) if limpar_texto(atividade) == "TEORIA"), 0)
                     inicio_manual_previa = {}
-                    if turma_inicio_teoria in turmas_modelo:
-                        ordem_a_partir_da_teoria = [posicoes_previa[indice_teoria_previa]] + [p for p in posicoes_previa if p not in (posicoes_previa[indice_teoria_previa], "Prática + Solfejo")] + ["Prática + Solfejo"]
-                        indice_turma_teoria = turmas_modelo.index(turma_inicio_teoria)
+                    if escolher_rotacao:
+                        st.caption("Organize o primeiro bloco. Cada posição pode ser usada por apenas uma turma.")
+                        colunas_rotacao = st.columns(len(turmas_modelo))
                         for indice_turma, turma_previa in enumerate(turmas_modelo):
-                            inicio_manual_previa[turma_previa] = ordem_a_partir_da_teoria[(indice_turma - indice_turma_teoria) % len(posicoes_previa)]
+                            with colunas_rotacao[indice_turma]:
+                                escolha = st.selectbox(
+                                    f"{turma_previa} começa em:", posicoes_previa,
+                                    index=indice_turma % len(posicoes_previa),
+                                    key=f"rotacao_completa_{data_sel_str}_{turma_previa}",
+                                )
+                                inicio_manual_previa[turma_previa] = escolha
+                        if len(set(inicio_manual_previa.values())) != len(turmas_modelo):
+                            st.error("Cada turma precisa começar em uma atividade diferente.")
+                        else:
+                            rotacao_inicial_modelo = {
+                                turma: "__individual__" if posicao == "Prática + Solfejo" else posicao
+                                for turma, posicao in inicio_manual_previa.items()
+                            }
                     linhas_previa = []
                     for indice_bloco, bloco_previa in enumerate(blocos_modelo):
                         linha_previa = {"Bloco": _horario_modelo(bloco_previa, indice_bloco)}
                         for indice_turma, turma_previa in enumerate(turmas_modelo):
-                            if inicio_manual_previa:
-                                atividade_inicial = inicio_manual_previa[turma_previa]
+                            atividade_inicial = inicio_manual_previa.get(turma_previa)
+                            if atividade_inicial:
                                 linha_previa[turma_previa] = posicoes_previa[(posicoes_previa.index(atividade_inicial) + indice_bloco) % len(posicoes_previa)]
                             else:
                                 linha_previa[turma_previa] = posicoes_previa[(indice_turma + indice_bloco) % len(posicoes_previa)]
