@@ -84,6 +84,29 @@ async function renderMinhasLicoes(content) {
   await carregar();
 }
 
+async function renderChamada(content) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">SECRETARIA</p><h2>📍 Chamada Geral</h2><p>A chamada usa apenas as alunas que constam no rodízio salvo para a data.</p></section><section class="panel"><div class="agenda-date"><div><label for="chamada-data">Data da chamada</label><input id="chamada-data" type="date" value="${hoje}"></div><button id="carregar-chamada" class="primary-action" type="button">Carregar chamada</button></div><div id="chamada-lista"><div class="empty">Carregando...</div></div></section>`;
+  const lista = $("#chamada-lista");
+  const carregar = async () => {
+    lista.innerHTML = `<div class="empty">Carregando chamada...</div>`;
+    try {
+      const { alunas, chamadas } = await window.GemData.dadosChamada($("#chamada-data").value);
+      if (!alunas.length) { lista.innerHTML = `<div class="empty">Não há rodízio salvo nesta data. Gere ou escolha uma escala antes da chamada.</div>`; return; }
+      const porAluna = Object.fromEntries(chamadas.map((chamada) => [chamada.Aluna, chamada]));
+      lista.innerHTML = `<div class="attendance-list">${alunas.map((aluna) => { const chamada = porAluna[aluna] || { Status: "Presente", Observacao: "" }; return `<article class="attendance-row"><strong>${escapeHtml(aluna)}</strong><select data-status="${escapeHtml(aluna)}"><option value="Presente" ${chamada.Status === "Presente" ? "selected" : ""}>Presente</option><option value="Justificada" ${chamada.Status === "Justificada" ? "selected" : ""}>Falta justificada</option><option value="Ausente" ${chamada.Status === "Ausente" ? "selected" : ""}>Ausente</option></select><input data-observacao="${escapeHtml(aluna)}" value="${escapeHtml(chamada.Observacao || "")}" placeholder="Motivo ou observação"></article>`; }).join("")}</div><button id="salvar-chamada" class="primary-action full-action" type="button">Salvar chamada</button><div id="chamada-retorno"></div>`;
+      $("#salvar-chamada").addEventListener("click", async () => {
+        const botao = $("#salvar-chamada"); botao.disabled = true;
+        const registros = alunas.map((aluna) => ({ aluna, status: document.querySelector(`[data-status="${CSS.escape(aluna)}"]`).value, observacao: document.querySelector(`[data-observacao="${CSS.escape(aluna)}"]`).value }));
+        try { await window.GemData.salvarChamada($("#chamada-data").value, registros); $("#chamada-retorno").innerHTML = `<div class="action-ok">Chamada salva para ${escapeHtml(window.GemData.dataBr($("#chamada-data").value))}.</div>`; }
+        catch (error) { $("#chamada-retorno").innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; botao.disabled = false; }
+      });
+    } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+  };
+  $("#carregar-chamada").addEventListener("click", carregar);
+  await carregar();
+}
+
 async function renderBoletim(content) {
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">BOLETIM MUSICAL</p><h2>Notas de ${escapeHtml(state.name)}</h2><p>Suas avaliações individuais, organizadas por prova e disciplina.</p></section><section class="panel"><div id="boletim-lista" class="lesson-list"><div class="empty">Carregando boletim...</div></div></section>`;
   const lista = $("#boletim-lista");
@@ -329,6 +352,10 @@ async function renderPage() {
   }
   if (state.role === "Secretaria" && state.page === "Planejamento e rodízio") {
     await renderRodizio(content);
+    return;
+  }
+  if (state.role === "Secretaria" && state.page === "Chamada") {
+    await renderChamada(content);
     return;
   }
   if (state.page === "Visão geral" || state.page === "Minhas aulas" || state.page === "Minhas lições") {

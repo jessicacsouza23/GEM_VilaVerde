@@ -232,5 +232,28 @@
     if (error) throw new Error(`Não foi possível salvar o rodízio: ${error.message}`);
   }
 
-  window.GemData = { carregarIdentidade, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, salvarRodizio, dataBr, normalizar };
+  async function dadosChamada(dataIso) {
+    const banco = await obterCliente();
+    const data = dataBr(dataIso);
+    const [{ data: calendario, error: erroEscala }, { data: historico, error: erroHistorico }] = await Promise.all([
+      banco.from("calendario").select("escala").eq("id", data).maybeSingle(),
+      banco.from("historico_geral").select("id,Aluna,Status,Observacao").eq("Data", data).eq("Tipo", "Chamada")
+    ]);
+    if (erroEscala || erroHistorico) throw new Error("Não foi possível carregar a chamada desta data.");
+    const alunas = [...new Set((calendario?.escala || []).map((linha) => linha.Aluna).filter(Boolean))].sort();
+    return { alunas, chamadas: historico || [] };
+  }
+
+  async function salvarChamada(dataIso, registros) {
+    const banco = await obterCliente();
+    const data = dataBr(dataIso);
+    const { error: apagarErro } = await banco.from("historico_geral").delete().eq("Data", data).eq("Tipo", "Chamada");
+    if (apagarErro) throw new Error("Não foi possível atualizar a chamada.");
+    if (!registros.length) return;
+    const linhas = registros.map((registro) => ({ Data: data, Aluna: registro.aluna, Tipo: "Chamada", Status: registro.status, Observacao: registro.observacao || "", Licao_Atual: "Presença em Aula" }));
+    const { error } = await banco.from("historico_geral").insert(linhas);
+    if (error) throw new Error("Não foi possível salvar a chamada.");
+  }
+
+  window.GemData = { carregarIdentidade, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, salvarRodizio, dadosChamada, salvarChamada, dataBr, normalizar };
 })();
