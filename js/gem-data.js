@@ -211,6 +211,19 @@
     if (error) throw new Error(`Não foi possível carregar modelos: ${error.message || "execute a migration de logística."}`); return data || [];
   }
 
+  async function salvarModeloLogistica({ id, nome, vigenciaInicio, configuracao, status = "rascunho" }) {
+    const banco = await obterCliente(); const dados = { nome, vigencia_inicio: vigenciaInicio, configuracao, status, updated_at: new Date().toISOString() };
+    if (id) dados.id = id;
+    const { error } = await banco.from("modelos_logistica").upsert(dados, { onConflict: "id" });
+    if (error) throw new Error(`Não foi possível salvar o modelo: ${error.message || "execute a migration de logística."}`);
+  }
+
+  async function alterarStatusModelo(id, status, vigenciaFim = null) {
+    const banco = await obterCliente(); const dados = { status, updated_at: new Date().toISOString() }; if (vigenciaFim) dados.vigencia_fim = vigenciaFim;
+    const { error } = await banco.from("modelos_logistica").update(dados).eq("id", id);
+    if (error) throw new Error("Não foi possível alterar o status do modelo.");
+  }
+
   function dataBr(iso) {
     if (!iso) return "";
     const [ano, mes, dia] = String(iso).split("-");
@@ -385,5 +398,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, dadosVisaoGeral, dadosPessoas, salvarPessoa, dadosDocumentos, enviarDocumento, urlDocumento, dadosProvas, criarProva, dadosLogistica, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, dadosVisaoGeral, dadosPessoas, salvarPessoa, dadosDocumentos, enviarDocumento, urlDocumento, dadosProvas, criarProva, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();
