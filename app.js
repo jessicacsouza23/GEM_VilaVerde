@@ -11,6 +11,13 @@ const exampleSchedule = [
   ["10:30 — 11:15", ["Sala 8 · Teoria", "Prof. Cássia", "Turma 3"], ["Sala 9 · Solfejo Melódico", "Prof. Kamyla", "Turma 1"], ["Salas 1–7 · Prática + Solfejo", "Professoras em rodízio", "Turma 2"]]
 ];
 
+// Mesmas opções pedagógicas usadas no registro de aula do app.py.
+const dificuldadesPorAula = {
+  "Prática": ["Não estudou nada", "Estudou de forma insatisfatória", "Não assistiu os vídeos dos métodos", "Dificuldade rítmica", "Dificuldade em distinguir os nomes das figuras rítmicas", "Está adentrando às teclas", "Dificuldade com a postura (costas, ombros e braços)", "Está deixando o punho alto ou baixo", "Não senta no centro da banqueta", "Está quebrando as falanges", "Unhas muito compridas", "Dificuldade em deixar os dedos arredondados", "Dificuldade em fazer nota de apoio", "Esquece de colocar o pé direito no pedal de expressão", "Faz movimentos desnecessários com o pé esquerdo na pedaleira", "Dificuldade com o uso do metrônomo", "Estuda sem o metrônomo", "Dificuldades em ler as notas na clave de sol", "Dificuldades no movimento da mão", "Demonstra insegurança ao lidar com o conteúdo", "Dificuldade em leitura rítmica", "Dificuldades em leitura métrica", "Dificuldades na ordem das notas, ascendente e descendente", "Dificuldade na pedaleira", "Dificuldades em ler as notas na clave de fá", "Não realizou as atividades da apostila", "Dificuldade em fazer a articulação ligada e semiligada", "Dificuldade com as respirações", "Dificuldade com as respirações sobre passagem", "Dificuldades em recurso de dedilhado (passagem, alargamento, contração, mudança ou substituição)", "Não apresentou dificuldades"],
+  "Teoria": ["Não assistiu os vídeos complementares", "Não apresentou dificuldades", "Não participou da aula", "Dificuldade em utilizar o metrônomo", "Não compreende o que é música na igreja", "Não compreende o que é música", "Não compreende o que é som", "Dificuldade em compreender os elementos da música", "Dificuldade em compreender as propriedades do som", "Dificuldade de leitura de clave de sol", "Dificuldade de leitura de clave de fá", "Não realizou as atividades da apostila", "Não estudou", "Não realizou as atividades para casa", "Ficou dispersa durante a aula", "Não realizou as atividades durante a aula", "Não trouxe o material necessário", "Demonstra insegurança ao lidar com o conteúdo"],
+  "Solfejo": ["Não assistiu os vídeos complementares", "Dificuldades em ler as notas na clave de sol", "Dificuldades em ler as notas na clave de fá", "Está com dificuldades no uso do metrônomo", "Estuda em metrônomo", "Não realizou as atividades", "Dificuldade em leitura rítmica", "Dificuldades em leitura métrica", "Dificuldade em solfejo (afinação)", "Dificuldades no movimento da mão", "Demonstra insegurança ao lidar com o conteúdo", "Dificuldade rítmica", "Dificuldades na ordem das notas, ascendente e descendente", "Não realizou as atividades da apostila", "Não estudou nada", "Estudou de forma insatisfatória", "Não apresentou dificuldades"]
+};
+
 const state = { role: "Secretaria", name: "Coordenação", page: "Visão geral" };
 const $ = (selector) => document.querySelector(selector);
 let installPrompt;
@@ -62,7 +69,20 @@ async function renderMinhasAulas(content) {
   const abrirRegistro = (indice) => {
     const aula = aulasAtuais[indice];
     if (!aula) return;
-    areaRegistro.innerHTML = `<section class="lesson-register"><div class="register-heading"><div><p class="eyebrow">LANÇAR REGISTRO</p><h3>${escapeHtml(aula.horario)} · ${escapeHtml(aula.tipo)}</h3><p>${escapeHtml(aula.individual ? "Aula individual" : `Aula por turma${aula.turma ? ` · ${aula.turma}` : ""}`)}</p></div><button id="fechar-registro" class="secondary-action" type="button">Fechar</button></div>${fotosDasAlunas(aula)}<div class="record-form"><div><label for="registro-material">Material usado hoje</label><input id="registro-material" placeholder="Ex.: MSA, Apostila, Folha Extra"></div><div><label for="registro-conteudo">Conteúdo / página / lição trabalhada</label><input id="registro-conteudo" placeholder="Ex.: MSA: exercício 9, páginas 12 a 15"></div><div><label for="registro-dificuldades">Dificuldades observadas</label><textarea id="registro-dificuldades" placeholder="Uma por linha ou separadas por vírgula. Deixe vazio se não houve dificuldades."></textarea></div><div><label for="registro-observacao">Observações pedagógicas</label><textarea id="registro-observacao" placeholder="Observações sobre a aula"></textarea></div><div><label for="registro-casa-tipo">Lição de casa</label><select id="registro-casa-tipo"><option value="">Não deixar lição</option><option value="MSA">MSA — corrigida pela professora de Solfejo</option><option value="Canto">Solfejo Melódico — corrigida pela professora</option><option value="Apostila">Apostila — correção pela Secretaria</option><option value="Teoria">Teoria / folha avulsa — correção pela Secretaria</option></select></div><div><label for="registro-casa">Lição deixada para casa</label><input id="registro-casa" placeholder="Ex.: página 18, exercícios 1 e 2" disabled></div></div><div class="register-actions"><button id="salvar-registro-aula" class="primary-action" type="button">Salvar registro da aula</button><div id="registro-retorno"></div></div></section>`;
+    const opcoesDificuldades = dificuldadesPorAula[aula.tipo] || dificuldadesPorAula.Solfejo;
+    const aulaPorTurma = !aula.individual;
+    const dificuldades = `<div class="difficulty-checks">${opcoesDificuldades.map((dificuldade) => `<label><input type="checkbox" data-dificuldade${aulaPorTurma ? "-compartilhada" : "-aluna"} ${aulaPorTurma ? "" : `data-dificuldade-aluna="${escapeHtml(aula.alunas[0])}"`} value="${escapeHtml(dificuldade)}"> ${escapeHtml(dificuldade)}</label>`).join("")}</div>`;
+    const secaoDificuldades = aulaPorTurma
+      ? `<div class="student-records shared-record"><p class="field-caption">Dificuldades (compartilhada para a turma):</p>${dificuldades}<label>Observações pedagógicas:<textarea id="registro-observacao-compartilhada" placeholder="Observação sobre a aula da turma"></textarea></label></div>`
+      : `<div class="student-records"><section class="student-record"><h4>${escapeHtml(aula.alunas[0])}</h4><p class="field-caption">Dificuldades observadas:</p>${dificuldades}<label>Observações pedagógicas:<textarea data-observacao-aluna="${escapeHtml(aula.alunas[0])}" placeholder="Observações sobre a aula"></textarea></label></section></div>`;
+    const licaoDeCasa = aula.tipo === "Teoria"
+      ? `<option value="">Não deixar lição</option><option value="Teoria">Folha avulsa — correção pela Secretaria</option><option value="Apostila_Teoria_Prof">Apostila — corrigida pela professora</option>`
+      : aula.tipo === "Solfejo"
+        ? `<option value="">Não deixar lição</option><option value="MSA">MSA — corrigida pela professora de Solfejo</option>`
+        : aula.tipo === "Solfejo Melódico"
+          ? `<option value="">Não deixar estudo</option><option value="Canto">Estudo de Solfejo Melódico — corrigido pela professora</option>`
+          : `<option value="">Não deixar lição</option><option value="Apostila">Apostila — correção pela Secretaria</option><option value="Metodo">Método — corrigido pela professora</option>`;
+    areaRegistro.innerHTML = `<section class="lesson-register"><div class="register-heading"><div><p class="eyebrow">LANÇAR REGISTRO</p><h3>📝 Registro: ${escapeHtml(aula.tipo)}</h3><p>${escapeHtml(aula.individual ? "Aula individual" : `Aula por turma${aula.turma ? ` · ${aula.turma}` : ""}`)}</p></div><button id="fechar-registro" class="secondary-action" type="button">Fechar</button></div>${fotosDasAlunas(aula)}<div class="record-form"><div><label for="registro-material">Material usado hoje:</label><input id="registro-material" placeholder="Ex.: MSA, Apostila, Folha Extra"></div><div><label for="registro-conteudo">Página/Lição trabalhada:</label><input id="registro-conteudo" placeholder="Ex.: MSA: exercício 9, páginas 12 a 15"></div></div>${secaoDificuldades}<div class="record-form"><div><label for="registro-casa-tipo">Lição de casa</label><select id="registro-casa-tipo">${licaoDeCasa}</select></div><div><label for="registro-casa">Lição deixada para casa</label><input id="registro-casa" placeholder="Ex.: página 18, exercícios 1 e 2" disabled></div></div><div class="register-actions"><button id="salvar-registro-aula" class="primary-action" type="button">Salvar registro da aula</button><div id="registro-retorno"></div></div></section>`;
     $("#fechar-registro").addEventListener("click", () => { areaRegistro.innerHTML = ""; });
     const tipoCasa = $("#registro-casa-tipo"), licaoCasa = $("#registro-casa");
     tipoCasa.addEventListener("change", () => { licaoCasa.disabled = !tipoCasa.value; if (!tipoCasa.value) licaoCasa.value = ""; });
@@ -70,10 +90,17 @@ async function renderMinhasAulas(content) {
       const botao = $("#salvar-registro-aula");
       const conteudo = $("#registro-conteudo").value.trim();
       if (!conteudo) { $("#registro-retorno").innerHTML = `<div class="action-error">Informe o conteúdo trabalhado antes de salvar.</div>`; return; }
-      const dificuldades = $("#registro-dificuldades").value.split(/[\n,;]/).map((item) => item.trim()).filter(Boolean);
+      const marcadas = [...areaRegistro.querySelectorAll("input[data-dificuldade-aluna]:checked")];
+      const observacoes = [...areaRegistro.querySelectorAll("[data-observacao-aluna]")];
+      const dificuldadesCompartilhadas = [...areaRegistro.querySelectorAll("input[data-dificuldade-compartilhada]:checked")].map((campo) => campo.value);
+      const observacaoCompartilhada = $("#registro-observacao-compartilhada")?.value.trim() || "";
+      const registrosPorAluna = Object.fromEntries(aula.alunas.map((aluna) => [aluna, {
+        dificuldades: aulaPorTurma ? dificuldadesCompartilhadas : marcadas.filter((campo) => campo.dataset.dificuldadeAluna === aluna).map((campo) => campo.value),
+        observacao: aulaPorTurma ? observacaoCompartilhada : observacoes.find((campo) => campo.dataset.observacaoAluna === aluna)?.value.trim() || ""
+      }]));
       botao.disabled = true;
       try {
-        await window.GemData.salvarRegistroAula({ dataIso: $("#agenda-data").value, instrutora: state.name, tipo: aula.tipo, alunas: aula.alunas, material: $("#registro-material").value.trim(), conteudo, dificuldades, observacao: $("#registro-observacao").value.trim(), casaTipo: tipoCasa.value, licaoCasa: licaoCasa.value });
+        await window.GemData.salvarRegistroAula({ dataIso: $("#agenda-data").value, instrutora: state.name, tipo: aula.tipo, alunas: aula.alunas, material: $("#registro-material").value.trim(), conteudo, registrosPorAluna, casaTipo: tipoCasa.value, licaoCasa: licaoCasa.value });
         $("#registro-retorno").innerHTML = `<div class="action-ok">Registro salvo para ${aula.alunas.length === 1 ? "a aluna" : "as alunas"} desta aula.</div>`;
       } catch (erro) { $("#registro-retorno").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; }
     });

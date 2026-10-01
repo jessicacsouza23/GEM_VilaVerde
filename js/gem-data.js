@@ -321,13 +321,14 @@
     return aulas.sort((a, b) => a.horario.localeCompare(b.horario));
   }
 
-  async function salvarRegistroAula({ dataIso, instrutora, tipo, alunas, material, conteudo, dificuldades, observacao, casaTipo, licaoCasa }) {
+  async function salvarRegistroAula({ dataIso, instrutora, tipo, alunas, material, conteudo, dificuldades, observacao, registrosPorAluna, casaTipo, licaoCasa }) {
     const banco = await obterCliente(); const data = dataBr(dataIso), disciplina = tipo === "Canto" ? "Solfejo Melódico" : tipo;
     if (!alunas?.length || !conteudo?.trim()) throw new Error("Informe o conteúdo trabalhado.");
     for (const aluna of alunas) {
+      const registroIndividual = registrosPorAluna?.[aluna] || {};
       const tipoAnalise = `Analise_${disciplina}`;
       const existente = await banco.from("historico_geral").select("id").eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoAnalise).eq("Instrutora", instrutora).order("id", { ascending: false }).limit(1);
-      const registro = { Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoAnalise, Licao_Atual: material ? `${material}: ${conteudo}` : conteudo, Dificuldades: dificuldades || [], Observacao: observacao || "", Status: "Registrado" };
+      const registro = { Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoAnalise, Licao_Atual: material ? `${material}: ${conteudo}` : conteudo, Dificuldades: registroIndividual.dificuldades ?? dificuldades ?? [], Observacao: registroIndividual.observacao ?? observacao ?? "", Status: "Registrado" };
       const salvar = existente.data?.[0] ? await banco.from("historico_geral").update(registro).eq("id", existente.data[0].id) : await banco.from("historico_geral").insert(registro);
       if (salvar.error) throw new Error(`Não foi possível salvar o registro de ${aluna}.`);
       if (casaTipo && licaoCasa?.trim()) {
