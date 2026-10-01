@@ -144,7 +144,7 @@
     const banco = await obterCliente(); const data = dataBr(dataIso);
     const [calendario, historico] = await Promise.all([
       banco.from("calendario").select("escala").eq("id", data).maybeSingle(),
-      banco.from("historico_geral").select("Aluna,Tipo,Status,Instrutora,Licao_Atual,Licao_Casa,Observacao").eq("Data", data)
+      banco.from("historico_geral").select("*").eq("Data", data).order("id", { ascending: true })
     ]);
     if (calendario.error || historico.error) throw new Error("Não foi possível carregar a visão geral desta data.");
     const alunas = [...new Set((calendario.data?.escala || []).map((linha) => linha.Aluna).filter(Boolean))];
@@ -168,10 +168,10 @@
     return { alunas: alunas.data || [], professoras: professoras.data || [], secretarias: secretarias.data || [] };
   }
 
-  async function salvarPessoa(tipo, dados, id) {
+  async function salvarPessoa(tipo, dados, id, nomeAtual = "") {
     const banco = await obterCliente(); const tabela = ({ aluna: "alunas", professora: "professoras", secretaria: "secretarias" })[tipo];
     if (!tabela) throw new Error("Tipo de pessoa inválido.");
-    const consulta = id ? banco.from(tabela).update(dados).eq("id", id) : banco.from(tabela).insert(dados);
+    const consulta = id ? banco.from(tabela).update(dados).eq("id", id) : nomeAtual ? banco.from(tabela).update(dados).eq("nome", nomeAtual) : banco.from(tabela).insert(dados);
     const { error } = await consulta; if (error) throw new Error(error.message || "Não foi possível salvar.");
   }
 
