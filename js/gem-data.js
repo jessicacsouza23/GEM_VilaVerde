@@ -288,7 +288,10 @@
   async function dadosCoordenacoesProfessoras() {
     const banco = await obterCliente();
     const { data, error } = await banco.from("coordenacoes_professoras").select("*").order("inicio", { ascending: false });
-    if (error) throw new Error(error.code === "42P01" ? "A função de professora coordenadora ainda não foi criada. Execute a migration 009 no Supabase." : "Não foi possível carregar as coordenações.");
+    if (error) {
+      if (["42P01", "PGRST205"].includes(error.code)) throw new Error("A tabela da professora coordenadora ainda não existe no Supabase. Execute a migration 009 e atualize a página.");
+      throw new Error(`Não foi possível carregar as coordenações (${error.code || "erro"}): ${error.message || "verifique as permissões da tabela."}`);
+    }
     return data || [];
   }
 
