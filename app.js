@@ -492,6 +492,12 @@ $("#entrar").addEventListener("click", async () => {
       aplicarAvatar(perfil.fotoUrl, state.name);
     } catch (error) { console.warn("Perfil visual indisponível", error); }
   }
+  if (state.role === "Professora") {
+    try {
+      const perfil = await window.GemData.perfilProfessora(state.name);
+      aplicarAvatar(perfil.fotoUrl, state.name);
+    } catch (error) { console.warn("Foto de perfil da professora indisponível", error); }
+  }
   renderNavigation(); await renderPage();
   botao.disabled = false;
   botao.textContent = "Entrar";

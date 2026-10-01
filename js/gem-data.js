@@ -124,6 +124,15 @@
     return { ...data, fotoUrl: foto.data?.signedUrl || null };
   }
 
+  async function perfilProfessora(nome) {
+    const banco = await obterCliente();
+    const { data, error } = await banco.from("professoras").select("*").eq("nome", nome).maybeSingle();
+    if (error) throw new Error("Não foi possível carregar o perfil da professora.");
+    if (!data?.foto_path) return data || {};
+    const foto = await banco.storage.from("fotos_professoras").createSignedUrl(data.foto_path, 3600);
+    return { ...data, fotoUrl: foto.data?.signedUrl || null };
+  }
+
   async function salvarPerfilSecretaria({ nome, arquivo }) {
     const banco = await obterCliente();
     let foto_path;
@@ -411,5 +420,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, dadosVisaoGeral, dadosPessoas, salvarPessoa, dadosDocumentos, enviarDocumento, urlDocumento, dadosProvas, criarProva, dadosAnalitico, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosVisaoGeral, dadosPessoas, salvarPessoa, dadosDocumentos, enviarDocumento, urlDocumento, dadosProvas, criarProva, dadosAnalitico, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();
