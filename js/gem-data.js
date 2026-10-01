@@ -4,7 +4,30 @@
 (function () {
   const config = window.GEM_SUPABASE;
   let client = null;
+  let r2Habilitado = null;
   const CACHE_URL_ASSINADA = "gem-url-assinada-v1:";
+
+  async function r2EstaHabilitado() {
+    if (r2Habilitado !== null) return r2Habilitado;
+    try {
+      const resposta = await fetch("/api/r2-status", { cache: "no-store", credentials: "same-origin" });
+      r2Habilitado = Boolean(resposta.ok && (await resposta.json()).enabled);
+    } catch (_) { r2Habilitado = false; }
+    return r2Habilitado;
+  }
+
+  async function enviarFotoParaR2(tipo, arquivo) {
+    if (!await r2EstaHabilitado()) return null;
+    const resposta = await fetch("/api/r2-upload-url", {
+      method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tipo, nome: arquivo.name, contentType: arquivo.type, tamanho: arquivo.size })
+    });
+    const dados = await resposta.json().catch(() => ({}));
+    if (!resposta.ok || !dados.url || !dados.key) throw new Error(dados.error || "Não foi possível preparar o envio da foto.");
+    const envio = await fetch(dados.url, { method: "PUT", headers: { "Content-Type": arquivo.type }, body: arquivo });
+    if (!envio.ok) throw new Error("Não foi possível enviar a foto ao armazenamento.");
+    return dados.key;
+  }
 
   // As fotos ficam em buckets privados. Sem esta memória, cada tela criava
   // uma URL assinada nova e o navegador baixava a mesma imagem novamente.
@@ -17,8 +40,15 @@
       const salvo = JSON.parse(localStorage.getItem(chave) || "null");
       if (salvo?.url && Number(salvo.expiraEm) > Date.now()) return salvo.url;
     } catch (_) { /* cache local é apenas uma otimização */ }
-    const resposta = await banco.storage.from(bucket).createSignedUrl(caminho, segundos);
-    const url = resposta.data?.signedUrl || null;
+    let url = null;
+    if (String(caminho).startsWith("r2:")) {
+      const resposta = await fetch(`/api/r2-download-url?key=${encodeURIComponent(caminho)}`, { cache: "no-store", credentials: "same-origin" });
+      if (!resposta.ok) throw new Error("Não foi possível obter a foto privada.");
+      url = (await resposta.json()).url || null;
+    } else {
+      const resposta = await banco.storage.from(bucket).createSignedUrl(caminho, segundos);
+      url = resposta.data?.signedUrl || null;
+    }
     if (url) {
       try { localStorage.setItem(chave, JSON.stringify({ url, expiraEm: Date.now() + Math.max(60, segundos - 600) * 1000 })); } catch (_) { /* sem espaço local: usa a URL normalmente */ }
     }
@@ -102,6 +132,19 @@
     const banco = await obterCliente();
     const { error } = await banco.auth.signOut();
     if (error) console.warn("Não foi possível encerrar a sessão do Supabase.", error);
+    try { await fetch("/api/r2-session", { method: "DELETE", credentials: "same-origin" }); } catch (_) { /* sessão de fotos expira em no máximo oito horas */ }
+  }
+
+  async function iniciarSessaoR2(login, senha) {
+    try {
+      const resposta = await fetch("/api/r2-session", {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ login: String(login || "").trim().toLowerCase(), senha: String(senha || "") })
+      });
+      const dados = await resposta.json().catch(() => ({}));
+      r2Habilitado = Boolean(dados.enabled);
+      return r2Habilitado;
+    } catch (_) { return false; }
   }
 
   async function listarGems() {
@@ -143,9 +186,12 @@
     if (!arquivo) throw new Error("Escolha a imagem da logo.");
     const banco = await obterCliente();
     const extensao = (arquivo.name.split(".").pop() || "png").toLowerCase();
-    const caminho = `logo_atual.${extensao}`;
-    const envio = await banco.storage.from("logo_gem").upload(caminho, arquivo, { upsert: true, contentType: arquivo.type || "image/png" });
-    if (envio.error) throw new Error("Não foi possível enviar a logo.");
+    let caminho = await enviarFotoParaR2("logo", arquivo);
+    if (!caminho) {
+      caminho = `logo_atual.${extensao}`;
+      const envio = await banco.storage.from("logo_gem").upload(caminho, arquivo, { upsert: true, contentType: arquivo.type || "image/png" });
+      if (envio.error) throw new Error("Não foi possível enviar a logo.");
+    }
     try { localStorage.removeItem(`${CACHE_URL_ASSINADA}logo_gem:${caminho}`); } catch (_) { /* sem cache local */ }
     const salvar = await banco.from("config_visual_gem").upsert({ id: 1, logo_path: caminho, updated_at: new Date().toISOString() });
     if (salvar.error) throw new Error("A logo foi enviada, mas não foi possível registrar a configuração.");
@@ -196,9 +242,12 @@
     let foto_path;
     if (arquivo) {
       const extensao = (arquivo.name.split(".").pop() || "png").toLowerCase();
-      foto_path = `coordenacao.${extensao}`;
-      const envio = await banco.storage.from("fotos_secretaria_gem").upload(foto_path, arquivo, { upsert: true, contentType: arquivo.type || "image/png" });
-      if (envio.error) throw new Error("Não foi possível enviar a foto da Coordenação.");
+      foto_path = await enviarFotoParaR2("secretaria", arquivo);
+      if (!foto_path) {
+        foto_path = `coordenacao.${extensao}`;
+        const envio = await banco.storage.from("fotos_secretaria_gem").upload(foto_path, arquivo, { upsert: true, contentType: arquivo.type || "image/png" });
+        if (envio.error) throw new Error("Não foi possível enviar a foto da Coordenação.");
+      }
       try { localStorage.removeItem(`${CACHE_URL_ASSINADA}fotos_secretaria_gem:${foto_path}`); } catch (_) { /* sem cache local */ }
     }
     const dados = { id: 1, nome_exibicao: String(nome || "Coordenação").trim(), updated_at: new Date().toISOString() };
@@ -252,6 +301,8 @@
     // evita cadastrar uma foto desproporcional para o avatar do sistema.
     if (arquivo.size > 5 * 1024 * 1024) throw new Error("A foto deve ter no máximo 5 MB.");
     const banco = await obterCliente();
+    const caminhoR2 = await enviarFotoParaR2(tipo, arquivo);
+    if (caminhoR2) return caminhoR2;
     const bucket = tipo === 'aluna' ? 'fotos_alunas' : 'fotos_professoras';
     const caminho = `${crypto.randomUUID()}_${String(arquivo.name).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '_')}`;
     const { error } = await banco.storage.from(bucket).upload(caminho, arquivo, { contentType: arquivo.type || `image/${extensao === 'jpg' ? 'jpeg' : extensao}` });
@@ -464,6 +515,78 @@
     }
   }
 
+  // Prática é diferente das demais disciplinas: uma mesma aula pode trabalhar
+  // Apostila e mais de um método. Cada material vira seu próprio registro
+  // Analise_Prática, exatamente como ocorre no app.py, para não misturar
+  // páginas, dificuldades e exercícios de livros diferentes.
+  async function salvarRegistrosPratica({ dataIso, instrutora, aluna, materiais, observacao = "" }) {
+    const banco = await obterCliente();
+    const data = dataBr(dataIso);
+    const lista = (materiais || []).filter((item) => String(item?.material || "").trim() && String(item?.conteudo || "").trim());
+    if (!aluna || !lista.length) throw new Error("Informe ao menos um método/apostila e a página ou lição trabalhada.");
+
+    for (const item of lista) {
+      const material = String(item.material).trim();
+      const conteudo = String(item.conteudo).trim();
+      const tipoAnalise = "Analise_Prática";
+      const { data: anteriores, error: erroAnteriores } = await banco.from("historico_geral").select("id,Licao_Atual")
+        .eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoAnalise).eq("Instrutora", instrutora).order("id", { ascending: false });
+      if (erroAnteriores) throw new Error("Não foi possível conferir o registro de Prática já salvo.");
+      const prefixo = `${material}:`;
+      const existente = (anteriores || []).find((registro) => String(registro.Licao_Atual || "").trim().startsWith(prefixo));
+      const registro = {
+        Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoAnalise,
+        Licao_Atual: `${material}: ${conteudo}`,
+        Dificuldades: Array.from(new Set(item.dificuldades || [])),
+        Observacao: String(observacao || "").trim(), Status: "Registrado"
+      };
+      const salvar = existente
+        ? await banco.from("historico_geral").update(registro).eq("id", existente.id)
+        : await banco.from("historico_geral").insert(registro);
+      if (salvar.error) throw new Error(`Não foi possível salvar o registro de ${material}.`);
+
+      // Mantém os exercícios separados para consulta futura, mas as suas
+      // dificuldades também estão agregadas acima — o Analítico lê o registro
+      // principal, como no Streamlit.
+      const apagar = await banco.from("exercicios_registro").delete()
+        .eq("aluna", aluna).eq("data", data).eq("disciplina", "Prática").eq("material", material);
+      if (apagar.error && apagar.error.code !== "42P01") throw new Error(`Não foi possível atualizar os exercícios de ${material}.`);
+      const exercicios = (item.exercicios || []).filter((exercicio) => String(exercicio?.exercicio || "").trim())
+        .map((exercicio, ordem) => ({
+          aluna, data, instrutora, disciplina: "Prática", material,
+          exercicio: String(exercicio.exercicio).trim(), dificuldades: Array.from(new Set(exercicio.dificuldades || [])), ordem
+        }));
+      if (exercicios.length) {
+        const inserir = await banco.from("exercicios_registro").insert(exercicios);
+        if (inserir.error) throw new Error(inserir.error.code === "42P01"
+          ? "A tabela de exercícios ainda não existe no banco. Ela já é usada pelo app.py; confirme que está no mesmo projeto Supabase."
+          : `Não foi possível salvar os exercícios de ${material}.`);
+      }
+
+      if (item.casaTipo && String(item.licaoCasa || "").trim()) {
+        const tipoCasa = item.casaTipo === "Apostila" ? "Casa_Apostila" : `Casa_Metodo_${material}`;
+        const { data: casas, error: erroCasas } = await banco.from("historico_geral").select("id")
+          .eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoCasa).order("id", { ascending: false }).limit(1);
+        if (erroCasas) throw new Error(`O registro foi salvo, mas não foi possível consultar a lição de ${material}.`);
+        const casa = { Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoCasa, Licao_Atual: "Definido", Licao_Casa: String(item.licaoCasa).trim(), Dificuldades: [], Observacao: "", Status: "Pendente" };
+        const salvarCasa = casas?.[0]
+          ? await banco.from("historico_geral").update(casa).eq("id", casas[0].id)
+          : await banco.from("historico_geral").insert(casa);
+        if (salvarCasa.error) throw new Error(`O registro foi salvo, mas não foi possível registrar a lição de ${material}.`);
+      }
+    }
+  }
+
+  async function exerciciosDaAula({ dataIso, aluna, material }) {
+    const banco = await obterCliente();
+    const { data, error } = await banco.from("exercicios_registro").select("*")
+      .eq("aluna", aluna).eq("data", dataBr(dataIso)).eq("disciplina", "Prática").eq("material", material).order("ordem");
+    // Instalações antigas podem não ter a tabela. Não falhamos a abertura do
+    // registro; apenas começamos a lista vazia e explicamos ao salvar.
+    if (error && error.code !== "42P01") throw new Error("Não foi possível carregar os exercícios deste material.");
+    return data || [];
+  }
+
   async function registrosDaAula({ dataIso, instrutora, alunas }) {
     const banco = await obterCliente();
     const data = dataBr(dataIso);
@@ -633,5 +756,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosCorrecoesLicoes, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, encerrarSessao, listarGems, criarGem, dadosPlataformaMaster, agendaProfessora, salvarRegistroAula, registrosDaAula, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosCorrecoesLicoes, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, encerrarSessao, iniciarSessaoR2, listarGems, criarGem, dadosPlataformaMaster, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();

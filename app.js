@@ -102,7 +102,8 @@ async function renderMinhasAulas(content) {
     const registrosVisiveis = analisesSalvas.length ? `<section class="saved-records"><h4>Registro já salvo nesta aula</h4>${analisesSalvas.map((registro) => { const diffs = Array.isArray(registro.Dificuldades) ? registro.Dificuldades : []; return `<article><strong>${escapeHtml(registro.Aluna)}</strong><span>${escapeHtml(registro.Licao_Atual || "—")}</span>${diffs.length ? `<small>⚠ ${escapeHtml(diffs.join(" · "))}</small>` : ""}${registro.Observacao ? `<small>📝 ${escapeHtml(registro.Observacao)}</small>` : ""}</article>`; }).join("")}</section>` : "";
     const tituloCasa = (tipo) => tipo === "Casa_MSA" ? "MSA de Solfejo" : tipo === "Casa_Canto" ? "Estudo de Solfejo Melódico" : tipo === "Casa_Apostila_Teoria_Prof" ? "Apostila de Teoria" : tipo === "Casa_Teoria_Prof" ? "Folha avulsa de Teoria" : "Método de Prática";
     const correcoesPendentes = licoesPendentes.length ? `<section class="teacher-pending"><h4>📋 Lição de casa para corrigir nesta aula</h4><p>Registre a correção aqui. A aluna continuará vendo a lição no histórico dela.</p>${licoesPendentes.map((licao, indicePendente) => `<article><div><strong>${escapeHtml(licao.Aluna)}</strong><span>${escapeHtml(tituloCasa(licao.Tipo))} · deixada em ${escapeHtml(licao.Data || "—")}</span><small>📚 ${escapeHtml(licao.Licao_Casa || "Lição não informada")}</small></div><div class="pending-action"><label>Resultado<select data-status-pendente="${indicePendente}"><option value="Resolvido">Resolvido</option><option value="Resolvido com pendências">Resolvido com pendências</option><option value="Não resolvido">Não resolvido</option></select></label><label>Observação da correção<textarea data-obs-pendente="${indicePendente}" placeholder="Ex.: realizou parcialmente os exercícios"></textarea></label><button class="secondary-action" type="button" data-corrigir-licao="${indicePendente}">Salvar correção</button></div></article>`).join("")}</section>` : "";
-    areaRegistro.innerHTML = `<section class="lesson-register"><div class="register-heading"><div><p class="eyebrow">LANÇAR REGISTRO</p><h3>📝 Registro: ${escapeHtml(aula.tipo)}</h3><p>${escapeHtml(aula.individual ? "Aula individual" : `Aula por turma${aula.turma ? ` · ${aula.turma}` : ""}`)}</p></div><button id="fechar-registro" class="secondary-action" type="button">Fechar</button></div>${fotosDasAlunas(aula)}${registrosVisiveis}${correcoesPendentes}<div class="record-form"><div><label for="registro-material">${aula.tipo === "Prática" ? "Método/Apostila conferido hoje:" : "Material usado hoje:"}</label>${campoMaterial}</div><div><label for="registro-conteudo">Página/Lição trabalhada:</label><input id="registro-conteudo" value="${escapeHtml(conteudoSalvo)}" placeholder="Ex.: MSA: exercício 9, páginas 12 a 15"></div></div>${secaoDificuldades}<div class="record-form"><div><label for="registro-casa-tipo">Lição de casa</label><select id="registro-casa-tipo">${licaoDeCasa}</select></div><div><label for="registro-casa">Lição deixada para casa</label><input id="registro-casa" placeholder="Ex.: página 18, exercícios 1 e 2" disabled></div></div><div class="register-actions"><button id="salvar-registro-aula" class="primary-action" type="button">Salvar registro da aula</button><div id="registro-retorno"></div></div></section>`;
+    const praticaMarkup = aula.tipo === "Prática" ? `<section class="practice-register"><div class="practice-register-head"><div><h4>🎹 Métodos e apostila conferidos hoje</h4><p>Registre cada método separadamente. As dificuldades e os exercícios ficam vinculados ao material correto, como no app.py.</p></div><button id="adicionar-material-pratica" class="secondary-action" type="button">＋ Adicionar método</button></div><div id="materiais-pratica"></div><label class="practice-observation">Observações pedagógicas gerais<textarea id="registro-observacao-pratica" placeholder="Observações sobre a aula e a evolução da aluna"></textarea></label></section>` : `<div class="record-form"><div><label for="registro-material">Material usado hoje:</label>${campoMaterial}</div><div><label for="registro-conteudo">Página/Lição trabalhada:</label><input id="registro-conteudo" value="${escapeHtml(conteudoSalvo)}" placeholder="Ex.: MSA: exercício 9, páginas 12 a 15"></div></div>${secaoDificuldades}<div class="record-form"><div><label for="registro-casa-tipo">Lição de casa</label><select id="registro-casa-tipo">${licaoDeCasa}</select></div><div><label for="registro-casa">Lição deixada para casa</label><input id="registro-casa" placeholder="Ex.: página 18, exercícios 1 e 2" disabled></div></div>`;
+    areaRegistro.innerHTML = `<section class="lesson-register"><div class="register-heading"><div><p class="eyebrow">LANÇAR REGISTRO</p><h3>📝 Registro: ${escapeHtml(aula.tipo)}</h3><p>${escapeHtml(aula.individual ? "Aula individual" : `Aula por turma${aula.turma ? ` · ${aula.turma}` : ""}`)}</p></div><button id="fechar-registro" class="secondary-action" type="button">Fechar</button></div>${fotosDasAlunas(aula)}${registrosVisiveis}${correcoesPendentes}${praticaMarkup}<div class="register-actions"><button id="salvar-registro-aula" class="primary-action" type="button">Salvar registro da aula</button><div id="registro-retorno"></div></div></section>`;
     $("#fechar-registro").addEventListener("click", () => { areaRegistro.innerHTML = ""; });
     areaRegistro.querySelectorAll("[data-corrigir-licao]").forEach((botao) => botao.addEventListener("click", async () => {
       const indicePendente = Number(botao.dataset.corrigirLicao), licao = licoesPendentes[indicePendente];
@@ -113,12 +114,46 @@ async function renderMinhasAulas(content) {
         botao.closest("article").classList.add("is-corrected");
       } catch (erro) { alert(erro.message); botao.disabled = false; }
     }));
-    const tipoCasa = $("#registro-casa-tipo"), licaoCasa = $("#registro-casa");
-    tipoCasa.addEventListener("change", () => { licaoCasa.disabled = !tipoCasa.value; if (!tipoCasa.value) licaoCasa.value = ""; });
+    if (aula.tipo === "Prática") {
+      const areaMateriais = $("#materiais-pratica");
+      const materiaisRegistrados = analisesSalvas.map((registro) => {
+        const partes = String(registro.Licao_Atual || "").split(":");
+        return { material: partes.length > 1 ? partes.shift().trim() : "Apostila", conteudo: partes.join(":").trim(), dificuldades: Array.isArray(registro.Dificuldades) ? registro.Dificuldades : [] };
+      }).filter((item) => opcoesPratica.includes(item.material));
+      let proximoMaterial = 0;
+      const linhasDificuldadesPratica = (marcadas = []) => dificuldadesPorAula.Prática.map((dificuldade) => `<label><input type="checkbox" data-dificuldade-pratica value="${escapeHtml(dificuldade)}" ${marcadas.includes(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("");
+      const novaLinhaExercicio = (exercicio = {}) => `<div class="exercise-row"><label>Exercício<input data-exercicio-nome value="${escapeHtml(exercicio.exercicio || "")}" placeholder="Ex.: Estudo 21, exercício 3"></label><div class="difficulty-checks compact">${dificuldadesPorAula.Prática.map((dificuldade) => `<label><input type="checkbox" data-exercicio-dificuldade value="${escapeHtml(dificuldade)}" ${(exercicio.dificuldades || []).includes(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("")}</div><button class="icon-action remover-exercicio" type="button" title="Remover exercício">×</button></div>`;
+      const conectarExercicios = (cartao) => {
+        cartao.querySelector("[data-adicionar-exercicio]").addEventListener("click", () => {
+          cartao.querySelector("[data-exercicios]").insertAdjacentHTML("beforeend", novaLinhaExercicio());
+          conectarExercicios(cartao);
+        });
+        cartao.querySelectorAll(".remover-exercicio").forEach((botao) => { if (!botao.dataset.conectado) { botao.dataset.conectado = "1"; botao.addEventListener("click", () => botao.closest(".exercise-row").remove()); } });
+      };
+      const adicionarMaterial = async (registro = {}) => {
+        const indice = proximoMaterial++;
+        const material = registro.material || "Apostila";
+        const cartao = document.createElement("article");
+        cartao.className = "practice-material-card";
+        cartao.dataset.materialIndex = indice;
+        cartao.innerHTML = `<div class="practice-material-title"><label>Método ou apostila<select data-pratica-material>${opcoesPratica.map((opcao) => `<option value="${escapeHtml(opcao)}" ${opcao === material ? "selected" : ""}>${escapeHtml(opcao)}</option>`).join("")}</select></label><button class="icon-action remover-material" type="button" title="Remover material">×</button></div><label>Página/Lição trabalhada<input data-pratica-conteudo value="${escapeHtml(registro.conteudo || "")}" placeholder="Ex.: página 18, exercício 4"></label><p class="field-caption">Dificuldades observadas neste material:</p><div class="difficulty-checks">${linhasDificuldadesPratica(registro.dificuldades || [])}</div><div class="practice-homework"><label>Lição de casa<select data-pratica-casa-tipo><option value="">Não deixar lição</option><option value="Apostila">Apostila — correção pela Secretaria</option><option value="Metodo">Método — correção pela professora</option></select></label><label>Lição deixada para casa<input data-pratica-casa placeholder="Ex.: página 20, exercícios 1 e 2"></label></div><div class="exercise-heading"><strong>🎼 Exercícios e dificuldades separadas</strong><button data-adicionar-exercicio class="secondary-action" type="button">＋ Exercício</button></div><p class="hint">Opcional: registre exercícios específicos sem misturar suas dificuldades.</p><div data-exercicios></div></article>`;
+        areaMateriais.appendChild(cartao);
+        cartao.querySelector(".remover-material").addEventListener("click", () => { if (areaMateriais.children.length > 1) cartao.remove(); });
+        let exercicios = [];
+        try { exercicios = await window.GemData.exerciciosDaAula({ dataIso: $("#agenda-data").value, aluna: aula.alunas[0], material }); } catch (erro) { console.warn("Exercícios salvos não carregaram", erro); }
+        cartao.querySelector("[data-exercicios]").innerHTML = exercicios.map(novaLinhaExercicio).join("");
+        conectarExercicios(cartao);
+      };
+      for (const registro of (materiaisRegistrados.length ? materiaisRegistrados : [{ material: materialSalvo || "Apostila", conteudo: conteudoSalvo, dificuldades: dificuldadesSalvas }])) await adicionarMaterial(registro);
+      $("#adicionar-material-pratica").addEventListener("click", () => adicionarMaterial());
+    } else {
+      const tipoCasa = $("#registro-casa-tipo"), licaoCasa = $("#registro-casa");
+      tipoCasa.addEventListener("change", () => { licaoCasa.disabled = !tipoCasa.value; if (!tipoCasa.value) licaoCasa.value = ""; });
+    }
     $("#salvar-registro-aula").addEventListener("click", async () => {
       const botao = $("#salvar-registro-aula");
-      const conteudo = $("#registro-conteudo").value.trim();
-      if (!conteudo) { $("#registro-retorno").innerHTML = `<div class="action-error">Informe o conteúdo trabalhado antes de salvar.</div>`; return; }
+      const conteudo = $("#registro-conteudo")?.value.trim();
+      if (aula.tipo !== "Prática" && !conteudo) { $("#registro-retorno").innerHTML = `<div class="action-error">Informe o conteúdo trabalhado antes de salvar.</div>`; return; }
       const marcadas = [...areaRegistro.querySelectorAll("input[data-dificuldade-aluna]:checked")];
       const observacoes = [...areaRegistro.querySelectorAll("[data-observacao-aluna]")];
       const dificuldadesCompartilhadas = [...areaRegistro.querySelectorAll("input[data-dificuldade-compartilhada]:checked")].map((campo) => campo.value);
@@ -129,7 +164,22 @@ async function renderMinhasAulas(content) {
       }]));
       botao.disabled = true;
       try {
-        await window.GemData.salvarRegistroAula({ dataIso: $("#agenda-data").value, instrutora: state.name, tipo: aula.tipo, alunas: aula.alunas, material: $("#registro-material").value.trim(), conteudo, registrosPorAluna, casaTipo: tipoCasa.value, licaoCasa: licaoCasa.value });
+        if (aula.tipo === "Prática") {
+          const materiais = [...areaRegistro.querySelectorAll(".practice-material-card")].map((cartao) => ({
+            material: cartao.querySelector("[data-pratica-material]").value,
+            conteudo: cartao.querySelector("[data-pratica-conteudo]").value.trim(),
+            dificuldades: [...cartao.querySelectorAll("[data-dificuldade-pratica]:checked")].map((campo) => campo.value),
+            exercicios: [...cartao.querySelectorAll(".exercise-row")].map((linha) => ({ exercicio: linha.querySelector("[data-exercicio-nome]").value.trim(), dificuldades: [...linha.querySelectorAll("[data-exercicio-dificuldade]:checked")].map((campo) => campo.value) })),
+            casaTipo: cartao.querySelector("[data-pratica-casa-tipo]").value,
+            licaoCasa: cartao.querySelector("[data-pratica-casa]").value.trim()
+          }));
+          const nomesRepetidos = materiais.map((item) => item.material).filter((material, indice, lista) => lista.indexOf(material) !== indice);
+          if (nomesRepetidos.length) throw new Error("Cada método/apostila deve aparecer apenas uma vez nesta aula.");
+          await window.GemData.salvarRegistrosPratica({ dataIso: $("#agenda-data").value, instrutora: state.name, aluna: aula.alunas[0], materiais, observacao: $("#registro-observacao-pratica").value.trim() });
+        } else {
+          const tipoCasa = $("#registro-casa-tipo"), licaoCasa = $("#registro-casa");
+          await window.GemData.salvarRegistroAula({ dataIso: $("#agenda-data").value, instrutora: state.name, tipo: aula.tipo, alunas: aula.alunas, material: $("#registro-material").value.trim(), conteudo, registrosPorAluna, casaTipo: tipoCasa.value, licaoCasa: licaoCasa.value });
+        }
         $("#registro-retorno").innerHTML = `<div class="action-ok">Registro salvo para ${aula.alunas.length === 1 ? "a aluna" : "as alunas"} desta aula.</div>`;
       } catch (erro) { $("#registro-retorno").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; }
     });
@@ -547,7 +597,7 @@ async function renderCorrecoesLicoes(content) {
 }
 
 async function renderAnalitico(content) {
-  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO PEDAGÓGICO</p><h2>Analítico e desempenho</h2><p>Indicadores calculados somente a partir dos registros, chamadas, lições e notas já existentes no GEM.</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-analise="prontuario">Prontuário individual</button><button class="tab-action" data-analise="quadro">Quadro de desempenho</button><button class="tab-action" data-analise="boletim">Boletim</button></div><div class="analytics-filters"><label>De<input id="analise-inicio" type="date"></label><label>Até<input id="analise-fim" type="date"></label><label id="analise-aluna-wrap">Aluna<select id="analise-aluna"></select></label><button id="atualizar-analise" class="primary-action" type="button">Atualizar</button></div><div id="analise-conteudo"><div class="empty">Carregando indicadores...</div></div></section>`;
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO PEDAGÓGICO</p><h2>Analítico e desempenho</h2><p>Indicadores calculados somente a partir dos registros, chamadas, lições e notas já existentes no GEM.</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-analise="prontuario">Prontuário individual</button><button class="tab-action" data-analise="quadro">Quadro de desempenho</button><button class="tab-action" data-analise="boletim">Boletim</button></div><div class="analytics-filters"><label>Período<select id="analise-periodo"><option value="30">Mensal</option><option value="60" selected>Bimestral</option><option value="180">Semestral</option><option value="tudo">Tudo</option><option value="personalizado">Personalizado</option></select></label><label>De<input id="analise-inicio" type="date"></label><label>Até<input id="analise-fim" type="date"></label><label id="analise-aluna-wrap">Aluna<select id="analise-aluna"></select></label><button id="atualizar-analise" class="primary-action" type="button">Atualizar</button></div><div id="analise-conteudo"><div class="empty">Carregando indicadores...</div></div></section>`;
   const dados = await window.GemData.dadosAnalitico();
   const hoje = new Date(), inicio = new Date(); inicio.setDate(hoje.getDate() - 60);
   $("#analise-inicio").value = inicio.toISOString().slice(0, 10); $("#analise-fim").value = hoje.toISOString().slice(0, 10);
@@ -557,6 +607,10 @@ async function renderAnalitico(content) {
   const disciplinaAnalise = (tipo) => { const texto = String(tipo || "").replace(/^Analise_/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase(); return texto === "CANTO" || texto === "SOLFEJO MELODICO" ? "Solfejo Melódico" : texto === "PRATICA" ? "Prática" : texto === "TEORIA" ? "Teoria" : texto === "SOLFEJO" ? "Solfejo" : ""; };
   const dificuldades = (valor) => { if (Array.isArray(valor)) return valor.filter((item) => item && !/^\[\]$|^null$|^nan$/i.test(String(item).trim())); if (typeof valor !== "string") return []; const texto = valor.trim(); if (!texto || /^\[\]$|^null$|^nan$/i.test(texto)) return []; try { const json = JSON.parse(texto); if (Array.isArray(json)) return json.filter(Boolean); } catch (_) {} return texto.replace(/^\[|\]$/g, "").split(/[,;]+/).map((item) => item.trim().replace(/^['"]|['"]$/g, "")).filter(Boolean); };
   const dentroPeriodo = (registro) => { const data = dataRegistro(registro.Data); return data && data >= $("#analise-inicio").value && data <= $("#analise-fim").value; };
+  // Há histórico antigo no GEM em que o Tipo veio somente como "Prática",
+  // "Teoria" ou "Solfejo". Ele é uma aula verdadeira e não pode aparecer
+  // como "sem registros" só porque não recebeu o prefixo Analise_.
+  const ehRegistroPedagogico = (registro) => Boolean(disciplinaAnalise(registro.Tipo)) && !String(registro.Tipo || "").startsWith("Casa_");
   const classificacao = (registros) => { if (!registros.length) return { icone: "🥉", nome: "Sem registros", nota: null }; const limpos = registros.filter((registro) => !dificuldades(registro.Dificuldades).some((item) => !/não apresentou dificuldade/i.test(item))); const nota = Math.round(limpos.length / registros.length * 100); return nota >= 80 ? { icone: "🥇", nome: "Ouro", nota } : nota >= 50 ? { icone: "🥈", nome: "Prata", nota } : { icone: "🥉", nome: "Bronze", nota }; };
   const render = () => {
     const destino = $("#analise-conteudo"), periodo = dados.historico.filter(dentroPeriodo);
@@ -566,13 +620,48 @@ async function renderAnalitico(content) {
       destino.innerHTML = `<h3>🏆 Quadro de desempenho</h3><p class="hint">A medalha usa a porcentagem de aulas sem dificuldades registradas no período escolhido. Registros antigos de Canto são considerados como Solfejo Melódico.</p><div class="table-wrap"><table class="scale-table performance-table"><thead><tr><th>Aluna</th>${disciplinas.map((disciplina) => `<th>${escapeHtml(disciplina)}</th>`).join("")}</tr></thead><tbody>${dados.alunas.filter((aluna) => aluna.ativo !== false).map((aluna) => `<tr><th>${escapeHtml(aluna.nome)}</th>${disciplinas.map((disciplina) => { const resultado = classificacao(periodo.filter((registro) => registro.Aluna === aluna.nome && disciplinaAnalise(registro.Tipo) === disciplina)); return `<td>${resultado.icone} ${resultado.nome}${resultado.nota !== null ? `<br><small>${resultado.nota}%</small>` : ""}</td>`; }).join("")}</tr>`).join("")}</tbody></table></div>`;
       return;
     }
-    const aluna = $("#analise-aluna").value, registros = periodo.filter((registro) => registro.Aluna === aluna), chamadas = registros.filter((registro) => registro.Tipo === "Chamada"), aulas = registros.filter((registro) => String(registro.Tipo || "").startsWith("Analise_")), casas = registros.filter((registro) => String(registro.Tipo || "").startsWith("Casa_"));
+    const aluna = $("#analise-aluna").value, registros = periodo.filter((registro) => registro.Aluna === aluna), chamadas = registros.filter((registro) => registro.Tipo === "Chamada"), aulas = registros.filter(ehRegistroPedagogico), casas = registros.filter((registro) => String(registro.Tipo || "").startsWith("Casa_"));
     if (aba === "boletim") { const notas = dados.notas.filter((nota) => nota.aluna === aluna); destino.innerHTML = `<h3>🎼 Boletim — ${escapeHtml(aluna)}</h3>${notas.length ? `<div class="table-wrap"><table class="scale-table"><thead><tr><th>Avaliação</th><th>Disciplina</th><th>Nota</th></tr></thead><tbody>${notas.map((nota) => { const avaliacao = dados.avaliacoes.find((item) => String(item.id) === String(nota.avaliacao_id)); return `<tr><td>${escapeHtml(avaliacao?.titulo || "Avaliação")}</td><td>${escapeHtml(nota.disciplina || "—")}</td><td>${escapeHtml(nota.nota ?? "—")}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">Ainda não há notas lançadas para esta aluna.</div>`}`; return; }
     const presentes = chamadas.filter((item) => !["Ausente", "Justificada"].includes(item.Status)).length, faltas = chamadas.filter((item) => item.Status === "Ausente").length, justificadas = chamadas.filter((item) => item.Status === "Justificada").length, aproveitamento = classificacao(aulas).nota || 0;
     const listaDificuldades = [...new Set(aulas.flatMap((registro) => dificuldades(registro.Dificuldades)).filter((item) => !/não apresentou dificuldade/i.test(item)))]; const pendentes = casas.filter((registro) => !/resolvido|realizada|sem pendência/i.test(String(registro.Status || "")));
     destino.innerHTML = `<section class="analytics-summary"><h3>👤 Prontuário — ${escapeHtml(aluna)}</h3><div class="grid"><div class="metric"><strong>${chamadas.length ? Math.round((presentes + justificadas * .5) / chamadas.length * 100) : 0}%</strong><span>Frequência ponderada</span></div><div class="metric"><strong>${faltas} / ${justificadas}</strong><span>Faltas / justificadas</span></div><div class="metric"><strong>${aproveitamento}%</strong><span>Aproveitamento nas aulas</span></div><div class="metric"><strong>${pendentes.length}</strong><span>Lições pendentes</span></div></div><div class="analytics-columns"><section><h4>⚠ Dificuldades registradas</h4>${listaDificuldades.length ? `<ul>${listaDificuldades.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "<p>Sem dificuldades registradas no período.</p>"}</section><section><h4>📚 Lições de casa</h4>${casas.length ? casas.map((item) => `<p class="homework-line"><strong>${escapeHtml(item.Tipo.replace("Casa_", ""))}:</strong> ${escapeHtml(item.Licao_Casa || "—")} <small>${escapeHtml(item.Status || "Pendente")}</small></p>`).join("") : "<p>Nenhuma lição registrada no período.</p>"}</section></div><section class="feedback-panel"><h4>👩‍🏫 Feedback das professoras e Secretaria</h4>${aulas.length ? aulas.map((item) => `<article><strong>${escapeHtml(disciplinaAnalise(item.Tipo) || String(item.Tipo).replace("Analise_", ""))} — ${escapeHtml(item.Data || "")}</strong>${item.Instrutora ? ` · ${escapeHtml(item.Instrutora)}` : ""}<p>${escapeHtml(item.Licao_Atual || "Sem conteúdo informado")}</p>${item.Observacao ? `<p class="report-note">📝 ${escapeHtml(item.Observacao)}</p>` : ""}</article>`).join("") : "<p>Nenhuma aula registrada no período.</p>"}</section></section>`;
+    const avaliacoesDoPeriodo = new Set(dados.avaliacoes.filter((avaliacao) => {
+      const data = dataRegistro(avaliacao.data_avaliacao);
+      return data && data >= $("#analise-inicio").value && data <= $("#analise-fim").value;
+    }).map((avaliacao) => String(avaliacao.id)));
+    const notasPeriodo = dados.notas.filter((nota) => nota.aluna === aluna && avaliacoesDoPeriodo.has(String(nota.avaliacao_id)) && Number.isFinite(Number(nota.nota)));
+    const resumoDisciplinas = ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"].map((disciplina) => {
+      const registrosDisciplina = aulas.filter((registro) => disciplinaAnalise(registro.Tipo) === disciplina);
+      if (!registrosDisciplina.length) return `${disciplina}: sem aula registrada no período.`;
+      const resultado = classificacao(registrosDisciplina), ocorrencias = registrosDisciplina.flatMap((registro) => dificuldades(registro.Dificuldades)).filter((item) => !/não apresentou dificuldade/i.test(item));
+      const recorrente = ocorrencias.length ? [...new Set(ocorrencias)].sort((a, b) => ocorrencias.filter((item) => item === b).length - ocorrencias.filter((item) => item === a).length)[0] : "nenhuma dificuldade registrada";
+      return `${disciplina}: ${resultado.nota}% de aulas sem dificuldade; dificuldade mais recorrente: ${recorrente}.`;
+    }).join("\n");
+    const mediaProvas = notasPeriodo.length ? (notasPeriodo.reduce((total, nota) => total + Number(nota.nota), 0) / notasPeriodo.length).toFixed(1) : "sem notas de prova";
+    const resumoIa = `Aluna: ${aluna}\nPeríodo: ${$("#analise-inicio").value} a ${$("#analise-fim").value}\nFrequência ponderada: ${chamadas.length ? Math.round((presentes + justificadas * .5) / chamadas.length * 100) : 0}% (${faltas} faltas e ${justificadas} justificadas)\nLições pendentes: ${pendentes.length}\nMédia das provas: ${mediaProvas}\nNotas por disciplina: ${notasPeriodo.map((nota) => `${nota.disciplina} ${nota.nota}`).join(", ") || "sem notas no período"}\nDesempenho por disciplina:\n${resumoDisciplinas}`;
+    destino.insertAdjacentHTML("beforeend", `<section class="feedback-panel ai-feedback"><h4>🤖 Resumo pedagógico com IA</h4><p>A IA recebe apenas este resumo de registros, frequência, lições e provas. Ela não recebe fotos, documentos nem senha; é uma sugestão pedagógica, não um diagnóstico.</p><label>Pergunta opcional para a IA<textarea id="pergunta-analitico-ia" placeholder="Ex.: Em qual conteúdo vale focar na próxima aula?"></textarea></label><button id="gerar-analitico-ia" class="primary-action" type="button">Gerar análise pedagógica</button><div id="resposta-analitico-ia"></div></section>`);
+    $("#gerar-analitico-ia").addEventListener("click", async () => {
+      const botao = $("#gerar-analitico-ia"), resposta = $("#resposta-analitico-ia");
+      botao.disabled = true; botao.textContent = "Analisando..."; resposta.innerHTML = "";
+      try {
+        const retorno = await fetch("/api/analitico-ia", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resumo: resumoIa, pergunta: $("#pergunta-analitico-ia").value.trim() }) });
+        const corpo = await retorno.json().catch(() => ({}));
+        if (!retorno.ok) throw new Error(corpo.error || "Não foi possível gerar a análise.");
+        resposta.innerHTML = `<article class="ai-answer">${escapeHtml(corpo.texto || "").replace(/\n/g, "<br>")}</article>`;
+      } catch (erro) { resposta.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+      finally { botao.disabled = false; botao.textContent = "Gerar análise pedagógica"; }
+    });
   };
-  document.querySelectorAll("[data-analise]").forEach((botao) => botao.addEventListener("click", () => { aba = botao.dataset.analise; document.querySelectorAll("[data-analise]").forEach((item) => item.classList.toggle("active", item === botao)); render(); })); $("#atualizar-analise").addEventListener("click", render); render();
+  const aplicarPeriodo = () => {
+    const escolha = $("#analise-periodo").value;
+    if (escolha === "personalizado") return;
+    const fim = new Date(), comeco = new Date();
+    if (escolha === "tudo") comeco.setFullYear(2024, 0, 1); else comeco.setDate(fim.getDate() - Number(escolha));
+    $("#analise-inicio").value = comeco.toISOString().slice(0, 10);
+    $("#analise-fim").value = fim.toISOString().slice(0, 10);
+    render();
+  };
+  document.querySelectorAll("[data-analise]").forEach((botao) => botao.addEventListener("click", () => { aba = botao.dataset.analise; document.querySelectorAll("[data-analise]").forEach((item) => item.classList.toggle("active", item === botao)); render(); })); $("#analise-periodo").addEventListener("change", aplicarPeriodo); $("#atualizar-analise").addEventListener("click", render); render();
 }
 
 function rodizioSalvoMarkup(base) {
@@ -815,8 +904,16 @@ $("#entrar").addEventListener("click", async () => {
   botao.disabled = true;
   botao.textContent = "Entrando...";
   try {
-    const conta = await window.GemData?.autenticar($("#nome").value, $("#senha").value);
+    const login = $("#nome").value, senha = $("#senha").value;
+    const conta = await window.GemData?.autenticar(login, senha);
     if (!conta) throw new Error("A autenticação do GEM ainda não está disponível.");
+    // A sessão adicional é usada apenas para URLs privadas das fotos no R2.
+    // Se o R2 ainda não estiver configurado, o login normal continua igual.
+    const r2Ativo = await window.GemData?.iniciarSessaoR2?.(login, senha);
+    if (r2Ativo) {
+      const identidade = await window.GemData?.carregarIdentidade?.();
+      if (identidade?.logoUrl) aplicarLogo(identidade.logoUrl);
+    }
     state.role = conta.role;
     state.name = conta.name;
   } catch (error) {

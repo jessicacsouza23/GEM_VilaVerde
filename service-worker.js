@@ -10,7 +10,8 @@ self.addEventListener("fetch", (event) => {
   // a URL reaproveitada pelo app, esta cópia local evita nova transferência ao
   // abrir telas diferentes ou ao usar o aplicativo instalado.
   const fotoSupabase = url.hostname.endsWith(".supabase.co") && url.pathname.includes("/storage/v1/object/");
-  if (fotoSupabase) {
+  const fotoR2 = url.hostname.endsWith(".r2.cloudflarestorage.com");
+  if (fotoSupabase || fotoR2) {
     event.respondWith(caches.open(RUNTIME_IMAGES).then(async (cache) => {
       const salvo = await cache.match(event.request);
       if (salvo) return salvo;

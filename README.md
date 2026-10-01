@@ -30,6 +30,8 @@ preservam tabelas, histórico e o funcionamento do Streamlit.
 5. `005_notificacoes_push.sql` — necessário somente para lembretes no celular.
 6. `006_reparar_vinculo_master.sql` — conecta a conta Master ao Supabase Auth.
 7. `007_fotos_alunas_professoras.sql` — garante os buckets usados pelas fotos.
+8. `008_exercicios_registro_pratica.sql` — garante os exercícios separados por
+   método no Registro de Prática.
 
 ### Conta Master inicial
 
