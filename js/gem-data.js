@@ -206,6 +206,19 @@
     const banco = await obterCliente(); const { error } = await banco.from("avaliacoes").insert({ titulo, data_avaliacao: data }); if (error) throw new Error("Não foi possível criar a avaliação.");
   }
 
+  async function dadosAnalitico() {
+    const banco = await obterCliente();
+    const [historico, alunas, avaliacoes, notas, estudos] = await Promise.all([
+      banco.from("historico_geral").select("*").order("id", { ascending: false }),
+      banco.from("alunas").select("*").order("nome"),
+      banco.from("avaliacoes").select("*").order("data_avaliacao", { ascending: false }),
+      banco.from("avaliacao_notas").select("*"),
+      banco.from("estudo_diario").select("*")
+    ]);
+    if (historico.error || alunas.error) throw new Error(`Não foi possível carregar o analítico: ${(historico.error || alunas.error).message || "verifique as permissões."}`);
+    return { historico: historico.data || [], alunas: alunas.data || [], avaliacoes: avaliacoes.data || [], notas: notas.data || [], estudos: estudos.error ? [] : estudos.data || [] };
+  }
+
   async function dadosLogistica() {
     const banco = await obterCliente(); const { data, error } = await banco.from("modelos_logistica").select("*").order("vigencia_inicio", { ascending: false });
     if (error) throw new Error(`Não foi possível carregar modelos: ${error.message || "execute a migration de logística."}`); return data || [];
@@ -398,5 +411,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, dadosVisaoGeral, dadosPessoas, salvarPessoa, dadosDocumentos, enviarDocumento, urlDocumento, dadosProvas, criarProva, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, dadosVisaoGeral, dadosPessoas, salvarPessoa, dadosDocumentos, enviarDocumento, urlDocumento, dadosProvas, criarProva, dadosAnalitico, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();
