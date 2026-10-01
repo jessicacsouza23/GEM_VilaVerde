@@ -141,7 +141,7 @@ function muralRodizio(escala, data) {
     }).join("");
     return `<section class="mural-column"><h3>${escapeHtml(horario)}</h3>${cards}</section>`;
   }).join("");
-  return `<section class="mural-print"><header><h2>Rodízio Geral das aulas - GEM Vila Verde</h2><p>Data: ${escapeHtml(data)}</p></header><div class="mural-columns">${colunas}</div></section>`;
+  return `<div class="mural-scroll"><section class="mural-print" id="mural-rodizio"><header><h2>Rodízio Geral das aulas - GEM Vila Verde</h2><p>Data: ${escapeHtml(data)}</p></header><div class="mural-columns">${colunas}</div></section></div>`;
 }
 
 function resumoModelo(modelo, turmas) {
@@ -154,7 +154,7 @@ function resumoModelo(modelo, turmas) {
 
 async function renderRodizio(content) {
   const hoje = new Date().toISOString().slice(0, 10);
-  content.innerHTML = `<section class="intro-card"><p class="eyebrow">PLANEJAMENTO</p><h2>Rodízio</h2><p>Esta tela lê diretamente as turmas, professoras, modelos e escalas já salvas no GEM. Nenhum rodízio anterior é alterado.</p></section><section class="panel"><div class="agenda-date"><div><label for="rodizio-data">Sábado</label><input id="rodizio-data" type="date" value="${hoje}"></div><button id="carregar-rodizio" class="primary-action" type="button">Carregar planejamento</button></div><div id="rodizio-base"><div class="empty">Carregando base do rodízio...</div></div></section>`;
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">PLANEJAMENTO</p><h2>Rodízio</h2><p>Gere uma nova escala com as mesmas regras do GEM. Uma escala já salva só muda quando a Secretaria confirma uma correção; as versões anteriores não são apagadas.</p></section><section class="panel"><div class="agenda-date"><div><label for="rodizio-data">Sábado</label><input id="rodizio-data" type="date" value="${hoje}"></div><button id="carregar-rodizio" class="primary-action" type="button">Carregar planejamento</button></div><div id="rodizio-base"><div class="empty">Carregando base do rodízio...</div></div></section>`;
   const area = $("#rodizio-base");
   const carregar = async () => {
     area.innerHTML = `<div class="empty">Carregando turmas, professoras, modelo e escala...</div>`;
@@ -163,11 +163,84 @@ async function renderRodizio(content) {
       const modelo = base.modeloEscala ? base.modelos.find((item) => item.id === base.modeloEscala) : window.GemData.modeloParaData(base.modelos, $("#rodizio-data").value);
       const turmas = Object.entries(base.turmas).map(([turma, alunas]) => `<li><strong>${escapeHtml(turma)}</strong>: ${alunas.length} aluna(s)</li>`).join("");
       const folgas = base.folga?.professoras?.length ? base.folga.professoras.join(", ") : "Nenhuma folga informada";
-      area.innerHTML = `${resumoModelo(modelo, base.turmas)}<div class="planning-grid"><section><h3>Turmas ativas</h3><ul>${turmas || "<li>Nenhuma turma cadastrada.</li>"}</ul></section><section><h3>Professoras disponíveis</h3><p>${escapeHtml(base.professoras.join(", ") || "Nenhuma professora cadastrada.")}</p><h3>Folgas deste sábado</h3><p>${escapeHtml(folgas)}</p></section></div><div class="section-title"><h2>${base.escala.length ? "Rodízio salvo" : "Nova geração"}</h2><p>${base.escala.length ? "Este é o retrato histórico da escala já criada." : "A base real foi carregada; o gerador completo será ligado após a conferência das regras."}</p></div>${muralRodizio(base.escala, window.GemData.dataBr($("#rodizio-data").value))}`;
+      if (!modelo) {
+        area.innerHTML = `<div class="action-error">Não há modelo logístico programado para esta data. Cadastre ou programe o modelo em Logística, sem alterar os rodízios anteriores.</div>`;
+        return;
+      }
+      const config = modelo.configuracao || {};
+      const preparacao = window.RodizioEngine.prepararModelo(modelo, base.turmas);
+      const atividades = Object.keys(preparacao.coletivas);
+      const todasAlunas = Object.values(base.turmas).flat();
+      const opcoesProf = base.professoras.map((prof) => `<option value="${escapeHtml(prof)}">${escapeHtml(prof)}</option>`).join("");
+      const fixas = todasAlunas.map((aluna) => `<label class="fixed-row"><span>${escapeHtml(aluna)}</span><select data-fixa="${escapeHtml(aluna)}"><option value="">Sem professora fixa</option>${base.professoras.map((prof) => `<option ${base.professorasFixas[String(aluna).toLowerCase()] === prof ? "selected" : ""} value="${escapeHtml(prof)}">${escapeHtml(prof)}</option>`).join("")}</select></label>`).join("");
+      const coletivas = atividades.map((atividade) => `<section class="collective-box"><h3>${escapeHtml(atividade)} <small>(${escapeHtml(preparacao.coletivas[atividade] || "Sala a definir")})</small></h3>${preparacao.turmas.map((turma) => `<label>Prof. ${escapeHtml(atividade)} — ${escapeHtml(turma)}<select data-coletiva="${escapeHtml(atividade)}" data-turma="${escapeHtml(turma)}">${(config.professoras_habilitadas?.[atividade] || (atividade === "Solfejo Melódico" ? config.professoras_habilitadas?.Canto : null) || base.professoras).map((prof) => `<option value="${escapeHtml(prof)}">${escapeHtml(prof)}</option>`).join("")}</select></label>`).join("")}</section>`).join("");
+      const escalaSalva = base.escala.length;
+      area.innerHTML = `${resumoModelo(modelo, base.turmas)}<div class="planning-grid"><section><h3>Turmas ativas</h3><ul>${turmas || "<li>Nenhuma turma cadastrada.</li>"}</ul></section><section><h3>Professoras disponíveis</h3><p>${escapeHtml(base.professoras.join(", ") || "Nenhuma professora cadastrada.")}</p><h3>Folgas deste sábado</h3><p>${escapeHtml(folgas)}</p></section></div>${escalaSalva ? rodizioSalvoMarkup(base) : `<section class="generator-panel"><h2>Gerar novo rodízio</h2><p>As alunas ativas entram no novo rodízio. Alunas desativadas continuam nas escalas e registros dos sábados já realizados.</p><div class="generator-grid"><div><h3>Professoras das aulas por turma</h3>${coletivas}</div><div><h3>Rotação das turmas</h3><label class="checkbox-line"><input id="rotacao-manual" type="checkbox"> Definir manualmente a rotação das turmas?</label><div id="rotacao-opcoes" class="hidden"><label><input type="radio" name="criterio-rotacao" value="teoria" checked> Turma que começa em Teoria</label><label><input type="radio" name="criterio-rotacao" value="individual"> Turma no último bloco de Prática + Solfejo</label><select id="turma-rotacao">${preparacao.turmas.map((turma) => `<option value="${escapeHtml(turma)}">${escapeHtml(turma)}</option>`).join("")}</select><div id="previa-rotacao"></div></div><h3>Saída antecipada</h3><p class="hint">Selecione somente quem sairá antes. Depois escolha o último bloco em que cada uma ainda pode atender.</p><select id="professoras-saida" multiple size="5">${opcoesProf}</select><div id="saidas-detalhes"></div></div></div>${config.usar_professoras_fixas ? `<section class="fixas-box"><h3>Professoras fixas neste modelo</h3><p>Defina a aluna e a professora antes de gerar. O checkbox abaixo decide se estas fixas serão usadas neste sábado.</p><div class="fixed-list">${fixas}</div><button id="salvar-fixas" class="secondary-action" type="button">Salvar professoras fixas</button><label class="checkbox-line"><input id="usar-fixas" type="checkbox" checked> Usar professoras fixas neste rodízio?</label></section>` : ""}<button id="gerar-rodizio" class="primary-action wide-action" type="button">Gerar rodízio do modelo</button><div id="gerar-feedback"></div></section>`}`;
+      if (escalaSalva) ligarAcoesEscala(base, modelo);
+      else ligarGerador(base, modelo, preparacao);
     } catch (error) { area.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
   $("#carregar-rodizio").addEventListener("click", carregar);
   await carregar();
+}
+
+async function renderVisaoGeral(content) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">COORDENAÇÃO</p><h2>Visão geral diária</h2><p>Resumo real do rodízio, presença e registros lançados pelas professoras.</p></section><section class="panel"><div class="agenda-date"><div><label for="visao-data">Data da análise</label><input id="visao-data" type="date" value="${hoje}"></div><button id="carregar-visao" class="primary-action" type="button">Atualizar visão</button></div><div id="visao-conteudo"><div class="empty">Carregando dados...</div></div></section><section class="panel branding-panel"><h2>Marca e perfil da Coordenação</h2><p>A logo aparece no login e na barra lateral. A foto substitui a letra do perfil da Coordenação neste aplicativo.</p><div class="branding-grid"><label>Nova logo do GEM<input id="logo-gem" type="file" accept="image/png,image/jpeg,image/webp"></label><button id="salvar-logo" class="secondary-action" type="button">Salvar logo</button><label>Nome exibido<input id="nome-coordenacao" value="${escapeHtml(state.name)}"></label><label>Foto da Coordenação<input id="foto-coordenacao" type="file" accept="image/png,image/jpeg,image/webp"></label><button id="salvar-perfil" class="secondary-action" type="button">Salvar perfil</button></div><div id="marca-feedback"></div></section>`;
+  const carregar = async () => { const destino = $("#visao-conteudo"); destino.innerHTML = `<div class="empty">Carregando resumo...</div>`; try { const dados = await window.GemData.dadosVisaoGeral($("#visao-data").value); const presentes = Math.max(0, dados.alunas.length - dados.ausentes.length); destino.innerHTML = `<div class="grid"><div class="metric"><strong>${dados.alunas.length}</strong><span>Alunas no rodízio</span></div><div class="metric"><strong>${presentes}</strong><span>Presentes</span></div><div class="metric"><strong>${dados.ausentes.length}</strong><span>Ausências/justificadas</span></div><div class="metric"><strong>${dados.analises.length}</strong><span>Registros pedagógicos</span></div></div><section class="panel compact-panel"><h3>Ausências</h3>${dados.ausentes.length ? `<ul>${dados.ausentes.map((item) => `<li><strong>${escapeHtml(item.Aluna)}</strong> — ${escapeHtml(item.Status)}${item.Observacao ? `: ${escapeHtml(item.Observacao)}` : ""}</li>`).join("")}</ul>` : "<p>Nenhuma ausência registrada nesta data.</p>"}</section>`; } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; } };
+  $("#carregar-visao").addEventListener("click", carregar); await carregar();
+  $("#salvar-logo").addEventListener("click", async () => { const feedback = $("#marca-feedback"); try { const identidade = await window.GemData.enviarLogoGem($("#logo-gem").files[0]); aplicarLogo(identidade.logoUrl); feedback.innerHTML = `<p class="action-ok">Logo atualizada. Ela aparecerá também no próximo acesso.</p>`; } catch (error) { feedback.innerHTML = `<p class="action-error">${escapeHtml(error.message)}</p>`; } });
+  $("#salvar-perfil").addEventListener("click", async () => { const feedback = $("#marca-feedback"); try { const perfil = await window.GemData.salvarPerfilSecretaria({ nome: $("#nome-coordenacao").value, arquivo: $("#foto-coordenacao").files[0] }); state.name = perfil.nome_exibicao || state.name; $("#profile-name").textContent = state.name; aplicarAvatar(perfil.fotoUrl, state.name); feedback.innerHTML = `<p class="action-ok">Perfil da Coordenação atualizado.</p>`; } catch (error) { feedback.innerHTML = `<p class="action-error">${escapeHtml(error.message)}</p>`; } });
+}
+
+async function renderPessoas(content) {
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">CADASTROS</p><h2>Turmas e pessoas</h2><p>Alunas desativadas deixam de entrar apenas em rodízios novos; os rodízios, chamadas e registros anteriores continuam visíveis.</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-pessoas="aluna">Alunas e turmas</button><button class="tab-action" data-pessoas="professora">Professoras</button><button class="tab-action" data-pessoas="secretaria">Secretarias</button></div><div id="pessoas-conteudo"><div class="empty">Carregando pessoas...</div></div></section>`;
+  const dados = await window.GemData.dadosPessoas(); const destino = $("#pessoas-conteudo");
+  const mostrar = (tipo) => {
+    const lista = tipo === "aluna" ? dados.alunas : tipo === "professora" ? dados.professoras : dados.secretarias;
+    const titulo = tipo === "aluna" ? "Adicionar aluna" : tipo === "professora" ? "Adicionar professora" : "Adicionar secretaria";
+    destino.innerHTML = `<div class="person-add"><h3>${titulo}</h3><div class="form-grid"><input id="pessoa-nome" placeholder="Nome completo">${tipo === "aluna" ? '<input id="pessoa-turma" placeholder="Turma">' : ""}${tipo !== "secretaria" ? '<input id="pessoa-login" placeholder="Login">' : ""}<button id="adicionar-pessoa" class="primary-action" type="button">Adicionar</button></div></div><div class="person-list">${lista.length ? lista.map((pessoa) => `<article class="person-row"><div><strong>${escapeHtml(pessoa.nome)}</strong><span>${tipo === "aluna" ? escapeHtml(pessoa.turma || "Sem turma") : pessoa.login ? `Login: ${escapeHtml(pessoa.login)}` : ""}</span></div><span class="badge ${pessoa.ativo === false ? "inactive" : ""}">${pessoa.ativo === false ? "Desativada" : "Ativa"}</span><button data-toggle="${escapeHtml(pessoa.id)}" class="secondary-action" type="button">${pessoa.ativo === false ? "Reativar" : "Desativar"}</button></article>`).join("") : "<div class=\"empty\">Nenhum cadastro ainda.</div>"}</div>`;
+    $("#adicionar-pessoa").addEventListener("click", async () => { const nome = $("#pessoa-nome").value.trim(); if (!nome) return; const novo = tipo === "aluna" ? { nome, turma: $("#pessoa-turma").value.trim() || "Sem turma", ativo: true, login: $("#pessoa-login").value.trim().toLowerCase() || null } : tipo === "professora" ? { nome, login: $("#pessoa-login").value.trim().toLowerCase(), ativo: true } : { nome, ativo: true }; try { await window.GemData.salvarPessoa(tipo, novo); await renderPessoas(content); } catch (error) { destino.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); } });
+    destino.querySelectorAll("[data-toggle]").forEach((botao) => botao.addEventListener("click", async () => { const pessoa = lista.find((item) => String(item.id) === botao.dataset.toggle); try { await window.GemData.salvarPessoa(tipo, { ativo: pessoa.ativo === false }, pessoa.id); pessoa.ativo = pessoa.ativo === false; mostrar(tipo); } catch (error) { alert(error.message); } }));
+  };
+  document.querySelectorAll("[data-pessoas]").forEach((botao) => botao.addEventListener("click", () => { document.querySelectorAll("[data-pessoas]").forEach((item) => item.classList.toggle("active", item === botao)); mostrar(botao.dataset.pessoas); }));
+  mostrar("aluna");
+}
+
+function rodizioSalvoMarkup(base) {
+  return `<section class="section-title"><div><h2>Rodízio salvo</h2><p>Este é o retrato da data. Use “Corrigir” somente se houve erro de lançamento; a versão anterior ficará registrada.</p></div><div class="scale-actions"><button id="ampliar-rodizio" class="secondary-action" type="button">Ampliar</button><button id="baixar-rodizio" class="primary-action" type="button">Baixar imagem</button><button id="editar-rodizio" class="secondary-action" type="button">Corrigir rodízio</button></div></section>${muralRodizio(base.escala, base.data)}<div id="edicao-rodizio"></div>`;
+}
+
+function ligarGerador(base, modelo, preparacao) {
+  const manual = $("#rotacao-manual"), opcoes = $("#rotacao-opcoes"), turma = $("#turma-rotacao"), previa = $("#previa-rotacao"), saidas = $("#professoras-saida"), detalhesSaidas = $("#saidas-detalhes");
+  const atualizarPrevia = () => {
+    if (!manual.checked) { previa.innerHTML = ""; return; }
+    const valor = turma.value; const individual = document.querySelector('input[name="criterio-rotacao"]:checked')?.value === "individual";
+    let comecaTeoria = valor;
+    if (individual) comecaTeoria = preparacao.turmas[(preparacao.turmas.indexOf(valor) - 1 + preparacao.turmas.length) % preparacao.turmas.length];
+    const posicoes = [...Object.keys(preparacao.coletivas), "Prática + Solfejo"], teoria = posicoes.findIndex((item) => window.RodizioEngine.nomeArea(item) === "Teoria");
+    const ordem = [posicoes[teoria], ...posicoes.filter((item) => item !== posicoes[teoria] && item !== "Prática + Solfejo"), "Prática + Solfejo"];
+    previa.innerHTML = `<p class="hint">Para isso, <strong>${escapeHtml(comecaTeoria)}</strong> começa em Teoria.</p><table class="mini-table"><thead><tr><th>Bloco</th>${preparacao.turmas.map((item) => `<th>${escapeHtml(item)}</th>`).join("")}</tr></thead><tbody>${preparacao.blocos.map((bloco, indice) => `<tr><td>${escapeHtml(window.RodizioEngine.horario(bloco, indice))}</td>${preparacao.turmas.map((turmaNome, indiceTurma) => `<td>${escapeHtml(ordem[(indiceTurma - preparacao.turmas.indexOf(comecaTeoria) + indice + ordem.length * 3) % ordem.length])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  };
+  const atualizarSaidas = () => { const selecionadas = [...saidas.selectedOptions].map((item) => item.value); detalhesSaidas.innerHTML = selecionadas.map((prof) => `<label>Último bloco disponível — ${escapeHtml(prof)}<select data-saida="${escapeHtml(prof)}">${preparacao.blocos.slice(0, -1).map((bloco, i) => `<option ${i === preparacao.blocos.length - 2 ? "selected" : ""} value="${escapeHtml(window.RodizioEngine.horario(bloco, i))}">${escapeHtml(window.RodizioEngine.horario(bloco, i))}</option>`).join("")}</select></label>`).join(""); };
+  manual.addEventListener("change", () => { opcoes.classList.toggle("hidden", !manual.checked); atualizarPrevia(); });
+  turma.addEventListener("change", atualizarPrevia); document.querySelectorAll('input[name="criterio-rotacao"]').forEach((item) => item.addEventListener("change", atualizarPrevia)); saidas.addEventListener("change", atualizarSaidas);
+  $("#salvar-fixas")?.addEventListener("click", async () => { const mapa = Object.fromEntries([...document.querySelectorAll("[data-fixa]")].filter((item) => item.value).map((item) => [item.dataset.fixa.trim().toLowerCase(), item.value])); try { await window.GemData.salvarProfessorasFixas(mapa); alert("Professoras fixas salvas."); } catch (error) { alert(error.message); } });
+  $("#gerar-rodizio").addEventListener("click", async () => {
+    const feedback = $("#gerar-feedback"); const coletivas = {}; document.querySelectorAll("[data-coletiva]").forEach((item) => { (coletivas[item.dataset.coletiva] ||= {})[item.dataset.turma] = item.value; });
+    const fixas = Object.fromEntries([...document.querySelectorAll("[data-fixa]")].filter((item) => item.value).map((item) => [item.dataset.fixa.trim().toLowerCase(), item.value])); const saidasMap = Object.fromEntries([...document.querySelectorAll("[data-saida]")].map((item) => [item.dataset.saida, item.value]));
+    let turmaTeoria = null; if (manual.checked) { turmaTeoria = turma.value; if (document.querySelector('input[name="criterio-rotacao"]:checked')?.value === "individual") turmaTeoria = preparacao.turmas[(preparacao.turmas.indexOf(turmaTeoria) - 1 + preparacao.turmas.length) % preparacao.turmas.length]; }
+    const resultado = window.RodizioEngine.gerar({ modelo, data: base.data, turmasReais: base.turmas, professoras: base.professoras, folgas: base.folga?.professoras || [], saidas: saidasMap, fixas, coletivas, turmaInicioTeoria: turmaTeoria, usarFixas: Boolean($("#usar-fixas")?.checked), escalasAnteriores: base.escalasAnteriores });
+    if (resultado.erros.length) { feedback.innerHTML = `<div class="action-error"><strong>O rodízio não foi salvo.</strong><br>${resultado.erros.map(escapeHtml).join("<br>")}</div>`; return; }
+    feedback.innerHTML = `${muralRodizio(resultado.escala, base.data)}<button id="confirmar-geracao" class="primary-action wide-action" type="button">Confirmar e salvar rodízio</button>`;
+    $("#confirmar-geracao").addEventListener("click", async () => { try { await window.GemData.salvarEscala($("#rodizio-data").value, resultado.escala, modelo.id); await renderRodizio($("#page-content")); } catch (error) { feedback.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); } });
+  });
+}
+
+function ligarAcoesEscala(base, modelo) {
+  $("#baixar-rodizio")?.addEventListener("click", async () => { const mural = $("#mural-rodizio"); if (!window.html2canvas) { alert("A ferramenta de imagem ainda não foi carregada. Tente novamente em alguns segundos."); return; } const canvas = await window.html2canvas(mural, { scale: 2, backgroundColor: "#ffffff", width: mural.scrollWidth, windowWidth: mural.scrollWidth }); const link = document.createElement("a"); link.download = `Rodizio_${base.data.replaceAll("/", "-")}.png`; link.href = canvas.toDataURL("image/png"); link.click(); });
+  $("#ampliar-rodizio")?.addEventListener("click", () => { document.body.insertAdjacentHTML("beforeend", `<div class="mural-modal" id="mural-modal"><button aria-label="Fechar" class="modal-close">×</button>${muralRodizio(base.escala, base.data)}</div>`); $("#mural-modal").addEventListener("click", (event) => { if (event.target.id === "mural-modal" || event.target.classList.contains("modal-close")) $("#mural-modal").remove(); }); });
+  $("#editar-rodizio")?.addEventListener("click", () => { const horarios = [...new Set(base.escala.flatMap((linha) => Object.keys(linha).filter((chave) => !["Aluna", "_detalhes"].includes(chave))))]; $("#edicao-rodizio").innerHTML = `<section class="panel edit-scale"><h3>Corrigir rodízio</h3><p>Edite somente a sala/professora incorreta. Os detalhes pedagógicos e a turma são preservados; informe o motivo da correção antes de salvar.</p><div class="table-wrap"><table class="scale-table"><thead><tr><th>Aluna</th>${horarios.map((hora) => `<th>${escapeHtml(hora)}</th>`).join("")}</tr></thead><tbody>${base.escala.map((linha, i) => `<tr><th>${escapeHtml(linha.Aluna)}</th>${horarios.map((hora) => `<td><input data-escala="${i}" data-hora="${escapeHtml(hora)}" value="${escapeHtml(linha[hora] || "")}"></td>`).join("")}</tr>`).join("")}</tbody></table></div><label>Motivo da correção<input id="motivo-edicao" placeholder="Ex.: troca de professora confirmada pela Secretaria"></label><button id="salvar-edicao" class="primary-action" type="button">Salvar correção</button></section>`; $("#salvar-edicao").addEventListener("click", async () => { const corrigida = structuredClone(base.escala); document.querySelectorAll("[data-escala]").forEach((item) => { corrigida[Number(item.dataset.escala)][item.dataset.hora] = item.value.trim(); }); try { await window.GemData.salvarEscala($("#rodizio-data").value, corrigida, modelo.id, $("#motivo-edicao").value); await renderRodizio($("#page-content")); } catch (error) { $("#edicao-rodizio").insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); } }); });
 }
 
 async function renderMasterGems(content) {
@@ -197,6 +270,21 @@ function escapeHtml(value) {
   const node = document.createElement("span"); node.textContent = String(value ?? ""); return node.innerHTML;
 }
 
+function aplicarLogo(url) {
+  if (!url) return;
+  document.querySelectorAll(".brand-mark, .sidebar-brand span").forEach((marca) => {
+    marca.textContent = ""; marca.style.backgroundImage = `url('${url}')`; marca.style.backgroundSize = "cover"; marca.style.backgroundPosition = "center";
+  });
+}
+
+function aplicarAvatar(url, nome) {
+  const avatar = $("#avatar");
+  avatar.textContent = url ? "" : String(nome || "G").slice(0, 1).toUpperCase();
+  avatar.style.backgroundImage = url ? `url('${url}')` : "";
+  avatar.style.backgroundSize = url ? "cover" : "";
+  avatar.style.backgroundPosition = url ? "center" : "";
+}
+
 async function renderPage() {
   $("#page-title").textContent = state.page;
   const content = $("#page-content");
@@ -218,6 +306,14 @@ async function renderPage() {
   }
   if (state.role === "Secretaria" && state.page === "Planejamento e rodízio") {
     await renderRodizio(content);
+    return;
+  }
+  if (state.role === "Secretaria" && state.page === "Visão geral") {
+    await renderVisaoGeral(content);
+    return;
+  }
+  if (state.role === "Secretaria" && state.page === "Turmas e pessoas") {
+    try { await renderPessoas(content); } catch (error) { content.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
     return;
   }
   if (state.role === "Secretaria" && state.page === "Chamada") {
@@ -253,8 +349,15 @@ $("#entrar").addEventListener("click", async () => {
   state.page = navByRole[state.role][0];
   $("#profile-name").textContent = state.name;
   $("#profile-role").textContent = state.role;
-  $("#avatar").textContent = state.name.slice(0, 1).toUpperCase();
+  aplicarAvatar(null, state.name);
   $("#login-screen").classList.add("hidden"); $("#app-screen").classList.remove("hidden");
+  if (state.role === "Secretaria") {
+    try {
+      const perfil = await window.GemData.perfilSecretaria();
+      if (perfil.nome_exibicao) { state.name = perfil.nome_exibicao; $("#profile-name").textContent = state.name; }
+      aplicarAvatar(perfil.fotoUrl, state.name);
+    } catch (error) { console.warn("Perfil visual indisponível", error); }
+  }
   renderNavigation(); await renderPage();
   botao.disabled = false;
   botao.textContent = "Entrar";
@@ -282,13 +385,7 @@ window.GemData?.carregarIdentidade().then((identidade) => {
   if (identidade?.connected) {
     status.innerHTML = "<span></span> Conectado ao GEM";
     if (identidade.logoUrl) {
-      const marcas = document.querySelectorAll(".brand-mark, .sidebar-brand span");
-      marcas.forEach((marca) => {
-        marca.textContent = "";
-        marca.style.backgroundImage = `url('${identidade.logoUrl}')`;
-        marca.style.backgroundSize = "cover";
-        marca.style.backgroundPosition = "center";
-      });
+      aplicarLogo(identidade.logoUrl);
     }
   }
 });
