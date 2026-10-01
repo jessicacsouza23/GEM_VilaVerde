@@ -13,9 +13,10 @@ h1 { margin:0; font-size:clamp(1.55rem,3vw,2.1rem); letter-spacing:-.03em; }
 .login-error { margin:14px 0 0; padding:10px 12px; color:#a72e47; background:#fff0f3; border:1px solid #f5c2ce; border-radius:10px; font-size:.85rem; line-height:1.4; }
 label { display:block; margin:18px 0 6px; font-size:.88rem; font-weight:700; }
 input,select { width:100%; height:46px; padding:0 12px; color:var(--ink); border:1px solid var(--line); border-radius:11px; background:#fff; outline:none; }
+textarea { display:block; width:100%; min-height:112px; margin-top:7px; padding:11px 12px; color:var(--ink); border:1px solid var(--line); border-radius:11px; background:#fff; outline:none; line-height:1.45; }
 input[type="checkbox"],input[type="radio"] { width:16px; height:16px; min-width:16px; padding:0; border-radius:4px; accent-color:var(--rose); box-shadow:none; vertical-align:middle; }
 input[type="radio"] { border-radius:50%; }
-input:focus,select:focus { border-color:var(--rose); box-shadow:0 0 0 3px rgba(233,75,106,.12); }
+input:focus,select:focus,textarea:focus { border-color:var(--rose); box-shadow:0 0 0 3px rgba(233,75,106,.12); }
 button { border:0; border-radius:11px; cursor:pointer; }
 #entrar { width:100%; margin-top:26px; height:48px; color:white; background:var(--rose); font-weight:800; box-shadow:0 8px 18px rgba(233,75,106,.23); }
 .app-shell { min-height:100vh; display:grid; grid-template-columns:248px 1fr; }
