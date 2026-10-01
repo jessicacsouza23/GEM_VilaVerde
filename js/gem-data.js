@@ -285,6 +285,45 @@
     return { alunas: alunas.data || [], professoras: professoras.data || [], secretarias: secretarias.data || [] };
   }
 
+  async function dadosCoordenacoesProfessoras() {
+    const banco = await obterCliente();
+    const { data, error } = await banco.from("coordenacoes_professoras").select("*").order("inicio", { ascending: false });
+    if (error) throw new Error(error.code === "42P01" ? "A função de professora coordenadora ainda não foi criada. Execute a migration 009 no Supabase." : "Não foi possível carregar as coordenações.");
+    return data || [];
+  }
+
+  async function definirCoordenadoraProfessora({ professora, inicio, fim, periodo }) {
+    if (!String(professora || "").trim() || !inicio || !fim) throw new Error("Escolha a professora e informe o início e o fim da coordenação.");
+    if (fim < inicio) throw new Error("A data final não pode ser anterior à data inicial.");
+    const banco = await obterCliente();
+    const existentes = await dadosCoordenacoesProfessoras();
+    // Uma professora coordenadora por vez. Ao trocar a responsável, o período
+    // anterior termina no dia anterior ao início do novo período, sem apagar
+    // o histórico de quem já coordenou.
+    const diaAnterior = new Date(`${inicio}T12:00:00`);
+    diaAnterior.setDate(diaAnterior.getDate() - 1);
+    const fimAnterior = diaAnterior.toISOString().slice(0, 10);
+    const sobrepostas = existentes.filter((item) => item.inicio <= fim && item.fim >= inicio);
+    for (const item of sobrepostas) {
+      const { error } = await banco.from("coordenacoes_professoras").update({ fim: fimAnterior }).eq("id", item.id);
+      if (error) throw new Error("Não foi possível encerrar a coordenação anterior.");
+    }
+    const { error } = await banco.from("coordenacoes_professoras").insert({ professora: String(professora).trim(), inicio, fim, periodo: String(periodo || "Coordenação").trim() || "Coordenação" });
+    if (error) throw new Error("Não foi possível definir a professora coordenadora.");
+  }
+
+  async function professoraEhCoordenadora(nome, dataIso = new Date().toISOString().slice(0, 10)) {
+    try {
+      const coordenacoes = await dadosCoordenacoesProfessoras();
+      const nomeNormalizado = normalizar(nome);
+      return coordenacoes.some((item) => normalizar(item.professora) === nomeNormalizado && item.inicio <= dataIso && item.fim >= dataIso);
+    } catch (error) {
+      // A migration não impede o login de professoras que já usam o GEM.
+      if (/migration 009/i.test(error.message || "")) return false;
+      throw error;
+    }
+  }
+
   async function salvarPessoa(tipo, dados, id, nomeAtual = "") {
     const banco = await obterCliente(); const tabela = ({ aluna: "alunas", professora: "professoras", secretaria: "secretarias" })[tipo];
     if (!tabela) throw new Error("Tipo de pessoa inválido.");
@@ -756,5 +795,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosCorrecoesLicoes, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, encerrarSessao, iniciarSessaoR2, listarGems, criarGem, dadosPlataformaMaster, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosCorrecoesLicoes, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, encerrarSessao, iniciarSessaoR2, listarGems, criarGem, dadosPlataformaMaster, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();
