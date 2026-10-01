@@ -1124,11 +1124,28 @@ STATUS_OK_LICAO = [
 # Olha a lista real de Dificuldades marcada pela professora (fonte primária),
 # em vez do texto de Status (que é só uma cópia derivada dela).
 def _tem_dificuldade_real(valor_difs):
+    """Aceita listas JSON antigas/novas sem transformar ``[]`` em dificuldade."""
     if isinstance(valor_difs, list):
         return any(d for d in valor_difs if d and d != "Não apresentou dificuldades")
-    if isinstance(valor_difs, str) and valor_difs.strip():
-        return valor_difs.strip() != "Não apresentou dificuldades"
+    if isinstance(valor_difs, str):
+        texto = valor_difs.strip()
+        if not texto or limpar_texto(texto) in ("[]", "NULL", "NONE", "NAN", "NAO APRESENTOU DIFICULDADES"):
+            return False
+        try:
+            valor_json = json.loads(texto)
+            if isinstance(valor_json, list):
+                return _tem_dificuldade_real(valor_json)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return True
     return False
+
+def disciplina_analise_normalizada(tipo):
+    """Unifica registros antigos de Canto com Solfejo Melódico no analítico."""
+    tipo = str(tipo or "").strip()
+    if not tipo.startswith("Analise_"):
+        return ""
+    return nome_area_exibicao(tipo.replace("Analise_", "", 1))
 
 def calcular_classificacao_desempenho(registros):
     """Aplica a mesma regra do Quadro de Desempenho a uma disciplina.
@@ -5781,6 +5798,7 @@ elif menu == "📊 Analítico IA":
                 # nome mas é lição de casa, não aula analisada, e sempre tem Dificuldades
                 # vazio, o que inflava o aproveitamento artificialmente.
                 pedag_rows = df_aluna[df_aluna['Tipo'].str.startswith("Analise_", na=False)].copy()
+                pedag_rows['Disciplina_Analitica'] = pedag_rows['Tipo'].apply(disciplina_analise_normalizada)
 
                 pedag_rows['tem_dificuldade'] = pedag_rows['Dificuldades'].apply(_tem_dificuldade_real)
                 total_pedag = len(pedag_rows)
@@ -5895,7 +5913,7 @@ elif menu == "📊 Analítico IA":
                     linhas_comparacao = []
                     for disciplina_cmp in ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"]:
                         notas_disc = [float(n["nota"]) for n in notas_periodo if n.get("disciplina") == disciplina_cmp]
-                        regs_disc = pedag_rows[pedag_rows["Tipo"] == f"Analise_{disciplina_cmp}"]
+                        regs_disc = pedag_rows[pedag_rows["Disciplina_Analitica"] == disciplina_cmp]
                         if regs_disc.empty and not notas_disc:
                             continue
                         rendimento = (
@@ -5988,7 +6006,7 @@ elif menu == "📊 Analítico IA":
                     # por método). No feedback isso é uma única disciplina,
                     # então reunimos todos os registros da mesma data e área.
                     for (data_aula, tipo_aula_feedback), bloco in aulas.groupby(["Data", "Tipo"], sort=False):
-                        disciplina_feedback = tipo_aula_feedback.replace("Analise_", "")
+                        disciplina_feedback = disciplina_analise_normalizada(tipo_aula_feedback)
                         professoras_feedback = [str(p) for p in bloco['Instrutora'].dropna().unique() if str(p).strip()]
                         conteudos = [str(c) for c in bloco['Licao_Atual'].dropna().unique() if str(c).strip()]
                         observacoes = [str(o) for o in bloco['Observacao'].dropna().unique() if str(o).strip()]
@@ -6118,7 +6136,7 @@ elif menu == "📊 Analítico IA":
                 # aulas de fato analisadas (Analise_...) nesse período.
                 resumo_disciplinas = []
                 for disciplina_r in ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"]:
-                    rows_disc = pedag_rows[pedag_rows['Tipo'] == f"Analise_{disciplina_r}"]
+                    rows_disc = pedag_rows[pedag_rows['Disciplina_Analitica'] == disciplina_r]
                     total_disc = len(rows_disc)
                     if total_disc == 0:
                         continue
@@ -6262,6 +6280,8 @@ das aulas; pontos fortes e pontos que precisam de reforço; plano objetivo para 
             st.info("ℹ️ O banco de dados está vazio — ainda não há registros pra montar o quadro.")
         else:
             df_periodo_q = df_base[(df_base['dt_obj'].dt.date >= data_ini_q) & (df_base['dt_obj'].dt.date <= data_fim_q)]
+            df_periodo_q = df_periodo_q.copy()
+            df_periodo_q['Disciplina_Analitica'] = df_periodo_q['Tipo'].apply(disciplina_analise_normalizada)
 
             estudo_todos_quadro = db_get_estudo_diario() if db_tabela_estudo_existe() else []
 
@@ -6276,7 +6296,7 @@ das aulas; pontos fortes e pontos que precisam de reforço; plano objetivo para 
             for al in ALUNAS_LISTA:
                 linha = {"Aluna": al}
                 for materia in ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"]:
-                    regs = df_periodo_q[(df_periodo_q['Aluna'] == al) & (df_periodo_q['Tipo'] == f"Analise_{materia}")].copy()
+                    regs = df_periodo_q[(df_periodo_q['Aluna'] == al) & (df_periodo_q['Disciplina_Analitica'] == materia)].copy()
                     icone, nome_medalha, score_final, tem_dados = calcular_classificacao_desempenho(regs)
                     linha[materia] = f"{icone} {nome_medalha}" + (f" ({score_final}%)" if tem_dados else " (sem registros)")
 
