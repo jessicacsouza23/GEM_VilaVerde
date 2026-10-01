@@ -47,14 +47,46 @@ function eResolvida(status) { return ["Resolvido", "Realizada", "Realizadas - se
 
 async function renderMinhasAulas(content) {
   const hoje = new Date().toISOString().slice(0, 10);
-  content.innerHTML = `<section class="intro-card"><p class="eyebrow">AGENDA DA PROFESSORA</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Escolha a data para visualizar a escala real que foi salva no rodízio.</p></section><div class="section-title"><h2>Minhas aulas</h2><p>As turmas seguem a escala daquela data, inclusive registros históricos.</p></div><section class="panel"><div class="agenda-date"><div><label for="agenda-data">Data da aula</label><input id="agenda-data" type="date" value="${hoje}"></div><button id="carregar-agenda" class="primary-action" type="button">Carregar agenda</button></div><div id="agenda-lista" class="lesson-list"></div></section>`;
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">REGISTRO DE AULA</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Sua agenda vem do rodízio salvo. Abra uma aula para registrar o conteúdo, as dificuldades e a lição de casa, como no sistema original.</p></section><div class="section-title"><h2>Minhas aulas</h2><p>As fotos das alunas e as turmas também seguem a escala real daquela data.</p></div><section class="panel"><div class="agenda-date"><div><label for="agenda-data">Data da aula</label><input id="agenda-data" type="date" value="${hoje}"></div><button id="carregar-agenda" class="primary-action" type="button">Carregar agenda</button></div><div id="agenda-lista" class="lesson-list"></div><div id="registro-aula"></div></section>`;
   const lista = $("#agenda-lista");
+  const areaRegistro = $("#registro-aula");
+  let aulasAtuais = [];
+
+  const fotosDasAlunas = (aula) => `<div class="lesson-students">${aula.alunas.map((aluna) => {
+    const foto = aula.fotos?.[aluna];
+    const iniciais = String(aluna || "?").split(/\s+/).slice(0, 2).map((parte) => parte[0]).join("");
+    const retrato = foto ? `<a href="${escapeHtml(foto)}" target="_blank" rel="noopener" title="Ampliar foto de ${escapeHtml(aluna)}"><img src="${escapeHtml(foto)}" alt="Foto de ${escapeHtml(aluna)}"></a>` : `<span title="${escapeHtml(aluna)}">${escapeHtml(iniciais)}</span>`;
+    return `<div class="lesson-student">${retrato}<small>${escapeHtml(aluna)}</small></div>`;
+  }).join("")}</div>`;
+
+  const abrirRegistro = (indice) => {
+    const aula = aulasAtuais[indice];
+    if (!aula) return;
+    areaRegistro.innerHTML = `<section class="lesson-register"><div class="register-heading"><div><p class="eyebrow">LANÇAR REGISTRO</p><h3>${escapeHtml(aula.horario)} · ${escapeHtml(aula.tipo)}</h3><p>${escapeHtml(aula.individual ? "Aula individual" : `Aula por turma${aula.turma ? ` · ${aula.turma}` : ""}`)}</p></div><button id="fechar-registro" class="secondary-action" type="button">Fechar</button></div>${fotosDasAlunas(aula)}<div class="record-form"><div><label for="registro-material">Material usado hoje</label><input id="registro-material" placeholder="Ex.: MSA, Apostila, Folha Extra"></div><div><label for="registro-conteudo">Conteúdo / página / lição trabalhada</label><input id="registro-conteudo" placeholder="Ex.: MSA: exercício 9, páginas 12 a 15"></div><div><label for="registro-dificuldades">Dificuldades observadas</label><textarea id="registro-dificuldades" placeholder="Uma por linha ou separadas por vírgula. Deixe vazio se não houve dificuldades."></textarea></div><div><label for="registro-observacao">Observações pedagógicas</label><textarea id="registro-observacao" placeholder="Observações sobre a aula"></textarea></div><div><label for="registro-casa-tipo">Lição de casa</label><select id="registro-casa-tipo"><option value="">Não deixar lição</option><option value="MSA">MSA — corrigida pela professora de Solfejo</option><option value="Canto">Solfejo Melódico — corrigida pela professora</option><option value="Apostila">Apostila — correção pela Secretaria</option><option value="Teoria">Teoria / folha avulsa — correção pela Secretaria</option></select></div><div><label for="registro-casa">Lição deixada para casa</label><input id="registro-casa" placeholder="Ex.: página 18, exercícios 1 e 2" disabled></div></div><div class="register-actions"><button id="salvar-registro-aula" class="primary-action" type="button">Salvar registro da aula</button><div id="registro-retorno"></div></div></section>`;
+    $("#fechar-registro").addEventListener("click", () => { areaRegistro.innerHTML = ""; });
+    const tipoCasa = $("#registro-casa-tipo"), licaoCasa = $("#registro-casa");
+    tipoCasa.addEventListener("change", () => { licaoCasa.disabled = !tipoCasa.value; if (!tipoCasa.value) licaoCasa.value = ""; });
+    $("#salvar-registro-aula").addEventListener("click", async () => {
+      const botao = $("#salvar-registro-aula");
+      const conteudo = $("#registro-conteudo").value.trim();
+      if (!conteudo) { $("#registro-retorno").innerHTML = `<div class="action-error">Informe o conteúdo trabalhado antes de salvar.</div>`; return; }
+      const dificuldades = $("#registro-dificuldades").value.split(/[\n,;]/).map((item) => item.trim()).filter(Boolean);
+      botao.disabled = true;
+      try {
+        await window.GemData.salvarRegistroAula({ dataIso: $("#agenda-data").value, instrutora: state.name, tipo: aula.tipo, alunas: aula.alunas, material: $("#registro-material").value.trim(), conteudo, dificuldades, observacao: $("#registro-observacao").value.trim(), casaTipo: tipoCasa.value, licaoCasa: licaoCasa.value });
+        $("#registro-retorno").innerHTML = `<div class="action-ok">Registro salvo para ${aula.alunas.length === 1 ? "a aluna" : "as alunas"} desta aula.</div>`;
+      } catch (erro) { $("#registro-retorno").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; }
+    });
+    areaRegistro.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const carregar = async () => {
     lista.innerHTML = `<div class="empty">Carregando agenda...</div>`;
+    areaRegistro.innerHTML = "";
     try {
-      const aulas = await window.GemData.agendaProfessora(state.name, $("#agenda-data").value);
-      if (!aulas.length) { lista.innerHTML = `<div class="empty">Nenhuma aula encontrada para você nesta data.</div>`; return; }
-      lista.innerHTML = aulas.map((aula) => `<article class="agenda-card"><h3>${escapeHtml(aula.horario)} · ${escapeHtml(aula.tipo)}</h3><p><strong>${escapeHtml(aula.local)}</strong></p><p>${aula.individual ? `Aluna: ${escapeHtml(aula.alunas[0] || "—")}` : `Alunas: ${escapeHtml(aula.alunas.join(", "))}`}</p><span class="agenda-tag">${aula.individual ? "Aula individual" : `Turma ${escapeHtml(aula.turma || "")}`}</span></article>`).join("");
+      aulasAtuais = await window.GemData.agendaProfessora(state.name, $("#agenda-data").value);
+      if (!aulasAtuais.length) { lista.innerHTML = `<div class="empty">Nenhuma aula encontrada para você nesta data.</div>`; return; }
+      lista.innerHTML = aulasAtuais.map((aula, indice) => `<article class="agenda-card"><h3>${escapeHtml(aula.horario)} · ${escapeHtml(aula.tipo)}</h3><p><strong>${escapeHtml(aula.local)}</strong></p>${fotosDasAlunas(aula)}<span class="agenda-tag">${aula.individual ? "Aula individual" : `Turma ${escapeHtml(aula.turma || "")}`}</span><button class="secondary-action register-open" type="button" data-registro="${indice}">📝 Registrar aula</button></article>`).join("");
+      lista.querySelectorAll("[data-registro]").forEach((botao) => botao.addEventListener("click", () => abrirRegistro(Number(botao.dataset.registro))));
     } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
   $("#carregar-agenda").addEventListener("click", carregar);
@@ -163,20 +195,23 @@ async function renderRodizio(content) {
       const modelo = base.modeloEscala ? base.modelos.find((item) => item.id === base.modeloEscala) : window.GemData.modeloParaData(base.modelos, $("#rodizio-data").value);
       const turmas = Object.entries(base.turmas).map(([turma, alunas]) => `<li><strong>${escapeHtml(turma)}</strong>: ${alunas.length} aluna(s)</li>`).join("");
       const folgas = base.folga?.professoras?.length ? base.folga.professoras.join(", ") : "Nenhuma folga informada";
-      if (!modelo) {
+      if (!modelo && !base.escala.length) {
         area.innerHTML = `<div class="action-error">Não há modelo logístico programado para esta data. Cadastre ou programe o modelo em Logística, sem alterar os rodízios anteriores.</div>`;
         return;
       }
-      const config = modelo.configuracao || {};
-      const preparacao = window.RodizioEngine.prepararModelo(modelo, base.turmas);
+      const modeloExibido = modelo || { nome: "Modelo legado — escala histórica", configuracao: {} };
+      const config = modeloExibido.configuracao || {};
+      const preparacao = modelo ? window.RodizioEngine.prepararModelo(modelo, base.turmas) : { coletivas: {}, turmas: [], blocos: [] };
       const atividades = Object.keys(preparacao.coletivas);
       const todasAlunas = Object.values(base.turmas).flat();
       const opcoesProf = base.professoras.map((prof) => `<option value="${escapeHtml(prof)}">${escapeHtml(prof)}</option>`).join("");
       const fixasSalvas = Object.entries(base.professorasFixas).map(([alunaNormalizada, professora]) => ({ aluna: todasAlunas.find((nome) => nome.trim().toLowerCase() === alunaNormalizada) || "", professora })).filter((item) => item.aluna);
       const coletivas = atividades.map((atividade) => `<section class="collective-box"><h3>${escapeHtml(atividade)} <small>(${escapeHtml(preparacao.coletivas[atividade] || "Sala a definir")})</small></h3>${preparacao.turmas.map((turma) => `<label>Prof. ${escapeHtml(atividade)} — ${escapeHtml(turma)}<select data-coletiva="${escapeHtml(atividade)}" data-turma="${escapeHtml(turma)}">${(config.professoras_habilitadas?.[atividade] || (atividade === "Solfejo Melódico" ? config.professoras_habilitadas?.Canto : null) || base.professoras).map((prof) => `<option value="${escapeHtml(prof)}">${escapeHtml(prof)}</option>`).join("")}</select></label>`).join("")}</section>`).join("");
       const escalaSalva = base.escala.length;
-      area.innerHTML = `${resumoModelo(modelo, base.turmas)}<div class="planning-grid"><section><h3>Turmas ativas</h3><ul>${turmas || "<li>Nenhuma turma cadastrada.</li>"}</ul></section><section><h3>Professoras disponíveis</h3><p>${escapeHtml(base.professoras.join(", ") || "Nenhuma professora cadastrada.")}</p><h3>Folgas deste sábado</h3><p>${escapeHtml(folgas)}</p></section></div>${escalaSalva ? rodizioSalvoMarkup(base) : `<section class="generator-panel"><h2>Gerar novo rodízio</h2><p>As alunas ativas entram no novo rodízio. Alunas desativadas continuam nas escalas e registros dos sábados já realizados.</p><div class="generator-grid"><div><h3>Professoras das aulas por turma</h3>${coletivas}</div><div><h3>Rotação das turmas</h3><label class="checkbox-line"><input id="rotacao-manual" type="checkbox"> Definir manualmente a rotação das turmas?</label><div id="rotacao-opcoes" class="hidden"><label><input type="radio" name="criterio-rotacao" value="teoria" checked> Turma que começa em Teoria</label><label><input type="radio" name="criterio-rotacao" value="individual"> Turma no último bloco de Prática + Solfejo</label><select id="turma-rotacao">${preparacao.turmas.map((turma) => `<option value="${escapeHtml(turma)}">${escapeHtml(turma)}</option>`).join("")}</select><div id="previa-rotacao"></div></div><h3>Saída antecipada</h3><p class="hint">Selecione somente quem sairá antes. Depois escolha o último bloco em que cada uma ainda pode atender.</p><select id="professoras-saida" multiple size="5">${opcoesProf}</select><div id="saidas-detalhes"></div></div></div>${config.usar_professoras_fixas ? `<section class="fixas-box"><h3>Professoras fixas neste modelo</h3><p>Escolha somente as alunas que terão professora fixa. Você pode acrescentar quantas precisar.</p><div class="fixed-list" id="fixed-list"></div><button id="adicionar-fixa" class="secondary-action" type="button">＋ Adicionar aluna fixa</button><button id="salvar-fixas" class="secondary-action" type="button">Salvar professoras fixas</button><label class="checkbox-line"><input id="usar-fixas" type="checkbox" checked> Usar professoras fixas neste rodízio?</label></section>` : ""}<button id="gerar-rodizio" class="primary-action wide-action" type="button">Gerar rodízio do modelo</button><div id="gerar-feedback"></div></section>`}`;
-      if (escalaSalva) ligarAcoesEscala(base, modelo);
+      const rodiziosSalvos = (base.escalasAnteriores || []).filter((item) => Array.isArray(item.escala) && item.escala.length).sort((a, b) => { const [da, ma, aa] = String(a.id).split("/"); const [db, mb, ab] = String(b.id).split("/"); return `${ab}${mb}${db}`.localeCompare(`${aa}${ma}${da}`); });
+      area.innerHTML = `${resumoModelo(modeloExibido, base.turmas)}<div class="planning-grid"><section><h3>Turmas ativas</h3><ul>${turmas || "<li>Nenhuma turma cadastrada.</li>"}</ul></section><section><h3>Professoras disponíveis</h3><p>${escapeHtml(base.professoras.join(", ") || "Nenhuma professora cadastrada.")}</p><h3>Folgas deste sábado</h3><p>${escapeHtml(folgas)}</p>${rodiziosSalvos.length ? `<label>Rodízios já salvos<select id="rodizios-anteriores"><option value="">Escolha uma data para abrir</option>${rodiziosSalvos.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}</option>`).join("")}</select></label>` : ""}</section></div>${escalaSalva ? rodizioSalvoMarkup(base) : `<section class="generator-panel"><h2>Gerar novo rodízio</h2><p>As alunas ativas entram no novo rodízio. Alunas desativadas continuam nas escalas e registros dos sábados já realizados.</p><div class="generator-grid"><div><h3>Professoras das aulas por turma</h3>${coletivas}</div><div><h3>Rotação das turmas</h3><label class="checkbox-line"><input id="rotacao-manual" type="checkbox"> Definir manualmente a rotação das turmas?</label><div id="rotacao-opcoes" class="hidden"><label><input type="radio" name="criterio-rotacao" value="teoria" checked> Turma que começa em Teoria</label><label><input type="radio" name="criterio-rotacao" value="individual"> Turma no último bloco de Prática + Solfejo</label><select id="turma-rotacao">${preparacao.turmas.map((turma) => `<option value="${escapeHtml(turma)}">${escapeHtml(turma)}</option>`).join("")}</select><div id="previa-rotacao"></div></div><h3>Saída antecipada</h3><p class="hint">Selecione somente quem sairá antes. Depois escolha o último bloco em que cada uma ainda pode atender.</p><select id="professoras-saida" multiple size="5">${opcoesProf}</select><div id="saidas-detalhes"></div></div></div>${config.usar_professoras_fixas ? `<section class="fixas-box"><h3>Professoras fixas neste modelo</h3><p>Escolha somente as alunas que terão professora fixa. Você pode acrescentar quantas precisar.</p><div class="fixed-list" id="fixed-list"></div><button id="adicionar-fixa" class="secondary-action" type="button">＋ Adicionar aluna fixa</button><button id="salvar-fixas" class="secondary-action" type="button">Salvar professoras fixas</button><label class="checkbox-line"><input id="usar-fixas" type="checkbox" checked> Usar professoras fixas neste rodízio?</label></section>` : ""}<button id="gerar-rodizio" class="primary-action wide-action" type="button">Gerar rodízio do modelo</button><div id="gerar-feedback"></div></section>`}`;
+      $("#rodizios-anteriores")?.addEventListener("change", (event) => { if (!event.target.value) return; const [dia, mes, ano] = event.target.value.split("/"); $("#rodizio-data").value = `${ano}-${mes}-${dia}`; carregar(); });
+      if (escalaSalva) ligarAcoesEscala(base, modeloExibido);
       else ligarGerador(base, modelo, preparacao, fixasSalvas);
     } catch (error) { area.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
