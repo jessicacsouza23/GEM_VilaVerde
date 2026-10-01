@@ -157,11 +157,14 @@
   async function dadosPessoas() {
     const banco = await obterCliente();
     const [alunas, professoras, secretarias] = await Promise.all([
-      banco.from("alunas").select("id,nome,turma,ativo,login,foto_path").order("turma").order("nome"),
-      banco.from("professoras").select("id,nome,ativo,login,foto_path").order("nome"),
-      banco.from("secretarias").select("id,nome,ativo").order("nome")
+      banco.from("alunas").select("*").order("turma").order("nome"),
+      banco.from("professoras").select("*").order("nome"),
+      banco.from("secretarias").select("*").order("nome")
     ]);
-    if (alunas.error || professoras.error) throw new Error("Não foi possível carregar turmas e pessoas.");
+    if (alunas.error || professoras.error) {
+      const erro = alunas.error || professoras.error;
+      throw new Error(`Não foi possível carregar turmas e pessoas: ${erro.message || "verifique as permissões do Supabase."}`);
+    }
     return { alunas: alunas.data || [], professoras: professoras.data || [], secretarias: secretarias.data || [] };
   }
 
@@ -170,6 +173,42 @@
     if (!tabela) throw new Error("Tipo de pessoa inválido.");
     const consulta = id ? banco.from(tabela).update(dados).eq("id", id) : banco.from(tabela).insert(dados);
     const { error } = await consulta; if (error) throw new Error(error.message || "Não foi possível salvar.");
+  }
+
+  async function dadosDocumentos() {
+    const banco = await obterCliente();
+    const { data, error } = await banco.from("gabaritos").select("*").order("id", { ascending: false });
+    if (error) throw new Error(`Não foi possível carregar documentos: ${error.message || "verifique as permissões."}`);
+    return data || [];
+  }
+
+  async function enviarDocumento({ arquivo, titulo, disciplina, turma, aluna, observacao, visivel }) {
+    if (!arquivo || !titulo) throw new Error("Informe o título e selecione o arquivo.");
+    const banco = await obterCliente(); const caminho = `${crypto.randomUUID()}_${arquivo.name.replace(/[^a-zA-Z0-9._-]+/g, "_")}`;
+    const envio = await banco.storage.from("gabaritos").upload(caminho, arquivo, { contentType: arquivo.type || "application/octet-stream" });
+    if (envio.error) throw new Error("Não foi possível enviar o arquivo.");
+    const { error } = await banco.from("gabaritos").insert({ titulo, disciplina, turma: turma || null, aluna: aluna || null, observacao: observacao || "", professora: "Secretaria", arquivo_path: caminho, arquivo_nome: arquivo.name, data_correcao: new Date().toISOString().slice(0, 10), visivel_alunas: Boolean(visivel) });
+    if (error) throw new Error("O arquivo foi enviado, mas o documento não foi registrado.");
+  }
+
+  async function urlDocumento(caminho) {
+    const banco = await obterCliente(); const { data, error } = await banco.storage.from("gabaritos").createSignedUrl(caminho, 3600);
+    if (error) throw new Error("Não foi possível abrir este documento."); return data?.signedUrl;
+  }
+
+  async function dadosProvas() {
+    const banco = await obterCliente(); const [avaliacoes, notas] = await Promise.all([banco.from("avaliacoes").select("*").order("data_avaliacao", { ascending: false }), banco.from("avaliacao_notas").select("*")]);
+    if (avaliacoes.error || notas.error) throw new Error(`Não foi possível carregar provas: ${(avaliacoes.error || notas.error).message || "verifique as permissões."}`);
+    return { avaliacoes: avaliacoes.data || [], notas: notas.data || [] };
+  }
+
+  async function criarProva(titulo, data) {
+    const banco = await obterCliente(); const { error } = await banco.from("avaliacoes").insert({ titulo, data_avaliacao: data }); if (error) throw new Error("Não foi possível criar a avaliação.");
+  }
+
+  async function dadosLogistica() {
+    const banco = await obterCliente(); const { data, error } = await banco.from("modelos_logistica").select("*").order("vigencia_inicio", { ascending: false });
+    if (error) throw new Error(`Não foi possível carregar modelos: ${error.message || "execute a migration de logística."}`); return data || [];
   }
 
   function dataBr(iso) {
@@ -346,5 +385,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, dadosVisaoGeral, dadosPessoas, salvarPessoa, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, dadosVisaoGeral, dadosPessoas, salvarPessoa, dadosDocumentos, enviarDocumento, urlDocumento, dadosProvas, criarProva, dadosLogistica, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();
