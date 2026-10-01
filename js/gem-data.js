@@ -31,12 +31,10 @@
         .select("logo_path, updated_at").eq("id", 1).maybeSingle();
       if (error) throw error;
 
-      let logoUrl = null;
-      if (visual?.logo_path) {
-        const { data: arquivo } = await banco.storage.from("logo_gem")
-          .createSignedUrl(visual.logo_path, 3600);
-        logoUrl = arquivo?.signedUrl || null;
-      }
+      const caminhoLogo = visual?.logo_path || "logo_atual";
+      const { data: arquivo } = await banco.storage.from("logo_gem")
+        .createSignedUrl(caminhoLogo, 3600);
+      const logoUrl = arquivo?.signedUrl || null;
       return { connected: true, logoUrl };
     } catch (error) {
       console.warn("A identidade visual do GEM ainda não pôde ser carregada.", error);
@@ -194,13 +192,11 @@
   async function dadosRodizio(dataIso) {
     const banco = await obterCliente();
     const data = dataBr(dataIso);
-    const [modelos, alunas, professoras, calendario, historicoEscalas, fixas, folgas] = await Promise.all([
+    const [modelos, alunas, professoras, calendario, folgas] = await Promise.all([
       banco.from("modelos_logistica").select("*").order("vigencia_inicio", { ascending: false }),
       banco.from("alunas").select("nome,turma,ativo").order("nome"),
       banco.from("professoras").select("nome,ativo").order("nome"),
       banco.from("calendario").select("id,escala,modelo_logistica_id").eq("id", data).maybeSingle(),
-      banco.from("calendario").select("id,escala").order("id", { ascending: true }),
-      banco.from("professoras_fixas").select("aluna,professora"),
       banco.from("folgas_professoras").select("*").eq("data", dataIso).maybeSingle()
     ]);
     const falha = [modelos, alunas, professoras, calendario].find((resultado) => resultado.error)?.error;
@@ -211,8 +207,7 @@
       (turmas[turma] ||= []).push(aluna.nome);
     });
     Object.values(turmas).forEach((lista) => lista.sort());
-    const mapaFixas = Object.fromEntries((fixas.data || []).map((item) => [normalizar(item.aluna), item.professora]));
-    return { data, modelos: modelos.data || [], turmas, professoras: (professoras.data || []).filter((professora) => professora.ativo !== false).map((professora) => professora.nome), escala: calendario.data?.escala || [], escalasAnteriores: historicoEscalas.data || [], modeloEscala: calendario.data?.modelo_logistica_id || null, fixas: mapaFixas, folga: folgas.data || null };
+    return { data, modelos: modelos.data || [], turmas, professoras: (professoras.data || []).filter((professora) => professora.ativo !== false).map((professora) => professora.nome), escala: calendario.data?.escala || [], modeloEscala: calendario.data?.modelo_logistica_id || null, folga: folgas.data || null };
   }
 
   function modeloParaData(modelos, dataIso) {
@@ -222,157 +217,33 @@
     }).sort((a, b) => String(b.vigencia_inicio).localeCompare(String(a.vigencia_inicio)))[0] || null;
   }
 
-  async function salvarRodizio(dataIso, modeloId, escala) {
-    const banco = await obterCliente();
-    const data = dataBr(dataIso);
-    const { data: existente, error: consultaErro } = await banco.from("calendario").select("id").eq("id", data).maybeSingle();
-    if (consultaErro) throw new Error("Não foi possível conferir a escala existente.");
-    if (existente) throw new Error("Já existe um rodízio salvo nesta data. Ele não foi substituído.");
-    const { error } = await banco.from("calendario").insert({ id: data, escala, modelo_logistica_id: modeloId });
-    if (error) throw new Error(`Não foi possível salvar o rodízio: ${error.message}`);
-  }
-
   async function dadosChamada(dataIso) {
     const banco = await obterCliente();
     const data = dataBr(dataIso);
-    const [{ data: calendario, error: erroEscala }, { data: historico, error: erroHistorico }] = await Promise.all([
+    const [calendario, historico] = await Promise.all([
       banco.from("calendario").select("escala").eq("id", data).maybeSingle(),
-      banco.from("historico_geral").select("id,Aluna,Status,Observacao").eq("Data", data).eq("Tipo", "Chamada")
+      banco.from("historico_geral").select("Aluna,Status,Observacao").eq("Data", data).eq("Tipo", "Chamada")
     ]);
-    if (erroEscala || erroHistorico) throw new Error("Não foi possível carregar a chamada desta data.");
-    const alunas = [...new Set((calendario?.escala || []).map((linha) => linha.Aluna).filter(Boolean))].sort();
-    const { data: perfis } = alunas.length ? await banco.from("alunas").select("nome,foto_path").in("nome", alunas) : { data: [] };
+    if (calendario.error || historico.error) throw new Error("Não foi possível carregar a chamada desta data.");
+    const alunas = [...new Set((calendario.data?.escala || []).map((linha) => linha.Aluna).filter(Boolean))].sort();
+    const perfis = alunas.length ? await banco.from("alunas").select("nome,foto_path").in("nome", alunas) : { data: [] };
     const fotos = {};
-    await Promise.all((perfis || []).filter((aluna) => aluna.foto_path).map(async (aluna) => {
-      const { data: arquivo } = await banco.storage.from("fotos_alunas").createSignedUrl(aluna.foto_path, 3600);
-      if (arquivo?.signedUrl) fotos[aluna.nome] = arquivo.signedUrl;
+    await Promise.all((perfis.data || []).filter((perfil) => perfil.foto_path).map(async (perfil) => {
+      const arquivo = await banco.storage.from("fotos_alunas").createSignedUrl(perfil.foto_path, 3600);
+      if (arquivo.data?.signedUrl) fotos[perfil.nome] = arquivo.data.signedUrl;
     }));
-    return { alunas, chamadas: historico || [], fotos };
+    return { alunas, chamadas: historico.data || [], fotos };
   }
 
   async function salvarChamada(dataIso, registros) {
     const banco = await obterCliente();
     const data = dataBr(dataIso);
-    const { error: apagarErro } = await banco.from("historico_geral").delete().eq("Data", data).eq("Tipo", "Chamada");
-    if (apagarErro) throw new Error("Não foi possível atualizar a chamada.");
+    const apagar = await banco.from("historico_geral").delete().eq("Data", data).eq("Tipo", "Chamada");
+    if (apagar.error) throw new Error("Não foi possível atualizar a chamada.");
     if (!registros.length) return;
-    const linhas = registros.map((registro) => ({ Data: data, Aluna: registro.aluna, Tipo: "Chamada", Status: registro.status, Observacao: registro.observacao || "", Licao_Atual: "Presença em Aula" }));
-    const { error } = await banco.from("historico_geral").insert(linhas);
-    if (error) throw new Error("Não foi possível salvar a chamada.");
+    const inserir = await banco.from("historico_geral").insert(registros.map((registro) => ({ Data: data, Aluna: registro.aluna, Tipo: "Chamada", Status: registro.status, Observacao: registro.observacao || "", Licao_Atual: "Presença em Aula" })));
+    if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  async function dadosVisaoGeral(dataIso) {
-    const banco = await obterCliente();
-    const data = dataBr(dataIso);
-    const [{ data: escala, error: erroEscala }, { data: historico, error: erroHistorico }] = await Promise.all([
-      banco.from("calendario").select("escala").eq("id", data).maybeSingle(),
-      banco.from("historico_geral").select("*").eq("Data", data)
-    ]);
-    if (erroEscala || erroHistorico) throw new Error("Não foi possível carregar a visão diária.");
-    return { escala: escala?.escala || [], historico: historico || [], data };
-  }
-
-  async function dadosPessoas() {
-    const banco = await obterCliente();
-    const [alunas, professoras, secretarias] = await Promise.all([
-      banco.from("alunas").select("*").order("turma").order("nome"),
-      banco.from("professoras").select("*").order("nome"),
-      banco.from("secretarias").select("*").order("nome")
-    ]);
-    const falha = [alunas, professoras, secretarias].find((resultado) => resultado.error)?.error;
-    if (falha) throw new Error(`Não foi possível carregar pessoas: ${falha.message}`);
-    return { alunas: alunas.data || [], professoras: professoras.data || [], secretarias: secretarias.data || [] };
-  }
-
-  async function atualizarAtivoPessoa(tabela, id, ativo) {
-    const banco = await obterCliente();
-    const { error } = await banco.from(tabela).update({ ativo }).eq("id", id);
-    if (error) throw new Error("Não foi possível atualizar o cadastro.");
-  }
-
-  async function dadosLicoesSecretaria(dataIso) {
-    const banco = await obterCliente();
-    let consulta = banco.from("historico_geral").select("*").order("id", { ascending: false });
-    if (dataIso) consulta = consulta.eq("Data", dataBr(dataIso));
-    const { data, error } = await consulta;
-    if (error) throw new Error("Não foi possível carregar os registros pedagógicos.");
-    return (data || []).filter((registro) => String(registro.Tipo || "").startsWith("Casa_") || String(registro.Tipo || "").startsWith("Analise_"));
-  }
-
-  async function dadosFolgas(dataIso) {
-    const banco = await obterCliente();
-    const { data, error } = await banco.from("folgas_professoras").select("*").eq("data", dataIso).maybeSingle();
-    if (error) throw new Error("Não foi possível carregar as folgas.");
-    return data || null;
-  }
-
-  async function salvarRegistroAula(registro) {
-    const banco = await obterCliente();
-    const data = dataBr(registro.data);
-    const tipo = `Analise_${registro.tipo}`;
-    const { error: apagarErro } = await banco.from("historico_geral").delete()
-      .eq("Data", data).eq("Aluna", registro.aluna).eq("Tipo", tipo);
-    if (apagarErro) throw new Error("Não foi possível atualizar o registro anterior desta aula.");
-    const linha = {
-      Data: data,
-      Aluna: registro.aluna,
-      Tipo: tipo,
-      Instrutora: registro.instrutora,
-      Licao_Atual: registro.licaoAtual || "",
-      Licao_Casa: registro.licaoCasa || "",
-      Dificuldades: registro.dificuldades || [],
-      Observacao: registro.observacao || "",
-      Status: registro.status || "Realizada"
-    };
-    const { error } = await banco.from("historico_geral").insert(linha);
-    if (error) throw new Error("Não foi possível salvar o registro da aula.");
-  }
-
-  async function salvarFolgas(dataIso, professoras, observacao, responsavel) {
-    const banco = await obterCliente();
-    const linha = { data: dataIso, professoras: professoras || [], observacao: observacao || "" };
-    if (responsavel) linha.coordenadora = responsavel;
-    const { error } = await banco.from("folgas_professoras").upsert(linha, { onConflict: "data" });
-    if (error) throw new Error("Não foi possível salvar as folgas.");
-  }
-
-  async function dadosLogistica() {
-    const banco = await obterCliente();
-    const [modelos, alunas, professoras] = await Promise.all([
-      banco.from("modelos_logistica").select("*").order("vigencia_inicio", { ascending: false }),
-      banco.from("alunas").select("nome,turma,ativo").order("turma").order("nome"),
-      banco.from("professoras").select("nome,ativo").order("nome")
-    ]);
-    const falha = [modelos, alunas, professoras].find((resultado) => resultado.error)?.error;
-    if (falha) throw new Error(`Não foi possível carregar a logística: ${falha.message}`);
-    return { modelos: modelos.data || [], alunas: alunas.data || [], professoras: professoras.data || [] };
-  }
-
-  async function salvarModeloLogistica(modelo) {
-    const banco = await obterCliente();
-    const linha = { nome: modelo.nome, vigencia_inicio: modelo.vigencia_inicio, configuracao: modelo.configuracao, status: modelo.status || "rascunho" };
-    if (modelo.id) {
-      const { data: escalas, error: erroEscalas } = await banco.from("calendario").select("id").eq("modelo_logistica_id", modelo.id).limit(1);
-      if (erroEscalas) throw new Error("Não foi possível verificar se este modelo já gerou rodízios.");
-      if (!escalas?.length) {
-        const { error } = await banco.from("modelos_logistica").update(linha).eq("id", modelo.id);
-        if (error) throw new Error("Não foi possível atualizar o modelo.");
-        return { revisao: false };
-      }
-      linha.status = "rascunho";
-    }
-    const { error } = await banco.from("modelos_logistica").insert(linha);
-    if (error) throw new Error("Não foi possível salvar a revisão do modelo.");
-    return { revisao: Boolean(modelo.id) };
-  }
-
-  async function alterarStatusModelo(id, status, vigenciaFim = null) {
-    const banco = await obterCliente();
-    const dados = { status };
-    if (vigenciaFim) dados.vigencia_fim = vigenciaFim;
-    const { error } = await banco.from("modelos_logistica").update(dados).eq("id", id);
-    if (error) throw new Error("Não foi possível alterar o status do modelo.");
-  }
-
-  window.GemData = { carregarIdentidade, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, salvarRodizio, dadosChamada, salvarChamada, dadosVisaoGeral, dadosPessoas, atualizarAtivoPessoa, dadosLicoesSecretaria, dadosFolgas, salvarFolgas, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, salvarRegistroAula, dataBr, normalizar };
+  window.GemData = { carregarIdentidade, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, dataBr };
 })();
