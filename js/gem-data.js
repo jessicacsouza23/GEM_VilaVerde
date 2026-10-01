@@ -447,7 +447,10 @@
   async function dadosCorrecoesLicoes() {
     const banco = await obterCliente();
     const [historico, alunas, secretarias] = await Promise.all([
-      banco.from("historico_geral").select("*").in("Tipo", ["Casa_Apostila", "Casa_Teoria"]).order("id", { ascending: false }),
+      // A Secretaria só confere folha avulsa de Teoria que a professora
+      // encaminhou para ela. Apostilas e métodos voltam para a professora na
+      // próxima aula, conforme a regra do app.py.
+      banco.from("historico_geral").select("*").eq("Tipo", "Casa_Teoria").order("id", { ascending: false }),
       banco.from("alunas").select("*").order("nome"),
       banco.from("secretarias").select("*").order("nome")
     ]);
@@ -606,7 +609,7 @@
       }
 
       if (item.casaTipo && String(item.licaoCasa || "").trim()) {
-        const tipoCasa = item.casaTipo === "Apostila" ? "Casa_Apostila" : `Casa_Metodo_${material}`;
+        const tipoCasa = item.casaTipo === "Apostila" ? "Casa_Apostila_Prof" : `Casa_Metodo_${material}`;
         const { data: casas, error: erroCasas } = await banco.from("historico_geral").select("id")
           .eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoCasa).order("id", { ascending: false }).limit(1);
         if (erroCasas) throw new Error(`O registro foi salvo, mas não foi possível consultar a lição de ${material}.`);
@@ -645,11 +648,12 @@
     const tiposPermitidos = tipoAula === "Solfejo" ? ["Casa_MSA"]
       : tipoAula === "Solfejo Melódico" ? ["Casa_Canto"]
         : tipoAula === "Teoria" ? ["Casa_Teoria_Prof", "Casa_Apostila_Teoria_Prof"]
-          : null;
+          : tipoAula === "Prática" ? ["Casa_Apostila_Prof"]
+            : null;
     const resolvidos = ["Resolvido", "Realizada", "Realizada - sem pendência", "Realizadas - sem pendência"];
     return (data || []).filter((registro) => {
       const tipo = String(registro.Tipo || "");
-      const pertence = tiposPermitidos ? tiposPermitidos.includes(tipo) : tipo.startsWith("Casa_Metodo_");
+      const pertence = tiposPermitidos ? (tiposPermitidos.includes(tipo) || (tipoAula === "Prática" && tipo.startsWith("Casa_Metodo_"))) : tipo.startsWith("Casa_Metodo_");
       return pertence && !resolvidos.includes(registro.Status);
     });
   }
