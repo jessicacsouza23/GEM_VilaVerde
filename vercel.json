@@ -1,6 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
+  "crons": [
+    { "path": "/api/notificar-pendencias", "schedule": "0 11 * * *" }
+  ],
   "headers": [
     {
       "source": "/service-worker.js",

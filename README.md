@@ -92,6 +92,18 @@ Ela cadastra `GEM Vila Verde` como a primeira unidade e deixa a conta Master
 `jessicavitorioit@gmail.com` pronta para receber o convite seguro de criação de
 senha. Ainda não altera as tabelas pedagógicas nem os arquivos atuais.
 
+### Criar a senha da conta Master
+
+No Supabase, abra **Authentication → Users → Add user → Create new user**.
+Informe o e-mail `jessicavitorioit@gmail.com`, escolha a senha e marque
+**Auto Confirm User**. Assim não depende do limite de e-mails de convite.
+
+Em seguida, execute `supabase/migrations/006_reparar_vinculo_master.sql` no
+SQL Editor. Ela conecta essa conta de autenticação ao cadastro Master já criado
+na migration 002. No resultado final, `status_convite` deve aparecer como
+`ativo` e `auth_user_id` deve estar preenchido. Só então entre pelo aplicativo
+com o e-mail e a senha definidos no Supabase Auth.
+
 ## Instalação no celular
 
 Depois da publicação em HTTPS, Android/Chrome mostrará o botão **Instalar

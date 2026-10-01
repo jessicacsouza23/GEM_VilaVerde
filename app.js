@@ -1,7 +1,7 @@
 const navByRole = {
   Master: ["GEMs", "Usuários mestres", "Visão da plataforma"],
-  Secretaria: ["Visão geral", "Planejamento e rodízio", "Turmas e pessoas", "Chamada", "Correção de lições", "Relatórios", "Analítico", "Documentos", "Provas", "Logística"],
-  Professora: ["Minhas aulas", "Envio de documentos", "Provas", "Analítico IA", "Mensagens"],
+  Secretaria: ["Visão geral", "Planejamento e rodízio", "Folgas", "Turmas e pessoas", "Chamada", "Correção de lições", "Relatórios", "Analítico", "Documentos", "Provas", "Mensagens", "Logística"],
+  Professora: ["Minhas aulas", "Configurar Métodos", "Envio de documentos", "Provas", "Analítico IA", "Mensagens"],
   Aluna: ["Minhas lições", "Boletim", "Documentos", "Mensagens"]
 };
 
@@ -34,7 +34,7 @@ function renderNavigation() {
 }
 
 function iconFor(page) {
-  return ({ "GEMs":"🏫", "Usuários mestres":"🔐", "Visão da plataforma":"🌐", "Visão geral":"🏠", "Planejamento e rodízio":"🗓️", "Turmas e pessoas":"👥", "Chamada":"✅", "Correção de lições":"📋", "Relatórios":"📊", "Analítico":"📈", "Documentos":"📁", "Provas":"📝", "Logística":"⚙️", "Minhas aulas":"👩‍🏫", "Envio de documentos":"📤", "Analítico IA":"📈", "Mensagens":"💬", "Minhas lições":"🎼", "Boletim":"🎓" }[page] || "•");
+  return ({ "GEMs":"🏫", "Usuários mestres":"🔐", "Visão da plataforma":"🌐", "Visão geral":"🏠", "Planejamento e rodízio":"🗓️", "Folgas":"👑", "Turmas e pessoas":"👥", "Chamada":"✅", "Correção de lições":"📋", "Relatórios":"📊", "Analítico":"📈", "Documentos":"📁", "Provas":"📝", "Mensagens":"💬", "Logística":"⚙️", "Minhas aulas":"👩‍🏫", "Configurar Métodos":"⚙️", "Envio de documentos":"📤", "Analítico IA":"📈", "Minhas lições":"🎼", "Boletim":"🎓" }[page] || "•");
 }
 
 function scheduleMarkup() {
@@ -58,6 +58,7 @@ async function renderMinhasAulas(content) {
   const lista = $("#agenda-lista");
   const areaRegistro = $("#registro-aula");
   let aulasAtuais = [];
+  let bibliotecaMetodos = [];
 
   const fotosDasAlunas = (aula) => `<div class="lesson-students">${aula.alunas.map((aluna) => {
     const foto = aula.fotos?.[aluna];
@@ -66,15 +67,29 @@ async function renderMinhasAulas(content) {
     return `<div class="lesson-student">${retrato}<small>${escapeHtml(aluna)}</small></div>`;
   }).join("")}</div>`;
 
-  const abrirRegistro = (indice) => {
+  const abrirRegistro = async (indice) => {
     const aula = aulasAtuais[indice];
     if (!aula) return;
+    let registrosSalvos = [];
+    let licoesPendentes = [];
+    try { registrosSalvos = await window.GemData.registrosDaAula({ dataIso: $("#agenda-data").value, instrutora: state.name, alunas: aula.alunas }); }
+    catch (erro) { console.warn("Registros anteriores não puderam ser carregados", erro); }
+    try { licoesPendentes = await window.GemData.licoesPendentesProfessora({ alunas: aula.alunas, tipoAula: aula.tipo }); }
+    catch (erro) { console.warn("Lições pendentes não puderam ser carregadas", erro); }
+    const tipoAnalise = `Analise_${aula.tipo}`;
+    const analisesSalvas = registrosSalvos.filter((registro) => registro.Tipo === tipoAnalise);
+    const porAluna = Object.fromEntries(analisesSalvas.map((registro) => [registro.Aluna, registro]));
+    const primeiroRegistro = porAluna[aula.alunas[0]] || {};
+    const partesRegistro = String(primeiroRegistro.Licao_Atual || "").split(":");
+    const materialSalvo = partesRegistro.length > 1 ? partesRegistro.shift().trim() : "";
+    const conteudoSalvo = partesRegistro.length > 1 ? partesRegistro.join(":").trim() : (partesRegistro[0] || "");
     const opcoesDificuldades = dificuldadesPorAula[aula.tipo] || dificuldadesPorAula.Solfejo;
     const aulaPorTurma = !aula.individual;
-    const dificuldades = `<div class="difficulty-checks">${opcoesDificuldades.map((dificuldade) => `<label><input type="checkbox" data-dificuldade${aulaPorTurma ? "-compartilhada" : "-aluna"} ${aulaPorTurma ? "" : `data-dificuldade-aluna="${escapeHtml(aula.alunas[0])}"`} value="${escapeHtml(dificuldade)}"> ${escapeHtml(dificuldade)}</label>`).join("")}</div>`;
+    const dificuldadesSalvas = new Set(Array.isArray(primeiroRegistro.Dificuldades) ? primeiroRegistro.Dificuldades : []);
+    const dificuldades = `<div class="difficulty-checks">${opcoesDificuldades.map((dificuldade) => `<label><input type="checkbox" data-dificuldade${aulaPorTurma ? "-compartilhada" : "-aluna"} ${aulaPorTurma ? "" : `data-dificuldade-aluna="${escapeHtml(aula.alunas[0])}"`} value="${escapeHtml(dificuldade)}" ${dificuldadesSalvas.has(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("")}</div>`;
     const secaoDificuldades = aulaPorTurma
-      ? `<div class="student-records shared-record"><p class="field-caption">Dificuldades (compartilhada para a turma):</p>${dificuldades}<label>Observações pedagógicas:<textarea id="registro-observacao-compartilhada" placeholder="Observação sobre a aula da turma"></textarea></label></div>`
-      : `<div class="student-records"><section class="student-record"><h4>${escapeHtml(aula.alunas[0])}</h4><p class="field-caption">Dificuldades observadas:</p>${dificuldades}<label>Observações pedagógicas:<textarea data-observacao-aluna="${escapeHtml(aula.alunas[0])}" placeholder="Observações sobre a aula"></textarea></label></section></div>`;
+      ? `<div class="student-records shared-record"><p class="field-caption">Dificuldades (compartilhada para a turma):</p>${dificuldades}<label>Observações pedagógicas:<textarea id="registro-observacao-compartilhada" placeholder="Observação sobre a aula da turma">${escapeHtml(primeiroRegistro.Observacao || "")}</textarea></label></div>`
+      : `<div class="student-records"><section class="student-record"><h4>${escapeHtml(aula.alunas[0])}</h4><p class="field-caption">Dificuldades observadas:</p>${dificuldades}<label>Observações pedagógicas:<textarea data-observacao-aluna="${escapeHtml(aula.alunas[0])}" placeholder="Observações sobre a aula">${escapeHtml(primeiroRegistro.Observacao || "")}</textarea></label></section></div>`;
     const licaoDeCasa = aula.tipo === "Teoria"
       ? `<option value="">Não deixar lição</option><option value="Teoria">Folha avulsa — correção pela Secretaria</option><option value="Apostila_Teoria_Prof">Apostila — corrigida pela professora</option>`
       : aula.tipo === "Solfejo"
@@ -82,8 +97,22 @@ async function renderMinhasAulas(content) {
         : aula.tipo === "Solfejo Melódico"
           ? `<option value="">Não deixar estudo</option><option value="Canto">Estudo de Solfejo Melódico — corrigido pela professora</option>`
           : `<option value="">Não deixar lição</option><option value="Apostila">Apostila — correção pela Secretaria</option><option value="Metodo">Método — corrigido pela professora</option>`;
-    areaRegistro.innerHTML = `<section class="lesson-register"><div class="register-heading"><div><p class="eyebrow">LANÇAR REGISTRO</p><h3>📝 Registro: ${escapeHtml(aula.tipo)}</h3><p>${escapeHtml(aula.individual ? "Aula individual" : `Aula por turma${aula.turma ? ` · ${aula.turma}` : ""}`)}</p></div><button id="fechar-registro" class="secondary-action" type="button">Fechar</button></div>${fotosDasAlunas(aula)}<div class="record-form"><div><label for="registro-material">Material usado hoje:</label><input id="registro-material" placeholder="Ex.: MSA, Apostila, Folha Extra"></div><div><label for="registro-conteudo">Página/Lição trabalhada:</label><input id="registro-conteudo" placeholder="Ex.: MSA: exercício 9, páginas 12 a 15"></div></div>${secaoDificuldades}<div class="record-form"><div><label for="registro-casa-tipo">Lição de casa</label><select id="registro-casa-tipo">${licaoDeCasa}</select></div><div><label for="registro-casa">Lição deixada para casa</label><input id="registro-casa" placeholder="Ex.: página 18, exercícios 1 e 2" disabled></div></div><div class="register-actions"><button id="salvar-registro-aula" class="primary-action" type="button">Salvar registro da aula</button><div id="registro-retorno"></div></div></section>`;
+    const opcoesPratica = ["Apostila", ...bibliotecaMetodos.filter((metodo) => metodo.categoria === "Prática").map((metodo) => metodo.nome)];
+    const campoMaterial = aula.tipo === "Prática" ? `<select id="registro-material"><option value="">Selecione o método/apostila</option>${opcoesPratica.map((material) => `<option ${material === materialSalvo ? "selected" : ""}>${escapeHtml(material)}</option>`).join("")}</select><small class="field-help">Cadastre novos métodos em Configurar Métodos.</small>` : `<input id="registro-material" value="${escapeHtml(materialSalvo)}" placeholder="Ex.: MSA, Apostila, Folha Extra">`;
+    const registrosVisiveis = analisesSalvas.length ? `<section class="saved-records"><h4>Registro já salvo nesta aula</h4>${analisesSalvas.map((registro) => { const diffs = Array.isArray(registro.Dificuldades) ? registro.Dificuldades : []; return `<article><strong>${escapeHtml(registro.Aluna)}</strong><span>${escapeHtml(registro.Licao_Atual || "—")}</span>${diffs.length ? `<small>⚠ ${escapeHtml(diffs.join(" · "))}</small>` : ""}${registro.Observacao ? `<small>📝 ${escapeHtml(registro.Observacao)}</small>` : ""}</article>`; }).join("")}</section>` : "";
+    const tituloCasa = (tipo) => tipo === "Casa_MSA" ? "MSA de Solfejo" : tipo === "Casa_Canto" ? "Estudo de Solfejo Melódico" : tipo === "Casa_Apostila_Teoria_Prof" ? "Apostila de Teoria" : tipo === "Casa_Teoria_Prof" ? "Folha avulsa de Teoria" : "Método de Prática";
+    const correcoesPendentes = licoesPendentes.length ? `<section class="teacher-pending"><h4>📋 Lição de casa para corrigir nesta aula</h4><p>Registre a correção aqui. A aluna continuará vendo a lição no histórico dela.</p>${licoesPendentes.map((licao, indicePendente) => `<article><div><strong>${escapeHtml(licao.Aluna)}</strong><span>${escapeHtml(tituloCasa(licao.Tipo))} · deixada em ${escapeHtml(licao.Data || "—")}</span><small>📚 ${escapeHtml(licao.Licao_Casa || "Lição não informada")}</small></div><div class="pending-action"><label>Resultado<select data-status-pendente="${indicePendente}"><option value="Resolvido">Resolvido</option><option value="Resolvido com pendências">Resolvido com pendências</option><option value="Não resolvido">Não resolvido</option></select></label><label>Observação da correção<textarea data-obs-pendente="${indicePendente}" placeholder="Ex.: realizou parcialmente os exercícios"></textarea></label><button class="secondary-action" type="button" data-corrigir-licao="${indicePendente}">Salvar correção</button></div></article>`).join("")}</section>` : "";
+    areaRegistro.innerHTML = `<section class="lesson-register"><div class="register-heading"><div><p class="eyebrow">LANÇAR REGISTRO</p><h3>📝 Registro: ${escapeHtml(aula.tipo)}</h3><p>${escapeHtml(aula.individual ? "Aula individual" : `Aula por turma${aula.turma ? ` · ${aula.turma}` : ""}`)}</p></div><button id="fechar-registro" class="secondary-action" type="button">Fechar</button></div>${fotosDasAlunas(aula)}${registrosVisiveis}${correcoesPendentes}<div class="record-form"><div><label for="registro-material">${aula.tipo === "Prática" ? "Método/Apostila conferido hoje:" : "Material usado hoje:"}</label>${campoMaterial}</div><div><label for="registro-conteudo">Página/Lição trabalhada:</label><input id="registro-conteudo" value="${escapeHtml(conteudoSalvo)}" placeholder="Ex.: MSA: exercício 9, páginas 12 a 15"></div></div>${secaoDificuldades}<div class="record-form"><div><label for="registro-casa-tipo">Lição de casa</label><select id="registro-casa-tipo">${licaoDeCasa}</select></div><div><label for="registro-casa">Lição deixada para casa</label><input id="registro-casa" placeholder="Ex.: página 18, exercícios 1 e 2" disabled></div></div><div class="register-actions"><button id="salvar-registro-aula" class="primary-action" type="button">Salvar registro da aula</button><div id="registro-retorno"></div></div></section>`;
     $("#fechar-registro").addEventListener("click", () => { areaRegistro.innerHTML = ""; });
+    areaRegistro.querySelectorAll("[data-corrigir-licao]").forEach((botao) => botao.addEventListener("click", async () => {
+      const indicePendente = Number(botao.dataset.corrigirLicao), licao = licoesPendentes[indicePendente];
+      botao.disabled = true;
+      try {
+        await window.GemData.corrigirLicaoProfessora(licao.id, { status: areaRegistro.querySelector(`[data-status-pendente="${indicePendente}"]`).value, observacao: areaRegistro.querySelector(`[data-obs-pendente="${indicePendente}"]`).value });
+        botao.textContent = "Correção salva ✓";
+        botao.closest("article").classList.add("is-corrected");
+      } catch (erro) { alert(erro.message); botao.disabled = false; }
+    }));
     const tipoCasa = $("#registro-casa-tipo"), licaoCasa = $("#registro-casa");
     tipoCasa.addEventListener("change", () => { licaoCasa.disabled = !tipoCasa.value; if (!tipoCasa.value) licaoCasa.value = ""; });
     $("#salvar-registro-aula").addEventListener("click", async () => {
@@ -110,7 +139,9 @@ async function renderMinhasAulas(content) {
     lista.innerHTML = `<div class="empty">Carregando agenda...</div>`;
     areaRegistro.innerHTML = "";
     try {
-      aulasAtuais = await window.GemData.agendaProfessora(state.name, $("#agenda-data").value);
+      const [agenda, metodos] = await Promise.all([window.GemData.agendaProfessora(state.name, $("#agenda-data").value), window.GemData.dadosMetodos().catch(() => [])]);
+      aulasAtuais = agenda;
+      bibliotecaMetodos = metodos;
       if (!aulasAtuais.length) { lista.innerHTML = `<div class="empty">Nenhuma aula encontrada para você nesta data.</div>`; return; }
       lista.innerHTML = aulasAtuais.map((aula, indice) => `<article class="agenda-card"><h3>${escapeHtml(aula.horario)} · ${escapeHtml(aula.tipo)}</h3><p><strong>${escapeHtml(aula.local)}</strong></p>${fotosDasAlunas(aula)}<span class="agenda-tag">${aula.individual ? "Aula individual" : `Turma ${escapeHtml(aula.turma || "")}`}</span><button class="secondary-action register-open" type="button" data-registro="${indice}">📝 Registrar aula</button></article>`).join("");
       lista.querySelectorAll("[data-registro]").forEach((botao) => botao.addEventListener("click", () => abrirRegistro(Number(botao.dataset.registro))));
@@ -118,6 +149,101 @@ async function renderMinhasAulas(content) {
   };
   $("#carregar-agenda").addEventListener("click", carregar);
   await carregar();
+}
+
+async function renderConfigurarMetodos(content) {
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">BIBLIOTECA DA PROFESSORA</p><h2>Configurar métodos</h2><p>Cadastre os livros e métodos que aparecem no Registro de Aula. Eles permanecem disponíveis para todas as professoras do GEM, como no app.py.</p></section><section class="panel"><h3>Adicionar método</h3><div class="form-grid"><div><label for="metodo-nome">Nome do método</label><input id="metodo-nome" placeholder="Ex.: Kohler, Burgmüller, MSA"></div><div><label for="metodo-categoria">Área</label><select id="metodo-categoria"><option>Prática</option><option>Teoria</option><option>Solfejo</option><option>Solfejo Melódico</option></select></div><button id="adicionar-metodo" class="primary-action" type="button">Adicionar</button></div><div id="metodo-feedback"></div></section><section class="panel"><h3>Biblioteca cadastrada</h3><div id="lista-metodos" class="lesson-list"><div class="empty">Carregando métodos...</div></div></section>`;
+  const lista = $("#lista-metodos");
+  const carregar = async () => {
+    try {
+      const metodos = await window.GemData.dadosMetodos();
+      lista.innerHTML = metodos.length ? metodos.map((metodo, indice) => `<article class="method-row"><div><strong>${escapeHtml(metodo.nome)}</strong><span>${escapeHtml(metodo.categoria)}</span></div><button type="button" class="secondary-action" data-remover-metodo="${indice}">Remover</button></article>`).join("") : `<div class="empty">Nenhum método cadastrado ainda.</div>`;
+      lista.querySelectorAll("[data-remover-metodo]").forEach((botao) => botao.addEventListener("click", async () => {
+        if (!confirm(`Remover ${metodos[Number(botao.dataset.removerMetodo)].nome} da biblioteca?`)) return;
+        try { await window.GemData.removerMetodo(metodos[Number(botao.dataset.removerMetodo)]); await carregar(); }
+        catch (erro) { $("#metodo-feedback").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+      }));
+    } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  };
+  $("#adicionar-metodo").addEventListener("click", async () => {
+    const feedback = $("#metodo-feedback"), nome = $("#metodo-nome").value.trim();
+    if (!nome) { feedback.innerHTML = `<div class="action-error">Informe o nome do método.</div>`; return; }
+    try { await window.GemData.criarMetodo(nome, $("#metodo-categoria").value); $("#metodo-nome").value = ""; feedback.innerHTML = `<div class="action-ok">Método salvo na biblioteca.</div>`; await carregar(); }
+    catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  });
+  await carregar();
+}
+
+async function renderEnvioDocumentosProfessora(content) {
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ARQUIVOS DA PROFESSORA</p><h2>Envio de documentos</h2><p>Envie materiais, exercícios ou avisos para uma turma ou aluna. Você decide se o arquivo ficará visível no acesso das alunas.</p></section><section class="panel"><div class="form-grid"><input id="doc-prof-titulo" placeholder="Título do documento"><select id="doc-prof-disciplina"><option>Prática</option><option>Teoria</option><option>Solfejo</option><option>Solfejo Melódico</option></select><input id="doc-prof-arquivo" type="file" accept="application/pdf,image/*"><input id="doc-prof-turma" placeholder="Turma (opcional)"><input id="doc-prof-aluna" placeholder="Aluna (opcional)"><label class="checkbox-line"><input id="doc-prof-visivel" type="checkbox"> Disponível para alunas</label><button id="enviar-doc-prof" class="primary-action" type="button">Enviar documento</button></div><div id="doc-prof-feedback"></div></section><section class="panel"><h3>Documentos enviados por você</h3><div id="lista-docs-prof" class="lesson-list"><div class="empty">Carregando documentos...</div></div></section>`;
+  const lista = $("#lista-docs-prof");
+  const carregar = async () => {
+    try {
+      const documentos = await window.GemData.dadosDocumentos();
+      const meus = documentos.filter((documento) => documento.professora === state.name);
+      lista.innerHTML = meus.length ? meus.map((documento) => `<article class="method-row"><div><strong>${escapeHtml(documento.titulo)}</strong><span>${escapeHtml(documento.disciplina || "—")} · ${documento.aluna ? `Aluna: ${escapeHtml(documento.aluna)}` : documento.turma ? `Turma: ${escapeHtml(documento.turma)}` : "Sem destino específico"}</span></div><button class="secondary-action" type="button" data-doc-prof="${escapeHtml(documento.arquivo_path)}">Abrir</button></article>`).join("") : `<div class="empty">Você ainda não enviou documentos.</div>`;
+      lista.querySelectorAll("[data-doc-prof]").forEach((botao) => botao.addEventListener("click", async () => { try { window.open(await window.GemData.urlDocumento(botao.dataset.docProf), "_blank", "noopener"); } catch (erro) { alert(erro.message); } }));
+    } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  };
+  $("#enviar-doc-prof").addEventListener("click", async () => {
+    const feedback = $("#doc-prof-feedback");
+    try { await window.GemData.enviarDocumento({ arquivo: $("#doc-prof-arquivo").files[0], titulo: $("#doc-prof-titulo").value.trim(), disciplina: $("#doc-prof-disciplina").value, turma: $("#doc-prof-turma").value.trim(), aluna: $("#doc-prof-aluna").value.trim(), visivel: $("#doc-prof-visivel").checked, professora: state.name }); feedback.innerHTML = `<div class="action-ok">Documento enviado.</div>`; await carregar(); }
+    catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  });
+  await carregar();
+}
+
+async function renderDocumentosAluna(content) {
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">MEUS ARQUIVOS</p><h2>Documentos</h2><p>Materiais enviados pela Secretaria e pelas professoras para você ou para a sua turma.</p></section><section class="panel"><div id="docs-aluna-lista" class="lesson-list"><div class="empty">Carregando documentos...</div></div></section>`;
+  const lista = $("#docs-aluna-lista");
+  try {
+    const [documentos, pessoas] = await Promise.all([window.GemData.dadosDocumentos(), window.GemData.dadosPessoas()]);
+    const turma = pessoas.alunas.find((aluna) => aluna.nome === state.name)?.turma;
+    const disponiveis = documentos.filter((documento) => documento.visivel_alunas && (!documento.aluna || documento.aluna === state.name) && (!documento.turma || documento.turma === turma));
+    lista.innerHTML = disponiveis.length ? disponiveis.map((documento) => `<article class="method-row"><div><strong>${escapeHtml(documento.titulo)}</strong><span>${escapeHtml(documento.disciplina || "Material")} · Enviado por ${escapeHtml(documento.professora || "Secretaria")}</span>${documento.observacao ? `<span>${escapeHtml(documento.observacao)}</span>` : ""}</div><button class="secondary-action" type="button" data-doc-aluna="${escapeHtml(documento.arquivo_path)}">Abrir</button></article>`).join("") : `<div class="empty">Nenhum documento disponível para você ainda.</div>`;
+    lista.querySelectorAll("[data-doc-aluna]").forEach((botao) => botao.addEventListener("click", async () => { try { window.open(await window.GemData.urlDocumento(botao.dataset.docAluna), "_blank", "noopener"); } catch (erro) { alert(erro.message); } }));
+  } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+}
+
+async function renderProvasProfessora(content) {
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">AVALIAÇÕES</p><h2>Provas</h2><p>Consulte as avaliações cadastradas e registre ou corrija as notas das alunas.</p></section><section class="panel"><div class="form-grid"><label>Avaliação<select id="nota-avaliacao"></select></label><label>Aluna<select id="nota-aluna"></select></label><label>Disciplina<select id="nota-disciplina"><option>Prática</option><option>Teoria</option><option>Solfejo</option><option>Solfejo Melódico</option></select></label><label>Nota<input id="nota-valor" type="number" min="0" max="10" step="0.1" placeholder="0 a 10"></label><button id="salvar-nota" class="primary-action" type="button">Salvar nota</button></div><div id="nota-feedback"></div></section><section class="panel"><h3>Notas cadastradas</h3><div id="notas-prof-lista" class="lesson-list"><div class="empty">Carregando provas...</div></div></section>`;
+  const carregar = async () => {
+    const [{ avaliacoes, notas }, pessoas] = await Promise.all([window.GemData.dadosProvas(), window.GemData.dadosPessoas()]);
+    $("#nota-avaliacao").innerHTML = avaliacoes.length ? avaliacoes.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.titulo)} — ${escapeHtml(item.data_avaliacao || "sem data")}</option>`).join("") : `<option value="">Nenhuma avaliação cadastrada</option>`;
+    $("#nota-aluna").innerHTML = pessoas.alunas.filter((item) => item.ativo !== false).map((item) => `<option>${escapeHtml(item.nome)}</option>`).join("");
+    const lista = $("#notas-prof-lista");
+    lista.innerHTML = notas.length ? notas.map((nota) => { const prova = avaliacoes.find((item) => String(item.id) === String(nota.avaliacao_id)); return `<article class="method-row"><div><strong>${escapeHtml(nota.aluna)} · ${escapeHtml(nota.disciplina)}</strong><span>${escapeHtml(prova?.titulo || "Avaliação")} · Nota ${escapeHtml(nota.nota)}</span></div></article>`; }).join("") : `<div class="empty">Nenhuma nota lançada ainda.</div>`;
+  };
+  $("#salvar-nota").addEventListener("click", async () => { const feedback = $("#nota-feedback"); try { await window.GemData.salvarNotaAvaliacao({ avaliacaoId: $("#nota-avaliacao").value, aluna: $("#nota-aluna").value, disciplina: $("#nota-disciplina").value, nota: $("#nota-valor").value }); feedback.innerHTML = `<div class="action-ok">Nota salva.</div>`; await carregar(); } catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; } });
+  try { await carregar(); } catch (erro) { $("#notas-prof-lista").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+}
+
+async function renderAnaliticoProfessora(content) {
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO</p><h2>Analítico da professora</h2><p>Resumo das aulas que você registrou, com conteúdos, dificuldades e lições pendentes.</p></section><section class="panel"><div id="analitico-prof-lista"><div class="empty">Carregando seus registros...</div></div></section>`;
+  const destino = $("#analitico-prof-lista");
+  try {
+    const dados = await window.GemData.dadosAnalitico();
+    const meus = dados.historico.filter((item) => item.Instrutora === state.name && String(item.Tipo || "").startsWith("Analise_"));
+    const porAluna = new Map();
+    meus.forEach((item) => (porAluna.get(item.Aluna) || porAluna.set(item.Aluna, []).get(item.Aluna)).push(item));
+    destino.innerHTML = porAluna.size ? [...porAluna.entries()].sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([aluna, registros]) => { const dificuldades = registros.flatMap((item) => Array.isArray(item.Dificuldades) ? item.Dificuldades : []).filter((item) => item && item !== "Não apresentou dificuldades"); return `<article class="student-report"><h3>👧 ${escapeHtml(aluna)}</h3><p><strong>${registros.length}</strong> registro(s) seu(s).</p>${dificuldades.length ? `<p class="report-warning">⚠ Dificuldades observadas: ${escapeHtml([...new Set(dificuldades)].join(" · "))}</p>` : `<p class="report-ok">✓ Sem dificuldades registradas por você.</p>`}${registros.slice(0, 5).map((item) => `<div class="report-record"><h4>${escapeHtml(String(item.Tipo).replace(/^Analise_/, ""))} <small>— ${escapeHtml(item.Data || "")}</small></h4><p>${escapeHtml(item.Licao_Atual || "—")}</p>${item.Observacao ? `<p class="report-note">📝 ${escapeHtml(item.Observacao)}</p>` : ""}</div>`).join("")}</article>`; }).join("") : `<div class="empty">Você ainda não tem registros de aula salvos.</div>`;
+  } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+}
+
+async function renderMensagens(content) {
+  const eProfessora = state.role === "Professora", eAluna = state.role === "Aluna", meuId = state.role === "Secretaria" ? "Secretaria" : state.name;
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">COMUNICAÇÃO</p><h2>Mensagens</h2><p>Envie avisos gerais, recados para professoras ou uma mensagem direta.</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-msg-tab="mural">Mural geral</button>${eProfessora ? `<button class="tab-action" data-msg-tab="professoras">Só professoras</button>` : ""}<button class="tab-action" data-msg-tab="direta">Conversa direta</button></div><div id="mensagens-conteudo"><div class="empty">Carregando mensagens...</div></div></section>`;
+  const pessoas = await window.GemData.dadosPessoas();
+  let mensagens = [];
+  const destino = $("#mensagens-conteudo");
+  const dataMensagem = (item) => item.created_at ? new Date(item.created_at).toLocaleString("pt-BR") : "";
+  const atualizar = async () => { mensagens = await window.GemData.dadosMensagens(); };
+  const publicar = async (para, campo, retorno) => { try { await window.GemData.enviarMensagem(meuId, para, $(campo).value); $(campo).value = ""; await atualizar(); retorno(); } catch (erro) { destino.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(erro.message)}</div>`); } };
+  const mostrarMural = () => { const itens = mensagens.filter((item) => eAluna ? item.para === "TODOS_ALUNAS" : ["TODOS", "TODOS_ALUNAS"].includes(item.para)); const formulario = eAluna ? `<p class="hint">Avisos gerais enviados pela Secretaria e pelas professoras.</p>` : `<p class="hint">Avisos entre Secretaria e professoras. Marque se as alunas também devem visualizar.</p><label>Novo aviso<textarea id="mensagem-mural" placeholder="Escreva o aviso"></textarea></label><label class="checkbox-line"><input id="mural-alunas" type="checkbox"> Enviar também para as alunas</label><button id="publicar-mural" class="primary-action" type="button">Publicar no mural</button>`; destino.innerHTML = `${formulario}<div class="message-list">${itens.length ? itens.slice().reverse().map((item) => `<article><strong>${escapeHtml(item.de)}</strong><small>${escapeHtml(dataMensagem(item))}${item.para === "TODOS_ALUNAS" && !eAluna ? " · 📚 também para alunas" : ""}</small><p>${escapeHtml(item.texto)}</p></article>`).join("") : `<div class="empty">Nenhum aviso publicado ainda.</div>`}</div>`; $("#publicar-mural")?.addEventListener("click", () => publicar($("#mural-alunas").checked ? "TODOS_ALUNAS" : "TODOS", "#mensagem-mural", mostrarMural)); };
+  const mostrarProfessoras = () => { const itens = mensagens.filter((item) => item.para === "PROFESSORAS"); destino.innerHTML = `<p class="hint">Este mural é visível somente para professoras.</p><label>Novo recado<textarea id="mensagem-professoras" placeholder="Escreva o recado"></textarea></label><button id="publicar-professoras" class="primary-action" type="button">Publicar para professoras</button><div class="message-list">${itens.length ? itens.slice().reverse().map((item) => `<article><strong>${escapeHtml(item.de)}</strong><small>${escapeHtml(dataMensagem(item))}</small><p>${escapeHtml(item.texto)}</p></article>`).join("") : `<div class="empty">Nenhum recado publicado ainda.</div>`}</div>`; $("#publicar-professoras").onclick = () => publicar("PROFESSORAS", "#mensagem-professoras", mostrarProfessoras); };
+  const mostrarDireta = () => { const opcoes = eAluna ? [{ grupo: "Secretaria", nomes: ["Secretaria"] }, { grupo: "Professoras", nomes: pessoas.professoras.filter((item) => item.ativo !== false).map((item) => item.nome) }] : eProfessora ? [{ grupo: "Secretaria", nomes: ["Secretaria"] }, { grupo: "Professoras", nomes: pessoas.professoras.filter((item) => item.ativo !== false && item.nome !== state.name).map((item) => item.nome) }, { grupo: "Alunas", nomes: pessoas.alunas.filter((item) => item.ativo !== false).map((item) => item.nome) }] : [{ grupo: "Professoras", nomes: pessoas.professoras.filter((item) => item.ativo !== false).map((item) => item.nome) }, { grupo: "Alunas", nomes: pessoas.alunas.filter((item) => item.ativo !== false).map((item) => item.nome) }]; destino.innerHTML = `<label>Contato<select id="mensagem-contato">${opcoes.map((grupo) => `<optgroup label="${escapeHtml(grupo.grupo)}">${grupo.nomes.map((nome) => `<option>${escapeHtml(nome)}</option>`).join("")}</optgroup>`).join("")}</select></label><div id="conversa-direta"></div><label>Mensagem<textarea id="mensagem-direta" placeholder="Escreva sua mensagem"></textarea></label><button id="enviar-direta" class="primary-action" type="button">Enviar mensagem</button>`; const desenhar = () => { const contato = $("#mensagem-contato").value, itens = mensagens.filter((item) => (item.de === meuId && item.para === contato) || (item.de === contato && item.para === meuId)); $("#conversa-direta").innerHTML = `<div class="message-list">${itens.length ? itens.map((item) => `<article class="${item.de === meuId ? "my-message" : ""}"><strong>${item.de === meuId ? "Você" : escapeHtml(item.de)}</strong><small>${escapeHtml(dataMensagem(item))}</small><p>${escapeHtml(item.texto)}</p></article>`).join("") : `<div class="empty">Nenhuma mensagem nesta conversa.</div>`}</div>`; }; $("#mensagem-contato").onchange = desenhar; $("#enviar-direta").onclick = () => publicar($("#mensagem-contato").value, "#mensagem-direta", desenhar); desenhar(); };
+  try { await atualizar(); mostrarMural(); } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  document.querySelectorAll("[data-msg-tab]").forEach((botao) => botao.onclick = () => { document.querySelectorAll("[data-msg-tab]").forEach((item) => item.classList.toggle("active", item === botao)); if (botao.dataset.msgTab === "mural") mostrarMural(); else if (botao.dataset.msgTab === "professoras") mostrarProfessoras(); else mostrarDireta(); });
 }
 
 async function renderMinhasLicoes(content) {
@@ -159,6 +285,32 @@ async function renderChamada(content) {
   };
   $("#carregar-chamada").addEventListener("click", carregar);
   await carregar();
+}
+
+async function renderFolgas(content) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">LOGÍSTICA DO SÁBADO</p><h2>Folgas das professoras</h2><p>As folgas salvas aqui entram automaticamente na geração do rodízio daquela data. Você pode reabrir e corrigir uma informação antes de gerar.</p></section><section class="panel"><div class="agenda-date"><div><label for="folga-data">Sábado</label><input id="folga-data" type="date" value="${hoje}"></div><button id="carregar-folga" class="primary-action" type="button">Abrir folgas</button></div><div id="folga-formulario"><div class="empty">Carregando professoras...</div></div></section><section class="panel"><h3>Folgas já cadastradas</h3><div id="folgas-lista" class="lesson-list"><div class="empty">Carregando...</div></div></section>`;
+  const formulario = $("#folga-formulario"), lista = $("#folgas-lista");
+  let professoras = [];
+  const carregarLista = async () => {
+    const folgas = await window.GemData.dadosFolgas();
+    lista.innerHTML = folgas.length ? folgas.map((folga) => `<article class="method-row"><div><strong>${escapeHtml(folga.data)}</strong><span>${escapeHtml((folga.professoras || []).join(", ") || "Nenhuma professora de folga")}</span>${folga.observacao ? `<span>${escapeHtml(folga.observacao)}</span>` : ""}</div><button class="secondary-action" type="button" data-abrir-folga="${escapeHtml(folga.data)}">Editar</button></article>`).join("") : `<div class="empty">Nenhuma folga cadastrada ainda.</div>`;
+    lista.querySelectorAll("[data-abrir-folga]").forEach((botao) => botao.addEventListener("click", () => { $("#folga-data").value = botao.dataset.abrirFolga; abrir(); window.scrollTo({ top: 0, behavior: "smooth" }); }));
+    return folgas;
+  };
+  const abrir = async () => {
+    formulario.innerHTML = `<div class="empty">Carregando folga deste sábado...</div>`;
+    try {
+      const [folgas, pessoas] = await Promise.all([window.GemData.dadosFolgas(), window.GemData.dadosPessoas()]);
+      professoras = pessoas.professoras.filter((item) => item.ativo !== false).map((item) => item.nome);
+      const salvo = folgas.find((item) => item.data === $("#folga-data").value) || {};
+      const selecionadas = new Set(salvo.professoras || []);
+      formulario.innerHTML = `<div class="folga-checks">${professoras.map((professora) => `<label class="checkbox-line"><input type="checkbox" data-professora-folga value="${escapeHtml(professora)}" ${selecionadas.has(professora) ? "checked" : ""}> ${escapeHtml(professora)}</label>`).join("")}</div><label>Observação opcional<textarea id="folga-observacao" placeholder="Ex.: Missão Fraternal, troca combinada">${escapeHtml(salvo.observacao || "")}</textarea></label><button id="salvar-folga" class="primary-action" type="button">Salvar folgas deste sábado</button><div id="folga-feedback"></div>`;
+      $("#salvar-folga").addEventListener("click", async () => { const feedback = $("#folga-feedback"); try { const selecionadasAgora = [...formulario.querySelectorAll("[data-professora-folga]:checked")].map((campo) => campo.value); await window.GemData.salvarFolgas({ data: $("#folga-data").value, coordenadora: state.name, professoras: selecionadasAgora, observacao: $("#folga-observacao").value }); feedback.innerHTML = `<div class="action-ok">Folgas salvas. O gerador do rodízio considerará esta lista.</div>`; await carregarLista(); } catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; } });
+    } catch (erro) { formulario.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  };
+  $("#carregar-folga").addEventListener("click", abrir);
+  try { await Promise.all([abrir(), carregarLista()]); } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
 }
 
 async function renderBoletim(content) {
@@ -261,11 +413,11 @@ async function renderPessoas(content) {
   const mostrar = (tipo) => {
     const lista = tipo === "aluna" ? dados.alunas : tipo === "professora" ? dados.professoras : dados.secretarias;
     const titulo = tipo === "aluna" ? "Adicionar aluna" : tipo === "professora" ? "Adicionar professora" : "Adicionar secretaria";
-    destino.innerHTML = `<div class="person-add"><h3>${titulo}</h3><div class="form-grid"><input id="pessoa-nome" placeholder="Nome completo">${tipo === "aluna" ? '<input id="pessoa-turma" placeholder="Turma">' : ""}${tipo !== "secretaria" ? '<input id="pessoa-login" placeholder="Login">' : ""}<button id="adicionar-pessoa" class="primary-action" type="button">Adicionar</button></div></div><div class="person-list">${lista.length ? lista.map((pessoa, indice) => `<article class="person-row person-card"><div><strong>${escapeHtml(pessoa.nome)}</strong><span>${tipo === "aluna" ? escapeHtml(pessoa.turma || "Sem turma") : pessoa.login ? `Login: ${escapeHtml(pessoa.login)}` : ""}</span></div><span class="badge ${pessoa.ativo === false ? "inactive" : ""}">${pessoa.ativo === false ? "Desativada" : "Ativa"}</span><div class="person-actions"><button data-editar="${indice}" class="secondary-action" type="button">Editar</button><button data-toggle="${indice}" class="secondary-action" type="button">${pessoa.ativo === false ? "Reativar" : "Desativar"}</button></div><div class="person-editor hidden" data-editor="${indice}"><label>Nome<input data-campo="nome" value="${escapeHtml(pessoa.nome)}"></label>${tipo === "aluna" ? `<label>Turma<input data-campo="turma" value="${escapeHtml(pessoa.turma || "")}"></label>` : ""}${tipo !== "secretaria" ? `<label>Login<input data-campo="login" value="${escapeHtml(pessoa.login || "")}"></label><label>Nova senha <small>(deixe vazia para manter a atual)</small><input data-campo="senha" type="password" autocomplete="new-password" placeholder="Nova senha"></label>` : ""}<button data-salvar="${indice}" class="primary-action" type="button">Salvar alterações</button></div></article>`).join("") : "<div class=\"empty\">Nenhum cadastro ainda.</div>"}</div>`;
-    $("#adicionar-pessoa").addEventListener("click", async () => { const nome = $("#pessoa-nome").value.trim(); if (!nome) return; const novo = tipo === "aluna" ? { nome, turma: $("#pessoa-turma").value.trim() || "Sem turma", ativo: true, login: $("#pessoa-login").value.trim().toLowerCase() || null } : tipo === "professora" ? { nome, login: $("#pessoa-login").value.trim().toLowerCase(), ativo: true } : { nome, ativo: true }; try { await window.GemData.salvarPessoa(tipo, novo); await renderPessoas(content); } catch (error) { destino.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); } });
+    destino.innerHTML = `<div class="person-add"><h3>${titulo}</h3><div class="form-grid"><input id="pessoa-nome" placeholder="Nome completo">${tipo === "aluna" ? '<input id="pessoa-turma" placeholder="Turma">' : ""}${tipo !== "secretaria" ? '<input id="pessoa-login" placeholder="Login"><label>Foto de perfil (opcional)<input id="pessoa-foto" type="file" accept="image/jpeg,image/png,image/webp"></label>' : ""}<button id="adicionar-pessoa" class="primary-action" type="button">Adicionar</button></div></div><div class="person-list">${lista.length ? lista.map((pessoa, indice) => `<article class="person-row person-card"><div><strong>${escapeHtml(pessoa.nome)}</strong><span>${tipo === "aluna" ? escapeHtml(pessoa.turma || "Sem turma") : pessoa.login ? `Login: ${escapeHtml(pessoa.login)}` : ""}</span></div><span class="badge ${pessoa.ativo === false ? "inactive" : ""}">${pessoa.ativo === false ? "Desativada" : "Ativa"}</span><div class="person-actions"><button data-editar="${indice}" class="secondary-action" type="button">Editar</button><button data-toggle="${indice}" class="secondary-action" type="button">${pessoa.ativo === false ? "Reativar" : "Desativar"}</button></div><div class="person-editor hidden" data-editor="${indice}"><label>Nome<input data-campo="nome" value="${escapeHtml(pessoa.nome)}"></label>${tipo === "aluna" ? `<label>Turma<input data-campo="turma" value="${escapeHtml(pessoa.turma || "")}"></label>` : ""}${tipo !== "secretaria" ? `<label>Login<input data-campo="login" value="${escapeHtml(pessoa.login || "")}"></label><label>Nova senha <small>(deixe vazia para manter a atual)</small><input data-campo="senha" type="password" autocomplete="new-password" placeholder="Nova senha"></label><label>Trocar foto <small>(JPG, PNG ou WEBP, até 5 MB)</small><input data-campo="foto" type="file" accept="image/jpeg,image/png,image/webp"></label>` : ""}<button data-salvar="${indice}" class="primary-action" type="button">Salvar alterações</button></div></article>`).join("") : "<div class=\"empty\">Nenhum cadastro ainda.</div>"}</div>`;
+    $("#adicionar-pessoa").addEventListener("click", async () => { const nome = $("#pessoa-nome").value.trim(); if (!nome) return; const novo = tipo === "aluna" ? { nome, turma: $("#pessoa-turma").value.trim() || "Sem turma", ativo: true, login: $("#pessoa-login").value.trim().toLowerCase() || null } : tipo === "professora" ? { nome, login: $("#pessoa-login").value.trim().toLowerCase(), ativo: true } : { nome, ativo: true }; const botao = $("#adicionar-pessoa"); botao.disabled = true; try { if (tipo !== "secretaria") { const foto = await window.GemData.enviarFotoPessoa(tipo, $("#pessoa-foto").files[0]); if (foto) novo.foto_path = foto; } await window.GemData.salvarPessoa(tipo, novo); await renderPessoas(content); } catch (error) { destino.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); botao.disabled = false; } });
     destino.querySelectorAll("[data-editar]").forEach((botao) => botao.addEventListener("click", () => destino.querySelector(`[data-editor="${botao.dataset.editar}"]`).classList.toggle("hidden")));
     destino.querySelectorAll("[data-toggle]").forEach((botao) => botao.addEventListener("click", async () => { const pessoa = lista[Number(botao.dataset.toggle)]; try { await window.GemData.salvarPessoa(tipo, { ativo: pessoa.ativo === false }, pessoa.id, pessoa.nome); pessoa.ativo = pessoa.ativo === false; mostrar(tipo); } catch (error) { alert(error.message); } }));
-    destino.querySelectorAll("[data-salvar]").forEach((botao) => botao.addEventListener("click", async () => { const pessoa = lista[Number(botao.dataset.salvar)], editor = destino.querySelector(`[data-editor="${botao.dataset.salvar}"]`); const atualizado = { nome: editor.querySelector('[data-campo="nome"]').value.trim() }; if (tipo === "aluna") atualizado.turma = editor.querySelector('[data-campo="turma"]').value.trim() || "Sem turma"; if (tipo !== "secretaria") { atualizado.login = editor.querySelector('[data-campo="login"]').value.trim().toLowerCase(); const senha = editor.querySelector('[data-campo="senha"]').value; if (senha) atualizado.senha = senha; } if (!atualizado.nome) { alert("Informe o nome."); return; } try { await window.GemData.salvarPessoa(tipo, atualizado, pessoa.id, pessoa.nome); await renderPessoas(content); } catch (error) { editor.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); } }));
+    destino.querySelectorAll("[data-salvar]").forEach((botao) => botao.addEventListener("click", async () => { const pessoa = lista[Number(botao.dataset.salvar)], editor = destino.querySelector(`[data-editor="${botao.dataset.salvar}"]`); const atualizado = { nome: editor.querySelector('[data-campo="nome"]').value.trim() }; if (tipo === "aluna") atualizado.turma = editor.querySelector('[data-campo="turma"]').value.trim() || "Sem turma"; if (tipo !== "secretaria") { atualizado.login = editor.querySelector('[data-campo="login"]').value.trim().toLowerCase(); const senha = editor.querySelector('[data-campo="senha"]').value; if (senha) atualizado.senha = senha; } if (!atualizado.nome) { alert("Informe o nome."); return; } botao.disabled = true; try { if (tipo !== "secretaria") { const foto = await window.GemData.enviarFotoPessoa(tipo, editor.querySelector('[data-campo="foto"]').files[0]); if (foto) atualizado.foto_path = foto; } await window.GemData.salvarPessoa(tipo, atualizado, pessoa.id, pessoa.nome); await renderPessoas(content); } catch (error) { editor.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); botao.disabled = false; } }));
   };
   document.querySelectorAll("[data-pessoas]").forEach((botao) => botao.addEventListener("click", () => { document.querySelectorAll("[data-pessoas]").forEach((item) => item.classList.toggle("active", item === botao)); mostrar(botao.dataset.pessoas); }));
   mostrar("aluna");
@@ -459,6 +611,25 @@ async function renderMasterGems(content) {
   await carregar();
 }
 
+async function renderMasterUsuarios(content) {
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ADMINISTRAÇÃO DA PLATAFORMA</p><h2>Usuários mestres</h2><p>Contas Master administram GEMs, mas não entram nos dados pedagógicos de nenhuma unidade sem receber acesso específico.</p></section><section class="panel"><div id="master-usuarios-lista"><div class="empty">Carregando usuários...</div></div></section>`;
+  const lista = $("#master-usuarios-lista");
+  try {
+    const { usuarios } = await window.GemData.dadosPlataformaMaster();
+    lista.innerHTML = usuarios.length ? usuarios.map((usuario) => `<article class="method-row"><div><strong>${escapeHtml(usuario.nome)}</strong><span>${escapeHtml(usuario.email)} · ${escapeHtml(usuario.papel)}</span><span>${usuario.ativo ? "Ativa" : "Bloqueada"} · ${usuario.status_convite === "ativo" ? "Login configurado" : "Aguardando criação da senha"}</span></div><span class="badge ${usuario.ativo ? "" : "inactive"}">${usuario.status_convite === "ativo" ? "Ativo" : "Pendente"}</span></article>`).join("") : `<div class="empty">Nenhuma conta Master cadastrada.</div>`;
+  } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+}
+
+async function renderMasterVisao(content) {
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">PLATAFORMA GEM</p><h2>Visão da plataforma</h2><p>Resumo das unidades e dos acessos já configurados. Os dados pedagógicos de cada GEM permanecem separados.</p></section><div id="master-visao"><div class="empty">Carregando plataforma...</div></div>`;
+  const destino = $("#master-visao");
+  try {
+    const { gems, usuarios, acessos } = await window.GemData.dadosPlataformaMaster();
+    const porGem = Object.fromEntries(gems.map((gem) => [gem.id, acessos.filter((acesso) => acesso.gem_id === gem.id && acesso.ativo !== false)]));
+    destino.innerHTML = `<div class="grid"><div class="metric"><strong>${gems.length}</strong><span>GEM(s) cadastrado(s)</span></div><div class="metric"><strong>${gems.filter((gem) => gem.ativo).length}</strong><span>GEM(s) ativo(s)</span></div><div class="metric"><strong>${usuarios.filter((usuario) => usuario.status_convite === "ativo" && usuario.ativo).length}</strong><span>Master(s) ativo(s)</span></div></div><section class="panel compact-panel"><h3>Unidades</h3><div class="lesson-list">${gems.length ? gems.map((gem) => `<article class="method-row"><div><strong>${escapeHtml(gem.nome)}</strong><span>${escapeHtml(gem.slug)} · ${porGem[gem.id]?.length || 0} acesso(s) vinculado(s)</span></div><span class="badge ${gem.ativo ? "" : "inactive"}">${gem.ativo ? "Ativo" : "Inativo"}</span></article>`).join("") : `<div class="empty">Nenhum GEM cadastrado.</div>`}</div></section>`;
+  } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+}
+
 function escapeHtml(value) {
   const node = document.createElement("span"); node.textContent = String(value ?? ""); return node.innerHTML;
 }
@@ -478,6 +649,34 @@ function aplicarAvatar(url, nome) {
   avatar.style.backgroundPosition = url ? "center" : "";
 }
 
+function chavePushParaBytes(chave) {
+  const ajustada = `${chave}`.replace(/-/g, "+").replace(/_/g, "/");
+  const preenchida = ajustada.padEnd(ajustada.length + (4 - ajustada.length % 4) % 4, "=");
+  const binaria = atob(preenchida);
+  return Uint8Array.from(binaria, (caractere) => caractere.charCodeAt(0));
+}
+
+async function ativarNotificacoes() {
+  const botao = $("#ativar-notificacoes");
+  if (!("Notification" in window) || !("serviceWorker" in navigator)) { alert("Este navegador não oferece notificações para o aplicativo."); return; }
+  botao.disabled = true;
+  try {
+    const permissao = await Notification.requestPermission();
+    if (permissao !== "granted") throw new Error("Você precisa permitir notificações para receber os lembretes.");
+    const respostaChave = await fetch("/api/vapid-public-key", { cache: "no-store" });
+    if (!respostaChave.ok) throw new Error("As notificações ainda não foram configuradas pela Administração.");
+    const { publicKey } = await respostaChave.json();
+    const registro = await navigator.serviceWorker.ready;
+    const subscription = await registro.pushManager.getSubscription() || await registro.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: chavePushParaBytes(publicKey) });
+    const resposta = await fetch("/api/push-subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ usuario: state.role === "Secretaria" ? "Secretaria" : state.name, perfil: state.role, subscription }) });
+    if (!resposta.ok) throw new Error("Não foi possível registrar este aparelho para os lembretes.");
+    botao.textContent = "🔔 Lembretes ativos";
+  } catch (erro) {
+    alert(erro.message || "Não foi possível ativar os lembretes.");
+    botao.disabled = false;
+  }
+}
+
 async function renderPage() {
   $("#page-title").textContent = state.page;
   const content = $("#page-content");
@@ -485,8 +684,36 @@ async function renderPage() {
     await renderMasterGems(content);
     return;
   }
+  if (state.role === "Master" && state.page === "Usuários mestres") {
+    await renderMasterUsuarios(content);
+    return;
+  }
+  if (state.role === "Master" && state.page === "Visão da plataforma") {
+    await renderMasterVisao(content);
+    return;
+  }
   if (state.role === "Professora" && state.page === "Minhas aulas") {
     await renderMinhasAulas(content);
+    return;
+  }
+  if (state.role === "Professora" && state.page === "Configurar Métodos") {
+    await renderConfigurarMetodos(content);
+    return;
+  }
+  if (state.role === "Professora" && state.page === "Envio de documentos") {
+    await renderEnvioDocumentosProfessora(content);
+    return;
+  }
+  if (state.role === "Professora" && state.page === "Provas") {
+    await renderProvasProfessora(content);
+    return;
+  }
+  if (state.role === "Professora" && state.page === "Analítico IA") {
+    await renderAnaliticoProfessora(content);
+    return;
+  }
+  if ((state.role === "Professora" || state.role === "Secretaria" || state.role === "Aluna") && state.page === "Mensagens") {
+    try { await renderMensagens(content); } catch (error) { content.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
     return;
   }
   if (state.role === "Aluna" && state.page === "Minhas lições") {
@@ -497,8 +724,16 @@ async function renderPage() {
     await renderBoletim(content);
     return;
   }
+  if (state.role === "Aluna" && state.page === "Documentos") {
+    await renderDocumentosAluna(content);
+    return;
+  }
   if (state.role === "Secretaria" && state.page === "Planejamento e rodízio") {
     await renderRodizio(content);
+    return;
+  }
+  if (state.role === "Secretaria" && state.page === "Folgas") {
+    await renderFolgas(content);
     return;
   }
   if (state.role === "Secretaria" && state.page === "Visão geral") {
@@ -581,12 +816,14 @@ $("#entrar").addEventListener("click", async () => {
       aplicarAvatar(perfil.fotoUrl, state.name);
     } catch (error) { console.warn("Foto de perfil da professora indisponível", error); }
   }
+  if ("Notification" in window && "serviceWorker" in navigator) $("#ativar-notificacoes").classList.remove("hidden");
   renderNavigation(); await renderPage();
   botao.disabled = false;
   botao.textContent = "Entrar";
 });
 $("#sair").addEventListener("click", () => { $("#app-screen").classList.add("hidden"); $("#login-screen").classList.remove("hidden"); });
 $("#menu-button").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
+$("#ativar-notificacoes").addEventListener("click", ativarNotificacoes);
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
   installPrompt = event;

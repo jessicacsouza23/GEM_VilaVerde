@@ -4,6 +4,26 @@
 (function () {
   const config = window.GEM_SUPABASE;
   let client = null;
+  const CACHE_URL_ASSINADA = "gem-url-assinada-v1:";
+
+  // As fotos ficam em buckets privados. Sem esta memória, cada tela criava
+  // uma URL assinada nova e o navegador baixava a mesma imagem novamente.
+  // A URL continua privada e expira normalmente; apenas é reutilizada por 50
+  // minutos no mesmo aparelho para reduzir a saída do Supabase.
+  async function urlAssinadaEmCache(banco, bucket, caminho, segundos = 3600) {
+    if (!caminho) return null;
+    const chave = `${CACHE_URL_ASSINADA}${bucket}:${caminho}`;
+    try {
+      const salvo = JSON.parse(localStorage.getItem(chave) || "null");
+      if (salvo?.url && Number(salvo.expiraEm) > Date.now()) return salvo.url;
+    } catch (_) { /* cache local é apenas uma otimização */ }
+    const resposta = await banco.storage.from(bucket).createSignedUrl(caminho, segundos);
+    const url = resposta.data?.signedUrl || null;
+    if (url) {
+      try { localStorage.setItem(chave, JSON.stringify({ url, expiraEm: Date.now() + Math.max(60, segundos - 600) * 1000 })); } catch (_) { /* sem espaço local: usa a URL normalmente */ }
+    }
+    return url;
+  }
 
   if (config?.url && config?.anonKey && window.supabase?.createClient) {
     client = window.supabase.createClient(config.url, config.anonKey, {
@@ -32,9 +52,7 @@
       if (error) throw error;
 
       const caminhoLogo = visual?.logo_path || "logo_atual";
-      const { data: arquivo } = await banco.storage.from("logo_gem")
-        .createSignedUrl(caminhoLogo, 3600);
-      const logoUrl = arquivo?.signedUrl || null;
+      const logoUrl = await urlAssinadaEmCache(banco, "logo_gem", caminhoLogo);
       return { connected: true, logoUrl };
     } catch (error) {
       console.warn("A identidade visual do GEM ainda não pôde ser carregada.", error);
@@ -99,6 +117,18 @@
     if (error) throw new Error(error.code === "23505" ? "Já existe um GEM com esse identificador." : "Não foi possível criar o GEM.");
   }
 
+  async function dadosPlataformaMaster() {
+    const banco = await obterCliente();
+    const [gems, usuarios, acessos] = await Promise.all([
+      banco.from("gems").select("*").order("nome"),
+      banco.from("plataforma_usuarios").select("*").order("created_at"),
+      banco.from("gem_acessos").select("gem_id,papel,ativo")
+    ]);
+    const falha = [gems, usuarios, acessos].find((resultado) => resultado.error)?.error;
+    if (falha) throw new Error("Não foi possível carregar a administração da plataforma.");
+    return { gems: gems.data || [], usuarios: usuarios.data || [], acessos: acessos.data || [] };
+  }
+
   function normalizar(texto) {
     return String(texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
   }
@@ -110,6 +140,7 @@
     const caminho = `logo_atual.${extensao}`;
     const envio = await banco.storage.from("logo_gem").upload(caminho, arquivo, { upsert: true, contentType: arquivo.type || "image/png" });
     if (envio.error) throw new Error("Não foi possível enviar a logo.");
+    try { localStorage.removeItem(`${CACHE_URL_ASSINADA}logo_gem:${caminho}`); } catch (_) { /* sem cache local */ }
     const salvar = await banco.from("config_visual_gem").upsert({ id: 1, logo_path: caminho, updated_at: new Date().toISOString() });
     if (salvar.error) throw new Error("A logo foi enviada, mas não foi possível registrar a configuração.");
     return carregarIdentidade();
@@ -120,8 +151,7 @@
     const { data, error } = await banco.from("secretaria_perfil").select("nome_exibicao,foto_path").eq("id", 1).maybeSingle();
     if (error && error.code !== "42P01") throw new Error("Não foi possível carregar o perfil da Coordenação.");
     if (!data?.foto_path) return data || {};
-    const foto = await banco.storage.from("fotos_secretaria_gem").createSignedUrl(data.foto_path, 3600);
-    return { ...data, fotoUrl: foto.data?.signedUrl || null };
+    return { ...data, fotoUrl: await urlAssinadaEmCache(banco, "fotos_secretaria_gem", data.foto_path) };
   }
 
   async function perfilProfessora(nome) {
@@ -129,8 +159,30 @@
     const { data, error } = await banco.from("professoras").select("*").eq("nome", nome).maybeSingle();
     if (error) throw new Error("Não foi possível carregar o perfil da professora.");
     if (!data?.foto_path) return data || {};
-    const foto = await banco.storage.from("fotos_professoras").createSignedUrl(data.foto_path, 3600);
-    return { ...data, fotoUrl: foto.data?.signedUrl || null };
+    return { ...data, fotoUrl: await urlAssinadaEmCache(banco, "fotos_professoras", data.foto_path) };
+  }
+
+  async function dadosMetodos() {
+    const banco = await obterCliente();
+    const { data, error } = await banco.from("config_metodos").select("*").order("categoria").order("nome");
+    if (error) throw new Error(error.code === "42P01" ? "A biblioteca de métodos ainda não foi criada no banco." : "Não foi possível carregar a biblioteca de métodos.");
+    return data || [];
+  }
+
+  async function criarMetodo(nome, categoria) {
+    const banco = await obterCliente();
+    const registro = { nome: String(nome || "").trim(), categoria: String(categoria || "").trim() };
+    if (!registro.nome || !registro.categoria) throw new Error("Informe o nome e a área do método.");
+    const { error } = await banco.from("config_metodos").insert(registro);
+    if (error) throw new Error("Não foi possível salvar o método.");
+  }
+
+  async function removerMetodo(metodo) {
+    const banco = await obterCliente();
+    let consulta = banco.from("config_metodos").delete();
+    consulta = metodo.id != null ? consulta.eq("id", metodo.id) : consulta.eq("nome", metodo.nome).eq("categoria", metodo.categoria);
+    const { error } = await consulta;
+    if (error) throw new Error("Não foi possível remover o método.");
   }
 
   async function salvarPerfilSecretaria({ nome, arquivo }) {
@@ -141,6 +193,7 @@
       foto_path = `coordenacao.${extensao}`;
       const envio = await banco.storage.from("fotos_secretaria_gem").upload(foto_path, arquivo, { upsert: true, contentType: arquivo.type || "image/png" });
       if (envio.error) throw new Error("Não foi possível enviar a foto da Coordenação.");
+      try { localStorage.removeItem(`${CACHE_URL_ASSINADA}fotos_secretaria_gem:${foto_path}`); } catch (_) { /* sem cache local */ }
     }
     const dados = { id: 1, nome_exibicao: String(nome || "Coordenação").trim(), updated_at: new Date().toISOString() };
     if (foto_path) dados.foto_path = foto_path;
@@ -184,6 +237,22 @@
     const { error } = await consulta; if (error) throw new Error(error.message || "Não foi possível salvar.");
   }
 
+  async function enviarFotoPessoa(tipo, arquivo) {
+    if (!arquivo) return null;
+    if (!['aluna', 'professora'].includes(tipo)) throw new Error("Foto disponível somente para aluna ou professora.");
+    const extensao = String(arquivo.name || "").split(".").pop().toLowerCase();
+    if (!['jpg', 'jpeg', 'png', 'webp'].includes(extensao)) throw new Error("Envie uma foto JPG, PNG ou WEBP.");
+    // Fotos de celular muito grandes multiplicam a saída do Storage. O limite
+    // evita cadastrar uma foto desproporcional para o avatar do sistema.
+    if (arquivo.size > 5 * 1024 * 1024) throw new Error("A foto deve ter no máximo 5 MB.");
+    const banco = await obterCliente();
+    const bucket = tipo === 'aluna' ? 'fotos_alunas' : 'fotos_professoras';
+    const caminho = `${crypto.randomUUID()}_${String(arquivo.name).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '_')}`;
+    const { error } = await banco.storage.from(bucket).upload(caminho, arquivo, { contentType: arquivo.type || `image/${extensao === 'jpg' ? 'jpeg' : extensao}` });
+    if (error) throw new Error(error.message?.toLowerCase().includes("bucket") ? "O armazenamento de fotos ainda não está configurado. Execute a migration 007 no Supabase." : "Não foi possível enviar a foto.");
+    return caminho;
+  }
+
   async function dadosDocumentos() {
     const banco = await obterCliente();
     const { data, error } = await banco.from("gabaritos").select("*").order("id", { ascending: false });
@@ -191,12 +260,12 @@
     return data || [];
   }
 
-  async function enviarDocumento({ arquivo, titulo, disciplina, turma, aluna, observacao, visivel }) {
+  async function enviarDocumento({ arquivo, titulo, disciplina, turma, aluna, observacao, visivel, professora = "Secretaria" }) {
     if (!arquivo || !titulo) throw new Error("Informe o título e selecione o arquivo.");
     const banco = await obterCliente(); const caminho = `${crypto.randomUUID()}_${arquivo.name.replace(/[^a-zA-Z0-9._-]+/g, "_")}`;
     const envio = await banco.storage.from("gabaritos").upload(caminho, arquivo, { contentType: arquivo.type || "application/octet-stream" });
     if (envio.error) throw new Error("Não foi possível enviar o arquivo.");
-    const { error } = await banco.from("gabaritos").insert({ titulo, disciplina, turma: turma || null, aluna: aluna || null, observacao: observacao || "", professora: "Secretaria", arquivo_path: caminho, arquivo_nome: arquivo.name, data_correcao: new Date().toISOString().slice(0, 10), visivel_alunas: Boolean(visivel) });
+    const { error } = await banco.from("gabaritos").insert({ titulo, disciplina, turma: turma || null, aluna: aluna || null, observacao: observacao || "", professora, arquivo_path: caminho, arquivo_nome: arquivo.name, data_correcao: new Date().toISOString().slice(0, 10), visivel_alunas: Boolean(visivel) });
     if (error) throw new Error("O arquivo foi enviado, mas o documento não foi registrado.");
   }
 
@@ -213,6 +282,30 @@
 
   async function criarProva(titulo, data) {
     const banco = await obterCliente(); const { error } = await banco.from("avaliacoes").insert({ titulo, data_avaliacao: data }); if (error) throw new Error("Não foi possível criar a avaliação.");
+  }
+
+  async function salvarNotaAvaliacao({ avaliacaoId, aluna, disciplina, nota }) {
+    const banco = await obterCliente();
+    const registro = { avaliacao_id: avaliacaoId, aluna, disciplina, nota: Number(nota) };
+    if (!registro.aluna || !registro.disciplina || !Number.isFinite(registro.nota)) throw new Error("Informe aluna, disciplina e nota.");
+    const existente = await banco.from("avaliacao_notas").select("id").eq("avaliacao_id", avaliacaoId).eq("aluna", aluna).eq("disciplina", disciplina).maybeSingle();
+    const { error } = existente.data?.id ? await banco.from("avaliacao_notas").update(registro).eq("id", existente.data.id) : await banco.from("avaliacao_notas").insert(registro);
+    if (error) throw new Error("Não foi possível salvar a nota.");
+  }
+
+  async function dadosMensagens() {
+    const banco = await obterCliente();
+    const { data, error } = await banco.from("mensagens").select("*").order("id", { ascending: true });
+    if (error) throw new Error(error.code === "42P01" ? "A tabela de mensagens ainda não está criada ou liberada no Supabase." : "Não foi possível carregar as mensagens.");
+    return data || [];
+  }
+
+  async function enviarMensagem(de, para, texto) {
+    const banco = await obterCliente();
+    const mensagem = String(texto || "").trim();
+    if (!mensagem) throw new Error("Escreva uma mensagem antes de enviar.");
+    const { error } = await banco.from("mensagens").insert({ de, para, texto: mensagem });
+    if (error) throw new Error("Não foi possível enviar a mensagem.");
   }
 
   async function dadosAnalitico() {
@@ -292,8 +385,8 @@
     const turmaPorAluna = Object.fromEntries((alunas || []).map((aluna) => [aluna.nome, aluna.turma]));
     const fotoPorAluna = {};
     await Promise.all((alunas || []).filter((aluna) => aluna.foto_path).map(async (aluna) => {
-      const foto = await banco.storage.from("fotos_alunas").createSignedUrl(aluna.foto_path, 3600);
-      if (foto.data?.signedUrl) fotoPorAluna[aluna.nome] = foto.data.signedUrl;
+      const url = await urlAssinadaEmCache(banco, "fotos_alunas", aluna.foto_path);
+      if (url) fotoPorAluna[aluna.nome] = url;
     }));
     const nomeNormalizado = normalizar(professora);
     const aulas = [];
@@ -339,6 +432,37 @@
         if (salvarCasa.error) throw new Error(`A aula foi salva, mas não foi possível registrar a lição de ${aluna}.`);
       }
     }
+  }
+
+  async function registrosDaAula({ dataIso, instrutora, alunas }) {
+    const banco = await obterCliente();
+    const data = dataBr(dataIso);
+    const { data: registros, error } = await banco.from("historico_geral").select("*")
+      .eq("Data", data).eq("Instrutora", instrutora).in("Aluna", alunas || []).order("id", { ascending: true });
+    if (error) throw new Error("Não foi possível carregar os registros já salvos desta aula.");
+    return (registros || []).filter((registro) => String(registro.Tipo || "").startsWith("Analise_") || String(registro.Tipo || "").startsWith("Casa_"));
+  }
+
+  async function licoesPendentesProfessora({ alunas, tipoAula }) {
+    const banco = await obterCliente();
+    const { data, error } = await banco.from("historico_geral").select("*").in("Aluna", alunas || []).order("id", { ascending: false });
+    if (error) throw new Error("Não foi possível carregar as lições pendentes.");
+    const tiposPermitidos = tipoAula === "Solfejo" ? ["Casa_MSA"]
+      : tipoAula === "Solfejo Melódico" ? ["Casa_Canto"]
+        : tipoAula === "Teoria" ? ["Casa_Teoria_Prof", "Casa_Apostila_Teoria_Prof"]
+          : null;
+    const resolvidos = ["Resolvido", "Realizada", "Realizada - sem pendência", "Realizadas - sem pendência"];
+    return (data || []).filter((registro) => {
+      const tipo = String(registro.Tipo || "");
+      const pertence = tiposPermitidos ? tiposPermitidos.includes(tipo) : tipo.startsWith("Casa_Metodo_");
+      return pertence && !resolvidos.includes(registro.Status);
+    });
+  }
+
+  async function corrigirLicaoProfessora(id, { status, observacao }) {
+    const banco = await obterCliente();
+    const { error } = await banco.from("historico_geral").update({ Status: status, Observacao: String(observacao || "").trim() }).eq("id", id);
+    if (error) throw new Error("Não foi possível salvar a correção da lição.");
   }
 
   async function dadosAluna(aluna) {
@@ -402,6 +526,19 @@
     return { data, modelos: modelos.data || [], turmas, professoras: (professoras.data || []).filter((professora) => professora.ativo !== false).map((professora) => professora.nome), escala: calendario.data?.escala || [], modeloEscala: calendario.data?.modelo_logistica_id || null, folga: folgas.data || null, escalasAnteriores: anteriores.data || [], professorasFixas };
   }
 
+  async function dadosFolgas() {
+    const banco = await obterCliente();
+    const { data, error } = await banco.from("folgas_professoras").select("*").order("data", { ascending: false });
+    if (error) throw new Error(error.code === "42P01" ? "A tabela de folgas ainda não foi criada no Supabase." : "Não foi possível carregar as folgas.");
+    return data || [];
+  }
+
+  async function salvarFolgas({ data, coordenadora, professoras, observacao }) {
+    const banco = await obterCliente();
+    const { error } = await banco.from("folgas_professoras").upsert({ data, coordenadora, professoras: professoras || [], observacao: String(observacao || "").trim() }, { onConflict: "data" });
+    if (error) throw new Error("Não foi possível salvar as folgas deste sábado.");
+  }
+
   async function salvarProfessorasFixas(mapa) {
     const banco = await obterCliente();
     const apagar = await banco.from("professoras_fixas").delete().neq("aluna", "");
@@ -450,8 +587,8 @@
     const perfis = alunas.length ? await banco.from("alunas").select("nome,foto_path").in("nome", alunas) : { data: [] };
     const fotos = {};
     await Promise.all((perfis.data || []).filter((perfil) => perfil.foto_path).map(async (perfil) => {
-      const arquivo = await banco.storage.from("fotos_alunas").createSignedUrl(perfil.foto_path, 3600);
-      if (arquivo.data?.signedUrl) fotos[perfil.nome] = arquivo.data.signedUrl;
+      const url = await urlAssinadaEmCache(banco, "fotos_alunas", perfil.foto_path);
+      if (url) fotos[perfil.nome] = url;
     }));
     return { alunas, chamadas: historico.data || [], fotos };
   }
@@ -466,5 +603,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosVisaoGeral, dadosPessoas, salvarPessoa, dadosDocumentos, enviarDocumento, urlDocumento, dadosProvas, criarProva, dadosAnalitico, dadosCorrecoesLicoes, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, listarGems, criarGem, agendaProfessora, salvarRegistroAula, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, urlDocumento, dadosProvas, criarProva, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosCorrecoesLicoes, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, listarGems, criarGem, dadosPlataformaMaster, agendaProfessora, salvarRegistroAula, registrosDaAula, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();

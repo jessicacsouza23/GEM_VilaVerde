@@ -1,5 +1,40 @@
-const CACHE = "gem-vila-verde-v3";
+const CACHE = "gem-vila-verde-v5";
+const RUNTIME_IMAGES = "gem-vila-verde-images-v1";
 const FILES = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon.svg", "./js/gem-data.js", "./js/rodizio-engine.js"];
 self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting())));
-self.addEventListener("activate", (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)))).then(() => self.clients.claim())));
-self.addEventListener("fetch", (event) => event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request))));
+self.addEventListener("activate", (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE && key !== RUNTIME_IMAGES).map((key) => caches.delete(key)))).then(() => self.clients.claim())));
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  // Fotos e logos do Storage do Supabase são servidas por URLs assinadas. Com
+  // a URL reaproveitada pelo app, esta cópia local evita nova transferência ao
+  // abrir telas diferentes ou ao usar o aplicativo instalado.
+  const fotoSupabase = url.hostname.endsWith(".supabase.co") && url.pathname.includes("/storage/v1/object/");
+  if (fotoSupabase) {
+    event.respondWith(caches.open(RUNTIME_IMAGES).then(async (cache) => {
+      const salvo = await cache.match(event.request);
+      if (salvo) return salvo;
+      try {
+        const resposta = await fetch(event.request);
+        if (resposta?.ok || resposta?.type === "opaque") cache.put(event.request, resposta.clone());
+        return resposta;
+      } catch (_) { return salvo || Response.error(); }
+    }));
+    return;
+  }
+  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
+});
+self.addEventListener("push", (event) => {
+  let mensagem = {};
+  try { mensagem = event.data?.json() || {}; } catch (_) { mensagem = { body: event.data?.text() || "Você tem uma nova atualização no GEM." }; }
+  event.waitUntil(self.registration.showNotification(mensagem.title || "GEM Vila Verde", {
+    body: mensagem.body || "Você tem uma nova atualização.",
+    icon: "./icon.svg",
+    badge: "./icon.svg",
+    data: { url: mensagem.url || "./" }
+  }));
+});
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(clients.openWindow(event.notification.data?.url || "./"));
+});
