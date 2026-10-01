@@ -1,6 +1,6 @@
 const navByRole = {
   Master: ["GEMs", "Usuários mestres", "Visão da plataforma"],
-  Secretaria: ["Visão geral", "Planejamento e rodízio", "Turmas e pessoas", "Chamada", "Relatórios", "Documentos", "Provas", "Logística"],
+  Secretaria: ["Visão geral", "Planejamento e rodízio", "Chamada", "Controle de lições", "Ajustar registros", "Coordenação", "Logística", "Turmas e pessoas"],
   Professora: ["Minhas aulas", "Envio de documentos", "Provas", "Analítico IA", "Mensagens"],
   Aluna: ["Minhas lições", "Boletim", "Documentos", "Mensagens"]
 };
@@ -27,7 +27,7 @@ function renderNavigation() {
 }
 
 function iconFor(page) {
-  return ({ "GEMs":"🏫", "Usuários mestres":"🔐", "Visão da plataforma":"🌐", "Visão geral":"🏠", "Planejamento e rodízio":"🗓️", "Turmas e pessoas":"👥", "Chamada":"✅", "Relatórios":"📊", "Documentos":"📁", "Provas":"📝", "Logística":"⚙️", "Minhas aulas":"👩‍🏫", "Envio de documentos":"📤", "Analítico IA":"📈", "Mensagens":"💬", "Minhas lições":"🎼", "Boletim":"🎓" }[page] || "•");
+  return ({ "GEMs":"🏫", "Usuários mestres":"🔐", "Visão da plataforma":"🌐", "Visão geral":"🏠", "Planejamento e rodízio":"🗓️", "Turmas e pessoas":"👥", "Chamada":"✅", "Controle de lições":"📝", "Ajustar registros":"🛠️", "Coordenação":"👑", "Logística":"⚙️", "Minhas aulas":"👩‍🏫", "Envio de documentos":"📤", "Analítico IA":"📈", "Mensagens":"💬", "Minhas lições":"🎼", "Boletim":"🎓" }[page] || "•");
 }
 
 function scheduleMarkup() {
@@ -247,6 +247,8 @@ function memoriaDoRodizio(escalas, dataBr, alunas, salasIndividuais) {
 
 function gerarEscalaModelo(base, modelo, opcoes) {
   const { config, blocos, individuais, coletivas, componentes, turmas } = dadosDoModelo(modelo, base.turmas);
+  const regras = config.regras_rodizio || {};
+  const mesmaProfessoraComponentes = config.mesma_professora_nos_componentes !== false;
   const erros = [];
   if (!blocos.length || !turmas.length || !individuais.length || !componentes.length) return { erros: ["Complete o modelo com blocos, turmas, salas individuais e atividades individuais."], escala: [] };
   if (coletivas.length + 1 > blocos.length || turmas.length > coletivas.length + 1) return { erros: ["O modelo não possui posições suficientes para as turmas ativas."], escala: [] };
@@ -294,25 +296,88 @@ function gerarEscalaModelo(base, modelo, opcoes) {
         alunasDaTurma.forEach((aluna) => { escala[aluna][horario] = `${atividade?.sala || "Sala coletiva"} | ${professora}`; escala[aluna]._detalhes[horario] = { tipo: posicao, individual: false, turma }; });
         continue;
       }
-      const livres = base.professoras.filter((professora) => !bloqueadas.has(professora) && !usadas.has(professora));
+      let habilitadasIndividuais = [...base.professoras];
+      if (mesmaProfessoraComponentes) componentes.forEach((componente) => {
+        const habilitadasComponente = habilitadas[componente] || base.professoras;
+        habilitadasIndividuais = habilitadasIndividuais.filter((professora) => habilitadasComponente.includes(professora));
+      });
+      const livres = base.professoras.filter((professora) => habilitadasIndividuais.includes(professora) && !bloqueadas.has(professora) && !usadas.has(professora));
       if (livres.length < alunasDaTurma.length) { erros.push(`Faltam professoras livres para o atendimento individual de ${turma} em ${horario}.`); continue; }
       const salasEmUso = new Set();
       alunasDaTurma.forEach((aluna) => {
         const mem = memoria[aluna];
         const fixa = opcoes.usarFixas ? base.fixas[window.GemData.normalizar(aluna)] : null;
         const candidatas = (fixa ? [fixa] : livres).filter((professora) => livres.includes(professora));
-        const professora = candidatas.sort((a, b) => Number(a === mem.ultima) - Number(b === mem.ultima) || Number(mem.professoras.includes(a)) - Number(mem.professoras.includes(b)) || a.localeCompare(b))[0];
+        const professora = candidatas.sort((a, b) => Number(Boolean(regras.nao_repetir_imediata ?? true) && a === mem.ultima) - Number(Boolean(regras.nao_repetir_imediata ?? true) && b === mem.ultima) || Number(Boolean(regras.nao_repetir_aluna ?? true) && mem.professoras.includes(a)) - Number(Boolean(regras.nao_repetir_aluna ?? true) && mem.professoras.includes(b)) || a.localeCompare(b))[0];
         let sala = salaDaProfessora[professora];
-        if (!sala || salasEmUso.has(sala)) sala = individuais.filter((item) => !salasEmUso.has(item)).sort((a, b) => Number(mem.salas.includes(a)) - Number(mem.salas.includes(b)) || a.localeCompare(b))[0];
+        if (!sala || salasEmUso.has(sala)) sala = individuais.filter((item) => !salasEmUso.has(item)).sort((a, b) => Number(Boolean(regras.nao_repetir_sala ?? true) && mem.salas.includes(a)) - Number(Boolean(regras.nao_repetir_sala ?? true) && mem.salas.includes(b)) || a.localeCompare(b))[0];
         if (!professora || !sala) { erros.push(`Não foi possível alocar ${aluna} — ${turma} em ${horario}.`); return; }
         salaDaProfessora[professora] ||= sala;
         salasEmUso.add(sala); usadas.add(professora); livres.splice(livres.indexOf(professora), 1);
         escala[aluna][horario] = `${sala} | ${professora}`;
-        escala[aluna]._detalhes[horario] = { tipo: componentes.length > 1 ? "Prática + Solfejo" : componentes[0], componentes, individual: true, turma, mesma_professora_componentes: true, sala_fixa_professora: sala };
+        escala[aluna]._detalhes[horario] = { tipo: componentes.length > 1 ? "Prática + Solfejo" : componentes[0], componentes, individual: true, turma, mesma_professora_componentes: mesmaProfessoraComponentes, sala_fixa_professora: sala };
         mem.professoras.push(professora); mem.salas.push(sala); mem.ultima = professora;
       });
+      if (!mesmaProfessoraComponentes && componentes.length > 1 && alunasDaTurma.length > 1) {
+        const alocadas = alunasDaTurma.map((aluna) => ({ aluna, valor: escala[aluna][horario] })).filter((item) => item.valor && item.valor.includes("|"));
+        const professorasPratica = alocadas.map((item) => item.valor.split("|").slice(1).join("|").trim());
+        const professorasSolfejo = professorasPratica.slice(1).concat(professorasPratica[0]);
+        alocadas.forEach((item, indice) => {
+          const sala = item.valor.split("|")[0].trim();
+          escala[item.aluna][horario] = `${sala} | Solfejo: ${professorasSolfejo[indice]} · Prática: ${professorasPratica[indice]}`;
+          escala[item.aluna]._detalhes[horario].professoras_componentes = { Solfejo: professorasSolfejo[indice], Prática: professorasPratica[indice] };
+        });
+      }
     }
   });
+  // A sala pertence à professora durante todo o sábado. Uma professora pode
+  // sair de uma aula coletiva e voltar ao individual sem trocar de sala; duas
+  // professoras que trabalham no mesmo bloco, porém, nunca dividem uma sala.
+  const blocosPorProfessora = new Map();
+  Object.values(escala).forEach((linha) => Object.entries(linha._detalhes || {}).forEach(([horario, detalhe]) => {
+    if (!detalhe.individual) return;
+    const valor = String(linha[horario] || "");
+    const professora = String(detalhe.professoras_componentes?.Prática || valor.split("|").slice(1).join("|").trim()).trim();
+    if (!professora) return;
+    if (!blocosPorProfessora.has(professora)) blocosPorProfessora.set(professora, new Set());
+    blocosPorProfessora.get(professora).add(horario);
+  }));
+  const professorasIndividuais = [...blocosPorProfessora.keys()];
+  const vizinhas = Object.fromEntries(professorasIndividuais.map((professora) => [professora, new Set()]));
+  horarios.forEach((horario) => {
+    const noBloco = professorasIndividuais.filter((professora) => blocosPorProfessora.get(professora).has(horario));
+    noBloco.forEach((professora) => noBloco.forEach((outra) => { if (professora !== outra) vizinhas[professora].add(outra); }));
+  });
+  const dataReferencia = new Date(`${opcoes.data}T12:00:00`);
+  const deslocamento = Number.isNaN(dataReferencia.getTime()) ? 0 : Math.floor(dataReferencia.getTime() / 86400000) % individuais.length;
+  const ordemSalas = individuais.slice(deslocamento).concat(individuais.slice(0, deslocamento));
+  const salaPorProfessora = {};
+  const ordenarProfessoras = [...professorasIndividuais].sort((a, b) => vizinhas[b].size - vizinhas[a].size || a.localeCompare(b));
+  const atribuirSalas = (indice = 0) => {
+    if (indice >= ordenarProfessoras.length) return true;
+    const professora = ordenarProfessoras[indice];
+    const ocupadas = new Set([...vizinhas[professora]].map((vizinha) => salaPorProfessora[vizinha]).filter(Boolean));
+    for (const sala of ordemSalas) {
+      if (ocupadas.has(sala)) continue;
+      salaPorProfessora[professora] = sala;
+      if (atribuirSalas(indice + 1)) return true;
+      delete salaPorProfessora[professora];
+    }
+    return false;
+  };
+  if (professorasIndividuais.length && !atribuirSalas()) {
+    erros.push("Não foi possível manter salas fixas para as professoras no individual. Revise a quantidade de salas e professoras disponíveis.");
+  } else {
+    Object.values(escala).forEach((linha) => Object.entries(linha._detalhes || {}).forEach(([horario, detalhe]) => {
+      if (!detalhe.individual) return;
+      const valor = String(linha[horario] || "");
+      const professora = String(detalhe.professoras_componentes?.Prática || valor.split("|").slice(1).join("|").trim()).trim();
+      const sala = salaPorProfessora[professora];
+      if (!sala) return;
+      detalhe.sala_fixa_professora = sala;
+      linha[horario] = `${sala} | ${valor.includes("|") ? valor.split("|").slice(1).join("|").trim() : professora}`;
+    }));
+  }
   return { erros: [...new Set(erros)], escala: Object.values(escala), horarios };
 }
 
@@ -403,6 +468,75 @@ function escapeHtml(value) {
   const node = document.createElement("span"); node.textContent = String(value ?? ""); return node.innerHTML;
 }
 
+async function renderVisaoGeral(content) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO DIÁRIO</p><h2>📊 Visão Geral Diária</h2><p>Confira a chamada e os registros já lançados para o rodízio salvo, sem modificar o histórico.</p></section><section class="panel"><div class="agenda-date"><div><label for="visao-data">Data da análise</label><input id="visao-data" type="date" value="${hoje}"></div><button id="carregar-visao" class="primary-action" type="button">Ver relatório</button></div><div id="visao-result" class="empty">Carregando relatório...</div></section>`;
+  const destino = $("#visao-result");
+  const carregar = async () => {
+    destino.innerHTML = `<div class="empty">Conferindo escala e registros...</div>`;
+    try {
+      const dados = await window.GemData.dadosVisaoGeral($("#visao-data").value);
+      const alunas = [...new Set(dados.escala.map((linha) => linha.Aluna).filter(Boolean))].sort();
+      const chamadas = Object.fromEntries(dados.historico.filter((linha) => linha.Tipo === "Chamada").map((linha) => [linha.Aluna, linha]));
+      const registros = dados.historico.filter((linha) => String(linha.Tipo || "").startsWith("Analise_"));
+      const presentes = alunas.filter((aluna) => (chamadas[aluna]?.Status || "Presente") === "Presente");
+      const faltas = alunas.filter((aluna) => ["Ausente", "Justificada"].includes(chamadas[aluna]?.Status));
+      const pendentes = presentes.filter((aluna) => !registros.some((registro) => registro.Aluna === aluna));
+      destino.innerHTML = `<div class="grid"><article class="metric"><strong>${alunas.length}</strong><span>Alunas no rodízio</span></article><article class="metric"><strong>${presentes.length}</strong><span>Presentes</span></article><article class="metric"><strong>${faltas.length}</strong><span>Faltas / justificadas</span></article></div><div class="section-title"><h2>Conferência de registros</h2><p>${pendentes.length ? `${pendentes.length} aluna(s) presente(s) ainda sem registro.` : "Todos os presentes têm ao menos um registro."}</p></div>${pendentes.length ? `<div class="table-wrap"><table class="scale-table"><thead><tr><th>Aluna</th><th>Status</th></tr></thead><tbody>${pendentes.map((aluna) => `<tr><th>${escapeHtml(aluna)}</th><td>Aguardando registro pedagógico</td></tr>`).join("")}</tbody></table></div>` : `<div class="action-ok">✅ Não há pendência de registro para esta conferência.</div>`}`;
+    } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  };
+  $("#carregar-visao").addEventListener("click", carregar);
+  await carregar();
+}
+
+async function renderTurmasPessoas(content) {
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">CADASTROS DO GEM</p><h2>👥 Turmas e Pessoas</h2><p>Os cadastros são compartilhados com o rodízio. Desativar alguém impede novos agendamentos, mas preserva escalas e registros antigos.</p></section><section class="panel"><div id="pessoas-lista" class="empty">Carregando cadastros...</div></section>`;
+  const destino = $("#pessoas-lista");
+  const carregar = async () => {
+    try {
+      const pessoas = await window.GemData.dadosPessoas();
+      const tabela = (titulo, linhas, tipo, descricao) => `<div class="section-title"><h2>${titulo}</h2><p>${descricao}</p></div><div class="table-wrap"><table class="scale-table"><thead><tr><th>Nome</th><th>Turma / função</th><th>Status</th><th>Ação</th></tr></thead><tbody>${linhas.map((linha) => `<tr><th>${escapeHtml(linha.nome || "—")}</th><td>${escapeHtml(linha.turma || linha.funcao || linha.cargo || "—")}</td><td>${linha.ativo === false ? "Inativo" : "Ativo"}</td><td>${linha.id ? `<button class="lesson-action" data-pessoa="${escapeHtml(tipo)}" data-id="${escapeHtml(linha.id)}" data-ativo="${linha.ativo === false ? "false" : "true"}">${linha.ativo === false ? "Reativar" : "Desativar"}</button>` : "—"}</td></tr>`).join("") || `<tr><td colspan="4">Nenhum cadastro encontrado.</td></tr>`}</tbody></table></div>`;
+      destino.innerHTML = tabela("Alunas", pessoas.alunas, "alunas", "As turmas atuais são usadas nas novas escalas.") + tabela("Professoras", pessoas.professoras, "professoras", "Professoras ativas podem ser selecionadas no rodízio.") + tabela("Secretarias", pessoas.secretarias, "secretarias", "A Secretaria administra os dados do próprio GEM.");
+      destino.querySelectorAll("button[data-pessoa]").forEach((botao) => botao.addEventListener("click", async () => {
+        botao.disabled = true;
+        try { await window.GemData.atualizarAtivoPessoa(botao.dataset.pessoa, botao.dataset.id, botao.dataset.ativo === "false"); await carregar(); }
+        catch (erro) { window.alert(erro.message); botao.disabled = false; }
+      }));
+    } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  };
+  await carregar();
+}
+
+async function renderControleLicoes(content, modoAjuste = false) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const titulo = modoAjuste ? "🛠️ Ajustar Registros" : "📝 Controle de Lições";
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO PEDAGÓGICO</p><h2>${titulo}</h2><p>${modoAjuste ? "Consulte os registros enviados. A edição detalhada continua protegida pelo histórico." : "Acompanhe o que foi passado e os registros de aula já lançados."}</p></section><section class="panel"><div class="agenda-date"><div><label for="licoes-data">Filtrar por data</label><input id="licoes-data" type="date" value="${hoje}"></div><button id="carregar-licoes" class="primary-action" type="button">Carregar</button></div><div id="licoes-secretaria" class="empty">Carregando registros...</div></section>`;
+  const destino = $("#licoes-secretaria");
+  const carregar = async () => {
+    try {
+      const registros = await window.GemData.dadosLicoesSecretaria($("#licoes-data").value);
+      destino.innerHTML = registros.length ? `<div class="table-wrap"><table class="scale-table"><thead><tr><th>Aluna</th><th>Tipo</th><th>Professora</th><th>Conteúdo / lição</th><th>Status</th></tr></thead><tbody>${registros.map((registro) => `<tr><th>${escapeHtml(registro.Aluna)}</th><td>${escapeHtml(registro.Tipo)}</td><td>${escapeHtml(registro.Instrutora || "—")}</td><td>${escapeHtml(registro.Licao_Casa || registro.Licao_Atual || "—")}</td><td>${escapeHtml(registro.Status || "—")}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">Nenhum registro pedagógico encontrado nesta data.</div>`;
+    } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  };
+  $("#carregar-licoes").addEventListener("click", carregar);
+  await carregar();
+}
+
+async function renderCoordenacao(content) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">COORDENAÇÃO</p><h2>👑 Folgas e conferência</h2><p>Informe as folgas antes de gerar o rodízio. A escala usa essas informações e nunca modifica um sábado já salvo.</p></section><section class="panel"><label for="folga-data">Sábado</label><input id="folga-data" type="date" value="${hoje}"><label for="folga-professoras">Professoras de folga</label><select id="folga-professoras" multiple size="7"></select><label for="folga-observacao">Observação</label><input id="folga-observacao" placeholder="Ex.: compromisso, saída especial..."><button id="salvar-folgas" class="primary-action full-action" type="button">Salvar folgas deste sábado</button><div id="folga-retorno"></div></section>`;
+  const carregar = async () => {
+    try {
+      const [pessoas, folga] = await Promise.all([window.GemData.dadosPessoas(), window.GemData.dadosFolgas($("#folga-data").value)]);
+      $("#folga-professoras").innerHTML = pessoas.professoras.filter((professora) => professora.ativo !== false).map((professora) => `<option ${folga?.professoras?.includes(professora.nome) ? "selected" : ""}>${escapeHtml(professora.nome)}</option>`).join("");
+      $("#folga-observacao").value = folga?.observacao || "";
+    } catch (erro) { $("#folga-retorno").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  };
+  $("#folga-data").addEventListener("change", carregar);
+  $("#salvar-folgas").addEventListener("click", async () => { try { await window.GemData.salvarFolgas($("#folga-data").value, [...$("#folga-professoras").selectedOptions].map((opcao) => opcao.value), $("#folga-observacao").value, state.name); $("#folga-retorno").innerHTML = `<div class="action-ok">Folgas salvas.</div>`; } catch (erro) { $("#folga-retorno").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; } });
+  await carregar();
+}
+
 async function renderPage() {
   $("#page-title").textContent = state.page;
   const content = $("#page-content");
@@ -426,8 +560,28 @@ async function renderPage() {
     await renderRodizio(content);
     return;
   }
+  if (state.role === "Secretaria" && state.page === "Visão geral") {
+    await renderVisaoGeral(content);
+    return;
+  }
   if (state.role === "Secretaria" && state.page === "Chamada") {
     await renderChamada(content);
+    return;
+  }
+  if (state.role === "Secretaria" && state.page === "Turmas e pessoas") {
+    await renderTurmasPessoas(content);
+    return;
+  }
+  if (state.role === "Secretaria" && state.page === "Controle de lições") {
+    await renderControleLicoes(content);
+    return;
+  }
+  if (state.role === "Secretaria" && state.page === "Ajustar registros") {
+    await renderControleLicoes(content, true);
+    return;
+  }
+  if (state.role === "Secretaria" && state.page === "Coordenação") {
+    await renderCoordenacao(content);
     return;
   }
   if (state.page === "Visão geral" || state.page === "Minhas aulas" || state.page === "Minhas lições") {

@@ -261,5 +261,58 @@
     if (error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, salvarRodizio, dadosChamada, salvarChamada, dataBr, normalizar };
+  async function dadosVisaoGeral(dataIso) {
+    const banco = await obterCliente();
+    const data = dataBr(dataIso);
+    const [{ data: escala, error: erroEscala }, { data: historico, error: erroHistorico }] = await Promise.all([
+      banco.from("calendario").select("escala").eq("id", data).maybeSingle(),
+      banco.from("historico_geral").select("*").eq("Data", data)
+    ]);
+    if (erroEscala || erroHistorico) throw new Error("Não foi possível carregar a visão diária.");
+    return { escala: escala?.escala || [], historico: historico || [], data };
+  }
+
+  async function dadosPessoas() {
+    const banco = await obterCliente();
+    const [alunas, professoras, secretarias] = await Promise.all([
+      banco.from("alunas").select("*").order("turma").order("nome"),
+      banco.from("professoras").select("*").order("nome"),
+      banco.from("secretarias").select("*").order("nome")
+    ]);
+    const falha = [alunas, professoras, secretarias].find((resultado) => resultado.error)?.error;
+    if (falha) throw new Error(`Não foi possível carregar pessoas: ${falha.message}`);
+    return { alunas: alunas.data || [], professoras: professoras.data || [], secretarias: secretarias.data || [] };
+  }
+
+  async function atualizarAtivoPessoa(tabela, id, ativo) {
+    const banco = await obterCliente();
+    const { error } = await banco.from(tabela).update({ ativo }).eq("id", id);
+    if (error) throw new Error("Não foi possível atualizar o cadastro.");
+  }
+
+  async function dadosLicoesSecretaria(dataIso) {
+    const banco = await obterCliente();
+    let consulta = banco.from("historico_geral").select("*").order("id", { ascending: false });
+    if (dataIso) consulta = consulta.eq("Data", dataBr(dataIso));
+    const { data, error } = await consulta;
+    if (error) throw new Error("Não foi possível carregar os registros pedagógicos.");
+    return (data || []).filter((registro) => String(registro.Tipo || "").startsWith("Casa_") || String(registro.Tipo || "").startsWith("Analise_"));
+  }
+
+  async function dadosFolgas(dataIso) {
+    const banco = await obterCliente();
+    const { data, error } = await banco.from("folgas_professoras").select("*").eq("data", dataIso).maybeSingle();
+    if (error) throw new Error("Não foi possível carregar as folgas.");
+    return data || null;
+  }
+
+  async function salvarFolgas(dataIso, professoras, observacao, responsavel) {
+    const banco = await obterCliente();
+    const linha = { data: dataIso, professoras: professoras || [], observacao: observacao || "" };
+    if (responsavel) linha.coordenadora = responsavel;
+    const { error } = await banco.from("folgas_professoras").upsert(linha, { onConflict: "data" });
+    if (error) throw new Error("Não foi possível salvar as folgas.");
+  }
+
+  window.GemData = { carregarIdentidade, autenticar, listarGems, criarGem, agendaProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, modeloParaData, horarioDoBloco, salvarRodizio, dadosChamada, salvarChamada, dadosVisaoGeral, dadosPessoas, atualizarAtivoPessoa, dadosLicoesSecretaria, dadosFolgas, salvarFolgas, dataBr, normalizar };
 })();
