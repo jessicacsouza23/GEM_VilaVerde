@@ -76,3 +76,9 @@ nav { display:grid; gap:5px; }
 
 @media (min-width:761px) { .analytics-filters { grid-template-columns:repeat(4,minmax(0,1fr)) auto; } }
 .ai-feedback { margin-top:16px; }.ai-feedback label { display:grid; gap:5px; max-width:760px; }.ai-feedback .primary-action { margin-top:10px; }.ai-answer { margin-top:14px; padding:14px; color:#35445d; background:#f5f9ff; border:1px solid #d9e6fa; border-radius:10px; line-height:1.6; white-space:normal; }
+
+/* Correção de lições: resultado e observação não devem ficar espremidos no
+   canto do cartão. A área de correção fica abaixo do enunciado e ganha espaço
+   suficiente para leitura e escrita. */
+.pending-card { grid-template-columns:1fr; gap:12px; }.pending-card > div:first-child { padding:2px 2px 0; }.pending-action { grid-template-columns:minmax(190px,240px) minmax(300px,1fr) auto; align-items:end; padding:13px; border:1px solid #f0d9df; border-radius:12px; background:#fff8fa; }.pending-action label { margin:0; color:var(--ink); }.pending-action select { min-width:0; }.pending-action textarea { min-height:76px; }.pending-action .primary-action { min-width:160px; }
+@media (max-width:760px) { .pending-action { grid-template-columns:1fr; }.pending-action .primary-action { width:100%; } }
