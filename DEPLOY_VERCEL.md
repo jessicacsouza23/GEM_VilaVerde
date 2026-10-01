@@ -6,7 +6,8 @@ esta pasta.
 ## Configuração única
 
 1. No Vercel, importe o mesmo repositório Git do GEM.
-2. Em **Root Directory**, selecione `gem-vila-verde`.
+2. Em **Root Directory**, selecione `./` quando o repositório aberto for o
+   próprio `GEM_VilaVerde`. Não selecione a pasta-pai `site_telemais`.
 3. Em **Environment Variables**, cadastre para Production e Preview:
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
@@ -24,6 +25,8 @@ disponível em aparelhos compatíveis.
   usada pelas funções de servidor.
 - As migrations do Supabase são uma configuração separada, executada uma única
   vez no SQL Editor ou por uma futura automação de deploy.
+- Antes do primeiro deploy completo, execute as migrations 001 a 007 listadas
+  no `README.md`. A 005 é opcional se os lembretes push não forem usados.
 
 ## Notificações no celular
 

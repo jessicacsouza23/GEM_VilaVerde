@@ -98,6 +98,12 @@
     };
   }
 
+  async function encerrarSessao() {
+    const banco = await obterCliente();
+    const { error } = await banco.auth.signOut();
+    if (error) console.warn("Não foi possível encerrar a sessão do Supabase.", error);
+  }
+
   async function listarGems() {
     const banco = await obterCliente();
     const { data, error } = await banco.from("gems")
@@ -269,24 +275,48 @@
     if (error) throw new Error("O arquivo foi enviado, mas o documento não foi registrado.");
   }
 
+  async function removerDocumento(documento) {
+    if (!documento?.id || !documento?.arquivo_path) throw new Error("Documento inválido para exclusão.");
+    const banco = await obterCliente();
+    const { error: apagarCadastro } = await banco.from("gabaritos").delete().eq("id", documento.id);
+    if (apagarCadastro) throw new Error("Não foi possível excluir o cadastro do documento.");
+    // O cadastro é apagado primeiro para que o arquivo não siga aparecendo no
+    // aplicativo mesmo se o Storage estiver temporariamente indisponível.
+    const { error: apagarArquivo } = await banco.storage.from("gabaritos").remove([documento.arquivo_path]);
+    if (apagarArquivo) console.warn("Cadastro excluído, mas o arquivo não pôde ser removido do Storage.", apagarArquivo);
+  }
+
   async function urlDocumento(caminho) {
     const banco = await obterCliente(); const { data, error } = await banco.storage.from("gabaritos").createSignedUrl(caminho, 3600);
     if (error) throw new Error("Não foi possível abrir este documento."); return data?.signedUrl;
   }
 
   async function dadosProvas() {
-    const banco = await obterCliente(); const [avaliacoes, notas] = await Promise.all([banco.from("avaliacoes").select("*").order("data_avaliacao", { ascending: false }), banco.from("avaliacao_notas").select("*")]);
-    if (avaliacoes.error || notas.error) throw new Error(`Não foi possível carregar provas: ${(avaliacoes.error || notas.error).message || "verifique as permissões."}`);
-    return { avaliacoes: avaliacoes.data || [], notas: notas.data || [] };
+    const banco = await obterCliente(); const [avaliacoes, notas, responsaveis] = await Promise.all([banco.from("avaliacoes").select("*").order("data_avaliacao", { ascending: false }), banco.from("avaliacao_notas").select("*"), banco.from("avaliacao_responsaveis").select("*")]);
+    if (avaliacoes.error || notas.error || responsaveis.error) throw new Error(`Não foi possível carregar provas: ${(avaliacoes.error || notas.error || responsaveis.error).message || "verifique as permissões e a tabela de responsáveis."}`);
+    return { avaliacoes: avaliacoes.data || [], notas: notas.data || [], responsaveis: responsaveis.data || [] };
   }
 
   async function criarProva(titulo, data) {
-    const banco = await obterCliente(); const { error } = await banco.from("avaliacoes").insert({ titulo, data_avaliacao: data }); if (error) throw new Error("Não foi possível criar a avaliação.");
+    const banco = await obterCliente(); const { data: criada, error } = await banco.from("avaliacoes").insert({ titulo, data_avaliacao: data }).select().single(); if (error) throw new Error("Não foi possível criar a avaliação."); return criada;
   }
 
-  async function salvarNotaAvaliacao({ avaliacaoId, aluna, disciplina, nota }) {
+  async function salvarResponsaveisAvaliacao(avaliacaoId, responsaveis) {
+    const linhas = (responsaveis || []).filter((item) => item.aluna && item.disciplina && item.professora).map((item) => ({ avaliacao_id: avaliacaoId, aluna: item.aluna, disciplina: item.disciplina, professora: item.professora }));
+    if (!linhas.length) throw new Error("Escolha ao menos uma professora responsável.");
+    const banco = await obterCliente(); const { error } = await banco.from("avaliacao_responsaveis").upsert(linhas, { onConflict: "avaliacao_id,aluna,disciplina" });
+    if (error) throw new Error("Não foi possível salvar as professoras responsáveis.");
+  }
+
+  async function removerProva(avaliacaoId) {
+    const banco = await obterCliente(); const { error } = await banco.from("avaliacoes").delete().eq("id", avaliacaoId);
+    if (error) throw new Error("Não foi possível excluir a avaliação.");
+  }
+
+  async function salvarNotaAvaliacao({ avaliacaoId, aluna, disciplina, nota, professora = null }) {
     const banco = await obterCliente();
     const registro = { avaliacao_id: avaliacaoId, aluna, disciplina, nota: Number(nota) };
+    if (professora) registro.professora = professora;
     if (!registro.aluna || !registro.disciplina || !Number.isFinite(registro.nota)) throw new Error("Informe aluna, disciplina e nota.");
     const existente = await banco.from("avaliacao_notas").select("id").eq("avaliacao_id", avaliacaoId).eq("aluna", aluna).eq("disciplina", disciplina).maybeSingle();
     const { error } = existente.data?.id ? await banco.from("avaliacao_notas").update(registro).eq("id", existente.data.id) : await banco.from("avaliacao_notas").insert(registro);
@@ -603,5 +633,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, urlDocumento, dadosProvas, criarProva, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosCorrecoesLicoes, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, listarGems, criarGem, dadosPlataformaMaster, agendaProfessora, salvarRegistroAula, registrosDaAula, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosCorrecoesLicoes, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, encerrarSessao, listarGems, criarGem, dadosPlataformaMaster, agendaProfessora, salvarRegistroAula, registrosDaAula, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();
