@@ -17,18 +17,55 @@ async function banco(path, options = {}) {
   return resultado.status === 204 ? null : resultado.json();
 }
 
-function professorasDaEscala(escala) {
-  const nomes = new Set();
-  (escala || []).forEach((linha) => {
-    Object.entries(linha || {}).forEach(([horario, valor]) => {
-      if (["Aluna", "_detalhes"].includes(horario)) return;
-      const texto = String(valor || "");
-      const depoisDaBarra = texto.split("|").slice(1).join("|").trim();
-      if (depoisDaBarra && !/TODAS AS ALUNAS/i.test(depoisDaBarra)) nomes.add(depoisDaBarra.replace(/\s*\([^)]*\)\s*$/g, "").trim());
+function normalizar(valor) {
+  return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+
+function disciplinaDaCelula(valor, detalhe = {}) {
+  if (detalhe.tipo) return detalhe.tipo === "Canto" ? "Solfejo Melódico" : detalhe.tipo;
+  const texto = String(valor || "").toUpperCase();
+  if (texto.includes("SALA 8")) return "Teoria";
+  if (texto.includes("SALA 9")) return "Solfejo Melódico";
+  return "Prática";
+}
+
+// Cada aluna/disciplina realmente escalada é conferida separadamente. Isso
+// impede que um único registro da professora esconda outras aulas pendentes.
+function professorasComPendencias(calendarios, historico, limite, inicioHoje) {
+  const pendentes = new Set();
+  (calendarios || []).forEach((calendario) => {
+    const data = dataValida(calendario.id);
+    // O cron roda às 08h. A escala do próprio sábado só entra no dia seguinte,
+    // depois de a professora ter tido oportunidade de lançar as aulas.
+    if (!data || data >= inicioHoje || data < limite) return;
+    const registrosDoDia = (historico || []).filter((registro) => registro.Data === calendario.id);
+    const ausentes = new Set(registrosDoDia.filter((registro) => registro.Tipo === "Chamada" && ["Ausente", "Justificada"].includes(registro.Status)).map((registro) => normalizar(registro.Aluna)));
+    (calendario.escala || []).forEach((linha) => {
+      const aluna = String(linha?.Aluna || "").trim();
+      if (!aluna || ausentes.has(normalizar(aluna))) return;
+      Object.entries(linha || {}).forEach(([horario, valor]) => {
+        if (["Aluna", "_detalhes"].includes(horario) || !String(valor || "").trim()) return;
+        const detalhe = linha?._detalhes?.[horario] || {};
+        const componentes = Array.isArray(detalhe.componentes) && detalhe.componentes.length
+          ? detalhe.componentes : [disciplinaDaCelula(valor, detalhe)];
+        const professoras = detalhe.professoras_componentes || {};
+        const padrao = String(valor || "").split("|").slice(1).join("|").replace(/\s*\([^)]*\)\s*$/g, "").trim();
+        componentes.forEach((componente) => {
+          const disciplina = componente === "Canto" ? "Solfejo Melódico" : componente;
+          const professora = String(professoras[componente] || professoras[disciplina] || padrao).trim();
+          if (!professora || /todas as alunas/i.test(professora)) return;
+          const possuiRegistro = registrosDoDia.some((registro) => {
+            const tipo = String(registro.Tipo || "").replace(/^Analise_/, "").replace(/^Canto$/, "Solfejo Melódico");
+            return normalizar(registro.Aluna) === normalizar(aluna)
+              && normalizar(registro.Instrutora) === normalizar(professora)
+              && normalizar(tipo) === normalizar(disciplina);
+          });
+          if (!possuiRegistro) pendentes.add(professora);
+        });
+      });
     });
-    Object.values(linha?._detalhes || {}).forEach((detalhe) => Object.values(detalhe?.professoras_componentes || {}).forEach((nome) => { if (nome) nomes.add(String(nome).trim()); }));
   });
-  return [...nomes].filter(Boolean);
+  return pendentes;
 }
 
 module.exports = async function notificarPendencias(request, response) {
@@ -40,22 +77,15 @@ module.exports = async function notificarPendencias(request, response) {
     const [subscriptions, calendarios, historico] = await Promise.all([
       banco("push_subscriptions?ativo=eq.true&select=*"),
       banco("calendario?select=id,escala"),
-      banco("historico_geral?select=Data,Instrutora,Tipo")
+      banco("historico_geral?select=Data,Aluna,Instrutora,Tipo,Status")
     ]);
-    const hoje = new Date(), chaveHoje = dataBrasil(hoje), limite = new Date(hoje.getTime() - 7 * 86400000);
-    const pendenciasProfessoras = new Set();
-    (calendarios || []).forEach((calendario) => {
-      const data = dataValida(calendario.id);
-      if (!data || data > hoje || data < limite) return;
-      professorasDaEscala(calendario.escala).forEach((professora) => {
-        const temRegistro = (historico || []).some((registro) => registro.Data === calendario.id && registro.Instrutora === professora && String(registro.Tipo || "").startsWith("Analise_"));
-        if (!temRegistro) pendenciasProfessoras.add(`${calendario.id}|${professora}`);
-      });
-    });
+    const hoje = new Date(), chaveHoje = dataBrasil(hoje), inicioHoje = dataValida(chaveHoje), limite = new Date(inicioHoje);
+    limite.setUTCDate(limite.getUTCDate() - 7);
+    const pendenciasProfessoras = professorasComPendencias(calendarios, historico, limite, inicioHoje);
     const fila = [];
     (subscriptions || []).forEach((sub) => {
       if (sub.perfil === "Aluna") fila.push({ sub, chave: `estudo:${chaveHoje}:${sub.endpoint}`, tipo: "estudo", payload: { title: "🎼 Hora de estudar", body: "Separe alguns minutos para praticar sua lição do GEM hoje.", url: "/" } });
-      if (sub.perfil === "Professora" && [...pendenciasProfessoras].some((item) => item.endsWith(`|${sub.usuario}`))) fila.push({ sub, chave: `registro:${chaveHoje}:${sub.endpoint}`, tipo: "registro_pendente", payload: { title: "📝 Registro de aula pendente", body: "Há uma aula escalada sem registro. Abra o GEM e conclua o lançamento.", url: "/" } });
+      if (sub.perfil === "Professora" && [...pendenciasProfessoras].some((professora) => normalizar(professora) === normalizar(sub.usuario))) fila.push({ sub, chave: `registro:${chaveHoje}:${sub.endpoint}`, tipo: "registro_pendente", payload: { title: "📝 Registro de aula pendente", body: "Há aula(s) escalada(s) sem registro. Abra o GEM e conclua o lançamento.", url: "/" } });
     });
     let enviadas = 0;
     for (const item of fila) {
