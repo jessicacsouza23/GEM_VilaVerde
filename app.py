@@ -24,6 +24,10 @@ import random
 import itertools
 import streamlit.components.v1 as components
 from streamlit_pills import pills # NOVO: Precisa instalar (pip install streamlit-pills)
+try:
+    import boto3
+except ImportError:
+    boto3 = None
 
 # Verificação de Segurança
 try:
@@ -32,6 +36,73 @@ try:
 except KeyError:
     st.error("⚠️ As credenciais do banco de dados não foram encontradas nas Secrets!")
     st.stop()
+
+
+def _segredo(nome):
+    """Lê secrets tanto do Streamlit Cloud quanto de execução local."""
+    try:
+        return st.secrets.get(nome) or os.getenv(nome)
+    except Exception:
+        return os.getenv(nome)
+
+
+@st.cache_resource
+def _cliente_r2():
+    """Cliente opcional do Cloudflare R2 para mídias do app Streamlit."""
+    conta = _segredo("R2_ACCOUNT_ID")
+    acesso = _segredo("R2_ACCESS_KEY_ID")
+    segredo = _segredo("R2_SECRET_ACCESS_KEY")
+    if boto3 is None or not (conta and acesso and segredo and _segredo("R2_BUCKET_NAME")):
+        return None
+    return boto3.client(
+        "s3",
+        endpoint_url=f"https://{conta}.r2.cloudflarestorage.com",
+        aws_access_key_id=acesso,
+        aws_secret_access_key=segredo,
+        region_name="auto",
+    )
+
+
+def _enviar_foto_r2(tipo, arquivo):
+    """Envia uma foto ao R2; em erro o app usa o Storage como reserva."""
+    cliente = _cliente_r2()
+    bucket = _segredo("R2_BUCKET_NAME")
+    if cliente is None or not bucket:
+        return None
+    prefixos = {"aluna": "fotos_alunas", "professora": "fotos_professoras"}
+    prefixo = prefixos.get(tipo)
+    if not prefixo:
+        return None
+    extensao = os.path.splitext(arquivo.name or "foto.jpg")[1].lower() or ".jpg"
+    nome = f"{uuid.uuid4().hex}_{_nome_seguro_arquivo(arquivo.name or f'foto{extensao}')}"
+    chave = f"{prefixo}/{nome}"
+    try:
+        cliente.put_object(
+            Bucket=bucket,
+            Key=chave,
+            Body=arquivo.getvalue(),
+            ContentType=arquivo.type or "image/jpeg",
+        )
+        return f"r2:{chave}"
+    except Exception:
+        return None
+
+
+def _url_foto_r2(caminho, segundos=3600):
+    if not str(caminho or "").startswith("r2:"):
+        return None
+    cliente = _cliente_r2()
+    bucket = _segredo("R2_BUCKET_NAME")
+    if cliente is None or not bucket:
+        return None
+    try:
+        return cliente.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": str(caminho)[3:]},
+            ExpiresIn=segundos,
+        )
+    except Exception:
+        return None
     
 def limpar_texto(txt):
     """Remove acentos, espaços extras e coloca em maiúsculo para comparação"""
@@ -1611,6 +1682,9 @@ def db_enviar_foto_aluna(arquivo):
     if extensao not in {".jpg", ".jpeg", ".png", ".webp"}:
         return None, "Envie uma imagem JPG, PNG ou WEBP."
     try:
+        caminho_r2 = _enviar_foto_r2("aluna", arquivo)
+        if caminho_r2:
+            return caminho_r2, ""
         caminho = f"{uuid.uuid4().hex}_{_nome_seguro_arquivo(arquivo.name)}"
         supabase.storage.from_("fotos_alunas").upload(
             path=caminho,
@@ -1635,6 +1709,8 @@ def db_url_foto_aluna(nome_aluna):
         caminho = aluna.get("foto_path") if aluna else None
         if not caminho:
             return None
+        if str(caminho).startswith("r2:"):
+            return _url_foto_r2(caminho)
         resposta = supabase.storage.from_("fotos_alunas").create_signed_url(caminho, 3600)
         return resposta.get("signedURL") or resposta.get("signedUrl")
     except Exception:
@@ -1663,6 +1739,9 @@ def db_enviar_foto_professora(arquivo):
     if extensao not in {".jpg", ".jpeg", ".png", ".webp"}:
         return None, "Envie uma imagem JPG, PNG ou WEBP."
     try:
+        caminho_r2 = _enviar_foto_r2("professora", arquivo)
+        if caminho_r2:
+            return caminho_r2, ""
         caminho = f"{uuid.uuid4().hex}_{_nome_seguro_arquivo(arquivo.name)}"
         supabase.storage.from_("fotos_professoras").upload(
             path=caminho,
@@ -1683,6 +1762,8 @@ def db_url_foto_professora(nome_professora):
         caminho = professora.get("foto_path") if professora else None
         if not caminho:
             return None
+        if str(caminho).startswith("r2:"):
+            return _url_foto_r2(caminho)
         resposta = supabase.storage.from_("fotos_professoras").create_signed_url(caminho, 3600)
         return resposta.get("signedURL") or resposta.get("signedUrl")
     except Exception:
