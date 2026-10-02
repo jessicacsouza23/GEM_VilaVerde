@@ -637,7 +637,7 @@
     return aulas.sort((a, b) => a.horario.localeCompare(b.horario));
   }
 
-  async function salvarRegistroAula({ dataIso, instrutora, tipo, alunas, material, conteudo, dificuldades, observacao, registrosPorAluna, casaTipo, licaoCasa }) {
+  async function salvarRegistroAula({ dataIso, instrutora, tipo, alunas, material, conteudo, dificuldades, observacao, registrosPorAluna, casaTipo, licaoCasa, limparCasas = [] }) {
     const banco = await obterCliente(); const data = dataBr(dataIso), disciplina = tipo === "Canto" ? "Solfejo Melódico" : tipo;
     if (!alunas?.length || !conteudo?.trim()) throw new Error("Informe o conteúdo trabalhado.");
     for (const aluna of alunas) {
@@ -647,12 +647,21 @@
       const registro = { Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoAnalise, Licao_Atual: material ? `${material}: ${conteudo}` : conteudo, Dificuldades: registroIndividual.dificuldades ?? dificuldades ?? [], Observacao: registroIndividual.observacao ?? observacao ?? "", Status: "Registrado" };
       const salvar = existente.data?.[0] ? await banco.from("historico_geral").update(registro).eq("id", existente.data[0].id) : await banco.from("historico_geral").insert(registro);
       if (salvar.error) throw new Error(`Não foi possível salvar o registro de ${aluna}.`);
-      if (casaTipo && licaoCasa?.trim()) {
-        const tipoCasa = `Casa_${casaTipo}`;
+      const tipoCasa = casaTipo ? `Casa_${casaTipo}` : "";
+      if (tipoCasa && licaoCasa?.trim()) {
         const pendente = await banco.from("historico_geral").select("id").eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoCasa).order("id", { ascending: false }).limit(1);
         const casa = { Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoCasa, Licao_Atual: "Definido", Licao_Casa: licaoCasa.trim(), Dificuldades: [], Observacao: "", Status: "Pendente" };
         const salvarCasa = pendente.data?.[0] ? await banco.from("historico_geral").update(casa).eq("id", pendente.data[0].id) : await banco.from("historico_geral").insert(casa);
         if (salvarCasa.error) throw new Error(`A aula foi salva, mas não foi possível registrar a lição de ${aluna}.`);
+      }
+      // Reabrir uma aula e remover/trocar a lição precisa refletir no mesmo
+      // histórico. No Streamlit, uma lição apagada não fica pendente para
+      // sempre; fazemos a mesma limpeza limitada à disciplina da tela atual.
+      const tiposRemover = [...new Set([...(limparCasas || []), ...(tipoCasa && !String(licaoCasa || "").trim() ? [tipoCasa] : [])])]
+        .filter((tipo) => tipo && tipo !== (String(licaoCasa || "").trim() ? tipoCasa : ""));
+      for (const tipoRemover of tiposRemover) {
+        const apagarCasa = await banco.from("historico_geral").delete().eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoRemover);
+        if (apagarCasa.error) throw new Error(`A aula foi salva, mas não foi possível atualizar a lição de ${aluna}.`);
       }
     }
   }
@@ -705,13 +714,20 @@
           : `Não foi possível salvar os exercícios de ${material}.`);
       }
 
-      if (item.casaTipo && String(item.licaoCasa || "").trim()) {
+      if (item.casaTipo) {
         // Apostila de Prática é corrigida pela Secretaria; Métodos são
         // corrigidos pela professora na próxima aula.
         const tipoCasa = item.casaTipo === "Apostila" ? "Casa_Apostila" : `Casa_Metodo_${material}`;
         const { data: casas, error: erroCasas } = await banco.from("historico_geral").select("id")
           .eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoCasa).order("id", { ascending: false }).limit(1);
         if (erroCasas) throw new Error(`O registro foi salvo, mas não foi possível consultar a lição de ${material}.`);
+        if (!String(item.licaoCasa || "").trim()) {
+          if (casas?.[0]) {
+            const apagarCasa = await banco.from("historico_geral").delete().eq("id", casas[0].id);
+            if (apagarCasa.error) throw new Error(`O registro foi salvo, mas não foi possível remover a lição de ${material}.`);
+          }
+          continue;
+        }
         const casa = { Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoCasa, Licao_Atual: "Definido", Licao_Casa: String(item.licaoCasa).trim(), Dificuldades: [], Observacao: "", Status: "Pendente" };
         const salvarCasa = casas?.[0]
           ? await banco.from("historico_geral").update(casa).eq("id", casas[0].id)
