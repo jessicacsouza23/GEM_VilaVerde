@@ -101,3 +101,14 @@ O botão **Ativar lembretes** aparece depois do login. O cron da Vercel roda às
 quando há aulas recentes sem registro. No iPhone, as notificações funcionam
 depois de instalar o site como aplicativo pela opção “Adicionar à Tela de
 Início”.
+
+## Diagnóstico de login
+
+Se **todos** os perfis (Secretaria, professoras e alunas) exibirem “usuário
+ou senha inválidos” ao mesmo tempo, não redefina as senhas: normalmente é a
+chave pública `anon` do Supabase que está incorreta na publicação. Confira o
+arquivo `js/supabase-config.js`: ele deve conter a URL e a `anonKey` pública
+do projeto correto, obtida em **Supabase → Project Settings → API**. Nunca
+substitua essa chave por `service_role`; a chave `service_role` fica somente
+nas variáveis Secret da Vercel. Após corrigir o arquivo, envie ao Git, aguarde
+a implantação e atualize a página do aplicativo.

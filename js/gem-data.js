@@ -48,15 +48,23 @@
 
   async function enviarFotoParaR2(tipo, arquivo) {
     if (!await r2EstaHabilitado()) return null;
-    const resposta = await fetch("/api/r2-upload-url", {
-      method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tipo, nome: arquivo.name, contentType: arquivo.type, tamanho: arquivo.size })
-    });
-    const dados = await resposta.json().catch(() => ({}));
-    if (!resposta.ok || !dados.url || !dados.key) throw new Error(dados.error || "Não foi possível preparar o envio da foto.");
-    const envio = await fetch(dados.url, { method: "PUT", headers: { "Content-Type": arquivo.type }, body: arquivo });
-    if (!envio.ok) throw new Error("Não foi possível enviar a foto ao armazenamento.");
-    return dados.key;
+    try {
+      const resposta = await fetch("/api/r2-upload-url", {
+        method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo, nome: arquivo.name, contentType: arquivo.type, tamanho: arquivo.size })
+      });
+      const dados = await resposta.json().catch(() => ({}));
+      if (!resposta.ok || !dados.url || !dados.key) throw new Error(dados.error || "Não foi possível preparar o envio da foto.");
+      const envio = await fetch(dados.url, { method: "PUT", headers: { "Content-Type": arquivo.type }, body: arquivo });
+      if (!envio.ok) throw new Error("O R2 recusou o envio da foto.");
+      return dados.key;
+    } catch (erro) {
+      // O R2 recebe o arquivo diretamente do navegador. Se uma regra CORS do
+      // bucket estiver temporariamente incorreta, não bloqueamos o cadastro:
+      // o fluxo continua pelo Storage privado já usado como reserva.
+      console.warn("R2 indisponível para esta foto; usando o Storage de reserva.", erro);
+      return null;
+    }
   }
 
   // As fotos ficam em buckets privados. Sem esta memória, cada tela criava
@@ -150,6 +158,9 @@
     // A Secretaria já usa esta RPC no Streamlit. Ela devolve somente o perfil
     // correto após conferir a senha no banco.
     const secretaria = await banco.rpc("validar_acesso", { p_login: usuario, p_senha: senha });
+    if (secretaria.error && [401, 403].includes(Number(secretaria.error.status))) {
+      throw new Error("O GEM não conseguiu validar o acesso no Supabase. Confira a chave pública anon publicada e atualize a página.");
+    }
     const contaSecretaria = secretaria.data?.[0];
     if (contaSecretaria?.perfil === "secretaria") {
       return { role: "Secretaria", name: contaSecretaria.nome || "Coordenação", gem: contextoGem.nome, externo: contextoGem.externo };
@@ -157,6 +168,9 @@
 
     // Professoras e alunas usam a ponte criada na migration desta interface.
     const pessoas = await banco.rpc("validar_acesso_gem_pessoas", { p_login: usuario, p_senha: senha });
+    if (pessoas.error) {
+      throw new Error(`Não foi possível validar o acesso no Supabase: ${pessoas.error.message || "confira a chave anon e as migrations do GEM."}`);
+    }
     const conta = pessoas.data?.[0];
     if (!conta) throw new Error("Usuário ou senha inválidos.");
     return {

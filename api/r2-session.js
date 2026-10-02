@@ -36,8 +36,9 @@ module.exports = async function r2Session(request, response) {
   try {
     const login = String(request.body?.login || "").trim().toLowerCase(), senha = String(request.body?.senha || "");
     if (!login || !senha) return response.status(400).json({ error: "Dados de acesso ausentes." });
-    if (login.includes("@")) {
-      const master = await validarMaster(login, senha);
+    const emailMaster = login === "master" ? "jessicavitorioit@gmail.com" : login;
+    if (emailMaster.includes("@")) {
+      const master = await validarMaster(emailMaster, senha);
       if (master) {
         definirCookie(response, criarSessao({ nome: master.nome || "Master", perfil: "Master" }));
         return response.status(200).json({ enabled: configurado(), session: true });

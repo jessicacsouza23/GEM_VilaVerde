@@ -1297,6 +1297,7 @@ function chavePushParaBytes(chave) {
 
 async function ativarNotificacoes() {
   const botao = $("#ativar-notificacoes");
+  if (!["Aluna", "Professora"].includes(state.role)) return;
   if (!("Notification" in window) || !("serviceWorker" in navigator)) { alert("Este navegador não oferece notificações para o aplicativo."); return; }
   botao.disabled = true;
   try {
@@ -1314,6 +1315,17 @@ async function ativarNotificacoes() {
     alert(erro.message || "Não foi possível ativar os lembretes.");
     botao.disabled = false;
   }
+}
+
+async function atualizarBotaoNotificacoes() {
+  const botao = $("#ativar-notificacoes");
+  if (!botao || !["Aluna", "Professora"].includes(state.role) || !("Notification" in window) || !("serviceWorker" in navigator)) return;
+  botao.textContent = "🔔 Ativar lembretes";
+  if (Notification.permission !== "granted") return;
+  try {
+    const registro = await navigator.serviceWorker.ready;
+    if (await registro.pushManager.getSubscription()) botao.textContent = "🔔 Lembretes ativos";
+  } catch (_) { /* o botão continua permitindo uma nova ativação manual */ }
 }
 
 async function renderPage() {
@@ -1479,7 +1491,7 @@ $("#entrar").addEventListener("click", async () => {
       aplicarAvatar(perfil.fotoUrl, state.name);
     } catch (error) { console.warn("Foto de perfil da professora indisponível", error); }
   }
-  if (!state.externo && "Notification" in window && "serviceWorker" in navigator) $("#ativar-notificacoes").classList.remove("hidden");
+  if (!state.externo && ["Aluna", "Professora"].includes(state.role) && "Notification" in window && "serviceWorker" in navigator) { $("#ativar-notificacoes").classList.remove("hidden"); atualizarBotaoNotificacoes(); }
   renderNavigation(); await renderPage();
   botao.disabled = false;
   botao.textContent = "Entrar";
