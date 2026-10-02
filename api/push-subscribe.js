@@ -1,3 +1,5 @@
+const { sessao } = require("./r2-auth");
+
 async function supabaseRequest(path, options = {}) {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -14,9 +16,16 @@ module.exports = async function pushSubscribe(request, response) {
   if (request.method !== "POST") return response.status(405).json({ error: "Método não permitido." });
   try {
     const { usuario, perfil, subscription } = request.body || {};
+    const acesso = sessao(request);
+    if (!acesso) return response.status(401).json({ error: "Entre novamente no GEM antes de ativar lembretes." });
     if (!usuario || !["Aluna", "Professora", "Secretaria", "Master"].includes(perfil) || !subscription?.endpoint) {
       return response.status(400).json({ error: "Inscrição de notificação inválida." });
     }
+    const mesmoPerfil = acesso.perfil === perfil;
+    const mesmoUsuario = perfil === "Secretaria"
+      ? ["Secretaria", String(acesso.nome || "")].includes(String(usuario))
+      : String(acesso.nome || "") === String(usuario);
+    if (!mesmoPerfil || !mesmoUsuario) return response.status(403).json({ error: "A inscrição precisa pertencer à conta que está logada." });
     await supabaseRequest("push_subscriptions?on_conflict=endpoint", {
       method: "POST",
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" },

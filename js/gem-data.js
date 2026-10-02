@@ -128,9 +128,13 @@
     if (!usuario || !senha) throw new Error("Informe usuário e senha.");
 
     // Contas novas (incluindo Master) usam Supabase Auth. A senha não passa
-    // pelas tabelas pedagógicas e a sessão retornada é a sessão oficial.
-    if (usuario.includes("@")) {
-      const sessao = await banco.auth.signInWithPassword({ email: usuario, password: senha });
+    // pelas tabelas pedagógicas e a sessão retornada é a sessão oficial. A
+    // primeira administradora pode entrar por "master" ou pelo e-mail que
+    // foi definido para ela na migration da plataforma.
+    const emailAuth = usuario.includes("@") ? usuario
+      : (!contextoGem.externo && usuario === "master" ? "jessicavitorioit@gmail.com" : "");
+    if (emailAuth) {
+      const sessao = await banco.auth.signInWithPassword({ email: emailAuth, password: senha });
       if (!sessao.error && sessao.data?.user) {
         if (!contextoGem.externo) {
           const { data: plataforma } = await banco.from("plataforma_usuarios")
@@ -328,6 +332,28 @@
       throw new Error(`Não foi possível carregar turmas e pessoas: ${erro.message || "verifique as permissões do Supabase."}`);
     }
     return { alunas: alunas.data || [], professoras: professoras.data || [], secretarias: secretarias.data || [] };
+  }
+
+  async function fotosPessoas() {
+    const banco = await obterCliente();
+    const [alunas, professoras] = await Promise.all([
+      banco.from("alunas").select("nome, foto_path").not("foto_path", "is", null),
+      banco.from("professoras").select("nome, foto_path").not("foto_path", "is", null)
+    ]);
+    const carregar = async (registros, bucket) => {
+      const resultado = {};
+      await Promise.all((registros || []).map(async (pessoa) => {
+        try {
+          const url = await urlAssinadaEmCache(banco, bucket, pessoa.foto_path);
+          if (url) resultado[pessoa.nome] = url;
+        } catch (_) { /* Uma foto indisponível não impede o cadastro de abrir. */ }
+      }));
+      return resultado;
+    };
+    return {
+      aluna: alunas.error ? {} : await carregar(alunas.data, "fotos_alunas"),
+      professora: professoras.error ? {} : await carregar(professoras.data, "fotos_professoras")
+    };
   }
 
   async function dadosCoordenacoesProfessoras() {
@@ -676,6 +702,25 @@
     const lista = (materiais || []).filter((item) => String(item?.material || "").trim() && String(item?.conteudo || "").trim());
     if (!aluna || !lista.length) throw new Error("Informe ao menos um método/apostila e a página ou lição trabalhada.");
 
+    // O cartão de um material pode ser removido ao corrigir um registro já
+    // salvo. Espelhamos o editor do Streamlit: o método removido deixa de
+    // existir no histórico daquela aula, inclusive sua lição pendente.
+    const { data: registrosDoDia, error: erroRegistrosDoDia } = await banco.from("historico_geral").select("id,Licao_Atual")
+      .eq("Aluna", aluna).eq("Data", data).eq("Tipo", "Analise_Prática").eq("Instrutora", instrutora);
+    if (erroRegistrosDoDia) throw new Error("Não foi possível preparar a atualização dos materiais de Prática.");
+    const materiaisAtuais = new Set(lista.map((item) => String(item.material).trim()));
+    for (const registro of (registrosDoDia || [])) {
+      const materialAnterior = String(registro.Licao_Atual || "").split(":", 1)[0].trim();
+      if (!materialAnterior || materiaisAtuais.has(materialAnterior)) continue;
+      const apagarAnalise = await banco.from("historico_geral").delete().eq("id", registro.id);
+      if (apagarAnalise.error) throw new Error(`Não foi possível remover o material ${materialAnterior}.`);
+      const tipoCasaAnterior = materialAnterior === "Apostila" ? "Casa_Apostila" : `Casa_Metodo_${materialAnterior}`;
+      const apagarCasa = await banco.from("historico_geral").delete().eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoCasaAnterior);
+      if (apagarCasa.error) throw new Error(`O material foi removido, mas não foi possível remover sua lição de casa.`);
+      const apagarExercicios = await banco.from("exercicios_registro").delete().eq("aluna", aluna).eq("data", data).eq("disciplina", "Prática").eq("material", materialAnterior);
+      if (apagarExercicios.error && apagarExercicios.error.code !== "42P01") throw new Error(`O material foi removido, mas não foi possível remover seus exercícios.`);
+    }
+
     for (const item of lista) {
       const material = String(item.material).trim();
       const conteudo = String(item.conteudo).trim();
@@ -765,14 +810,17 @@
         : tipoAula === "Teoria" ? ["Casa_Teoria_Prof", "Casa_Apostila_Teoria_Prof", "Casa_Apostila_Teoria"]
           : tipoAula === "Prática" ? []
             : null;
-    // "Não resolvido" e "Resolvido com pendências" continuam relevantes nos
-    // relatórios, mas não devem voltar como a mesma correção: se for método,
-    // a nova pendência criada para a próxima aula é que deve ser corrigida.
-    const resolvidos = ["Resolvido", "Resolvido com pendências", "Não resolvido", "Realizada", "Realizada - sem pendência", "Realizadas - sem pendência"];
+    // Mantém na fila tudo o que ainda requer acompanhamento. Em métodos,
+    // "Não passou" e "Estudar mais" já criam uma nova lição pendente para a
+    // próxima aula; portanto, a versão anterior não deve duplicar a fila.
+    const finalizados = ["Resolvido", "Realizada", "Realizada - sem pendência", "Realizadas - sem pendência"];
     return (data || []).filter((registro) => {
       const tipo = String(registro.Tipo || "");
       const pertence = tiposPermitidos ? (tiposPermitidos.includes(tipo) || (tipoAula === "Prática" && tipo.startsWith("Casa_Metodo_"))) : tipo.startsWith("Casa_Metodo_");
-      return pertence && !resolvidos.includes(registro.Status);
+      const ehMetodo = tipo.startsWith("Casa_Metodo_");
+      const baixada = finalizados.includes(registro.Status)
+        || (ehMetodo && ["Resolvido com pendências", "Não resolvido"].includes(registro.Status));
+      return pertence && !baixada;
     });
   }
 
@@ -969,5 +1017,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, encerrarSessao, iniciarSessaoR2, listarGems, criarGem, gemAtivo, dadosPlataformaMaster, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, encerrarSessao, iniciarSessaoR2, listarGems, criarGem, gemAtivo, dadosPlataformaMaster, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();

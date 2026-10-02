@@ -84,6 +84,8 @@ também como **Secret** na Vercel (Production):
 
 - `SUPABASE_SERVICE_ROLE_KEY` — usada apenas pelas rotas `/api/`, nunca é
   enviada ao celular.
+- `SESSION_SECRET` — senha longa que confirma a conta logada antes de aceitar
+  a inscrição do aparelho para receber notificações.
 - `PUSH_VAPID_PUBLIC_KEY` e `PUSH_VAPID_PRIVATE_KEY` — par de chaves Web Push.
 - `PUSH_CONTACT_EMAIL` — e-mail de contato técnico.
 - `CRON_SECRET` — senha longa usada pelo agendamento diário.

@@ -1,4 +1,4 @@
-const CACHE = "gem-vila-verde-v6";
+const CACHE = "gem-vila-verde-v7";
 const RUNTIME_IMAGES = "gem-vila-verde-images-v1";
 const FILES = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon.svg", "./js/gem-data.js", "./js/rodizio-engine.js"];
 self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting())));
@@ -21,6 +21,19 @@ self.addEventListener("fetch", (event) => {
         return resposta;
       } catch (_) { return salvo || Response.error(); }
     }));
+    return;
+  }
+  // Para os arquivos do próprio aplicativo, a rede é priorizada. Assim, uma
+  // publicação nova na Vercel aparece também no PWA instalado; sem internet,
+  // a última versão em cache continua disponível.
+  if (url.origin === self.location.origin && !url.pathname.startsWith("/api/")) {
+    event.respondWith(fetch(event.request).then(async (resposta) => {
+      if (resposta?.ok) {
+        const cache = await caches.open(CACHE);
+        cache.put(event.request, resposta.clone());
+      }
+      return resposta;
+    }).catch(async () => (await caches.match(event.request)) || Response.error()));
     return;
   }
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));

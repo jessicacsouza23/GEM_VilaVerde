@@ -352,7 +352,10 @@ async function renderProvasProfessora(content) {
   try { await carregar(); } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
 }
 
-async function renderAnaliticoProfessora(content) {
+// Mantido temporariamente como referência do painel antigo, que restringia a
+// visão à própria professora. O painel ativo abaixo usa o mesmo prontuário
+// completo da Secretaria.
+async function renderAnaliticoProfessoraLegado(content) {
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO PEDAGÓGICO</p><h2>Analítico IA da professora</h2><p>Consulte os seus próprios registros por aluna e peça uma sugestão pedagógica baseada somente no que foi lançado no GEM.</p></section><section class="panel"><div class="analytics-filters"><label>Aluna<select id="analitico-prof-aluna"></select></label><button id="atualizar-analitico-prof" class="primary-action" type="button">Atualizar</button></div><div id="analitico-prof-lista"><div class="empty">Carregando seus registros...</div></div></section>`;
   const destino = $("#analitico-prof-lista");
   try {
@@ -394,6 +397,14 @@ async function renderAnaliticoProfessora(content) {
   } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
 }
 
+async function renderAnaliticoProfessora(content) {
+  return renderAnalitico(content, {
+    somenteLeitura: true,
+    titulo: "Analítico pedagógico",
+    descricao: "Acompanhe o prontuário completo de cada aluna: aulas de todas as professoras, frequência, lições, estudo em casa, provas e observações da Secretaria."
+  });
+}
+
 async function renderMensagens(content) {
   const eProfessora = state.role === "Professora", eAluna = state.role === "Aluna", meuId = state.role === "Secretaria" ? "Secretaria" : state.name;
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">COMUNICAÇÃO</p><h2>Mensagens</h2><p>Envie avisos gerais, recados para professoras ou uma mensagem direta.</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-msg-tab="mural">Mural geral</button>${eProfessora ? `<button class="tab-action" data-msg-tab="professoras">Só professoras</button>` : ""}<button class="tab-action" data-msg-tab="direta">Conversa direta</button></div><div id="mensagens-conteudo"><div class="empty">Carregando mensagens...</div></div></section>`;
@@ -411,7 +422,7 @@ async function renderMensagens(content) {
 }
 
 async function renderMinhasLicoes(content) {
-  content.innerHTML = `<section class="intro-card"><p class="eyebrow">MINHAS LIÇÕES</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Seu controle de lições e estudo em casa fica salvo no mesmo histórico usado pela professora e pela Coordenação.</p></section><section id="aluna-indicadores" class="grid"><div class="metric"><strong>—</strong><span>Carregando indicadores</span></div></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-aluna-aba="licoes">📚 Minhas lições de casa</button><button class="tab-action" data-aluna-aba="estudo">✅ Controle de estudo diário</button></div><div id="aluna-conteudo"><div class="empty">Carregando...</div></div></section>`;
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">MINHAS LIÇÕES</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Seu controle de lições e estudo em casa fica salvo no mesmo histórico usado pela professora e pela Coordenação.</p></section><section id="aluna-indicadores" class="grid"><div class="metric"><strong>—</strong><span>Carregando indicadores</span></div></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-aluna-aba="licoes">📚 Minhas lições de casa</button><button class="tab-action" data-aluna-aba="historico">🗂️ Histórico</button><button class="tab-action" data-aluna-aba="estudo">✅ Controle de estudo diário</button></div><div id="aluna-conteudo"><div class="empty">Carregando...</div></div></section>`;
   const destino = $("#aluna-conteudo"), indicadores = $("#aluna-indicadores");
   let dadosAluna = { historico: [], feitas: [] }, estudos = [], erroEstudo = "", aba = "licoes", horariosEditando = [];
   const dataIso = (valor) => { const texto = String(valor || ""); if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return texto.slice(0, 10); const [dia, mes, ano] = texto.split("/"); return ano ? `${ano}-${mes}-${dia}` : ""; };
@@ -424,9 +435,18 @@ async function renderMinhasLicoes(content) {
     indicadores.innerHTML = `<div class="metric"><strong>${frequencia}%</strong><span>Frequência ponderada</span></div><div class="metric"><strong>${faltas}</strong><span>Ausência(s)</span></div><div class="metric"><strong>${justificadas}</strong><span>Justificada(s)</span></div><div class="metric"><strong>${classificacao("Prática")}</strong><span>Prática — últimos 30 dias</span></div><div class="metric"><strong>${classificacao("Teoria")}</strong><span>Teoria — últimos 30 dias</span></div><div class="metric"><strong>${classificacao("Solfejo")}</strong><span>Solfejo — últimos 30 dias</span></div>`;
   };
   const mostrarLicoes = () => {
-    const idsFeitos = new Set(dadosAluna.feitas.map((item) => String(item.historico_id))), licoes = dadosAluna.historico.filter((item) => String(item.Tipo || "").startsWith("Casa_"));
-    destino.innerHTML = `<div class="section-title"><div><h2>Lições de casa</h2><p>Marcar como feito é apenas seu controle; a professora confirma a avaliação em aula.</p></div></div>${licoes.length ? `<div class="lesson-list">${licoes.map((licao) => { const feito = idsFeitos.has(String(licao.id)); return `<article class="lesson-card"><h3>${escapeHtml(casaCategoria(licao.Tipo))}</h3><p><strong>Lição:</strong> ${escapeHtml(licao.Licao_Casa || "—")}</p><span class="lesson-meta">Lançada em ${escapeHtml(licao.Data || "—")}${eResolvida(licao.Status) ? " · Corrigida" : ""}</span><br><button class="lesson-action ${feito ? "done" : ""}" data-licao="${escapeHtml(licao.id)}" data-feito="${feito}">${feito ? "✓ Feito — desfazer" : "✓ Marcar como feito"}</button></article>`; }).join("")}</div>` : `<div class="empty">Nenhuma lição de casa registrada ainda.</div>`}`;
+    const idsFeitos = new Set(dadosAluna.feitas.map((item) => String(item.historico_id)));
+    // A tela da aluna é uma lista de pendências, não o arquivo completo.
+    // Uma lição resolvida continua em historico_geral com seu resultado e
+    // observações, aparecendo no relatório e no prontuário, mas sai daqui.
+    const licoes = dadosAluna.historico.filter((item) => String(item.Tipo || "").startsWith("Casa_") && !eResolvida(item.Status));
+    destino.innerHTML = `<div class="section-title"><div><h2>Lições de casa</h2><p>Somente lições pendentes aparecem aqui. As resolvidas ficam preservadas no histórico pedagógico.</p></div></div>${licoes.length ? `<div class="lesson-list">${licoes.map((licao) => { const feito = idsFeitos.has(String(licao.id)); return `<article class="lesson-card"><h3>${escapeHtml(casaCategoria(licao.Tipo))}</h3><p><strong>Lição:</strong> ${escapeHtml(licao.Licao_Casa || "—")}</p><span class="lesson-meta">Lançada em ${escapeHtml(licao.Data || "—")}</span><br><button class="lesson-action ${feito ? "done" : ""}" data-licao="${escapeHtml(licao.id)}" data-feito="${feito}">${feito ? "✓ Feito — desfazer" : "✓ Marcar como feito"}</button></article>`; }).join("")}</div>` : `<div class="empty">✅ Nenhuma lição pendente agora. As lições resolvidas continuam no seu histórico.</div>`}`;
     destino.querySelectorAll("button[data-licao]").forEach((botao) => botao.addEventListener("click", async () => { botao.disabled = true; try { await window.GemData.marcarLicaoFeita(state.name, botao.dataset.licao, botao.dataset.feito !== "true"); dadosAluna = await window.GemData.dadosAluna(state.name); mostrarLicoes(); } catch (erro) { botao.disabled = false; alert(erro.message); } }));
+  };
+  const mostrarHistorico = () => {
+    const licoes = dadosAluna.historico.filter((item) => String(item.Tipo || "").startsWith("Casa_"))
+      .sort((a, b) => dataIso(b.Data).localeCompare(dataIso(a.Data)) || Number(b.id || 0) - Number(a.id || 0));
+    destino.innerHTML = `<div class="section-title"><div><h2>Histórico de lições</h2><p>As lições resolvidas ficam registradas aqui com as orientações da professora ou da Secretaria.</p></div></div>${licoes.length ? `<div class="lesson-list">${licoes.map((licao) => `<article class="lesson-card ${eResolvida(licao.Status) ? "resolved-lesson" : ""}"><h3>${escapeHtml(casaCategoria(licao.Tipo))}</h3><p><strong>Lição:</strong> ${escapeHtml(licao.Licao_Casa || "—")}</p><span class="lesson-meta">Lançada em ${escapeHtml(licao.Data || "—")} · ${escapeHtml(licao.Status || "Pendente")}</span>${licao.Observacao ? `<p class="report-note">📝 ${escapeHtml(String(licao.Observacao).replace(/^Sec:\s*/i, ""))}</p>` : ""}</article>`).join("")}</div>` : `<div class="empty">Nenhuma lição registrada ainda.</div>`}`;
   };
   const mostrarEstudo = () => {
     if (erroEstudo) { destino.innerHTML = `<div class="action-error">${escapeHtml(erroEstudo)}</div>`; return; }
@@ -442,7 +462,7 @@ async function renderMinhasLicoes(content) {
   };
   try { dadosAluna = await window.GemData.dadosAluna(state.name); try { estudos = await window.GemData.dadosEstudoAluna(state.name); } catch (erro) { erroEstudo = erro.message; } desenharIndicadores(); mostrarLicoes(); }
   catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
-  document.querySelectorAll("[data-aluna-aba]").forEach((botao) => botao.addEventListener("click", () => { aba = botao.dataset.alunaAba; document.querySelectorAll("[data-aluna-aba]").forEach((item) => item.classList.toggle("active", item === botao)); if (aba === "estudo") mostrarEstudo(); else mostrarLicoes(); }));
+  document.querySelectorAll("[data-aluna-aba]").forEach((botao) => botao.addEventListener("click", () => { aba = botao.dataset.alunaAba; document.querySelectorAll("[data-aluna-aba]").forEach((item) => item.classList.toggle("active", item === botao)); if (aba === "estudo") mostrarEstudo(); else if (aba === "historico") mostrarHistorico(); else mostrarLicoes(); }));
 }
 
 async function renderChamada(content) {
@@ -675,7 +695,7 @@ async function renderVisaoGeral(content) {
 
 async function renderPessoas(content) {
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">CADASTROS</p><h2>Turmas e pessoas</h2><p>Alunas desativadas deixam de entrar apenas em rodízios novos; os rodízios, chamadas e registros anteriores continuam visíveis.</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-pessoas="aluna">Alunas e turmas</button><button class="tab-action" data-pessoas="professora">Professoras</button><button class="tab-action" data-pessoas="secretaria">Secretarias</button></div><div id="pessoas-conteudo"><div class="empty">Carregando pessoas...</div></div></section>`;
-  const dados = await window.GemData.dadosPessoas(); const destino = $("#pessoas-conteudo");
+  const [dados, fotos] = await Promise.all([window.GemData.dadosPessoas(), window.GemData.fotosPessoas().catch(() => ({ aluna: {}, professora: {} }))]); const destino = $("#pessoas-conteudo");
   let coordenacoes = [], erroCoordenacoes = "";
   try { coordenacoes = await window.GemData.dadosCoordenacoesProfessoras(); }
   catch (erro) { erroCoordenacoes = erro.message || "Não foi possível carregar as coordenações."; }
@@ -685,7 +705,7 @@ async function renderPessoas(content) {
   const mostrar = (tipo) => {
     const lista = tipo === "aluna" ? dados.alunas : tipo === "professora" ? dados.professoras : dados.secretarias;
     const titulo = tipo === "aluna" ? "Adicionar aluna" : tipo === "professora" ? "Adicionar professora" : "Adicionar secretaria";
-    destino.innerHTML = `<div class="person-add"><h3>${titulo}</h3><div class="form-grid"><input id="pessoa-nome" placeholder="Nome completo">${tipo === "aluna" ? '<input id="pessoa-turma" placeholder="Turma">' : ""}${tipo !== "secretaria" ? '<input id="pessoa-login" placeholder="Login"><label>Foto de perfil (opcional)<input id="pessoa-foto" type="file" accept="image/jpeg,image/png,image/webp"></label>' : ""}<button id="adicionar-pessoa" class="primary-action" type="button">Adicionar</button></div></div><div class="person-list">${lista.length ? lista.map((pessoa, indice) => `<article class="person-row person-card"><div><strong>${escapeHtml(pessoa.nome)}</strong><span>${tipo === "aluna" ? escapeHtml(pessoa.turma || "Sem turma") : pessoa.login ? `Login: ${escapeHtml(pessoa.login)}` : ""}</span></div><span class="badge ${pessoa.ativo === false ? "inactive" : ""}">${pessoa.ativo === false ? "Desativada" : "Ativa"}</span><div class="person-actions"><button data-editar="${indice}" class="secondary-action" type="button">Editar</button><button data-toggle="${indice}" class="secondary-action" type="button">${pessoa.ativo === false ? "Reativar" : "Desativar"}</button></div><div class="person-editor hidden" data-editor="${indice}"><label>Nome<input data-campo="nome" value="${escapeHtml(pessoa.nome)}"></label>${tipo === "aluna" ? `<label>Turma<input data-campo="turma" value="${escapeHtml(pessoa.turma || "")}"></label>` : ""}${tipo !== "secretaria" ? `<label>Login<input data-campo="login" value="${escapeHtml(pessoa.login || "")}"></label><label>Nova senha <small>(deixe vazia para manter a atual)</small><input data-campo="senha" type="password" autocomplete="new-password" placeholder="Nova senha"></label><label>Trocar foto <small>(JPG, PNG ou WEBP, até 5 MB)</small><input data-campo="foto" type="file" accept="image/jpeg,image/png,image/webp"></label>` : ""}<button data-salvar="${indice}" class="primary-action" type="button">Salvar alterações</button></div></article>`).join("") : "<div class=\"empty\">Nenhum cadastro ainda.</div>"}</div>`;
+    destino.innerHTML = `<div class="person-add"><h3>${titulo}</h3><div class="form-grid"><input id="pessoa-nome" placeholder="Nome completo">${tipo === "aluna" ? '<input id="pessoa-turma" placeholder="Turma">' : ""}${tipo !== "secretaria" ? '<input id="pessoa-login" placeholder="Login"><label>Foto de perfil (opcional)<input id="pessoa-foto" type="file" accept="image/jpeg,image/png,image/webp"></label>' : ""}<button id="adicionar-pessoa" class="primary-action" type="button">Adicionar</button></div></div><div class="person-list">${lista.length ? lista.map((pessoa, indice) => { const foto = fotos[tipo]?.[pessoa.nome]; const retrato = tipo !== "secretaria" ? (foto ? `<a class="person-photo" href="${escapeHtml(foto)}" target="_blank" rel="noopener" title="Ampliar foto de ${escapeHtml(pessoa.nome)}"><img src="${escapeHtml(foto)}" alt="Foto de ${escapeHtml(pessoa.nome)}"></a>` : `<span class="person-photo initials">${escapeHtml(pessoa.nome.slice(0, 1))}</span>`) : ""; return `<article class="person-row person-card"><div class="person-identity">${retrato}<div><strong>${escapeHtml(pessoa.nome)}</strong><span>${tipo === "aluna" ? escapeHtml(pessoa.turma || "Sem turma") : pessoa.login ? `Login: ${escapeHtml(pessoa.login)}` : ""}</span></div></div><span class="badge ${pessoa.ativo === false ? "inactive" : ""}">${pessoa.ativo === false ? "Desativada" : "Ativa"}</span><div class="person-actions"><button data-editar="${indice}" class="secondary-action" type="button">Editar</button><button data-toggle="${indice}" class="secondary-action" type="button">${pessoa.ativo === false ? "Reativar" : "Desativar"}</button></div><div class="person-editor hidden" data-editor="${indice}"><label>Nome<input data-campo="nome" value="${escapeHtml(pessoa.nome)}"></label>${tipo === "aluna" ? `<label>Turma<input data-campo="turma" value="${escapeHtml(pessoa.turma || "")}"></label>` : ""}${tipo !== "secretaria" ? `<label>Login<input data-campo="login" value="${escapeHtml(pessoa.login || "")}"></label><label>Nova senha <small>(deixe vazia para manter a atual)</small><input data-campo="senha" type="password" autocomplete="new-password" placeholder="Nova senha"></label><label>Trocar foto <small>(JPG, PNG ou WEBP, até 5 MB)</small><input data-campo="foto" type="file" accept="image/jpeg,image/png,image/webp"></label>` : ""}<button data-salvar="${indice}" class="primary-action" type="button">Salvar alterações</button></div></article>`; }).join("") : "<div class=\"empty\">Nenhum cadastro ainda.</div>"}</div>`;
     if (tipo === "professora") {
       const professorasAtivas = lista.filter((pessoa) => pessoa.ativo !== false);
       const coordenacaoAtual = coordenacoes.filter((item) => item.inicio <= hoje && item.fim >= hoje);
@@ -740,7 +760,23 @@ async function renderLogistica(content) {
   const lista = $("#lista-modelos");
   const modelos = await window.GemData.dadosLogistica();
   const pessoas = await window.GemData.dadosPessoas();
-  const renderLista = () => { lista.innerHTML = modelos.length ? modelos.map((modelo, indice) => { const config = modelo.configuracao || {}; return `<article class="agenda-card"><h3>${escapeHtml(modelo.nome)}</h3><p><strong>${escapeHtml(modelo.status || "rascunho")}</strong> · começa em ${escapeHtml(modelo.vigencia_inicio || "—")}</p><p>${(config.blocos || []).length} bloco(s), ${(config.turmas || []).filter((t) => t["Ativa no modelo"] !== false).length} turma(s), ${(config.salas || []).filter((s) => String(s.Uso || "").toLowerCase() === "individual").length} sala(s) individual(is).</p><div class="scale-actions"><button data-editar-modelo="${indice}" class="secondary-action" type="button">Criar revisão</button>${modelo.status !== "programado" ? `<button data-programar-modelo="${indice}" class="primary-action" type="button">Programar</button>` : `<button data-rascunho-modelo="${indice}" class="secondary-action" type="button">Voltar a rascunho</button>`}</div></article>`; }).join("") : `<div class="empty">Nenhum modelo cadastrado. Crie o primeiro para gerar novos rodízios.</div>`; ligarLista(); };
+  const statusVisualModelo = (modelo) => {
+    const hoje = new Date().toISOString().slice(0, 10);
+    if (modelo.status === "encerrado" || (modelo.vigencia_fim && modelo.vigencia_fim < hoje)) return "encerrado";
+    if (modelo.status === "programado" && modelo.vigencia_inicio <= hoje) return "vigente";
+    return modelo.status || "rascunho";
+  };
+  const renderLista = () => { lista.innerHTML = modelos.length ? modelos.map((modelo, indice) => {
+    const config = modelo.configuracao || {}, statusVisual = statusVisualModelo(modelo);
+    const periodo = `${modelo.vigencia_inicio || "—"} até ${modelo.vigencia_fim || "sem data final"}`;
+    const acoes = statusVisual === "vigente"
+      ? `<label class="model-end-date">Encerrar em <input data-fim-modelo="${indice}" type="date" min="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}"></label><button data-encerrar-modelo="${indice}" class="secondary-action danger-action" type="button">Encerrar modelo</button>`
+      : modelo.status === "programado"
+        ? `<button data-rascunho-modelo="${indice}" class="secondary-action" type="button">Voltar a rascunho</button>`
+        : modelo.status !== "encerrado"
+          ? `<button data-programar-modelo="${indice}" class="primary-action" type="button">Programar início</button>` : "";
+    return `<article class="agenda-card"><h3>${escapeHtml(modelo.nome)}</h3><p><strong>${escapeHtml(statusVisual)}</strong> · vigência: ${escapeHtml(periodo)}</p><p>${(config.blocos || []).length} bloco(s), ${(config.turmas || []).filter((t) => t["Ativa no modelo"] !== false).length} turma(s), ${(config.salas || []).filter((s) => String(s.Uso || "").toLowerCase() === "individual").length} sala(s) individual(is).</p><div class="scale-actions"><button data-editar-modelo="${indice}" class="secondary-action" type="button">Criar revisão</button>${acoes}</div></article>`;
+  }).join("") : `<div class="empty">Nenhum modelo cadastrado. Crie o primeiro para gerar novos rodízios.</div>`; ligarLista(); };
   const editor = $("#editor-modelo");
   const linhas = (itens, tipo, habilitadas = {}) => (itens || []).map((item) => {
     if (tipo === "bloco") return `<div class="model-row"><input data-bloco-nome value="${escapeHtml(item.Bloco || "")}" placeholder="Bloco"><input data-bloco-inicio value="${escapeHtml(item["Início"] || "")}" placeholder="08:50"><input data-bloco-fim value="${escapeHtml(item.Fim || "")}" placeholder="09:35"><button class="remove-row" type="button">×</button></div>`;
@@ -787,7 +823,27 @@ async function renderLogistica(content) {
       catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
     };
   };
-  const ligarLista = () => { lista.querySelectorAll("[data-editar-modelo]").forEach((botao) => botao.onclick = () => abrirEditor(modelos[Number(botao.dataset.editarModelo)])); lista.querySelectorAll("[data-programar-modelo]").forEach((botao) => botao.onclick = async () => { try { await window.GemData.alterarStatusModelo(modelos[Number(botao.dataset.programarModelo)].id, "programado"); modelos[Number(botao.dataset.programarModelo)].status = "programado"; renderLista(); } catch (error) { alert(error.message); } }); lista.querySelectorAll("[data-rascunho-modelo]").forEach((botao) => botao.onclick = async () => { try { await window.GemData.alterarStatusModelo(modelos[Number(botao.dataset.rascunhoModelo)].id, "rascunho"); modelos[Number(botao.dataset.rascunhoModelo)].status = "rascunho"; renderLista(); } catch (error) { alert(error.message); } }); };
+  const ligarLista = () => {
+    lista.querySelectorAll("[data-editar-modelo]").forEach((botao) => botao.onclick = () => abrirEditor(modelos[Number(botao.dataset.editarModelo)]));
+    lista.querySelectorAll("[data-programar-modelo]").forEach((botao) => botao.onclick = async () => {
+      try { await window.GemData.alterarStatusModelo(modelos[Number(botao.dataset.programarModelo)].id, "programado"); modelos[Number(botao.dataset.programarModelo)].status = "programado"; renderLista(); }
+      catch (error) { alert(error.message); }
+    });
+    lista.querySelectorAll("[data-rascunho-modelo]").forEach((botao) => botao.onclick = async () => {
+      try { await window.GemData.alterarStatusModelo(modelos[Number(botao.dataset.rascunhoModelo)].id, "rascunho"); modelos[Number(botao.dataset.rascunhoModelo)].status = "rascunho"; renderLista(); }
+      catch (error) { alert(error.message); }
+    });
+    lista.querySelectorAll("[data-encerrar-modelo]").forEach((botao) => botao.onclick = async () => {
+      const indice = Number(botao.dataset.encerrarModelo), modelo = modelos[indice];
+      const dataFim = lista.querySelector(`[data-fim-modelo="${indice}"]`)?.value;
+      if (!dataFim) { alert("Informe a data de encerramento."); return; }
+      if (!confirm(`Encerrar “${modelo.nome}” para novas escalas a partir de ${dataFim}? As escalas já salvas serão preservadas.`)) return;
+      try {
+        await window.GemData.alterarStatusModelo(modelo.id, "encerrado", dataFim);
+        modelo.status = "encerrado"; modelo.vigencia_fim = dataFim; renderLista();
+      } catch (error) { alert(error.message); }
+    });
+  };
   $("#novo-modelo").onclick = () => abrirEditor(); renderLista();
 }
 
@@ -885,8 +941,9 @@ async function renderCorrecoesLicoes(content) {
   $("#criar-licao-secretaria").addEventListener("click", async () => { const feedback = $("#correcao-feedback"), licao = $("#nova-licao-conteudo").value.trim(); if (!licao) { feedback.innerHTML = `<div class="action-error">Informe a lição ou página.</div>`; return; } try { await window.GemData.criarCorrecaoLicao({ aluna: $("#correcao-aluna").value, tipo: $("#nova-licao-tipo").value, licao, status: $("#nova-licao-status").value, observacao: $("#nova-licao-obs").value.trim(), secretaria: $("#correcao-secretaria").value, data: dataBr($("#correcao-data").value) }); feedback.innerHTML = `<div class="action-ok">Atividade registrada para correção.</div>`; } catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; } });
 }
 
-async function renderAnalitico(content) {
-  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO PEDAGÓGICO</p><h2>Analítico e desempenho</h2><p>Indicadores calculados somente a partir dos registros, chamadas, lições e notas já existentes no GEM.</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-analise="prontuario">Prontuário individual</button><button class="tab-action" data-analise="quadro">Quadro de desempenho</button><button class="tab-action" data-analise="boletim">Boletim</button></div><div class="analytics-filters"><label>Período<select id="analise-periodo"><option value="30">Mensal</option><option value="60" selected>Bimestral</option><option value="180">Semestral</option><option value="tudo">Tudo</option><option value="personalizado">Personalizado</option></select></label><label>De<input id="analise-inicio" type="date"></label><label>Até<input id="analise-fim" type="date"></label><label id="analise-aluna-wrap">Aluna<select id="analise-aluna"></select></label><button id="atualizar-analise" class="primary-action" type="button">Atualizar</button></div><div id="analise-conteudo"><div class="empty">Carregando indicadores...</div></div></section>`;
+async function renderAnalitico(content, opcoes = {}) {
+  const titulo = opcoes.titulo || "Analítico e desempenho", descricao = opcoes.descricao || "Indicadores calculados somente a partir dos registros, chamadas, lições e notas já existentes no GEM.";
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO PEDAGÓGICO</p><h2>${escapeHtml(titulo)}</h2><p>${escapeHtml(descricao)}</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-analise="prontuario">Prontuário individual</button><button class="tab-action" data-analise="quadro">Quadro de desempenho</button><button class="tab-action" data-analise="boletim">Boletim</button></div><div class="analytics-filters"><label>Período<select id="analise-periodo"><option value="30">Mensal</option><option value="60" selected>Bimestral</option><option value="180">Semestral</option><option value="tudo">Tudo</option><option value="personalizado">Personalizado</option></select></label><label>De<input id="analise-inicio" type="date"></label><label>Até<input id="analise-fim" type="date"></label><label id="analise-aluna-wrap">Aluna<select id="analise-aluna"></select></label><button id="atualizar-analise" class="primary-action" type="button">Atualizar</button></div><div id="analise-conteudo"><div class="empty">Carregando indicadores...</div></div></section>`;
   const dados = await window.GemData.dadosAnalitico();
   const hoje = new Date(), inicio = new Date(); inicio.setDate(hoje.getDate() - 60);
   $("#analise-inicio").value = inicio.toISOString().slice(0, 10); $("#analise-fim").value = hoje.toISOString().slice(0, 10);
@@ -932,7 +989,10 @@ async function renderAnalitico(content) {
     const listaDificuldades = [...new Set(aulas.flatMap((registro) => dificuldades(registro.Dificuldades)).filter((item) => !/não apresentou dificuldade/i.test(item)))]; const pendentes = casas.filter((registro) => !/resolvido|realizada|sem pendência/i.test(String(registro.Status || "")));
     destino.innerHTML = `<section class="analytics-summary"><h3>👤 Prontuário — ${escapeHtml(aluna)}</h3><div class="grid"><div class="metric"><strong>${chamadas.length ? Math.round((presentes + justificadas * .5) / chamadas.length * 100) : 0}%</strong><span>Frequência ponderada</span></div><div class="metric"><strong>${faltas} / ${justificadas}</strong><span>Faltas / justificadas</span></div><div class="metric"><strong>${aproveitamento}%</strong><span>Aproveitamento nas aulas</span></div><div class="metric"><strong>${pendentes.length}</strong><span>Lições pendentes</span></div><div class="metric"><strong>${constanciaEstudo}%</strong><span>Constância de estudo</span></div></div><div class="analytics-columns"><section><h4>⚠ Dificuldades registradas</h4>${listaDificuldades.length ? `<ul>${listaDificuldades.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "<p>Sem dificuldades registradas no período.</p>"}</section><section><h4>📚 Lições de casa</h4>${casas.length ? casas.map((item) => `<p class="homework-line"><strong>${escapeHtml(item.Tipo.replace("Casa_", ""))}:</strong> ${escapeHtml(item.Licao_Casa || "—")} <small>${escapeHtml(item.Status || "Pendente")}</small></p>`).join("") : "<p>Nenhuma lição registrada no período.</p>"}</section><section><h4>✅ Estudo em casa</h4>${estudos.length ? `<p><strong>${diasEstudados}</strong> dia(s) com estudo registrado em ${estudos.length} lançamento(s).</p>${estudos.slice(0, 10).map((item) => `<p class="homework-line"><strong>${escapeHtml(item.data || item.Data || "—")}:</strong> ${escapeHtml((item.horarios || []).join(" · ") || "sem horário informado")}</p>`).join("")}` : "<p>Não há estudo informado no período.</p>"}</section></div><section class="feedback-panel"><h4>👩‍🏫 Feedback das professoras e Secretaria</h4>${aulas.length ? aulas.map((item) => `<article><strong>${escapeHtml(disciplinaAnalise(item.Tipo) || String(item.Tipo).replace("Analise_", ""))} — ${escapeHtml(item.Data || "")}</strong>${item.Instrutora ? ` · ${escapeHtml(item.Instrutora)}` : ""}<p>${escapeHtml(item.Licao_Atual || "Sem conteúdo informado")}</p>${item.Observacao ? `<p class="report-note">📝 ${escapeHtml(item.Observacao)}</p>` : ""}</article>`).join("") : "<p>Nenhuma aula registrada no período.</p>"}</section></section>`;
     const objetivoAtual = (dados.objetivos || []).find((item) => item.aluna === aluna) || {};
-    destino.querySelector(".analytics-summary")?.insertAdjacentHTML("beforeend", `<section class="feedback-panel objective-panel"><h4>🎯 Próximos objetivos pedagógicos</h4><p class="hint">Visível para a Secretaria e para as professoras que derem aula a esta aluna.</p><label>Foco para as próximas aulas<textarea id="objetivo-pedagogico" placeholder="Ex.: consolidar leitura de clave de sol e manter o estudo diário.">${escapeHtml(objetivoAtual.texto || "")}</textarea></label>${objetivoAtual.professora ? `<small>Última atualização por: ${escapeHtml(objetivoAtual.professora)}</small>` : ""}<div class="inline-actions"><button id="salvar-objetivo-pedagogico" class="secondary-action" type="button">Salvar objetivo</button><span id="objetivo-feedback" aria-live="polite"></span></div></section>`);
+    const objetivoMarkup = opcoes.somenteLeitura
+      ? `<section class="feedback-panel objective-panel"><h4>🎯 Próximos objetivos pedagógicos</h4><p>${objetivoAtual.texto ? escapeHtml(objetivoAtual.texto) : "Nenhum objetivo combinado ainda para esta aluna."}</p>${objetivoAtual.professora ? `<small>Última atualização por: ${escapeHtml(objetivoAtual.professora)}</small>` : ""}</section>`
+      : `<section class="feedback-panel objective-panel"><h4>🎯 Próximos objetivos pedagógicos</h4><p class="hint">Visível para a Secretaria e para as professoras que derem aula a esta aluna.</p><label>Foco para as próximas aulas<textarea id="objetivo-pedagogico" placeholder="Ex.: consolidar leitura de clave de sol e manter o estudo diário.">${escapeHtml(objetivoAtual.texto || "")}</textarea></label>${objetivoAtual.professora ? `<small>Última atualização por: ${escapeHtml(objetivoAtual.professora)}</small>` : ""}<div class="inline-actions"><button id="salvar-objetivo-pedagogico" class="secondary-action" type="button">Salvar objetivo</button><span id="objetivo-feedback" aria-live="polite"></span></div></section>`;
+    destino.querySelector(".analytics-summary")?.insertAdjacentHTML("beforeend", objetivoMarkup);
     $("#salvar-objetivo-pedagogico")?.addEventListener("click", async () => {
       const botao = $("#salvar-objetivo-pedagogico"), retorno = $("#objetivo-feedback");
       botao.disabled = true;
@@ -1440,7 +1500,11 @@ $("#install-app").addEventListener("click", async () => {
   $("#install-app").classList.add("hidden");
 });
 window.addEventListener("appinstalled", () => $("#install-app").classList.add("hidden"));
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("service-worker.js");
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" })
+    .then((registro) => registro.update())
+    .catch((erro) => console.warn("Não foi possível atualizar o aplicativo offline.", erro));
+}
 
 // A marca é carregada da configuração já usada pelo GEM.
 window.GemData?.carregarIdentidade().then((identidade) => {
