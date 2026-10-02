@@ -1,4 +1,4 @@
-const { configurado, sessaoConfigurada, criarSessao, definirCookie, limparCookie } = require("./r2-auth");
+const { configurado, sessaoConfigurada, criarSessao, sessao, definirCookie, limparCookie } = require("./r2-auth");
 
 async function supabaseRpc(nome, parametros) {
   const url = process.env.SUPABASE_URL, chave = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -29,6 +29,14 @@ async function validarMaster(email, senha) {
 
 module.exports = async function r2Session(request, response) {
   if (request.method === "DELETE") { limparCookie(response); return response.status(204).end(); }
+  // O cookie é HttpOnly: o navegador o envia, mas nenhum script consegue lê-lo.
+  // Esta rota só devolve a identidade mínima necessária para reconstruir a tela
+  // depois de atualizar a página.
+  if (request.method === "GET") {
+    const acesso = sessao(request);
+    if (!acesso) return response.status(401).json({ session: false });
+    return response.status(200).json({ enabled: configurado(), session: true, nome: acesso.nome, perfil: acesso.perfil });
+  }
   if (request.method !== "POST") return response.status(405).json({ error: "Método não permitido." });
   // A mesma sessão curta protege o R2 e o Analítico IA. O R2 continua
   // opcional: a sessão pode existir mesmo antes de suas chaves serem salvas.

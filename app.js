@@ -1439,34 +1439,11 @@ async function renderPage() {
   }
 }
 
-$("#entrar").addEventListener("click", async () => {
-  const botao = $("#entrar");
-  const erro = $("#login-error");
-  erro.classList.add("hidden");
-  botao.disabled = true;
-  botao.textContent = "Entrando...";
-  try {
-    const login = $("#nome").value, senha = $("#senha").value;
-    const conta = await window.GemData?.autenticar(login, senha);
-    if (!conta) throw new Error("A autenticação do GEM ainda não está disponível.");
-    // A sessão adicional é usada apenas para URLs privadas das fotos no R2.
-    // Se o R2 ainda não estiver configurado, o login normal continua igual.
-    const r2Ativo = await window.GemData?.iniciarSessaoR2?.(login, senha);
-    if (r2Ativo) {
-      const identidade = await window.GemData?.carregarIdentidade?.();
-      if (identidade?.logoUrl) aplicarLogo(identidade.logoUrl);
-    }
-    state.role = conta.role;
-    state.name = conta.name;
-    state.gem = conta.gem || "GEM Vila Verde";
-    state.externo = Boolean(conta.externo);
-  } catch (error) {
-    erro.textContent = error?.message || "Não foi possível entrar agora.";
-    erro.classList.remove("hidden");
-    botao.disabled = false;
-    botao.textContent = "Entrar";
-    return;
-  }
+async function abrirConta(conta) {
+  state.role = conta.role;
+  state.name = conta.name;
+  state.gem = conta.gem || "GEM Vila Verde";
+  state.externo = Boolean(conta.externo);
   state.coordenadora = false;
   if (state.role === "Professora") {
     try { state.coordenadora = await window.GemData.professoraEhCoordenadora(state.name); }
@@ -1493,6 +1470,33 @@ $("#entrar").addEventListener("click", async () => {
   }
   if (!state.externo && ["Aluna", "Professora"].includes(state.role) && "Notification" in window && "serviceWorker" in navigator) { $("#ativar-notificacoes").classList.remove("hidden"); atualizarBotaoNotificacoes(); }
   renderNavigation(); await renderPage();
+}
+
+$("#entrar").addEventListener("click", async () => {
+  const botao = $("#entrar");
+  const erro = $("#login-error");
+  erro.classList.add("hidden");
+  botao.disabled = true;
+  botao.textContent = "Entrando...";
+  try {
+    const login = $("#nome").value, senha = $("#senha").value;
+    const conta = await window.GemData?.autenticar(login, senha);
+    if (!conta) throw new Error("A autenticação do GEM ainda não está disponível.");
+    // A sessão adicional é usada apenas para URLs privadas das fotos no R2.
+    // Se o R2 ainda não estiver configurado, o login normal continua igual.
+    const r2Ativo = await window.GemData?.iniciarSessaoR2?.(login, senha);
+    if (r2Ativo) {
+      const identidade = await window.GemData?.carregarIdentidade?.();
+      if (identidade?.logoUrl) aplicarLogo(identidade.logoUrl);
+    }
+    await abrirConta(conta);
+  } catch (error) {
+    erro.textContent = error?.message || "Não foi possível entrar agora.";
+    erro.classList.remove("hidden");
+    botao.disabled = false;
+    botao.textContent = "Entrar";
+    return;
+  }
   botao.disabled = false;
   botao.textContent = "Entrar";
 });
@@ -1529,3 +1533,12 @@ window.GemData?.carregarIdentidade().then((identidade) => {
     }
   }
 });
+
+// Atualizar a página não encerra a sessão: a identidade é restaurada a partir
+// do cookie seguro (HttpOnly), que expira em até oito horas ou ao clicar em Sair.
+(async () => {
+  const conta = await window.GemData?.restaurarSessao?.();
+  if (!conta) return;
+  try { await abrirConta(conta); }
+  catch (erro) { console.warn("Não foi possível restaurar a sessão do GEM.", erro); }
+})();
