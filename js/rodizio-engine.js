@@ -33,8 +33,16 @@
     return { config, blocos, individuais, coletivas, componentes, turmas };
   }
 
+  function professoraDaPratica(valor, detalhe = {}) {
+    const componentes = detalhe.professoras_componentes || {};
+    const texto = String(componentes.Prática || String(valor || "").split("|").slice(1).join("|").trim());
+    const encontrada = texto.match(/Prática:\s*([^·]+)\s*$/i);
+    return (encontrada ? encontrada[1] : texto).replace(/^Prática:\s*/i, "").trim();
+  }
+
   function memoriaDasEscalas(escalaAnteriores, dataSelecionada, alunas, salasIndividuais) {
     const memoria = Object.fromEntries(alunas.map((aluna) => [aluna, { professoras: [], salas: [], ultima: null }]));
+    const alunasPorProfessora = {};
     const limite = dataBrParaData(dataSelecionada);
     (escalaAnteriores || []).forEach((anterior) => {
       const data = dataBrParaData(anterior.id);
@@ -49,14 +57,16 @@
           const sala = String(valor).split("|", 1)[0].trim();
           if (!detalhe.individual && !salasIndividuais.includes(sala)) return;
           if (!salasIndividuais.includes(sala)) return;
-          const professora = String(valor).split("|").slice(1).join("|").trim();
+          const professora = professoraDaPratica(valor, detalhe);
+          if (!professora) return;
           item.professoras.push(professora);
           item.salas.push(sala);
           item.ultima = professora;
+          (alunasPorProfessora[professora] ||= new Set()).add(linha.Aluna);
         });
       });
     });
-    return memoria;
+    return { porAluna: memoria, alunasPorProfessora };
   }
 
   function gerar({ modelo, data, turmasReais, professoras, folgas = [], saidas = {}, fixas = {}, coletivas = {}, turmaInicioTeoria = null, usarFixas = false, escalasAnteriores = [] }) {
@@ -75,7 +85,8 @@
     const habilitadas = config.professoras_habilitadas || {};
     const disponiveis = professoras.filter((professora) => !folgas.includes(professora));
     const todasAlunas = turmas.flatMap((turma) => turmasReais[turma] || []);
-    const memoria = memoriaDasEscalas(escalasAnteriores, data, todasAlunas, individuais);
+    const memoriaHistorica = memoriaDasEscalas(escalasAnteriores, data, todasAlunas, individuais);
+    const memoria = memoriaHistorica.porAluna;
     const escala = Object.fromEntries(todasAlunas.map((aluna) => [aluna, { Aluna: aluna, _detalhes: {} }]));
     const mesmaProf = config.mesma_professora_nos_componentes !== false;
     const regras = config.regras_rodizio || {};
@@ -126,7 +137,14 @@
           const mem = memoria[aluna];
           const pares = candidatas.flatMap((professora) => salasLivres.map((sala) => ({ professora, sala })));
           pares.sort((a, b) => {
-            const pontuar = (item) => [Number(regras.nao_repetir_imediata !== false && candidatas.length > 1 && item.professora === mem.ultima), Number(regras.nao_repetir_aluna !== false && new Set(mem.professoras).size < professoras.length && mem.professoras.includes(item.professora)), Number(regras.nao_repetir_sala !== false && new Set(mem.salas).size < individuais.length && mem.salas.includes(item.sala)), item.professora, item.sala];
+            const pontuar = (item) => {
+              // A roda é da professora: ela só volta a atender a mesma aluna
+              // depois de ter passado por todas as alunas deste modelo.
+              const alunasAtendidas = memoriaHistorica.alunasPorProfessora[item.professora] || new Set();
+              const completouARoda = todasAlunas.length > 0 && todasAlunas.every((outra) => alunasAtendidas.has(outra));
+              const repetiuAntesDaRoda = regras.nao_repetir_aluna !== false && !completouARoda && alunasAtendidas.has(aluna);
+              return [Number(regras.nao_repetir_imediata !== false && candidatas.length > 1 && item.professora === mem.ultima), Number(repetiuAntesDaRoda), Number(regras.nao_repetir_sala !== false && new Set(mem.salas).size < individuais.length && mem.salas.includes(item.sala)), item.professora, item.sala];
+            };
             return pontuar(a).join("|").localeCompare(pontuar(b).join("|"), "pt-BR", { numeric: true });
           });
           const { professora, sala } = pares[0];
@@ -134,6 +152,7 @@
           escala[aluna]._detalhes[hora] = { tipo: componentes.length > 1 ? "Prática + Solfejo" : componentes[0], componentes: [...componentes], individual: true, turma, mesma_professora_componentes: mesmaProf };
           alocadas.push({ aluna, sala, professora }); profsLivres.splice(profsLivres.indexOf(professora), 1); salasLivres.splice(salasLivres.indexOf(sala), 1);
           mem.professoras.push(professora); mem.salas.push(sala); mem.ultima = professora;
+          (memoriaHistorica.alunasPorProfessora[professora] ||= new Set()).add(aluna);
         });
         if (!mesmaProf && alocadas.length > 1) {
           const pratica = alocadas.map((item) => item.professora), solfejo = [...pratica.slice(1), pratica[0]];
@@ -142,11 +161,11 @@
       });
     });
     if (erros.length) return { escala: null, erros: [...new Set(erros)] };
-    estabilizarSalas(escala, horarios, individuais, data);
+    estabilizarSalas(escala, horarios, individuais, data, escalasAnteriores);
     return { escala: Object.values(escala), erros: [] };
   }
 
-  function estabilizarSalas(mapa, horarios, salas, data) {
+  function estabilizarSalas(mapa, horarios, salas, data, escalasAnteriores = []) {
     const porProf = {};
     Object.values(mapa).forEach((linha) => Object.entries(linha._detalhes || {}).forEach(([hora, detalhe]) => {
       if (!detalhe.individual) return;
@@ -156,7 +175,12 @@
     }));
     const profs = Object.keys(porProf); const vizinhas = Object.fromEntries(profs.map((prof) => [prof, new Set()]));
     horarios.forEach((hora) => { const noBloco = profs.filter((prof) => porProf[prof].has(hora)); noBloco.forEach((prof) => noBloco.forEach((outra) => { if (prof !== outra) vizinhas[prof].add(outra); })); });
-    const dataObj = dataBrParaData(data); const deslocamento = salas.length ? ((dataObj ? Math.floor(dataObj / 86400000) : 0) % salas.length) : 0; const ordem = [...salas.slice(deslocamento), ...salas.slice(0, deslocamento)]; const porSala = {};
+    // A professora mantém a mesma sala entre todos os blocos do sábado. No
+    // próximo rodízio, a ordem começa em outra sala para a roda continuar.
+    const dataObj = dataBrParaData(data);
+    const deslocamento = salas.length ? ((dataObj ? Math.floor(dataObj / 86400000) : 0) % salas.length) : 0;
+    const ordem = [...salas.slice(deslocamento), ...salas.slice(0, deslocamento)];
+    const porSala = {};
     const ordenar = [...profs].sort((a, b) => vizinhas[b].size - vizinhas[a].size || a.localeCompare(b));
     const tentar = (indice) => { if (indice >= ordenar.length) return true; const prof = ordenar[indice]; const usadas = new Set([...vizinhas[prof]].map((vizinha) => porSala[vizinha]).filter(Boolean)); for (const sala of ordem) { if (usadas.has(sala)) continue; porSala[prof] = sala; if (tentar(indice + 1)) return true; delete porSala[prof]; } return false; };
     if (!tentar(0)) return;
