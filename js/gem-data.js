@@ -2,12 +2,42 @@
    Dados pedagógicos só serão carregados após a migração de autenticação e
    isolamento por GEM, para não reproduzir no navegador permissões antigas. */
 (function () {
-  const config = window.GEM_SUPABASE;
+  const configLocal = window.GEM_SUPABASE;
   let client = null;
+  let configPrincipal = null;
+  let contextoGem = { nome: "GEM Vila Verde", slug: "vila-verde", externo: false, perfilSchema: "gem-pwa-v1" };
   let r2Habilitado = null;
   const CACHE_URL_ASSINADA = "gem-url-assinada-v1:";
 
+  function slugSolicitado() {
+    const valor = new URLSearchParams(window.location.search).get("gem");
+    return String(valor || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+  }
+
+  function criarCliente(configuracao, persistir = true) {
+    return window.supabase.createClient(configuracao.url, configuracao.anonKey, {
+      auth: { persistSession: persistir, autoRefreshToken: persistir }
+    });
+  }
+
+  async function obterConfigPrincipal() {
+    if (configPrincipal?.url && configPrincipal?.anonKey) return configPrincipal;
+    if (configLocal?.url && configLocal?.anonKey) {
+      configPrincipal = configLocal;
+      return configPrincipal;
+    }
+    const resposta = await fetch("/api/runtime-config", { cache: "no-store" });
+    if (!resposta.ok) throw new Error("A configuração principal do aplicativo não está disponível.");
+    const remoto = await resposta.json();
+    if (!remoto?.url || !remoto?.anonKey) throw new Error("A configuração principal do aplicativo está incompleta.");
+    configPrincipal = remoto;
+    return configPrincipal;
+  }
+
   async function r2EstaHabilitado() {
+    // A sessão R2 da Vercel pertence à base padrão. GEMs externos usam o
+    // Storage privado da própria unidade, sem misturar arquivos.
+    if (contextoGem.externo) return false;
     if (r2Habilitado !== null) return r2Habilitado;
     try {
       const resposta = await fetch("/api/r2-status", { cache: "no-store", credentials: "same-origin" });
@@ -55,22 +85,24 @@
     return url;
   }
 
-  if (config?.url && config?.anonKey && window.supabase?.createClient) {
-    client = window.supabase.createClient(config.url, config.anonKey, {
-      auth: { persistSession: true, autoRefreshToken: true }
-    });
-  }
-
   async function obterCliente() {
     if (client) return client;
     if (!window.supabase?.createClient) throw new Error("A biblioteca de conexão não foi carregada.");
-    const resposta = await fetch("/api/runtime-config", { cache: "no-store" });
-    if (!resposta.ok) throw new Error("A configuração do aplicativo não está disponível.");
-    const remoto = await resposta.json();
-    if (!remoto?.url || !remoto?.anonKey) throw new Error("A configuração do aplicativo está incompleta.");
-    client = window.supabase.createClient(remoto.url, remoto.anonKey, {
-      auth: { persistSession: true, autoRefreshToken: true }
-    });
+    const principal = await obterConfigPrincipal();
+    const slug = slugSolicitado();
+    if (slug && slug !== "vila-verde") {
+      const plataforma = criarCliente(principal, false);
+      const { data: gem, error } = await plataforma.from("gems")
+        .select("nome,slug,ativo,supabase_url,supabase_anon_key,perfil_schema")
+        .eq("slug", slug).eq("ativo", true).maybeSingle();
+      if (error || !gem) throw new Error("Este GEM não foi encontrado ou está inativo.");
+      if (!gem.supabase_url || !gem.supabase_anon_key) throw new Error("A base deste GEM ainda não foi vinculada pela conta Master.");
+      contextoGem = { nome: gem.nome, slug: gem.slug, externo: true, perfilSchema: gem.perfil_schema || "gem-pwa-v1" };
+      client = criarCliente({ url: gem.supabase_url, anonKey: gem.supabase_anon_key });
+    } else {
+      contextoGem = { nome: "GEM Vila Verde", slug: "vila-verde", externo: false, perfilSchema: "gem-pwa-v1" };
+      client = criarCliente(principal);
+    }
     return client;
   }
 
@@ -83,7 +115,7 @@
 
       const caminhoLogo = visual?.logo_path || "logo_atual";
       const logoUrl = await urlAssinadaEmCache(banco, "logo_gem", caminhoLogo);
-      return { connected: true, logoUrl };
+      return { connected: true, logoUrl, gem: { ...contextoGem } };
     } catch (error) {
       console.warn("A identidade visual do GEM ainda não pôde ser carregada.", error);
       return { connected: false, message: "Não foi possível confirmar a conexão agora." };
@@ -100,11 +132,13 @@
     if (usuario.includes("@")) {
       const sessao = await banco.auth.signInWithPassword({ email: usuario, password: senha });
       if (!sessao.error && sessao.data?.user) {
-        const { data: plataforma } = await banco.from("plataforma_usuarios")
-          .select("nome, papel, ativo, status_convite")
-          .eq("auth_user_id", sessao.data.user.id).maybeSingle();
-        if (plataforma?.papel === "master" && plataforma.ativo && plataforma.status_convite === "ativo") {
-          return { role: "Master", name: plataforma.nome, gem: null, sessao: true };
+        if (!contextoGem.externo) {
+          const { data: plataforma } = await banco.from("plataforma_usuarios")
+            .select("nome, papel, ativo, status_convite")
+            .eq("auth_user_id", sessao.data.user.id).maybeSingle();
+          if (plataforma?.papel === "master" && plataforma.ativo && plataforma.status_convite === "ativo") {
+            return { role: "Master", name: plataforma.nome, gem: null, sessao: true, externo: false };
+          }
         }
       }
     }
@@ -114,7 +148,7 @@
     const secretaria = await banco.rpc("validar_acesso", { p_login: usuario, p_senha: senha });
     const contaSecretaria = secretaria.data?.[0];
     if (contaSecretaria?.perfil === "secretaria") {
-      return { role: "Secretaria", name: contaSecretaria.nome || "Coordenação", gem: "Vila Verde" };
+      return { role: "Secretaria", name: contaSecretaria.nome || "Coordenação", gem: contextoGem.nome, externo: contextoGem.externo };
     }
 
     // Professoras e alunas usam a ponte criada na migration desta interface.
@@ -124,7 +158,8 @@
     return {
       role: conta.perfil === "professora" ? "Professora" : "Aluna",
       name: conta.nome,
-      gem: "Vila Verde"
+      gem: contextoGem.nome,
+      externo: contextoGem.externo
     };
   }
 
@@ -136,6 +171,7 @@
   }
 
   async function iniciarSessaoR2(login, senha) {
+    if (contextoGem.externo) return false;
     try {
       const resposta = await fetch("/api/r2-session", {
         method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
@@ -150,20 +186,28 @@
   async function listarGems() {
     const banco = await obterCliente();
     const { data, error } = await banco.from("gems")
-      .select("id, nome, slug, ativo, created_at")
+      .select("id, nome, slug, ativo, perfil_schema, supabase_url, supabase_anon_key, created_at")
       .order("nome", { ascending: true });
     if (error) throw new Error("Não foi possível carregar os GEMs.");
     return data || [];
   }
 
-  async function criarGem(nome, slug) {
+  async function criarGem(nome, slug, conexao = {}) {
     const banco = await obterCliente();
     const slugLimpo = String(slug || "").trim().toLowerCase()
       .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     if (!String(nome || "").trim() || !slugLimpo) throw new Error("Informe o nome e um identificador para o GEM.");
-    const { error } = await banco.from("gems").insert({ nome: String(nome).trim(), slug: slugLimpo });
+    const url = String(conexao.url || "").trim().replace(/\/$/, "");
+    const anonKey = String(conexao.anonKey || "").trim();
+    if (!/^https:\/\/[^\s]+\.supabase\.co$/i.test(url) || !anonKey) throw new Error("Informe a URL e a chave anon da base Supabase exclusiva deste GEM.");
+    const { error } = await banco.from("gems").insert({ nome: String(nome).trim(), slug: slugLimpo, supabase_url: url, supabase_anon_key: anonKey, perfil_schema: "gem-pwa-v1" });
     if (error) throw new Error(error.code === "23505" ? "Já existe um GEM com esse identificador." : "Não foi possível criar o GEM.");
+  }
+
+  async function gemAtivo() {
+    await obterCliente();
+    return { ...contextoGem };
   }
 
   async function dadosPlataformaMaster() {
@@ -259,16 +303,17 @@
 
   async function dadosVisaoGeral(dataIso) {
     const banco = await obterCliente(); const data = dataBr(dataIso);
-    const [calendario, historico] = await Promise.all([
+    const [calendario, historico, estudos] = await Promise.all([
       banco.from("calendario").select("escala").eq("id", data).maybeSingle(),
-      banco.from("historico_geral").select("*").eq("Data", data).order("id", { ascending: true })
+      banco.from("historico_geral").select("*").eq("Data", data).order("id", { ascending: true }),
+      banco.from("estudo_diario").select("*").eq("data", data)
     ]);
     if (calendario.error || historico.error) throw new Error("Não foi possível carregar a visão geral desta data.");
     const alunas = [...new Set((calendario.data?.escala || []).map((linha) => linha.Aluna).filter(Boolean))];
     const chamadas = historico.data?.filter((item) => item.Tipo === "Chamada") || [];
     const ausentes = chamadas.filter((item) => ["Ausente", "Justificada"].includes(item.Status));
     const analises = historico.data?.filter((item) => String(item.Tipo || "").startsWith("Analise_")) || [];
-    return { data, alunas, ausentes, analises, registros: historico.data || [] };
+    return { data, escala: calendario.data?.escala || [], alunas, ausentes, analises, registros: historico.data || [], estudos: estudos.error ? [] : estudos.data || [] };
   }
 
   async function dadosPessoas() {
@@ -359,12 +404,12 @@
     return data || [];
   }
 
-  async function enviarDocumento({ arquivo, titulo, disciplina, turma, aluna, observacao, visivel, professora = "Secretaria" }) {
+  async function enviarDocumento({ arquivo, titulo, disciplina, data, turma, aluna, observacao, visivel, professora = "Secretaria" }) {
     if (!arquivo || !titulo) throw new Error("Informe o título e selecione o arquivo.");
     const banco = await obterCliente(); const caminho = `${crypto.randomUUID()}_${arquivo.name.replace(/[^a-zA-Z0-9._-]+/g, "_")}`;
     const envio = await banco.storage.from("gabaritos").upload(caminho, arquivo, { contentType: arquivo.type || "application/octet-stream" });
     if (envio.error) throw new Error("Não foi possível enviar o arquivo.");
-    const { error } = await banco.from("gabaritos").insert({ titulo, disciplina, turma: turma || null, aluna: aluna || null, observacao: observacao || "", professora, arquivo_path: caminho, arquivo_nome: arquivo.name, data_correcao: new Date().toISOString().slice(0, 10), visivel_alunas: Boolean(visivel) });
+    const { error } = await banco.from("gabaritos").insert({ titulo, disciplina, turma: turma || null, aluna: aluna || null, observacao: observacao || "", professora, arquivo_path: caminho, arquivo_nome: arquivo.name, data_correcao: data || new Date().toISOString().slice(0, 10), visivel_alunas: Boolean(visivel) });
     if (error) throw new Error("O arquivo foi enviado, mas o documento não foi registrado.");
   }
 
@@ -433,29 +478,80 @@
 
   async function dadosAnalitico() {
     const banco = await obterCliente();
-    const [historico, alunas, avaliacoes, notas, estudos] = await Promise.all([
+    const [historico, alunas, avaliacoes, notas, estudos, objetivos] = await Promise.all([
       banco.from("historico_geral").select("*").order("id", { ascending: false }),
       banco.from("alunas").select("*").order("nome"),
       banco.from("avaliacoes").select("*").order("data_avaliacao", { ascending: false }),
       banco.from("avaliacao_notas").select("*"),
-      banco.from("estudo_diario").select("*")
+      banco.from("estudo_diario").select("*"),
+      banco.from("objetivos_pedagogicos").select("*")
     ]);
     if (historico.error || alunas.error) throw new Error(`Não foi possível carregar o analítico: ${(historico.error || alunas.error).message || "verifique as permissões."}`);
-    return { historico: historico.data || [], alunas: alunas.data || [], avaliacoes: avaliacoes.data || [], notas: notas.data || [], estudos: estudos.error ? [] : estudos.data || [] };
+    return { historico: historico.data || [], alunas: alunas.data || [], avaliacoes: avaliacoes.data || [], notas: notas.data || [], estudos: estudos.error ? [] : estudos.data || [], objetivos: objetivos.error ? [] : objetivos.data || [] };
+  }
+
+  async function salvarObjetivoPedagogico({ aluna, texto, professora }) {
+    const banco = await obterCliente();
+    if (!String(aluna || "").trim()) throw new Error("Escolha a aluna antes de salvar o objetivo.");
+    const registro = { aluna: String(aluna).trim(), texto: String(texto || "").trim(), professora: String(professora || "Secretaria").trim() };
+    const { error } = await banco.from("objetivos_pedagogicos").upsert(registro, { onConflict: "aluna" });
+    if (error) throw new Error(error.code === "42P01" ? "A tabela de objetivos pedagógicos ainda não existe nesta base do GEM." : "Não foi possível salvar o objetivo pedagógico.");
   }
 
   async function dadosCorrecoesLicoes() {
     const banco = await obterCliente();
     const [historico, alunas, secretarias] = await Promise.all([
-      // A Secretaria só confere folha avulsa de Teoria que a professora
-      // encaminhou para ela. Apostilas e métodos voltam para a professora na
-      // próxima aula, conforme a regra do app.py.
-      banco.from("historico_geral").select("*").eq("Tipo", "Casa_Teoria").order("id", { ascending: false }),
+      // A Secretaria corrige folhas avulsas de Teoria encaminhadas para ela
+      // e as apostilas de Prática. Somente os métodos voltam à professora.
+      // Casa_Apostila_Prof é lida também para trazer para a Secretaria as
+      // apostilas cadastradas antes desta regra ser corrigida no PWA.
+      banco.from("historico_geral").select("*").in("Tipo", ["Casa_Teoria", "Casa_Apostila", "Casa_Apostila_Prof"]).order("id", { ascending: false }),
       banco.from("alunas").select("*").order("nome"),
       banco.from("secretarias").select("*").order("nome")
     ]);
     if (historico.error || alunas.error) throw new Error(`Não foi possível carregar as correções: ${(historico.error || alunas.error).message || "verifique as permissões."}`);
     return { historico: historico.data || [], alunas: alunas.data || [], secretarias: secretarias.error ? [] : secretarias.data || [] };
+  }
+
+  async function dadosAjustes() {
+    const banco = await obterCliente();
+    const [historico, alunas] = await Promise.all([
+      banco.from("historico_geral").select("*").order("id", { ascending: false }),
+      banco.from("alunas").select("id,nome,ativo").order("nome")
+    ]);
+    if (historico.error || alunas.error) throw new Error(`Não foi possível carregar os ajustes: ${(historico.error || alunas.error).message || "verifique as permissões."}`);
+    return { historico: historico.data || [], alunas: alunas.data || [] };
+  }
+
+  async function contarRegistrosOrfaos() {
+    const banco = await obterCliente();
+    const { data, error } = await banco.from("historico_geral").select("id").is("Tipo", null);
+    if (error) throw new Error("Não foi possível consultar os registros órfãos.");
+    return (data || []).length;
+  }
+
+  async function limparRegistrosOrfaos() {
+    const banco = await obterCliente();
+    const { error } = await banco.from("historico_geral").delete().is("Tipo", null);
+    if (error) throw new Error("Não foi possível apagar os registros órfãos.");
+  }
+
+  async function removerRegistroHistorico(id) {
+    if (!id) throw new Error("Registro inválido.");
+    const banco = await obterCliente();
+    const { error } = await banco.from("historico_geral").delete().eq("id", id);
+    if (error) throw new Error("Não foi possível apagar este registro.");
+  }
+
+  async function dadosAuditoriaRodizio() {
+    const banco = await obterCliente();
+    const [calendario, fixas] = await Promise.all([
+      banco.from("calendario").select("id,escala").order("id", { ascending: true }),
+      banco.from("professoras_fixas").select("aluna,professora")
+    ]);
+    if (calendario.error) throw new Error("Não foi possível carregar as escalas salvas para a auditoria.");
+    if (fixas.error && !["42P01", "PGRST205"].includes(fixas.error.code)) throw new Error("Não foi possível carregar as professoras fixas para a auditoria.");
+    return { escalas: calendario.data || [], fixas: fixas.data || [] };
   }
 
   async function atualizarCorrecaoLicao(id, { status, observacao, secretaria, data }) {
@@ -476,8 +572,9 @@
   async function salvarModeloLogistica({ id, nome, vigenciaInicio, configuracao, status = "rascunho" }) {
     const banco = await obterCliente(); const dados = { nome, vigencia_inicio: vigenciaInicio, configuracao, status, updated_at: new Date().toISOString() };
     if (id) dados.id = id;
-    const { error } = await banco.from("modelos_logistica").upsert(dados, { onConflict: "id" });
+    const { data, error } = await banco.from("modelos_logistica").upsert(dados, { onConflict: "id" }).select().maybeSingle();
     if (error) throw new Error(`Não foi possível salvar o modelo: ${error.message || "execute a migration de logística."}`);
+    return data;
   }
 
   async function alterarStatusModelo(id, status, vigenciaFim = null) {
@@ -609,7 +706,9 @@
       }
 
       if (item.casaTipo && String(item.licaoCasa || "").trim()) {
-        const tipoCasa = item.casaTipo === "Apostila" ? "Casa_Apostila_Prof" : `Casa_Metodo_${material}`;
+        // Apostila de Prática é corrigida pela Secretaria; Métodos são
+        // corrigidos pela professora na próxima aula.
+        const tipoCasa = item.casaTipo === "Apostila" ? "Casa_Apostila" : `Casa_Metodo_${material}`;
         const { data: casas, error: erroCasas } = await banco.from("historico_geral").select("id")
           .eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoCasa).order("id", { ascending: false }).limit(1);
         if (erroCasas) throw new Error(`O registro foi salvo, mas não foi possível consultar a lição de ${material}.`);
@@ -647,10 +746,13 @@
     if (error) throw new Error("Não foi possível carregar as lições pendentes.");
     const tiposPermitidos = tipoAula === "Solfejo" ? ["Casa_MSA"]
       : tipoAula === "Solfejo Melódico" ? ["Casa_Canto"]
-        : tipoAula === "Teoria" ? ["Casa_Teoria_Prof", "Casa_Apostila_Teoria_Prof"]
-          : tipoAula === "Prática" ? ["Casa_Apostila_Prof"]
+        : tipoAula === "Teoria" ? ["Casa_Teoria_Prof", "Casa_Apostila_Teoria_Prof", "Casa_Apostila_Teoria"]
+          : tipoAula === "Prática" ? []
             : null;
-    const resolvidos = ["Resolvido", "Realizada", "Realizada - sem pendência", "Realizadas - sem pendência"];
+    // "Não resolvido" e "Resolvido com pendências" continuam relevantes nos
+    // relatórios, mas não devem voltar como a mesma correção: se for método,
+    // a nova pendência criada para a próxima aula é que deve ser corrigida.
+    const resolvidos = ["Resolvido", "Resolvido com pendências", "Não resolvido", "Realizada", "Realizada - sem pendência", "Realizadas - sem pendência"];
     return (data || []).filter((registro) => {
       const tipo = String(registro.Tipo || "");
       const pertence = tiposPermitidos ? (tiposPermitidos.includes(tipo) || (tipoAula === "Prática" && tipo.startsWith("Casa_Metodo_"))) : tipo.startsWith("Casa_Metodo_");
@@ -658,10 +760,39 @@
     });
   }
 
-  async function corrigirLicaoProfessora(id, { status, observacao }) {
+  async function corrigirLicaoProfessora(id, { status, observacao, repetirLicao, dataIso, instrutora, licao }) {
     const banco = await obterCliente();
-    const { error } = await banco.from("historico_geral").update({ Status: status, Observacao: String(observacao || "").trim() }).eq("id", id);
+    // O app.py trata o resultado pedagógico dos métodos separadamente do
+    // status técnico do histórico. Mantemos os dois significados: a lição
+    // corrigida é baixada e, quando necessário, uma nova pendência editável é
+    // criada para a próxima aula.
+    const statusHistorico = ({ "Passou": "Resolvido", "Não passou": "Não resolvido", "Estudar mais": "Resolvido com pendências" })[status] || status;
+    const { error } = await banco.from("historico_geral").update({ Status: statusHistorico, Observacao: String(observacao || "").trim() }).eq("id", id);
     if (error) throw new Error("Não foi possível salvar a correção da lição.");
+
+    const tipo = String(licao?.Tipo || "");
+    const deveRepetir = tipo.startsWith("Casa_Metodo_") && ["Não passou", "Estudar mais"].includes(status) && String(repetirLicao || "").trim();
+    if (!deveRepetir) return;
+    const data = dataBr(dataIso);
+    const proxima = {
+      Aluna: licao.Aluna,
+      Data: data,
+      Instrutora: instrutora || licao.Instrutora || "",
+      Tipo: tipo,
+      Licao_Atual: "Definido",
+      Licao_Casa: String(repetirLicao).trim(),
+      Dificuldades: [],
+      Observacao: "",
+      Status: "Pendente"
+    };
+    const { data: existentes, error: erroBusca } = await banco.from("historico_geral").select("id")
+      .eq("Aluna", proxima.Aluna).eq("Data", data).eq("Tipo", tipo).order("id", { ascending: false }).limit(1);
+    if (erroBusca) throw new Error("A correção foi salva, mas não foi possível preparar a lição de reforço.");
+    const operacao = existentes?.[0]?.id
+      ? banco.from("historico_geral").update(proxima).eq("id", existentes[0].id)
+      : banco.from("historico_geral").insert(proxima);
+    const { error: erroRepeticao } = await operacao;
+    if (erroRepeticao) throw new Error("A correção foi salva, mas não foi possível preparar a lição de reforço.");
   }
 
   async function dadosAluna(aluna) {
@@ -672,6 +803,24 @@
     ]);
     if (erroHist) throw new Error("Não foi possível carregar o histórico da aluna.");
     return { historico: historico || [], feitas: feitas || [] };
+  }
+
+  async function dadosEstudoAluna(aluna) {
+    const banco = await obterCliente();
+    const { data, error } = await banco.from("estudo_diario").select("*").eq("aluna", aluna).order("data", { ascending: false });
+    if (error) throw new Error(error.code === "42P01" || error.code === "PGRST205" ? "O Controle de Estudo Diário ainda não foi criado no Supabase." : "Não foi possível carregar seu histórico de estudo.");
+    return data || [];
+  }
+
+  async function salvarEstudoDiario({ aluna, dataIso, horarios }) {
+    if (!aluna || !dataIso) throw new Error("Informe o dia do estudo.");
+    const banco = await obterCliente();
+    const { error } = await banco.from("estudo_diario").upsert({
+      aluna,
+      data: dataBr(dataIso),
+      horarios: Array.from(new Set((horarios || []).map((horario) => String(horario).trim()).filter(Boolean)))
+    }, { onConflict: "aluna,data" });
+    if (error) throw new Error("Não foi possível salvar seu estudo do dia.");
   }
 
   async function marcarLicaoFeita(aluna, historicoId, feito) {
@@ -687,11 +836,13 @@
 
   async function boletimAluna(aluna) {
     const banco = await obterCliente();
-    const [{ data: avaliacoes }, { data: notas }] = await Promise.all([
+    const [{ data: avaliacoes, error: erroAvaliacoes }, { data: notas, error: erroNotas }, { data: historico, error: erroHistorico }] = await Promise.all([
       banco.from("avaliacoes").select("*").order("data_avaliacao", { ascending: false }),
-      banco.from("avaliacao_notas").select("*").eq("aluna", aluna)
+      banco.from("avaliacao_notas").select("*").eq("aluna", aluna),
+      banco.from("historico_geral").select("Data,Tipo,Status").eq("Aluna", aluna)
     ]);
-    return { avaliacoes: avaliacoes || [], notas: notas || [] };
+    if (erroAvaliacoes || erroNotas || erroHistorico) throw new Error("Não foi possível carregar o boletim.");
+    return { avaliacoes: avaliacoes || [], notas: notas || [], historico: historico || [] };
   }
 
   function horarioDoBloco(bloco, indice) {
@@ -802,5 +953,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosCorrecoesLicoes, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, encerrarSessao, iniciarSessaoR2, listarGems, criarGem, dadosPlataformaMaster, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, encerrarSessao, iniciarSessaoR2, listarGems, criarGem, gemAtivo, dadosPlataformaMaster, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();

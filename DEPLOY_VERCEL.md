@@ -25,7 +25,7 @@ disponível em aparelhos compatíveis.
   usada pelas funções de servidor.
 - As migrations do Supabase são uma configuração separada, executada uma única
   vez no SQL Editor ou por uma futura automação de deploy.
-- Antes do primeiro deploy completo, execute as migrations 001 a 008 listadas
+- Antes do primeiro deploy completo, execute as migrations 001 a 010 listadas
   no `README.md`. A 005 é opcional se os lembretes push não forem usados.
 
 ## Fotos no Cloudflare R2 (opcional)

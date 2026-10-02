@@ -32,8 +32,7 @@ preservam tabelas, histórico e o funcionamento do Streamlit.
 7. `007_fotos_alunas_professoras.sql` — garante os buckets usados pelas fotos.
 8. `008_exercicios_registro_pratica.sql` — registra os exercícios e dificuldades da Prática.
 9. `009_professora_coordenadora.sql` — define a professora coordenadora por período e libera Folgas no login dela.
-8. `008_exercicios_registro_pratica.sql` — garante os exercícios separados por
-   método no Registro de Prática.
+10. `010_conexoes_bases_multi_gem.sql` — vincula uma base Supabase exclusiva a cada novo GEM.
 
 ### Conta Master inicial
 
@@ -49,18 +48,29 @@ aplicativo, sem escolher “entrar como”.
 
 ## Vários GEMs
 
-A plataforma já possui as tabelas de Master, GEMs e acessos. O Vila Verde
-continua no banco legado atual para não interromper o Streamlit.
+O Vila Verde continua na base atual, sem mexer no Streamlit. Para uma unidade
+nova, a Master cria primeiro um projeto Supabase **separado** e executa nele as
+migrations e estruturas usadas pelo aplicativo. Depois, no login Master do
+Vila Verde, informe no cadastro do GEM novo:
 
-Antes de cadastrar um GEM novo para uso real, é preciso decidir sua base:
+- nome e identificador;
+- URL do projeto Supabase novo;
+- chave pública `anon` desse projeto.
 
-- **banco Supabase próprio** para o novo GEM; ou
-- uma futura migração das tabelas pedagógicas para multi-GEM com `gem_id` e
-  políticas de isolamento.
+O sistema gera um link como `https://seu-app.vercel.app/?gem=gem-central`.
+Esse endereço abre o aplicativo conectado somente à base daquela unidade. A
+chave `anon` é pública por definição do Supabase; as políticas RLS da base de
+cada GEM continuam sendo responsáveis pela proteção dos dados.
 
-Criar somente o nome de outro GEM não deve ser entendido como uma cópia pronta
-do Vila Verde: os dados pedagógicos, usuários e arquivos precisam da base
-isolada escolhida para aquela unidade.
+O perfil atual suportado é `gem-pwa-v1`: a nova base precisa ter o mesmo
+esquema funcional do GEM PWA. Uma unidade com tabelas totalmente diferentes
+precisa de um perfil/adaptador próprio antes de ser ativada; ela não deve ser
+cadastrada como se fosse compatível.
+
+As integrações de servidor já configuradas para o Vila Verde (R2, IA e
+notificações push) permanecem isoladas nele. O núcleo pedagógico do PWA usa a
+base exclusiva do novo GEM; para ativar essas integrações em outra unidade é
+necessário configurar as credenciais próprias dela na Vercel.
 
 ## Publicação no Vercel
 
