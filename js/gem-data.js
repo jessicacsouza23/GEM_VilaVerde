@@ -7,7 +7,8 @@
   let configPrincipal = null;
   let contextoGem = { nome: "GEM Vila Verde", slug: "vila-verde", externo: false, perfilSchema: "gem-pwa-v1" };
   let r2Habilitado = null;
-  const CACHE_URL_ASSINADA = "gem-url-assinada-v1:";
+  // v2 invalida somente URLs antigas do R2 que eram assinadas diretamente.
+  const CACHE_URL_ASSINADA = "gem-url-assinada-v2:";
 
   function slugSolicitado() {
     const valor = new URLSearchParams(window.location.search).get("gem");
@@ -80,9 +81,10 @@
     } catch (_) { /* cache local é apenas uma otimização */ }
     let url = null;
     if (String(caminho).startsWith("r2:")) {
-      const resposta = await fetch(`/api/r2-download-url?key=${encodeURIComponent(caminho)}`, { cache: "no-store", credentials: "same-origin" });
-      if (!resposta.ok) throw new Error("Não foi possível obter a foto privada.");
-      url = (await resposta.json()).url || null;
+      // A própria Vercel lê o objeto privado do R2 e o entrega no mesmo
+      // domínio do GEM. Isso evita falhas de CORS e URLs assinadas expiradas
+      // no elemento <img> do navegador.
+      url = `/api/r2-file?key=${encodeURIComponent(caminho)}`;
     } else {
       const resposta = await banco.storage.from(bucket).createSignedUrl(caminho, segundos);
       url = resposta.data?.signedUrl || null;
