@@ -40,11 +40,24 @@
     return (encontrada ? encontrada[1] : texto).replace(/^Prática:\s*/i, "").trim();
   }
 
-  function memoriaDasEscalas(escalaAnteriores, dataSelecionada, alunas, salasIndividuais) {
+  function cicloConcluido(alunasAtendidas, alunasDaRoda) {
+    return alunasDaRoda.length > 0 && alunasDaRoda.every((aluna) => alunasAtendidas.has(aluna));
+  }
+
+  function registrarNoCiclo(mapa, professora, aluna, alunasDaRoda) {
+    // Alunas fixas não entram na roda geral: a mesma professora foi escolhida
+    // deliberadamente para elas e não deve bloquear o ciclo das demais.
+    if (!alunasDaRoda.includes(aluna)) return;
+    const atendidas = (mapa[professora] ||= new Set());
+    if (cicloConcluido(atendidas, alunasDaRoda)) atendidas.clear();
+    atendidas.add(aluna);
+  }
+
+  function memoriaDasEscalas(escalaAnteriores, dataSelecionada, alunas, alunasDaRoda, salasIndividuais) {
     const memoria = Object.fromEntries(alunas.map((aluna) => [aluna, { professoras: [], salas: [], ultima: null }]));
     const alunasPorProfessora = {};
     const limite = dataBrParaData(dataSelecionada);
-    (escalaAnteriores || []).forEach((anterior) => {
+    [...(escalaAnteriores || [])].sort((a, b) => (dataBrParaData(a.id)?.getTime() || 0) - (dataBrParaData(b.id)?.getTime() || 0)).forEach((anterior) => {
       const data = dataBrParaData(anterior.id);
       if (limite && data && data >= limite) return;
       (anterior.escala || []).forEach((linha) => {
@@ -62,7 +75,7 @@
           item.professoras.push(professora);
           item.salas.push(sala);
           item.ultima = professora;
-          (alunasPorProfessora[professora] ||= new Set()).add(linha.Aluna);
+          registrarNoCiclo(alunasPorProfessora, professora, linha.Aluna, alunasDaRoda);
         });
       });
     });
@@ -85,7 +98,8 @@
     const habilitadas = config.professoras_habilitadas || {};
     const disponiveis = professoras.filter((professora) => !folgas.includes(professora));
     const todasAlunas = turmas.flatMap((turma) => turmasReais[turma] || []);
-    const memoriaHistorica = memoriaDasEscalas(escalasAnteriores, data, todasAlunas, individuais);
+    const alunasDaRoda = todasAlunas.filter((aluna) => !(usarFixas && fixas[String(aluna).trim().toLowerCase()]));
+    const memoriaHistorica = memoriaDasEscalas(escalasAnteriores, data, todasAlunas, alunasDaRoda, individuais);
     const memoria = memoriaHistorica.porAluna;
     const escala = Object.fromEntries(todasAlunas.map((aluna) => [aluna, { Aluna: aluna, _detalhes: {} }]));
     const mesmaProf = config.mesma_professora_nos_componentes !== false;
@@ -141,7 +155,7 @@
               // A roda é da professora: ela só volta a atender a mesma aluna
               // depois de ter passado por todas as alunas deste modelo.
               const alunasAtendidas = memoriaHistorica.alunasPorProfessora[item.professora] || new Set();
-              const completouARoda = todasAlunas.length > 0 && todasAlunas.every((outra) => alunasAtendidas.has(outra));
+              const completouARoda = cicloConcluido(alunasAtendidas, alunasDaRoda);
               const repetiuAntesDaRoda = regras.nao_repetir_aluna !== false && !completouARoda && alunasAtendidas.has(aluna);
               return [Number(regras.nao_repetir_imediata !== false && candidatas.length > 1 && item.professora === mem.ultima), Number(repetiuAntesDaRoda), Number(regras.nao_repetir_sala !== false && new Set(mem.salas).size < individuais.length && mem.salas.includes(item.sala)), item.professora, item.sala];
             };
@@ -152,7 +166,7 @@
           escala[aluna]._detalhes[hora] = { tipo: componentes.length > 1 ? "Prática + Solfejo" : componentes[0], componentes: [...componentes], individual: true, turma, mesma_professora_componentes: mesmaProf };
           alocadas.push({ aluna, sala, professora }); profsLivres.splice(profsLivres.indexOf(professora), 1); salasLivres.splice(salasLivres.indexOf(sala), 1);
           mem.professoras.push(professora); mem.salas.push(sala); mem.ultima = professora;
-          (memoriaHistorica.alunasPorProfessora[professora] ||= new Set()).add(aluna);
+          registrarNoCiclo(memoriaHistorica.alunasPorProfessora, professora, aluna, alunasDaRoda);
         });
         if (!mesmaProf && alocadas.length > 1) {
           const pratica = alocadas.map((item) => item.professora), solfejo = [...pratica.slice(1), pratica[0]];
