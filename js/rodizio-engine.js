@@ -113,11 +113,50 @@
       turmas.forEach((turma, indice) => { inicioManual[turma] = ordem[(indice - indiceDaTurma + ordem.length) % ordem.length]; });
     }
     const horarios = blocos.map(horario);
+    // No modo automático, a ordem visual das turmas é uma preferência, não
+    // pode derrubar uma professora fixa. O app.py procura uma combinação de
+    // Teoria / Solfejo / Individual que deixe a fixa livre no bloco certo.
+    // Mantemos a sequência padrão como primeira opção e só remanejamos se ela
+    // criar conflito; a rotação manual continua sendo respeitada literalmente.
+    let planoAutomatico = null;
+    if (!turmaInicioTeoria && usarFixas && turmas.length === posicoes.length && turmas.length <= 6) {
+      const permutar = (itens) => itens.length < 2 ? [itens] : itens.flatMap((item, indice) => permutar([...itens.slice(0, indice), ...itens.slice(indice + 1)]).map((restante) => [item, ...restante]));
+      const indisponivelNoBloco = (professora, indiceBloco) => folgas.includes(professora)
+        || (saidas[professora] && horarios.indexOf(saidas[professora]) < indiceBloco);
+      const respeitaFixas = (ordemTurmas, direcao) => blocos.every((_, indiceBloco) => {
+        const posicaoDaTurma = (turma) => (ordemTurmas.indexOf(turma) + direcao * indiceBloco + posicoes.length * 10) % posicoes.length;
+        const turmaIndividual = turmas.find((turma) => posicoes[posicaoDaTurma(turma)] === "__individual__");
+        const reservadas = new Set((turmasReais[turmaIndividual] || []).map((aluna) => fixas[String(aluna).trim().toLowerCase()]).filter(Boolean));
+        if ([...reservadas].some((professora) => indisponivelNoBloco(professora, indiceBloco))) return false;
+        const coletivasNoBloco = [];
+        for (const turma of turmas) {
+          const posicao = posicoes[posicaoDaTurma(turma)];
+          if (posicao === "__individual__") continue;
+          const professora = coletivas?.[posicao]?.[turma];
+          if (professora) {
+            if (reservadas.has(professora) || indisponivelNoBloco(professora, indiceBloco)) return false;
+            coletivasNoBloco.push(professora);
+          }
+        }
+        return new Set(coletivasNoBloco).size === coletivasNoBloco.length;
+      });
+      // A primeira candidata é precisamente a ordem antiga (turmas + rotação
+      // para frente), então não há mudança quando ela já é válida.
+      for (const direcao of [1, -1]) {
+        for (const ordemTurmas of permutar(turmas)) {
+          if (respeitaFixas(ordemTurmas, direcao)) { planoAutomatico = { ordemTurmas, direcao }; break; }
+        }
+        if (planoAutomatico) break;
+      }
+      if (!planoAutomatico) return { escala: null, erros: ["Não existe combinação de horários que respeite simultaneamente as professoras fixas, as aulas coletivas, as folgas e as saídas antecipadas. Ajuste uma dessas informações."] };
+    }
     blocos.forEach((bloco, indiceBloco) => {
       const hora = horarios[indiceBloco];
       const alocacoes = turmas.map((turma, indiceTurma) => {
         const inicial = inicioManual[turma];
-        const posicao = inicial ? posicoes[(posicoes.indexOf(inicial) + indiceBloco) % posicoes.length] : posicoes[(indiceTurma + indiceBloco) % posicoes.length];
+        const indiceInicial = planoAutomatico ? planoAutomatico.ordemTurmas.indexOf(turma) : indiceTurma;
+        const passo = planoAutomatico ? planoAutomatico.direcao : 1;
+        const posicao = inicial ? posicoes[(posicoes.indexOf(inicial) + indiceBloco) % posicoes.length] : posicoes[(indiceInicial + passo * indiceBloco + posicoes.length * 10) % posicoes.length];
         return { turma, posicao };
       }).sort((a, b) => Number(a.posicao === "__individual__") - Number(b.posicao === "__individual__"));
       // A professora fixa é reservada para a aluna antes da escolha das

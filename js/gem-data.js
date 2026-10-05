@@ -60,11 +60,12 @@
       if (!envio.ok) throw new Error("O R2 recusou o envio da foto.");
       return dados.key;
     } catch (erro) {
-      // O R2 recebe o arquivo diretamente do navegador. Se uma regra CORS do
-      // bucket estiver temporariamente incorreta, não bloqueamos o cadastro:
-      // o fluxo continua pelo Storage privado já usado como reserva.
-      console.warn("R2 indisponível para esta foto; usando o Storage de reserva.", erro);
-      return null;
+      // Com o R2 ativo não usamos o Supabase silenciosamente como reserva.
+      // Isso esconderia uma regra CORS/credencial quebrada e voltaria a gerar
+      // saída no Storage sem a Secretaria perceber. A pessoa recebe o erro e
+      // pode corrigir a configuração antes de gravar uma foto no lugar errado.
+      const detalhe = String(erro?.message || "erro desconhecido");
+      throw new Error(`A foto não foi enviada ao R2 (${detalhe}). Confira as credenciais e o CORS do bucket antes de tentar novamente.`);
     }
   }
 
