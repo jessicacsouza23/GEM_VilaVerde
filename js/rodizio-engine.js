@@ -187,13 +187,45 @@
         let habilitadasIndividuais = [...professoras];
         if (mesmaProf) componentes.forEach((componente) => { const lista = habilitadas[componente] || professoras; habilitadasIndividuais = habilitadasIndividuais.filter((professora) => lista.includes(professora)); });
         const profsLivres = disponiveis.filter((professora) => habilitadasIndividuais.includes(professora) && !ocupadas.has(professora) && !indisponiveis.includes(professora));
-        if (profsLivres.length < alunas.length) { erros.push(`Faltam professoras livres para o atendimento individual de ${turma} no ${hora}.`); return; }
+        // Havendo professora fixa, continuamos até a verificação por aluna:
+        // assim a Secretaria recebe a causa verdadeira (folga, habilitação,
+        // coletiva ou duplicidade), em vez de uma mensagem genérica sobre
+        // quantidade de professoras.
+        const haFixaNestaTurma = usarFixas && alunas.some((aluna) => fixas[String(aluna).trim().toLowerCase()]);
+        if (profsLivres.length < alunas.length && !haFixaNestaTurma) { erros.push(`Faltam professoras livres para o atendimento individual de ${turma} no ${hora}.`); return; }
         const salasLivres = [...individuais];
         const alocadas = [];
-        alunas.forEach((aluna) => {
+        // A regra do app.py é obrigatória: primeiro reservamos as professoras
+        // fixas para as respectivas alunas; só depois distribuímos as demais.
+        // Sem isso, uma aluna sem fixa que aparecesse antes na lista podia
+        // receber a professora de uma aluna fixa e criar um falso conflito.
+        const professorasFixasDaTurma = new Set(usarFixas
+          ? alunas.map((aluna) => fixas[String(aluna).trim().toLowerCase()]).filter(Boolean)
+          : []);
+        const alunasParaAlocar = [...alunas].sort((a, b) => {
+          const aFixa = Boolean(usarFixas && fixas[String(a).trim().toLowerCase()]);
+          const bFixa = Boolean(usarFixas && fixas[String(b).trim().toLowerCase()]);
+          return Number(bFixa) - Number(aFixa);
+        });
+        alunasParaAlocar.forEach((aluna) => {
           const fixa = usarFixas ? fixas[String(aluna).trim().toLowerCase()] : null;
-          const candidatas = (fixa ? [fixa] : [...profsLivres]).filter((professora) => profsLivres.includes(professora));
-          if (!candidatas.length || !salasLivres.length) { erros.push(fixa ? `Não foi possível alocar ${aluna} — ${turma} em ${hora}: a professora fixa ${fixa} já está ocupada, de folga ou saiu mais cedo.` : `Não foi possível alocar ${aluna} — ${turma} em ${hora}; verifique professoras, folgas e salas.`); return; }
+          const candidatas = (fixa ? [fixa] : profsLivres.filter((professora) => !professorasFixasDaTurma.has(professora)))
+            .filter((professora) => profsLivres.includes(professora));
+          if (!candidatas.length || !salasLivres.length) {
+            if (fixa) {
+              let motivo = "não está disponível para este atendimento.";
+              if (!professoras.includes(fixa)) motivo = "não está cadastrada como professora ativa no rodízio.";
+              else if (folgas.includes(fixa)) motivo = "está de folga.";
+              else if (indisponiveis.includes(fixa)) motivo = "tem saída antecipada antes deste bloco.";
+              else if (!habilitadasIndividuais.includes(fixa)) motivo = `não está habilitada para ${componentes.join(" + ") || "a aula individual"}.`;
+              else if (alocadas.some((item) => item.professora === fixa)) motivo = "já está atendendo outra aluna no mesmo horário; uma professora não pode atender duas alunas simultaneamente.";
+              else if (ocupadas.has(fixa)) motivo = "já está em uma aula coletiva neste mesmo horário.";
+              erros.push(`Não foi possível alocar ${aluna} — ${turma} em ${hora}: a professora fixa ${fixa} ${motivo}`);
+            } else {
+              erros.push(`Não foi possível alocar ${aluna} — ${turma} em ${hora}; verifique professoras, folgas e salas.`);
+            }
+            return;
+          }
           const mem = memoria[aluna];
           const pares = candidatas.flatMap((professora) => salasLivres.map((sala) => ({ professora, sala })));
           pares.sort((a, b) => {
