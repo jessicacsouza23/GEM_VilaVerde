@@ -699,9 +699,20 @@
     for (const aluna of alunas) {
       const registroIndividual = registrosPorAluna?.[aluna] || {};
       const tipoAnalise = `Analise_${disciplina}`;
-      const existente = await banco.from("historico_geral").select("id").eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoAnalise).eq("Instrutora", instrutora).order("id", { ascending: false }).limit(1);
-      const registro = { Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoAnalise, Licao_Atual: material ? `${material}: ${conteudo}` : conteudo, Dificuldades: registroIndividual.dificuldades ?? dificuldades ?? [], Observacao: registroIndividual.observacao ?? observacao ?? "", Status: "Registrado" };
-      const salvar = existente.data?.[0] ? await banco.from("historico_geral").update(registro).eq("id", existente.data[0].id) : await banco.from("historico_geral").insert(registro);
+      const existente = await banco.from("historico_geral").select("id,Licao_Atual").eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoAnalise).eq("Instrutora", instrutora).order("id", { ascending: false });
+      const dificuldadesDaAluna = registroIndividual.dificuldades ?? dificuldades ?? [];
+      const temDificuldade = dificuldadesDaAluna.some((dificuldade) => String(dificuldade).trim() && String(dificuldade).trim() !== "Não apresentou dificuldades");
+      const registro = {
+        Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoAnalise,
+        Licao_Atual: material ? `${material}: ${conteudo}` : conteudo,
+        Dificuldades: dificuldadesDaAluna,
+        Observacao: registroIndividual.observacao ?? observacao ?? "",
+        Status: temDificuldade ? "Realizada - com dificuldades" : "Realizada - sem pendência"
+      };
+      // Em uma mesma aula a professora pode registrar mais de um material.
+      // Só atualizamos o cartão que corresponde ao mesmo material, como no app.py.
+      const existenteMesmoMaterial = (existente.data || []).find((item) => !material || String(item.Licao_Atual || "").trim().startsWith(`${material}:`));
+      const salvar = existenteMesmoMaterial ? await banco.from("historico_geral").update(registro).eq("id", existenteMesmoMaterial.id) : await banco.from("historico_geral").insert(registro);
       if (salvar.error) throw new Error(`Não foi possível salvar o registro de ${aluna}.`);
       const tipoCasa = casaTipo ? `Casa_${casaTipo}` : "";
       if (tipoCasa && licaoCasa?.trim()) {

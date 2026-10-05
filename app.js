@@ -91,10 +91,28 @@ async function renderMinhasAulas(content) {
     const conteudoSalvo = partesRegistro.length > 1 ? partesRegistro.join(":").trim() : (partesRegistro[0] || "");
     const opcoesDificuldades = dificuldadesPorAula[aula.tipo] || dificuldadesPorAula.Solfejo;
     const aulaPorTurma = !aula.individual;
+    // A chamada é a fonte de presença, como no app.py. Ausentes e justificadas
+    // continuam visíveis para a professora, mas não podem receber análise.
+    let statusChamada = {};
+    try {
+      const chamada = await window.GemData.dadosChamada($("#agenda-data").value);
+      statusChamada = Object.fromEntries((chamada.chamadas || []).map((item) => [item.Aluna, item.Status]));
+    } catch (erro) { console.warn("Não foi possível consultar a chamada antes do registro", erro); }
+    const presente = (aluna) => !["Ausente", "Justificada"].includes(statusChamada[aluna]);
+    const participantesTurma = aulaPorTurma ? `<section class="attendance-select"><h4>👥 Alunas que receberão este registro</h4><p class="hint">Marque a turma toda para um registro coletivo ou somente uma aluna para registrar separadamente.</p>${aula.alunas.map((aluna, indice) => {
+      const status = statusChamada[aluna] || "Presente";
+      const bloqueada = !presente(aluna);
+      return `<label class="attendance-student ${bloqueada ? "is-absent" : ""}"><input type="checkbox" data-aluna-turma="${indice}" ${bloqueada ? "disabled" : "checked"}><span>${escapeHtml(aluna)}</span><small>${escapeHtml(status)}</small></label>`;
+    }).join("")}</section>` : "";
     const dificuldadesSalvas = new Set(Array.isArray(primeiroRegistro.Dificuldades) ? primeiroRegistro.Dificuldades : []);
     const dificuldades = `<div class="difficulty-checks">${opcoesDificuldades.map((dificuldade) => `<label><input type="checkbox" data-dificuldade${aulaPorTurma ? "-compartilhada" : "-aluna"} ${aulaPorTurma ? "" : `data-dificuldade-aluna="${escapeHtml(aula.alunas[0])}"`} value="${escapeHtml(dificuldade)}" ${dificuldadesSalvas.has(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("")}</div>`;
+    const camposIndividuais = (aluna, indice) => {
+      const salvo = porAluna[aluna] || {};
+      const marcadas = new Set(Array.isArray(salvo.Dificuldades) ? salvo.Dificuldades : []);
+      return `<section class="student-record"><h4>${escapeHtml(aluna)}</h4><p class="field-caption">Dificuldades observadas:</p><div class="difficulty-checks">${opcoesDificuldades.map((dificuldade) => `<label><input type="checkbox" data-dificuldade-individual="${indice}" value="${escapeHtml(dificuldade)}" ${marcadas.has(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("")}</div><label>Observações pedagógicas:<textarea data-observacao-individual="${indice}" placeholder="Observações sobre ${escapeHtml(aluna)}">${escapeHtml(salvo.Observacao || "")}</textarea></label></section>`;
+    };
     const secaoDificuldades = aulaPorTurma
-      ? `<div class="student-records shared-record"><p class="field-caption">Dificuldades (compartilhada para a turma):</p>${dificuldades}<label>Observações pedagógicas:<textarea id="registro-observacao-compartilhada" placeholder="Observação sobre a aula da turma">${escapeHtml(primeiroRegistro.Observacao || "")}</textarea></label></div>`
+      ? `<section class="record-mode"><h4>Forma de registrar</h4><label><input type="radio" name="modo-registro-turma" value="compartilhado" checked> Mesmo registro para as alunas marcadas</label><label><input type="radio" name="modo-registro-turma" value="individual"> Observação e dificuldades individuais</label></section><div id="registro-compartilhado" class="student-records shared-record"><p class="field-caption">Dificuldades compartilhadas para as alunas marcadas:</p>${dificuldades}<label>Observações pedagógicas:<textarea id="registro-observacao-compartilhada" placeholder="Observação sobre a aula da turma">${escapeHtml(primeiroRegistro.Observacao || "")}</textarea></label></div><div id="registro-por-aluna" class="student-records hidden"></div>`
       : `<div class="student-records"><section class="student-record"><h4>${escapeHtml(aula.alunas[0])}</h4><p class="field-caption">Dificuldades observadas:</p>${dificuldades}<label>Observações pedagógicas:<textarea data-observacao-aluna="${escapeHtml(aula.alunas[0])}" placeholder="Observações sobre a aula">${escapeHtml(primeiroRegistro.Observacao || "")}</textarea></label></section></div>`;
     const opcoesLicaoGenerica = aula.tipo === "Solfejo"
         ? `<option value="">Não deixar lição</option><option value="MSA">MSA — corrigida pela professora de Solfejo</option>`
@@ -122,7 +140,7 @@ async function renderMinhasAulas(content) {
     const opcoesLicaoComSelecao = opcoesLicaoGenerica.replace(`value="${aula.tipo === "Solfejo" ? "MSA" : "Canto"}"`, `value="${aula.tipo === "Solfejo" ? "MSA" : "Canto"}" ${casaGenericaSalva.Tipo ? "selected" : ""}`);
     const licaoGenerica = `<div class="record-form"><div><label for="registro-casa-tipo">Lição de casa</label><select id="registro-casa-tipo">${opcoesLicaoComSelecao}</select></div><div><label for="registro-casa">Lição deixada para casa</label><input id="registro-casa" value="${escapeHtml(casaGenericaSalva.Licao_Casa || "")}" placeholder="Ex.: página 18, exercícios 1 e 2" ${casaGenericaSalva.Tipo ? "" : "disabled"}></div></div>`;
     const praticaMarkup = aula.tipo === "Prática" ? `<section class="practice-register"><div class="practice-register-head"><div><h4>🎹 Métodos e apostila conferidos hoje</h4><p>Registre cada material separadamente. A <strong>Apostila</strong> deixada para casa entra na fila da Secretaria. Apenas os <strong>Métodos</strong> são avaliados pela professora na próxima aula.</p></div><button id="adicionar-material-pratica" class="secondary-action" type="button">＋ Adicionar método</button></div><div id="materiais-pratica"></div><label class="practice-observation">Observações pedagógicas gerais<textarea id="registro-observacao-pratica" placeholder="Observações sobre a aula e a evolução da aluna"></textarea></label></section>` : `<div class="record-form"><div><label for="registro-material">Material usado hoje:</label>${campoMaterial}</div><div><label for="registro-conteudo">Página/Lição trabalhada:</label><input id="registro-conteudo" value="${escapeHtml(conteudoSalvo)}" placeholder="Ex.: MSA: exercício 9, páginas 12 a 15"></div></div>${secaoDificuldades}${aula.tipo === "Teoria" ? licaoTeoria : licaoGenerica}`;
-    areaRegistro.innerHTML = `<section class="lesson-register"><div class="register-heading"><div><p class="eyebrow">LANÇAR REGISTRO</p><h3>📝 Registro: ${escapeHtml(aula.tipo)}</h3><p>${escapeHtml(aula.individual ? "Aula individual" : `Aula por turma${aula.turma ? ` · ${aula.turma}` : ""}`)}</p></div><button id="fechar-registro" class="secondary-action" type="button">Fechar</button></div>${fotosDasAlunas(aula)}${registrosVisiveis}${correcoesPendentes}${praticaMarkup}<div class="register-actions"><button id="salvar-registro-aula" class="primary-action" type="button">Salvar registro da aula</button><div id="registro-retorno"></div></div></section>`;
+    areaRegistro.innerHTML = `<section class="lesson-register"><div class="register-heading"><div><p class="eyebrow">LANÇAR REGISTRO</p><h3>📝 Registro: ${escapeHtml(aula.tipo)}</h3><p>${escapeHtml(aula.individual ? "Aula individual" : `Aula por turma${aula.turma ? ` · ${aula.turma}` : ""}`)}</p></div><button id="fechar-registro" class="secondary-action" type="button">Fechar</button></div>${fotosDasAlunas(aula)}${participantesTurma}${registrosVisiveis}${correcoesPendentes}${praticaMarkup}<div class="register-actions"><button id="salvar-registro-aula" class="primary-action" type="button">Salvar registro da aula</button><div id="registro-retorno"></div></div></section>`;
     $("#fechar-registro").addEventListener("click", () => { areaRegistro.innerHTML = ""; });
     areaRegistro.querySelectorAll("[data-corrigir-licao]").forEach((botao) => botao.addEventListener("click", async () => {
       const indicePendente = Number(botao.dataset.corrigirLicao), licao = licoesPendentes[indicePendente];
@@ -137,6 +155,27 @@ async function renderMinhasAulas(content) {
         botao.closest("article").classList.add("is-corrected");
       } catch (erro) { alert(erro.message); botao.disabled = false; }
     }));
+    if (aulaPorTurma) {
+      const renderRegistrosIndividuais = () => {
+        const destino = $("#registro-por-aluna");
+        const selecionadas = [...areaRegistro.querySelectorAll("[data-aluna-turma]:checked")]
+          .map((campo) => Number(campo.dataset.alunaTurma));
+        destino.innerHTML = selecionadas.length
+          ? selecionadas.map((indice) => camposIndividuais(aula.alunas[indice], indice)).join("")
+          : `<div class="action-error">Marque ao menos uma aluna presente para registrar.</div>`;
+      };
+      const atualizarModoRegistro = () => {
+        const individual = areaRegistro.querySelector('input[name="modo-registro-turma"]:checked')?.value === "individual";
+        $("#registro-compartilhado").classList.toggle("hidden", individual);
+        $("#registro-por-aluna").classList.toggle("hidden", !individual);
+        if (individual) renderRegistrosIndividuais();
+      };
+      areaRegistro.querySelectorAll("[data-aluna-turma]").forEach((campo) => campo.addEventListener("change", () => {
+        if (areaRegistro.querySelector('input[name="modo-registro-turma"]:checked')?.value === "individual") renderRegistrosIndividuais();
+      }));
+      areaRegistro.querySelectorAll('input[name="modo-registro-turma"]').forEach((campo) => campo.addEventListener("change", atualizarModoRegistro));
+      atualizarModoRegistro();
+    }
     if (aula.tipo === "Prática") {
       const areaMateriais = $("#materiais-pratica");
       const materiaisRegistrados = analisesSalvas.map((registro) => {
@@ -202,14 +241,26 @@ async function renderMinhasAulas(content) {
       const botao = $("#salvar-registro-aula");
       const conteudo = $("#registro-conteudo")?.value.trim();
       if (aula.tipo !== "Prática" && !conteudo) { $("#registro-retorno").innerHTML = `<div class="action-error">Informe o conteúdo trabalhado antes de salvar.</div>`; return; }
+      const alunasParaSalvar = aulaPorTurma
+        ? [...areaRegistro.querySelectorAll("[data-aluna-turma]:checked")].map((campo) => aula.alunas[Number(campo.dataset.alunaTurma)])
+        : [...aula.alunas];
+      if (!alunasParaSalvar.length) { $("#registro-retorno").innerHTML = `<div class="action-error">Marque ao menos uma aluna presente para receber o registro.</div>`; return; }
+      const modoIndividualTurma = aulaPorTurma && areaRegistro.querySelector('input[name="modo-registro-turma"]:checked')?.value === "individual";
       const marcadas = [...areaRegistro.querySelectorAll("input[data-dificuldade-aluna]:checked")];
       const observacoes = [...areaRegistro.querySelectorAll("[data-observacao-aluna]")];
       const dificuldadesCompartilhadas = [...areaRegistro.querySelectorAll("input[data-dificuldade-compartilhada]:checked")].map((campo) => campo.value);
       const observacaoCompartilhada = $("#registro-observacao-compartilhada")?.value.trim() || "";
-      const registrosPorAluna = Object.fromEntries(aula.alunas.map((aluna) => [aluna, {
-        dificuldades: aulaPorTurma ? dificuldadesCompartilhadas : marcadas.filter((campo) => campo.dataset.dificuldadeAluna === aluna).map((campo) => campo.value),
-        observacao: aulaPorTurma ? observacaoCompartilhada : observacoes.find((campo) => campo.dataset.observacaoAluna === aluna)?.value.trim() || ""
-      }]));
+      const registrosPorAluna = Object.fromEntries(alunasParaSalvar.map((aluna) => {
+        const indice = aula.alunas.indexOf(aluna);
+        return [aluna, {
+        dificuldades: modoIndividualTurma
+          ? [...areaRegistro.querySelectorAll(`[data-dificuldade-individual="${indice}"]:checked`)].map((campo) => campo.value)
+          : aulaPorTurma ? dificuldadesCompartilhadas : marcadas.filter((campo) => campo.dataset.dificuldadeAluna === aluna).map((campo) => campo.value),
+        observacao: modoIndividualTurma
+          ? areaRegistro.querySelector(`[data-observacao-individual="${indice}"]`)?.value.trim() || ""
+          : aulaPorTurma ? observacaoCompartilhada : observacoes.find((campo) => campo.dataset.observacaoAluna === aluna)?.value.trim() || ""
+        }];
+      }));
       botao.disabled = true;
       try {
         if (aula.tipo === "Prática") {
@@ -233,9 +284,9 @@ async function renderMinhasAulas(content) {
             if (tipoTeoria === "apostila") casaTipo = "Apostila_Teoria_Prof";
             else casaTipo = areaRegistro.querySelector('input[name="corretora-folha"]:checked')?.value === "Secretaria" ? "Teoria" : "Teoria_Prof";
           }
-          await window.GemData.salvarRegistroAula({ dataIso: $("#agenda-data").value, instrutora: state.name, tipo: aula.tipo, alunas: aula.alunas, material: $("#registro-material").value.trim(), conteudo, registrosPorAluna, casaTipo, licaoCasa, limparCasas });
+          await window.GemData.salvarRegistroAula({ dataIso: $("#agenda-data").value, instrutora: state.name, tipo: aula.tipo, alunas: alunasParaSalvar, material: $("#registro-material").value.trim(), conteudo, registrosPorAluna, casaTipo, licaoCasa, limparCasas });
         }
-        $("#registro-retorno").innerHTML = `<div class="action-ok">Registro salvo para ${aula.alunas.length === 1 ? "a aluna" : "as alunas"} desta aula.</div>`;
+        $("#registro-retorno").innerHTML = `<div class="action-ok">Registro salvo para ${alunasParaSalvar.length === 1 ? "a aluna" : "as alunas"} desta aula.</div>`;
       } catch (erro) { $("#registro-retorno").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; }
     });
     areaRegistro.scrollIntoView({ behavior: "smooth", block: "start" });
