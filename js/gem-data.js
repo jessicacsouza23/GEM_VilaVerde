@@ -714,6 +714,25 @@
       const existenteMesmoMaterial = (existente.data || []).find((item) => !material || String(item.Licao_Atual || "").trim().startsWith(`${material}:`));
       const salvar = existenteMesmoMaterial ? await banco.from("historico_geral").update(registro).eq("id", existenteMesmoMaterial.id) : await banco.from("historico_geral").insert(registro);
       if (salvar.error) throw new Error(`Não foi possível salvar o registro de ${aluna}.`);
+
+      // Mesma regra do app.py: o MSA é conferido dentro do registro de
+      // Solfejo. Ao salvar a aula, as lições MSA anteriores são baixadas;
+      // se foi marcada uma dificuldade de “não realizou”, elas permanecem
+      // como não resolvidas para acompanhamento na próxima aula.
+      if (disciplina === "Solfejo") {
+        const { data: licoesMsa, error: erroMsa } = await banco.from("historico_geral")
+          .select("id,Status").eq("Aluna", aluna).eq("Tipo", "Casa_MSA");
+        if (erroMsa) throw new Error(`A aula foi salva, mas não foi possível atualizar o MSA de ${aluna}.`);
+        const statusFinal = ["Resolvido", "Realizada", "Realizada - sem pendência", "Realizadas - sem pendência"];
+        const naoRealizou = dificuldadesDaAluna.some((dificuldade) => normalizar(dificuldade).includes("NAO REALIZOU"));
+        const pendentesMsa = (licoesMsa || []).filter((licao) => !statusFinal.includes(String(licao.Status || "")));
+        for (const licao of pendentesMsa) {
+          const atualizacao = await banco.from("historico_geral")
+            .update({ Status: naoRealizou ? "Não resolvido" : "Resolvido", Observacao: registro.Observacao })
+            .eq("id", licao.id);
+          if (atualizacao.error) throw new Error(`A aula foi salva, mas não foi possível atualizar o MSA de ${aluna}.`);
+        }
+      }
       const tipoCasa = casaTipo ? `Casa_${casaTipo}` : "";
       if (tipoCasa && licaoCasa?.trim()) {
         const pendente = await banco.from("historico_geral").select("id").eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoCasa).order("id", { ascending: false }).limit(1);

@@ -191,8 +191,17 @@
     horarios.forEach((hora) => { const noBloco = profs.filter((prof) => porProf[prof].has(hora)); noBloco.forEach((prof) => noBloco.forEach((outra) => { if (prof !== outra) vizinhas[prof].add(outra); })); });
     // A professora mantém a mesma sala entre todos os blocos do sábado. No
     // próximo rodízio, a ordem começa em outra sala para a roda continuar.
-    const dataObj = dataBrParaData(data);
-    const deslocamento = salas.length ? ((dataObj ? Math.floor(dataObj / 86400000) : 0) % salas.length) : 0;
+    // A troca de sala acompanha a quantidade de rodízios efetivamente
+    // realizados, e não os dias do calendário. Usar a data quebrava a roda
+    // quando havia sete salas: um sábado para o outro são sete dias e a
+    // conta voltava à mesma sala. Escalas canceladas/sem geração também não
+    // avançam a sequência.
+    const dataAtual = dataBrParaData(data)?.getTime() || Number.POSITIVE_INFINITY;
+    const rodiziosAnteriores = (escalasAnteriores || []).filter((escala) => {
+      const dataEscala = dataBrParaData(escala?.id)?.getTime();
+      return Array.isArray(escala?.escala) && escala.escala.length && dataEscala && dataEscala < dataAtual;
+    }).length;
+    const deslocamento = salas.length ? rodiziosAnteriores % salas.length : 0;
     const ordem = [...salas.slice(deslocamento), ...salas.slice(0, deslocamento)];
     const porSala = {};
     const ordenar = [...profs].sort((a, b) => vizinhas[b].size - vizinhas[a].size || a.localeCompare(b));

@@ -129,7 +129,9 @@ async function renderMinhasAulas(content) {
     const teoriaApostila = ["Casa_Apostila_Teoria_Prof", "Casa_Apostila_Teoria"].includes(casaTeoriaSalva.Tipo);
     const teoriaSecretaria = casaTeoriaSalva.Tipo !== "Casa_Teoria_Prof";
     const tituloCasa = (tipo) => tipo === "Casa_MSA" ? "MSA de Solfejo" : tipo === "Casa_Canto" ? "Estudo de Solfejo Melódico" : ["Casa_Apostila_Teoria_Prof", "Casa_Apostila_Teoria"].includes(tipo) ? "Apostila de Teoria" : tipo === "Casa_Teoria_Prof" ? "Folha avulsa de Teoria" : ["Casa_Apostila_Prof", "Casa_Apostila"].includes(tipo) ? "Apostila de Prática" : "Método de Prática";
-    const opcoesResultadoPendente = (indice, metodo) => (metodo ? ["Passou", "Não passou", "Estudar mais"] : ["Resolvido", "Resolvido com pendências", "Não resolvido"]).map((resultado, posicao) => `<label class="result-check ${posicao === 0 ? "selected" : ""}"><input type="checkbox" data-status-pendente="${indice}" data-resultado-metodo="${metodo ? "1" : "0"}" value="${resultado}" ${posicao === 0 ? "checked" : ""}><span>${escapeHtml(resultado)}</span></label>`).join("");
+    // Resultado é uma decisão única: radio evita que uma mesma lição seja
+    // salva, por engano, como resolvida e não resolvida ao mesmo tempo.
+    const opcoesResultadoPendente = (indice, metodo) => (metodo ? ["Passou", "Não passou", "Estudar mais"] : ["Resolvido", "Resolvido com pendências", "Não resolvido", "Não trouxe a apostila/atividade"]).map((resultado, posicao) => `<label class="result-check ${posicao === 0 ? "selected" : ""}"><input type="radio" name="status-pendente-${indice}" data-status-pendente="${indice}" data-resultado-metodo="${metodo ? "1" : "0"}" value="${resultado}" ${posicao === 0 ? "checked" : ""}><span>${escapeHtml(resultado)}</span></label>`).join("");
     const correcoesPendentes = licoesPendentes.length ? `<section class="teacher-corrections correction-queue"><div class="correction-queue-head"><div><h4>📋 Correções para esta aula</h4><p>Escolha o resultado, registre a observação e salve. A informação entra no histórico da aluna.</p></div><span>${licoesPendentes.length} pendente${licoesPendentes.length > 1 ? "s" : ""}</span></div>${licoesPendentes.map((licao, indicePendente) => {
       const metodo = String(licao.Tipo || "").startsWith("Casa_Metodo_");
       const tipo = tituloCasa(licao.Tipo);
@@ -240,7 +242,10 @@ async function renderMinhasAulas(content) {
     $("#salvar-registro-aula").addEventListener("click", async () => {
       const botao = $("#salvar-registro-aula");
       const conteudo = $("#registro-conteudo")?.value.trim();
-      if (aula.tipo !== "Prática" && !conteudo) { $("#registro-retorno").innerHTML = `<div class="action-error">Informe o conteúdo trabalhado antes de salvar.</div>`; return; }
+      const material = $("#registro-material")?.value.trim();
+      // Igual ao app.py: o registro pedagógico identifica tanto o material
+      // quanto a página/lição. Isso evita históricos sem referência.
+      if (aula.tipo !== "Prática" && (!material || !conteudo)) { $("#registro-retorno").innerHTML = `<div class="action-error">Informe o material e o conteúdo trabalhado antes de salvar.</div>`; return; }
       const alunasParaSalvar = aulaPorTurma
         ? [...areaRegistro.querySelectorAll("[data-aluna-turma]:checked")].map((campo) => aula.alunas[Number(campo.dataset.alunaTurma)])
         : [...aula.alunas];
@@ -284,7 +289,7 @@ async function renderMinhasAulas(content) {
             if (tipoTeoria === "apostila") casaTipo = "Apostila_Teoria_Prof";
             else casaTipo = areaRegistro.querySelector('input[name="corretora-folha"]:checked')?.value === "Secretaria" ? "Teoria" : "Teoria_Prof";
           }
-          await window.GemData.salvarRegistroAula({ dataIso: $("#agenda-data").value, instrutora: state.name, tipo: aula.tipo, alunas: alunasParaSalvar, material: $("#registro-material").value.trim(), conteudo, registrosPorAluna, casaTipo, licaoCasa, limparCasas });
+          await window.GemData.salvarRegistroAula({ dataIso: $("#agenda-data").value, instrutora: state.name, tipo: aula.tipo, alunas: alunasParaSalvar, material, conteudo, registrosPorAluna, casaTipo, licaoCasa, limparCasas });
         }
         $("#registro-retorno").innerHTML = `<div class="action-ok">Registro salvo para ${alunasParaSalvar.length === 1 ? "a aluna" : "as alunas"} desta aula.</div>`;
       } catch (erro) { $("#registro-retorno").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; }
@@ -744,11 +749,35 @@ async function renderVisaoGeral(content) {
         return [...disciplinas];
       };
       const normalizarDisciplina = (tipo) => String(tipo || "").replace(/^Analise_/, "").replace("Canto", "Solfejo Melódico");
+      const normalizarNome = (nome) => String(nome || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+      // A escala salva é a fonte de verdade de quem estava designada para a
+      // aula. Isso mantém a conferência do relatório diário do app.py e evita
+      // considerar como regular um registro lançado pela professora errada.
+      const professorasPrevistas = (linha) => {
+        const previstas = {};
+        Object.entries(linha?._detalhes || {}).forEach(([hora, detalhe]) => {
+          const componentes = (detalhe.componentes || [detalhe.tipo]).filter(Boolean);
+          const valor = String(linha?.[hora] || "");
+          const textoProfessoras = valor.includes("|") ? valor.split("|").slice(1).join("|").trim() : "";
+          componentes.forEach((componente) => {
+            const disciplina = normalizarDisciplina(componente);
+            let professora = detalhe.professoras_componentes?.[componente] || "";
+            if (!professora && componentes.length > 1) {
+              const encontrada = textoProfessoras.match(new RegExp(`${String(componente).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*([^·]+)`, "i"));
+              professora = encontrada?.[1]?.trim() || textoProfessoras;
+            }
+            if (!professora) professora = textoProfessoras;
+            if (professora) (previstas[disciplina] ||= new Set()).add(professora);
+          });
+        });
+        return previstas;
+      };
       const cards = dados.alunas.map((aluna) => {
         const linhaEscala = dados.escala.find((linha) => linha.Aluna === aluna) || {}, chamada = chamadas[aluna], status = chamada?.Status || "Sem chamada", registros = dados.registros.filter((item) => item.Aluna === aluna && String(item.Tipo || "").startsWith("Analise_")), licoes = dados.registros.filter((item) => item.Aluna === aluna && String(item.Tipo || "").startsWith("Casa_"));
         const previstas = disciplinasDaEscala(linhaEscala), registradas = new Set(registros.map((item) => normalizarDisciplina(item.Tipo))), faltantes = previstas.filter((disciplina) => !registradas.has(disciplina));
+        const escalaProfessoras = professorasPrevistas(linhaEscala);
         const estudo = estudos[aluna];
-        const registrosMarkup = registros.length ? registros.map((registro) => { const dificuldades = Array.isArray(registro.Dificuldades) ? registro.Dificuldades.filter((item) => item && !/não apresentou dificuldade/i.test(item)) : []; return `<article class="daily-record"><strong>${escapeHtml(normalizarDisciplina(registro.Tipo))}${registro.Instrutora ? ` · ${escapeHtml(registro.Instrutora)}` : ""}</strong><span>${escapeHtml(registro.Licao_Atual || "Conteúdo não informado")}</span>${dificuldades.length ? `<small>⚠️ ${escapeHtml(dificuldades.join(" · "))}</small>` : `<small>✓ Sem dificuldades registradas</small>`}${registro.Observacao ? `<small>📝 ${escapeHtml(registro.Observacao)}</small>` : ""}</article>`; }).join("") : `<p class="hint">Nenhum registro pedagógico lançado ainda.</p>`;
+        const registrosMarkup = registros.length ? registros.map((registro) => { const dificuldades = Array.isArray(registro.Dificuldades) ? registro.Dificuldades.filter((item) => item && !/não apresentou dificuldade/i.test(item)) : []; const disciplina = normalizarDisciplina(registro.Tipo), esperadas = escalaProfessoras[disciplina] || new Set(), divergente = registro.Instrutora && esperadas.size && ![...esperadas].some((professora) => normalizarNome(professora) === normalizarNome(registro.Instrutora)); return `<article class="daily-record"><strong>${escapeHtml(disciplina)}${registro.Instrutora ? ` · ${escapeHtml(registro.Instrutora)}` : ""}</strong><span>${escapeHtml(registro.Licao_Atual || "Conteúdo não informado")}</span>${divergente ? `<small class="record-divergence">⚠️ Rodízio: prevista ${escapeHtml([...esperadas].join(" / "))}</small>` : ""}${dificuldades.length ? `<small>⚠️ ${escapeHtml(dificuldades.join(" · "))}</small>` : `<small>✓ Sem dificuldades registradas</small>`}${registro.Observacao ? `<small>📝 ${escapeHtml(registro.Observacao)}</small>` : ""}</article>`; }).join("") : `<p class="hint">Nenhum registro pedagógico lançado ainda.</p>`;
         const licoesMarkup = licoes.filter((licao) => !eResolvida(licao.Status) || licao.Observacao).map((licao) => `<span>📚 ${escapeHtml(casaCategoria(licao.Tipo))}: ${escapeHtml(licao.Licao_Casa || "—")} <small>${escapeHtml(licao.Status || "Pendente")}</small></span>`).join("");
         return `<article class="daily-student"><header><div><h3>${escapeHtml(aluna)}</h3><p>${chamada ? `${escapeHtml(status)}${chamada.Observacao ? ` · ${escapeHtml(chamada.Observacao)}` : ""}` : "Chamada ainda não lançada"}</p></div><span class="daily-badge ${status === "Presente" ? "ok" : status === "Sem chamada" ? "wait" : "alert"}">${status === "Presente" ? "✓ Presente" : escapeHtml(status)}</span></header><div class="daily-study">${estudo === undefined ? "📚 Sem registro de estudo em casa" : estudo.length ? `📚 😊 Estudou: ${escapeHtml(estudo.join(" · "))}` : "📚 😢 Não estudou"}</div><div class="daily-planned"><strong>Aulas previstas:</strong> ${previstas.length ? escapeHtml(previstas.join(" · ")) : "escala sem detalhes"}</div><div class="daily-records">${registrosMarkup}</div>${faltantes.length && !["Ausente", "Justificada"].includes(status) ? `<div class="daily-warning">⚠️ Falta registro: ${escapeHtml(faltantes.join(" · "))}</div>` : ""}${licoesMarkup ? `<div class="daily-homework"><strong>Para a próxima aula</strong>${licoesMarkup}</div>` : ""}</article>`;
       }).join("");
@@ -805,7 +834,7 @@ async function renderProvas(content) {
   let base = null;
   const abrirResponsaveis = (avaliacaoId) => {
     const avaliacao = base.avaliacoes.find((item) => String(item.id) === String(avaliacaoId));
-    const alunas = base.pessoas.alunas.filter((item) => item.ativo !== false), professoras = base.pessoas.professoras.filter((item) => item.ativo !== false).map((item) => item.nome), disciplinas = ["Prática", "Teoria", "Solfejo"];
+    const alunas = base.pessoas.alunas.filter((item) => item.ativo !== false), professoras = base.pessoas.professoras.filter((item) => item.ativo !== false).map((item) => item.nome), disciplinas = ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"];
     if (!professoras.length) { areaResponsaveis.innerHTML = `<div class="action-error">Cadastre professoras antes de definir responsáveis.</div>`; return; }
     const responsavelAtual = (aluna, disciplina) => base.responsaveis.find((item) => String(item.avaliacao_id) === String(avaliacaoId) && item.aluna === aluna && item.disciplina === disciplina)?.professora || professoras[0];
     areaResponsaveis.innerHTML = `<section class="panel"><div class="section-title"><div><h2>👩‍🏫 Professoras responsáveis</h2><p>${escapeHtml(avaliacao?.titulo || "Avaliação")} · defina uma responsável por disciplina e aluna.</p></div><button id="fechar-responsaveis" class="secondary-action" type="button">Fechar</button></div><div class="responsibility-list">${alunas.map((aluna, indice) => `<article><h3>${escapeHtml(aluna.nome)}</h3><div class="responsibility-grid">${disciplinas.map((disciplina) => `<label>${disciplina}<select data-responsavel-aluna="${indice}" data-responsavel-disciplina="${escapeHtml(disciplina)}">${professoras.map((professora) => `<option ${responsavelAtual(aluna.nome, disciplina) === professora ? "selected" : ""}>${escapeHtml(professora)}</option>`).join("")}</select></label>`).join("")}</div></article>`).join("")}</div><button id="salvar-responsaveis" class="primary-action" type="button">Salvar professoras responsáveis</button><div id="responsaveis-feedback"></div></section>`;
@@ -966,13 +995,25 @@ async function renderRelatorios(content) {
         try {
           const alvo = $("#report-print"), blocos = [...alvo.querySelectorAll(".report-header, .student-report")];
           const pdf = new window.jspdf.jsPDF("p", "mm", "a4"), larguraPagina = 190, alturaPagina = 277;
-          for (let indice = 0; indice < blocos.length; indice += 1) {
-            const bloco = blocos[indice];
+          let primeiraPagina = true;
+          for (const bloco of blocos) {
             const canvas = await window.html2canvas(bloco, { scale: 2, backgroundColor: "#ffffff", useCORS: true, windowWidth: bloco.scrollWidth });
-            const proporcao = Math.min(larguraPagina / canvas.width, alturaPagina / canvas.height);
-            const largura = canvas.width * proporcao, altura = canvas.height * proporcao;
-            if (indice > 0) pdf.addPage();
-            pdf.addImage(canvas.toDataURL("image/png"), "PNG", (210 - largura) / 2, 10, largura, altura);
+            // Cada bloco mantém a mesma largura no PDF. Se o histórico da
+            // aluna for longo, recortamos o canvas em páginas em vez de
+            // diminuí-lo até ficar ilegível ou perder o fim do conteúdo.
+            const pixelsPorMm = canvas.width / larguraPagina;
+            const alturaMaximaEmPixels = Math.max(1, Math.floor(alturaPagina * pixelsPorMm));
+            for (let inicioY = 0; inicioY < canvas.height; inicioY += alturaMaximaEmPixels) {
+              const alturaTrecho = Math.min(alturaMaximaEmPixels, canvas.height - inicioY);
+              const paginaCanvas = document.createElement("canvas");
+              paginaCanvas.width = canvas.width;
+              paginaCanvas.height = alturaTrecho;
+              paginaCanvas.getContext("2d").drawImage(canvas, 0, inicioY, canvas.width, alturaTrecho, 0, 0, canvas.width, alturaTrecho);
+              if (!primeiraPagina) pdf.addPage();
+              primeiraPagina = false;
+              const alturaNoPdf = alturaTrecho / pixelsPorMm;
+              pdf.addImage(paginaCanvas.toDataURL("image/png"), "PNG", 10, 10, larguraPagina, alturaNoPdf);
+            }
           }
           pdf.save(`Relatorio_GEM_${dados.data.replaceAll("/", "-")}.pdf`);
         } catch (error) { alert("Não foi possível gerar o PDF: " + error.message); } finally { botao.disabled = false; botao.textContent = "Baixar relatório em PDF"; }
@@ -983,7 +1024,7 @@ async function renderRelatorios(content) {
 }
 
 async function renderCorrecoesLicoes(content) {
-  content.innerHTML = `<section class="intro-card"><p class="eyebrow">SECRETARIA</p><h2>Correção de lições</h2><p>Este painel recebe Folha Avulsa de Teoria encaminhada pela professora e Apostila de Prática. Métodos, MSA e Apostila de Teoria são avaliados pela própria professora na aula seguinte.</p></section><section class="panel"><div class="analytics-filters"><label>Aluna<select id="correcao-aluna"></select></label><label>Responsável da Secretaria<select id="correcao-secretaria"></select></label><label>Data da conferência<input id="correcao-data" type="date" value="${new Date().toISOString().slice(0, 10)}"></label><button id="atualizar-correcoes" class="primary-action" type="button">Consultar pendências</button></div><div id="pendencias-licoes"><div class="empty">Carregando lições...</div></div></section><section class="panel"><h2>➕ Registrar atividade para correção</h2><p class="hint">Use se a folha de Teoria ou a Apostila de Prática foi entregue à Secretaria sem lançamento anterior.</p><div class="form-grid"><input id="nova-licao-conteudo" placeholder="Folha ou Apostila / exercícios"><select id="nova-licao-tipo"><option value="Casa_Teoria">Folha Avulsa de Teoria</option><option value="Casa_Apostila">Apostila de Prática</option></select><select id="nova-licao-status"><option>Pendente</option><option>Resolvido</option><option>Resolvido com pendências</option><option>Não resolvido</option></select><input id="nova-licao-obs" placeholder="Observações técnicas / dicas"><button id="criar-licao-secretaria" class="primary-action" type="button">Salvar atividade</button></div><div id="correcao-feedback"></div></section>`;
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">SECRETARIA</p><h2>Correção de lições</h2><p>Este painel recebe Folha Avulsa de Teoria encaminhada pela professora e Apostila de Prática. Métodos, MSA e Apostila de Teoria são avaliados pela própria professora na aula seguinte.</p></section><section class="panel"><div class="analytics-filters"><label>Aluna<select id="correcao-aluna"></select></label><label>Responsável da Secretaria<select id="correcao-secretaria"></select></label><label>Data da conferência<input id="correcao-data" type="date" value="${new Date().toISOString().slice(0, 10)}"></label><button id="atualizar-correcoes" class="primary-action" type="button">Consultar pendências</button></div><div id="pendencias-licoes"><div class="empty">Carregando lições...</div></div></section><section class="panel"><h2>➕ Registrar atividade para correção</h2><p class="hint">Use se a folha de Teoria ou a Apostila de Prática foi entregue à Secretaria sem lançamento anterior.</p><div class="form-grid"><input id="nova-licao-conteudo" placeholder="Folha ou Apostila / exercícios"><select id="nova-licao-tipo"><option value="Casa_Teoria">Folha Avulsa de Teoria</option><option value="Casa_Apostila">Apostila de Prática</option></select><select id="nova-licao-status"><option>Pendente</option><option>Resolvido</option><option>Resolvido com pendências</option><option>Não resolvido</option><option>Não trouxe a apostila/atividade</option></select><input id="nova-licao-obs" placeholder="Observações técnicas / dicas"><button id="criar-licao-secretaria" class="primary-action" type="button">Salvar atividade</button></div><div id="correcao-feedback"></div></section>`;
   const base = await window.GemData.dadosCorrecoesLicoes(); const alunas = base.alunas.filter((aluna) => aluna.ativo !== false).map((aluna) => aluna.nome), secretarias = base.secretarias.filter((item) => item.ativo !== false).map((item) => item.nome);
   $("#correcao-aluna").innerHTML = alunas.map((aluna) => `<option value="${escapeHtml(aluna)}">${escapeHtml(aluna)}</option>`).join(""); $("#correcao-secretaria").innerHTML = (secretarias.length ? secretarias : [state.name]).map((nome) => `<option value="${escapeHtml(nome)}">${escapeHtml(nome)}</option>`).join("");
   const dataBr = (iso) => { const [ano, mes, dia] = String(iso).split("-"); return ano ? `${dia}/${mes}/${ano}` : iso; };
@@ -992,10 +1033,18 @@ async function renderCorrecoesLicoes(content) {
     const aluna = $("#correcao-aluna").value, porLicao = new Map();
     base.historico.filter((item) => item.Aluna === aluna).sort((a, b) => dataOrdenavel(a.Data).localeCompare(dataOrdenavel(b.Data)) || Number(a.id || 0) - Number(b.id || 0)).forEach((item) => porLicao.set(`${item.Tipo}|${item.Licao_Casa}`, item));
     const pendentes = [...porLicao.values()].filter((item) => !["Resolvido", "Realizada", "Realizadas - sem pendência", "Realizada - sem pendência"].includes(item.Status)); const destino = $("#pendencias-licoes");
-    const opcoesResultado = (item, indice) => ["Resolvido", "Resolvido com pendências", "Não resolvido"].map((resultado) => `<label class="result-check ${item.Status === resultado ? "selected" : ""}"><input type="checkbox" data-status-correcao="${indice}" value="${resultado}" ${item.Status === resultado ? "checked" : ""}><span>${escapeHtml(resultado)}</span></label>`).join("");
-    destino.innerHTML = pendentes.length ? `<div class="pending-title">🚨 Lições pendentes para ${escapeHtml(aluna)}</div>${pendentes.map((item, indice) => { const tipo = ["Casa_Apostila", "Casa_Apostila_Prof"].includes(item.Tipo) ? "📕 Apostila (Prática)" : "📘 Folha Avulsa (Teoria)"; return `<article class="pending-card"><div><h3>${tipo}</h3><p><strong>${escapeHtml(item.Licao_Casa || "Lição não informada")}</strong></p><p class="hint">Lançada em ${escapeHtml(item.Data || "—")} · Status atual: ${escapeHtml(item.Status || "Pendente")}</p></div><div class="pending-action"><div class="result-area"><strong>Resultado da correção</strong><div class="result-checks">${opcoesResultado(item, indice)}</div></div><label class="correction-note">Observação da Secretaria<textarea data-obs-correcao="${indice}" placeholder="Ex.: quais exercícios ficaram incompletos e o que deve ser retomado">${escapeHtml(String(item.Observacao || "").replace(/^Sec:\s*/i, ""))}</textarea></label><button data-salvar-correcao="${indice}" class="primary-action" type="button">Salvar correção</button></div></article>`; }).join("")}` : `<div class="action-ok">✅ Nenhuma folha de Teoria ou Apostila de Prática pendente para esta aluna.</div>`;
+    const opcoesResultado = (item, indice) => ["Resolvido", "Resolvido com pendências", "Não resolvido", "Não trouxe a apostila/atividade"].map((resultado) => `<label class="result-check ${item.Status === resultado ? "selected" : ""}"><input type="radio" name="status-correcao-${indice}" data-status-correcao="${indice}" value="${resultado}" ${item.Status === resultado ? "checked" : ""}><span>${escapeHtml(resultado)}</span></label>`).join("");
+    const dataConferencia = dataBr($("#correcao-data").value);
+    destino.innerHTML = pendentes.length ? `<div class="pending-title">🚨 Lições pendentes para ${escapeHtml(aluna)}</div>${pendentes.map((item, indice) => {
+      const tipo = ["Casa_Apostila", "Casa_Apostila_Prof"].includes(item.Tipo) ? "📕 Apostila (Prática)" : "📘 Folha Avulsa (Teoria)";
+      // “Resolvido com pendências” continua na fila. A observação é
+      // reaproveitada somente se a Secretaria reabrir a própria correção no
+      // mesmo dia; em outro dia começa limpa para registrar a nova devolutiva.
+      const manterObservacao = item.Status === "Resolvido com pendências" && String(item.Data || "") === dataConferencia;
+      const observacaoInicial = manterObservacao ? String(item.Observacao || "").replace(/^Sec:\s*/i, "") : "";
+      return `<article class="pending-card"><div><h3>${tipo}</h3><p><strong>${escapeHtml(item.Licao_Casa || "Lição não informada")}</strong></p><p class="hint">Lançada em ${escapeHtml(item.Data || "—")} · Status atual: ${escapeHtml(item.Status || "Pendente")}</p></div><div class="pending-action"><div class="result-area"><strong>Resultado da correção</strong><div class="result-checks">${opcoesResultado(item, indice)}</div></div><label class="correction-note">Observação da Secretaria<textarea data-obs-correcao="${indice}" placeholder="Ex.: quais exercícios ficaram incompletos e o que deve ser retomado">${escapeHtml(observacaoInicial)}</textarea></label><button data-salvar-correcao="${indice}" class="primary-action" type="button">Salvar correção</button></div></article>`;
+    }).join("")}` : `<div class="action-ok">✅ Nenhuma folha de Teoria ou Apostila de Prática pendente para esta aluna.</div>`;
     destino.querySelectorAll("[data-status-correcao]").forEach((campo) => campo.addEventListener("change", () => {
-      if (campo.checked) destino.querySelectorAll(`[data-status-correcao="${campo.dataset.statusCorrecao}"]`).forEach((outro) => { if (outro !== campo) outro.checked = false; });
       destino.querySelectorAll(`[data-status-correcao="${campo.dataset.statusCorrecao}"]`).forEach((outro) => outro.closest(".result-check").classList.toggle("selected", outro.checked));
     }));
     destino.querySelectorAll("[data-salvar-correcao]").forEach((botao) => botao.addEventListener("click", async () => {
@@ -1005,7 +1054,7 @@ async function renderCorrecoesLicoes(content) {
       try {
         await window.GemData.atualizarCorrecaoLicao(item.id, { status, observacao: destino.querySelector(`[data-obs-correcao="${indice}"]`).value.trim(), secretaria: $("#correcao-secretaria").value, data: dataBr($("#correcao-data").value) });
         const posicao = base.historico.findIndex((registro) => String(registro.id) === String(item.id));
-        if (posicao >= 0) base.historico[posicao] = { ...base.historico[posicao], Status: status };
+        if (posicao >= 0) base.historico[posicao] = { ...base.historico[posicao], Status: status, Observacao: `Sec: ${destino.querySelector(`[data-obs-correcao="${indice}"]`).value.trim()}`, Data: dataBr($("#correcao-data").value) };
         atualizar();
       } catch (error) { botao.disabled = false; botao.closest(".pending-action").insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); }
     }));
@@ -1172,11 +1221,13 @@ function ligarGerador(base, modelo, preparacao, fixasSalvas = []) {
   const atualizarPrevia = () => {
     if (!manual.checked) { previa.innerHTML = ""; return; }
     const valor = turma.value;
-    // A sequência do modelo é Teoria → demais coletivas → Individual.
-    // Portanto, a mesma turma que começa em Teoria é a que chega ao
-    // atendimento individual no último bloco. A versão anterior deslocava
-    // uma turma para trás e a prévia não correspondia ao que foi pedido.
-    const comecaTeoria = valor;
+    // Compatível com a regra do app.py: nesta opção, a turma anterior à
+    // escolhida é a referência que começa em Teoria. A prévia precisa usar
+    // exatamente a mesma transformação aplicada ao gerar a escala.
+    const individual = document.querySelector('input[name="criterio-rotacao"]:checked')?.value === "individual";
+    const comecaTeoria = individual
+      ? preparacao.turmas[(preparacao.turmas.indexOf(valor) - 1 + preparacao.turmas.length) % preparacao.turmas.length]
+      : valor;
     const posicoes = [...Object.keys(preparacao.coletivas), "Prática + Solfejo"], teoria = posicoes.findIndex((item) => window.RodizioEngine.nomeArea(item) === "Teoria");
     const ordem = [posicoes[teoria], ...posicoes.filter((item) => item !== posicoes[teoria] && item !== "Prática + Solfejo"), "Prática + Solfejo"];
     previa.innerHTML = `<p class="hint">Para isso, <strong>${escapeHtml(comecaTeoria)}</strong> começa em Teoria.</p><table class="mini-table"><thead><tr><th>Bloco</th>${preparacao.turmas.map((item) => `<th>${escapeHtml(item)}</th>`).join("")}</tr></thead><tbody>${preparacao.blocos.map((bloco, indice) => `<tr><td>${escapeHtml(window.RodizioEngine.horario(bloco, indice))}</td>${preparacao.turmas.map((turmaNome, indiceTurma) => `<td>${escapeHtml(ordem[(indiceTurma - preparacao.turmas.indexOf(comecaTeoria) + indice + ordem.length * 3) % ordem.length])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
@@ -1193,9 +1244,13 @@ function ligarGerador(base, modelo, preparacao, fixasSalvas = []) {
   $("#gerar-rodizio").addEventListener("click", async () => {
     const feedback = $("#gerar-feedback"); const coletivas = {}; document.querySelectorAll("[data-coletiva]").forEach((item) => { (coletivas[item.dataset.coletiva] ||= {})[item.dataset.turma] = item.value; });
     const fixas = mapaDasFixas(); const saidasMap = Object.fromEntries([...document.querySelectorAll("[data-saida]")].map((item) => [item.dataset.saida, item.value]));
-    // Tanto “começa em Teoria” quanto “fica no último bloco individual”
-    // apontam para a mesma turma na ordem cíclica do modelo.
-    let turmaTeoria = null; if (manual.checked) turmaTeoria = turma.value;
+    let turmaTeoria = null;
+    if (manual.checked) {
+      turmaTeoria = turma.value;
+      if (document.querySelector('input[name="criterio-rotacao"]:checked')?.value === "individual") {
+        turmaTeoria = preparacao.turmas[(preparacao.turmas.indexOf(turmaTeoria) - 1 + preparacao.turmas.length) % preparacao.turmas.length];
+      }
+    }
     const resultado = window.RodizioEngine.gerar({ modelo, data: base.data, turmasReais: base.turmas, professoras: base.professoras, folgas: base.folga?.professoras || [], saidas: saidasMap, fixas, coletivas, turmaInicioTeoria: turmaTeoria, usarFixas: Boolean($("#usar-fixas")?.checked), escalasAnteriores: base.escalasAnteriores });
     if (resultado.erros.length) { feedback.innerHTML = `<div class="action-error"><strong>O rodízio não foi salvo.</strong><br>${resultado.erros.map(escapeHtml).join("<br>")}</div>`; return; }
     feedback.innerHTML = `${muralRodizio(resultado.escala, base.data)}<button id="confirmar-geracao" class="primary-action wide-action" type="button">Confirmar e salvar rodízio</button>`;
