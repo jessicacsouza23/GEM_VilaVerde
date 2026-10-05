@@ -2,7 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
   "crons": [
-    { "path": "/api/notificar-pendencias", "schedule": "0 11 * * *" }
+    { "path": "/api/notificar-pendencias", "schedule": "0 11 * * *" },
+    { "path": "/api/notificar-estudo-manha", "schedule": "0 11 * * *" },
+    { "path": "/api/notificar-estudo-tarde", "schedule": "0 17 * * *" },
+    { "path": "/api/notificar-estudo-noite", "schedule": "0 22 * * *" }
   ],
   "headers": [
     {

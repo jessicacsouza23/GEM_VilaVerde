@@ -29,6 +29,36 @@ function disciplinaDaCelula(valor, detalhe = {}) {
   return "Prática";
 }
 
+function configurarPush() {
+  const publicKey = process.env.PUSH_VAPID_PUBLIC_KEY, privateKey = process.env.PUSH_VAPID_PRIVATE_KEY;
+  if (!publicKey || !privateKey || !process.env.PUSH_CONTACT_EMAIL) {
+    throw new Error("Chaves de notificação não configuradas.");
+  }
+  webpush.setVapidDetails(`mailto:${process.env.PUSH_CONTACT_EMAIL}`, publicKey, privateKey);
+}
+
+function cronAutorizado(request) {
+  return !process.env.CRON_SECRET || request.headers.authorization === `Bearer ${process.env.CRON_SECRET}`;
+}
+
+async function enviarFila(fila) {
+  let enviadas = 0;
+  for (const item of fila) {
+    const jaEnviada = await banco(`notificacoes_enviadas?chave=eq.${encodeURIComponent(item.chave)}&select=id`);
+    if (jaEnviada?.length) continue;
+    try {
+      await webpush.sendNotification(item.sub.subscription, JSON.stringify(item.payload));
+      await banco("notificacoes_enviadas", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ chave: item.chave, usuario: item.sub.usuario, tipo: item.tipo }) });
+      enviadas += 1;
+    } catch (error) {
+      if ([404, 410].includes(error.statusCode)) {
+        await banco(`push_subscriptions?endpoint=eq.${encodeURIComponent(item.sub.endpoint)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ ativo: false }) });
+      }
+    }
+  }
+  return enviadas;
+}
+
 // Cada aluna/disciplina realmente escalada é conferida separadamente. Isso
 // impede que um único registro da professora esconda outras aulas pendentes.
 function professorasComPendencias(calendarios, historico, inicioHoje) {
@@ -71,11 +101,9 @@ function professorasComPendencias(calendarios, historico, inicioHoje) {
 }
 
 module.exports = async function notificarPendencias(request, response) {
-  if (process.env.CRON_SECRET && request.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return response.status(401).json({ error: "Não autorizado." });
+  if (!cronAutorizado(request)) return response.status(401).json({ error: "Não autorizado." });
   try {
-    const publicKey = process.env.PUSH_VAPID_PUBLIC_KEY, privateKey = process.env.PUSH_VAPID_PRIVATE_KEY;
-    if (!publicKey || !privateKey || !process.env.PUSH_CONTACT_EMAIL) return response.status(503).json({ error: "Chaves de notificação não configuradas." });
-    webpush.setVapidDetails(`mailto:${process.env.PUSH_CONTACT_EMAIL}`, publicKey, privateKey);
+    configurarPush();
     const [subscriptions, calendarios, historico] = await Promise.all([
       banco("push_subscriptions?ativo=eq.true&select=*"),
       banco("calendario?select=id,escala"),
@@ -85,23 +113,35 @@ module.exports = async function notificarPendencias(request, response) {
     const pendenciasProfessoras = professorasComPendencias(calendarios, historico, inicioHoje);
     const fila = [];
     (subscriptions || []).forEach((sub) => {
-      if (sub.perfil === "Aluna") fila.push({ sub, chave: `estudo:${chaveHoje}:${sub.endpoint}`, tipo: "estudo", payload: { title: "🎼 Hora de estudar", body: "Separe alguns minutos para praticar sua lição do GEM hoje.", url: "/" } });
       if (sub.perfil === "Professora" && [...pendenciasProfessoras].some((professora) => normalizar(professora) === normalizar(sub.usuario))) fila.push({ sub, chave: `registro:${chaveHoje}:${sub.endpoint}`, tipo: "registro_pendente", payload: { title: "📝 Registro de aula pendente", body: "Há aula(s) escalada(s) sem registro. Abra o GEM e conclua o lançamento.", url: "/" } });
     });
-    let enviadas = 0;
-    for (const item of fila) {
-      const jaEnviada = await banco(`notificacoes_enviadas?chave=eq.${encodeURIComponent(item.chave)}&select=id`);
-      if (jaEnviada?.length) continue;
-      try {
-        await webpush.sendNotification(item.sub.subscription, JSON.stringify(item.payload));
-        await banco("notificacoes_enviadas", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ chave: item.chave, usuario: item.sub.usuario, tipo: item.tipo }) });
-        enviadas += 1;
-      } catch (error) {
-        if ([404, 410].includes(error.statusCode)) await banco(`push_subscriptions?endpoint=eq.${encodeURIComponent(item.sub.endpoint)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ ativo: false }) });
-      }
-    }
+    const enviadas = await enviarFila(fila);
     return response.status(200).json({ ok: true, enviadas, pendenciasProfessoras: pendenciasProfessoras.size });
   } catch (error) {
     return response.status(500).json({ error: "Falha no envio automático de notificações." });
+  }
+};
+
+module.exports.enviarLembretesEstudo = async function enviarLembretesEstudo(request, response, periodo) {
+  if (!cronAutorizado(request)) return response.status(401).json({ error: "Não autorizado." });
+  try {
+    configurarPush();
+    const subscriptions = await banco("push_subscriptions?ativo=eq.true&perfil=eq.Aluna&select=*");
+    const chaveHoje = dataBrasil(new Date());
+    const mensagens = {
+      manha: { title: "🌤️ Bom dia! Hora de estudar", body: "Reserve alguns minutos nesta manhã para praticar sua lição do GEM." },
+      tarde: { title: "🎼 Lembrete de estudo", body: "Que tal separar um momento desta tarde para estudar sua lição do GEM?" },
+      noite: { title: "🌙 Antes de encerrar o dia", body: "Faça uma breve prática da sua lição do GEM para continuar evoluindo." }
+    };
+    const mensagem = mensagens[periodo] || mensagens.manha;
+    const fila = (subscriptions || []).map((sub) => ({
+      sub,
+      chave: `estudo:${periodo}:${chaveHoje}:${sub.endpoint}`,
+      tipo: `estudo_${periodo}`,
+      payload: { ...mensagem, url: "/" }
+    }));
+    return response.status(200).json({ ok: true, periodo, enviadas: await enviarFila(fila) });
+  } catch (error) {
+    return response.status(500).json({ error: "Falha no envio do lembrete de estudo." });
   }
 };
