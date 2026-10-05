@@ -1171,9 +1171,12 @@ function ligarGerador(base, modelo, preparacao, fixasSalvas = []) {
   const manual = $("#rotacao-manual"), opcoes = $("#rotacao-opcoes"), turma = $("#turma-rotacao"), previa = $("#previa-rotacao"), saidas = $("#professoras-saida"), detalhesSaidas = $("#saidas-detalhes");
   const atualizarPrevia = () => {
     if (!manual.checked) { previa.innerHTML = ""; return; }
-    const valor = turma.value; const individual = document.querySelector('input[name="criterio-rotacao"]:checked')?.value === "individual";
-    let comecaTeoria = valor;
-    if (individual) comecaTeoria = preparacao.turmas[(preparacao.turmas.indexOf(valor) - 1 + preparacao.turmas.length) % preparacao.turmas.length];
+    const valor = turma.value;
+    // A sequência do modelo é Teoria → demais coletivas → Individual.
+    // Portanto, a mesma turma que começa em Teoria é a que chega ao
+    // atendimento individual no último bloco. A versão anterior deslocava
+    // uma turma para trás e a prévia não correspondia ao que foi pedido.
+    const comecaTeoria = valor;
     const posicoes = [...Object.keys(preparacao.coletivas), "Prática + Solfejo"], teoria = posicoes.findIndex((item) => window.RodizioEngine.nomeArea(item) === "Teoria");
     const ordem = [posicoes[teoria], ...posicoes.filter((item) => item !== posicoes[teoria] && item !== "Prática + Solfejo"), "Prática + Solfejo"];
     previa.innerHTML = `<p class="hint">Para isso, <strong>${escapeHtml(comecaTeoria)}</strong> começa em Teoria.</p><table class="mini-table"><thead><tr><th>Bloco</th>${preparacao.turmas.map((item) => `<th>${escapeHtml(item)}</th>`).join("")}</tr></thead><tbody>${preparacao.blocos.map((bloco, indice) => `<tr><td>${escapeHtml(window.RodizioEngine.horario(bloco, indice))}</td>${preparacao.turmas.map((turmaNome, indiceTurma) => `<td>${escapeHtml(ordem[(indiceTurma - preparacao.turmas.indexOf(comecaTeoria) + indice + ordem.length * 3) % ordem.length])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
@@ -1190,7 +1193,9 @@ function ligarGerador(base, modelo, preparacao, fixasSalvas = []) {
   $("#gerar-rodizio").addEventListener("click", async () => {
     const feedback = $("#gerar-feedback"); const coletivas = {}; document.querySelectorAll("[data-coletiva]").forEach((item) => { (coletivas[item.dataset.coletiva] ||= {})[item.dataset.turma] = item.value; });
     const fixas = mapaDasFixas(); const saidasMap = Object.fromEntries([...document.querySelectorAll("[data-saida]")].map((item) => [item.dataset.saida, item.value]));
-    let turmaTeoria = null; if (manual.checked) { turmaTeoria = turma.value; if (document.querySelector('input[name="criterio-rotacao"]:checked')?.value === "individual") turmaTeoria = preparacao.turmas[(preparacao.turmas.indexOf(turmaTeoria) - 1 + preparacao.turmas.length) % preparacao.turmas.length]; }
+    // Tanto “começa em Teoria” quanto “fica no último bloco individual”
+    // apontam para a mesma turma na ordem cíclica do modelo.
+    let turmaTeoria = null; if (manual.checked) turmaTeoria = turma.value;
     const resultado = window.RodizioEngine.gerar({ modelo, data: base.data, turmasReais: base.turmas, professoras: base.professoras, folgas: base.folga?.professoras || [], saidas: saidasMap, fixas, coletivas, turmaInicioTeoria: turmaTeoria, usarFixas: Boolean($("#usar-fixas")?.checked), escalasAnteriores: base.escalasAnteriores });
     if (resultado.erros.length) { feedback.innerHTML = `<div class="action-error"><strong>O rodízio não foi salvo.</strong><br>${resultado.erros.map(escapeHtml).join("<br>")}</div>`; return; }
     feedback.innerHTML = `${muralRodizio(resultado.escala, base.data)}<button id="confirmar-geracao" class="primary-action wide-action" type="button">Confirmar e salvar rodízio</button>`;
