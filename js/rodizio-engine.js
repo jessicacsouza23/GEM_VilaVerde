@@ -120,13 +120,20 @@
         const posicao = inicial ? posicoes[(posicoes.indexOf(inicial) + indiceBloco) % posicoes.length] : posicoes[(indiceTurma + indiceBloco) % posicoes.length];
         return { turma, posicao };
       }).sort((a, b) => Number(a.posicao === "__individual__") - Number(b.posicao === "__individual__"));
+      // A professora fixa é reservada para a aluna antes da escolha das
+      // coletivas. Sem esta reserva, a seleção automática podia colocá-la em
+      // Teoria/Solfejo no mesmo horário e só então acusar um conflito que o
+      // rodízio poderia ter evitado escolhendo outra professora habilitada.
+      const turmasNoIndividual = alocacoes.filter((item) => item.posicao === "__individual__").map((item) => item.turma);
+      const professorasReservadas = new Set(usarFixas ? turmasNoIndividual.flatMap((turma) => (turmasReais[turma] || [])
+        .map((aluna) => fixas[String(aluna).trim().toLowerCase()]).filter(Boolean)) : []);
       alocacoes.forEach(({ turma, posicao }) => {
         const alunas = turmasReais[turma] || [];
         const indisponiveis = Object.entries(saidas).filter(([, ultimo]) => ultimo && horarios.indexOf(ultimo) < indiceBloco).map(([professora]) => professora);
         if (posicao !== "__individual__") {
           const ocupadas = new Set(todasAlunas.map((aluna) => String(escala[aluna][hora] || "")).filter((item) => item.includes("|")).map((item) => item.split("|").slice(1).join("|").trim()));
           const habilitadasDaArea = habilitadas[posicao] || (posicao === "Solfejo Melódico" ? habilitadas.Canto : null) || disponiveis;
-          let candidatas = habilitadasDaArea.filter((professora) => disponiveis.includes(professora) && !indisponiveis.includes(professora) && !ocupadas.has(professora));
+          let candidatas = habilitadasDaArea.filter((professora) => disponiveis.includes(professora) && !indisponiveis.includes(professora) && !ocupadas.has(professora) && !professorasReservadas.has(professora));
           const escolhida = coletivas?.[posicao]?.[turma];
           if (escolhida) {
             if (!candidatas.includes(escolhida)) { erros.push(`${escolhida} não está disponível para ${posicao} de ${turma} no ${hora}. Ajuste a escolha, as folgas ou as habilitações.`); return; }
