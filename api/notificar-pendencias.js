@@ -110,38 +110,27 @@ module.exports = async function notificarPendencias(request, response) {
       banco("historico_geral?select=Data,Aluna,Instrutora,Tipo,Status")
     ]);
     const hoje = new Date(), chaveHoje = dataBrasil(hoje), inicioHoje = dataValida(chaveHoje);
-    const pendenciasProfessoras = professorasComPendencias(calendarios, historico, inicioHoje);
-    const fila = [];
-    (subscriptions || []).forEach((sub) => {
-      if (sub.perfil === "Professora" && [...pendenciasProfessoras].some((professora) => normalizar(professora) === normalizar(sub.usuario))) fila.push({ sub, chave: `registro:${chaveHoje}:${sub.endpoint}`, tipo: "registro_pendente", payload: { title: "📝 Registro de aula pendente", body: "Há aula(s) escalada(s) sem registro. Abra o GEM e conclua o lançamento.", url: "/" } });
-    });
-    const enviadas = await enviarFila(fila);
-    return response.status(200).json({ ok: true, enviadas, pendenciasProfessoras: pendenciasProfessoras.size });
-  } catch (error) {
-    return response.status(500).json({ error: "Falha no envio automático de notificações." });
-  }
-};
-
-module.exports.enviarLembretesEstudo = async function enviarLembretesEstudo(request, response, periodo) {
-  if (!cronAutorizado(request)) return response.status(401).json({ error: "Não autorizado." });
-  try {
-    configurarPush();
-    const subscriptions = await banco("push_subscriptions?ativo=eq.true&perfil=eq.Aluna&select=*");
-    const chaveHoje = dataBrasil(new Date());
-    const mensagens = {
+    const horaBrasil = Number(new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", hourCycle: "h23" }).format(hoje));
+    const periodoEstudo = horaBrasil < 12 ? "manha" : horaBrasil < 18 ? "tarde" : "noite";
+    const mensagensEstudo = {
       manha: { title: "🌤️ Bom dia! Hora de estudar", body: "Reserve alguns minutos nesta manhã para praticar sua lição do GEM." },
       tarde: { title: "🎼 Lembrete de estudo", body: "Que tal separar um momento desta tarde para estudar sua lição do GEM?" },
       noite: { title: "🌙 Antes de encerrar o dia", body: "Faça uma breve prática da sua lição do GEM para continuar evoluindo." }
     };
-    const mensagem = mensagens[periodo] || mensagens.manha;
-    const fila = (subscriptions || []).map((sub) => ({
-      sub,
-      chave: `estudo:${periodo}:${chaveHoje}:${sub.endpoint}`,
-      tipo: `estudo_${periodo}`,
-      payload: { ...mensagem, url: "/" }
-    }));
-    return response.status(200).json({ ok: true, periodo, enviadas: await enviarFila(fila) });
+    const pendenciasProfessoras = professorasComPendencias(calendarios, historico, inicioHoje);
+    const fila = [];
+    (subscriptions || []).forEach((sub) => {
+      if (sub.perfil === "Aluna") {
+        fila.push({ sub, chave: `estudo:${periodoEstudo}:${chaveHoje}:${sub.endpoint}`, tipo: `estudo_${periodoEstudo}`, payload: { ...mensagensEstudo[periodoEstudo], url: "/" } });
+      }
+      // A cobrança pedagógica é enviada apenas pela execução da manhã.
+      if (periodoEstudo === "manha" && sub.perfil === "Professora" && [...pendenciasProfessoras].some((professora) => normalizar(professora) === normalizar(sub.usuario))) {
+        fila.push({ sub, chave: `registro:${chaveHoje}:${sub.endpoint}`, tipo: "registro_pendente", payload: { title: "📝 Registro de aula pendente", body: "Há aula(s) escalada(s) sem registro. Abra o GEM e conclua o lançamento.", url: "/" } });
+      }
+    });
+    const enviadas = await enviarFila(fila);
+    return response.status(200).json({ ok: true, periodoEstudo, enviadas, pendenciasProfessoras: pendenciasProfessoras.size });
   } catch (error) {
-    return response.status(500).json({ error: "Falha no envio do lembrete de estudo." });
+    return response.status(500).json({ error: "Falha no envio automático de notificações." });
   }
 };
