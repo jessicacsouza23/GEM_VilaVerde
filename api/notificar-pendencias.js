@@ -31,13 +31,15 @@ function disciplinaDaCelula(valor, detalhe = {}) {
 
 // Cada aluna/disciplina realmente escalada é conferida separadamente. Isso
 // impede que um único registro da professora esconda outras aulas pendentes.
-function professorasComPendencias(calendarios, historico, limite, inicioHoje) {
+function professorasComPendencias(calendarios, historico, inicioHoje) {
   const pendentes = new Set();
   (calendarios || []).forEach((calendario) => {
     const data = dataValida(calendario.id);
     // O cron roda às 08h. A escala do próprio sábado só entra no dia seguinte,
-    // depois de a professora ter tido oportunidade de lançar as aulas.
-    if (!data || data >= inicioHoje || data < limite) return;
+    // depois de a professora ter tido oportunidade de lançar as aulas. A
+    // cobrança não expira após uma semana: permanece diária até o registro
+    // pedagógico daquela aula ser realmente enviado.
+    if (!data || data >= inicioHoje) return;
     const registrosDoDia = (historico || []).filter((registro) => registro.Data === calendario.id);
     const ausentes = new Set(registrosDoDia.filter((registro) => registro.Tipo === "Chamada" && ["Ausente", "Justificada"].includes(registro.Status)).map((registro) => normalizar(registro.Aluna)));
     (calendario.escala || []).forEach((linha) => {
@@ -79,9 +81,8 @@ module.exports = async function notificarPendencias(request, response) {
       banco("calendario?select=id,escala"),
       banco("historico_geral?select=Data,Aluna,Instrutora,Tipo,Status")
     ]);
-    const hoje = new Date(), chaveHoje = dataBrasil(hoje), inicioHoje = dataValida(chaveHoje), limite = new Date(inicioHoje);
-    limite.setUTCDate(limite.getUTCDate() - 7);
-    const pendenciasProfessoras = professorasComPendencias(calendarios, historico, limite, inicioHoje);
+    const hoje = new Date(), chaveHoje = dataBrasil(hoje), inicioHoje = dataValida(chaveHoje);
+    const pendenciasProfessoras = professorasComPendencias(calendarios, historico, inicioHoje);
     const fila = [];
     (subscriptions || []).forEach((sub) => {
       if (sub.perfil === "Aluna") fila.push({ sub, chave: `estudo:${chaveHoje}:${sub.endpoint}`, tipo: "estudo", payload: { title: "🎼 Hora de estudar", body: "Separe alguns minutos para praticar sua lição do GEM hoje.", url: "/" } });

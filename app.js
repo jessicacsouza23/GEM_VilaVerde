@@ -479,7 +479,15 @@ async function renderMinhasLicoes(content) {
   const dataIso = (valor) => { const texto = String(valor || ""); if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return texto.slice(0, 10); const [dia, mes, ano] = texto.split("/"); return ano ? `${ano}-${mes}-${dia}` : ""; };
   const hoje = new Date().toISOString().slice(0, 10);
   const eDificuldade = (valor) => { const itens = Array.isArray(valor) ? valor : typeof valor === "string" ? valor.replace(/^\[|\]$/g, "").split(/[,;]+/) : []; return itens.some((item) => String(item || "").trim() && !/não apresentou dificuldade/i.test(String(item))); };
-  const classificacao = (disciplina) => { const inicio = new Date(); inicio.setDate(inicio.getDate() - 30); const limite = inicio.toISOString().slice(0, 10); const registros = dadosAluna.historico.filter((item) => dataIso(item.Data) >= limite && String(item.Tipo || "") === `Analise_${disciplina}`); if (!registros.length) return "🥉 Sem registros"; const percentual = Math.round(registros.filter((item) => !eDificuldade(item.Dificuldades)).length / registros.length * 100); return percentual >= 80 ? "🥇 Ouro" : percentual >= 50 ? "🥈 Prata" : "🥉 Bronze"; };
+  const disciplinaAnalitica = (tipo) => {
+    const texto = String(tipo || "").replace(/^Analise_/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+    if (texto === "CANTO" || texto === "SOLFEJO MELODICO") return "Solfejo Melódico";
+    if (texto === "PRATICA") return "Prática";
+    if (texto === "TEORIA") return "Teoria";
+    if (texto === "SOLFEJO") return "Solfejo";
+    return "";
+  };
+  const classificacao = (disciplina) => { const inicio = new Date(); inicio.setDate(inicio.getDate() - 30); const limite = inicio.toISOString().slice(0, 10); const registros = dadosAluna.historico.filter((item) => dataIso(item.Data) >= limite && disciplinaAnalitica(item.Tipo) === disciplina); if (!registros.length) return "🥉 Sem registros"; const percentual = Math.round(registros.filter((item) => !eDificuldade(item.Dificuldades)).length / registros.length * 100); return percentual >= 80 ? "🥇 Ouro" : percentual >= 50 ? "🥈 Prata" : "🥉 Bronze"; };
   const desenharIndicadores = () => {
     const chamadas = dadosAluna.historico.filter((item) => item.Tipo === "Chamada"), presentes = chamadas.filter((item) => !["Ausente", "Justificada"].includes(item.Status)).length, faltas = chamadas.filter((item) => item.Status === "Ausente").length, justificadas = chamadas.filter((item) => item.Status === "Justificada").length;
     const frequencia = chamadas.length ? Math.round((presentes + justificadas * .5) / chamadas.length * 100) : 0;
@@ -525,8 +533,17 @@ async function renderChamada(content) {
       const { alunas, chamadas, fotos } = await window.GemData.dadosChamada($("#chamada-data").value);
       if (!alunas.length) { lista.innerHTML = `<div class="empty">Não há rodízio salvo nesta data.</div>`; return; }
       const porAluna = Object.fromEntries(chamadas.map((item) => [item.Aluna, item]));
-      lista.innerHTML = `<div class="attendance-list">${alunas.map((aluna, indice) => { const chamada = porAluna[aluna] || { Status: "Presente", Observacao: "" }; const foto = fotos[aluna] ? `<a href="${escapeHtml(fotos[aluna])}" target="_blank" rel="noopener" title="Abrir foto ampliada"><img src="${escapeHtml(fotos[aluna])}" alt="Foto de ${escapeHtml(aluna)}"></a>` : `<span>${escapeHtml(aluna.slice(0, 1))}</span>`; return `<article class="attendance-row"><div class="attendance-student">${foto}<strong>${escapeHtml(aluna)}</strong></div><div class="attendance-checks"><label><input type="radio" name="presenca-${indice}" data-presente="${escapeHtml(aluna)}" ${chamada.Status === "Presente" ? "checked" : ""}> Presente</label><label><input type="radio" name="presenca-${indice}" data-ausente="${escapeHtml(aluna)}" ${chamada.Status === "Ausente" ? "checked" : ""}> Ausente</label><label><input type="radio" name="presenca-${indice}" data-justificada="${escapeHtml(aluna)}" ${chamada.Status === "Justificada" ? "checked" : ""}> Falta justificada</label></div><input class="${chamada.Status === "Justificada" ? "" : "hidden"}" data-motivo="${escapeHtml(aluna)}" value="${escapeHtml(chamada.Observacao || "")}" placeholder="Motivo da falta justificada"></article>`; }).join("")}</div><button id="salvar-chamada" class="primary-action full-action" type="button">Salvar chamada</button><div id="chamada-retorno"></div>`;
-      lista.querySelectorAll("input[data-presente],input[data-ausente],input[data-justificada]").forEach((campo) => campo.addEventListener("change", (evento) => { const aluna = evento.target.dataset.presente || evento.target.dataset.ausente || evento.target.dataset.justificada; lista.querySelector(`[data-motivo="${CSS.escape(aluna)}"]`).classList.toggle("hidden", !evento.target.dataset.justificada); }));
+      lista.innerHTML = `<div class="attendance-list">${alunas.map((aluna) => { const chamada = porAluna[aluna] || { Status: "Presente", Observacao: "" }; const foto = fotos[aluna] ? `<a href="${escapeHtml(fotos[aluna])}" target="_blank" rel="noopener" title="Abrir foto ampliada"><img src="${escapeHtml(fotos[aluna])}" alt="Foto de ${escapeHtml(aluna)}"></a>` : `<span>${escapeHtml(aluna.slice(0, 1))}</span>`; return `<article class="attendance-row"><div class="attendance-student">${foto}<strong>${escapeHtml(aluna)}</strong></div><div class="attendance-checks"><label><input type="checkbox" data-presente="${escapeHtml(aluna)}" ${chamada.Status === "Presente" ? "checked" : ""}> Presente</label><label><input type="checkbox" data-ausente="${escapeHtml(aluna)}" ${chamada.Status === "Ausente" ? "checked" : ""}> Ausente</label><label><input type="checkbox" data-justificada="${escapeHtml(aluna)}" ${chamada.Status === "Justificada" ? "checked" : ""}> Falta justificada</label></div><input class="${chamada.Status === "Justificada" ? "" : "hidden"}" data-motivo="${escapeHtml(aluna)}" value="${escapeHtml(chamada.Observacao || "")}" placeholder="Motivo da falta justificada"></article>`; }).join("")}</div><button id="salvar-chamada" class="primary-action full-action" type="button">Salvar chamada</button><div id="chamada-retorno"></div>`;
+      lista.querySelectorAll("input[data-presente],input[data-ausente],input[data-justificada]").forEach((campo) => campo.addEventListener("change", (evento) => {
+        const linha = evento.target.closest(".attendance-row");
+        const opcoes = [...linha.querySelectorAll("input[data-presente],input[data-ausente],input[data-justificada]")];
+        // São checkboxes para a tela ficar mais direta, mas os três estados
+        // continuam mutuamente exclusivos para preservar a regra da chamada.
+        if (evento.target.checked) opcoes.forEach((opcao) => { if (opcao !== evento.target) opcao.checked = false; });
+        else if (!opcoes.some((opcao) => opcao.checked)) linha.querySelector("[data-presente]").checked = true;
+        const aluna = evento.target.dataset.presente || evento.target.dataset.ausente || evento.target.dataset.justificada;
+        linha.querySelector(`[data-motivo="${CSS.escape(aluna)}"]`).classList.toggle("hidden", !linha.querySelector("[data-justificada]").checked);
+      }));
       $("#salvar-chamada").addEventListener("click", async () => { const botao = $("#salvar-chamada"); botao.disabled = true; try { await window.GemData.salvarChamada($("#chamada-data").value, alunas.map((aluna) => ({ aluna, status: lista.querySelector(`[data-justificada="${CSS.escape(aluna)}"]`).checked ? "Justificada" : lista.querySelector(`[data-ausente="${CSS.escape(aluna)}"]`).checked ? "Ausente" : "Presente", observacao: lista.querySelector(`[data-justificada="${CSS.escape(aluna)}"]`).checked ? lista.querySelector(`[data-motivo="${CSS.escape(aluna)}"]`).value : "" }))); $("#chamada-retorno").innerHTML = `<div class="action-ok">Chamada salva.</div>`; } catch (erro) { $("#chamada-retorno").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; } });
     } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
   };
@@ -928,7 +945,7 @@ async function renderRelatorios(content) {
       }).join("\n\n");
       const textoWhatsApp = `🎼 *${state.gem || "GEM Vila Verde"} — Relatório ${dados.data}*\n\n${linhasWhatsApp || "Não há alunas na escala deste sábado."}`;
       const corpo = porAluna.size ? [...porAluna.entries()].sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([aluna, registros]) => `<section class="student-report"><h3>👧 ${escapeHtml(aluna)}</h3>${registros.length ? registros.map(card).join("") : `<div class="report-empty">Nenhum registro lançado ainda para esta aluna.</div>`}</section>`).join("") : `<div class="empty">Não há escala salva para esta data.</div>`;
-      destino.innerHTML = `<div class="report-actions"><button id="copiar-relatorio-whatsapp" class="secondary-action" type="button">📋 Copiar para WhatsApp</button><button id="baixar-relatorio-pdf" class="primary-action" type="button">Baixar relatório em PDF</button></div><div id="report-print"><section class="compact-panel report-header"><h3>Relatório completo — ${escapeHtml(dados.data)}</h3><p><strong>${dados.alunas.length}</strong> aluna(s) na escala · <strong>${dados.ausentes.length}</strong> ausência(s) · <strong>${dados.analises.length}</strong> registro(s) pedagógico(s).</p></section>${corpo}</div>`;
+      destino.innerHTML = `<div class="report-actions"><button id="copiar-relatorio-whatsapp" class="secondary-action" type="button">📋 Copiar para WhatsApp</button><button id="abrir-relatorio-whatsapp" class="secondary-action" type="button">💬 Abrir no WhatsApp</button><button id="baixar-relatorio-pdf" class="primary-action" type="button">Baixar relatório em PDF</button></div><div id="report-print"><section class="compact-panel report-header"><h3>Relatório completo — ${escapeHtml(dados.data)}</h3><p><strong>${dados.alunas.length}</strong> aluna(s) na escala · <strong>${dados.ausentes.length}</strong> ausência(s) · <strong>${dados.analises.length}</strong> registro(s) pedagógico(s).</p></section>${corpo}</div>`;
       $("#copiar-relatorio-whatsapp").addEventListener("click", async () => {
         const botao = $("#copiar-relatorio-whatsapp");
         try {
@@ -937,6 +954,11 @@ async function renderRelatorios(content) {
           botao.textContent = "✓ Texto copiado";
           setTimeout(() => { botao.textContent = "📋 Copiar para WhatsApp"; }, 2500);
         } catch (erro) { alert(`${erro.message}\n\nCopie o texto abaixo:\n\n${textoWhatsApp}`); }
+      });
+      $("#abrir-relatorio-whatsapp").addEventListener("click", () => {
+        // Abre apenas a composição: a Secretaria confere o destinatário e
+        // envia quando quiser, como acontece no comando do Streamlit.
+        window.open(`https://wa.me/?text=${encodeURIComponent(textoWhatsApp)}`, "_blank", "noopener,noreferrer");
       });
       $("#baixar-relatorio-pdf").addEventListener("click", async () => {
         if (!window.html2canvas || !window.jspdf?.jsPDF) { alert("A ferramenta de PDF ainda está carregando. Tente novamente em alguns segundos."); return; }

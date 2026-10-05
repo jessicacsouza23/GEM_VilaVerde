@@ -191,29 +191,29 @@
   }
 
   async function iniciarSessaoR2(login, senha) {
-    if (contextoGem.externo) return false;
     try {
       const resposta = await fetch("/api/r2-session", {
         method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ login: String(login || "").trim().toLowerCase(), senha: String(senha || "") })
+        body: JSON.stringify({ login: String(login || "").trim().toLowerCase(), senha: String(senha || ""), gem: contextoGem.slug })
       });
       const dados = await resposta.json().catch(() => ({}));
       r2Habilitado = Boolean(dados.enabled);
-      return r2Habilitado;
+      // Apesar do nome histórico da função, a rota também persiste a sessão
+      // dos GEMs externos. O R2 continua restrito ao Vila Verde.
+      return Boolean(resposta.ok && dados.session);
     } catch (_) { return false; }
   }
 
   async function restaurarSessao() {
-    // As bases externas possuem seu próprio fluxo de acesso. A sessão segura
-    // compartilhada pertence apenas ao GEM Vila Verde.
-    if (contextoGem.externo) return null;
     try {
       const resposta = await fetch("/api/r2-session", { method: "GET", credentials: "same-origin", cache: "no-store" });
       const dados = await resposta.json().catch(() => ({}));
       const perfis = ["Master", "Secretaria", "Professora", "Aluna"];
       if (!resposta.ok || !dados.session || !perfis.includes(dados.perfil)) return null;
+      // Um cookie de outro GEM jamais restaura uma tela na base errada.
+      if (String(dados.gem || "vila-verde") !== contextoGem.slug) return null;
       r2Habilitado = Boolean(dados.enabled);
-      return { role: dados.perfil, name: dados.nome, gem: "GEM Vila Verde", externo: false };
+      return { role: dados.perfil, name: dados.nome, gem: contextoGem.nome, externo: Boolean(dados.externo) };
     } catch (_) { return null; }
   }
 
@@ -766,6 +766,17 @@
       const material = String(item.material).trim();
       const conteudo = String(item.conteudo).trim();
       const tipoAnalise = "Analise_Prática";
+      // O Analítico usa o registro principal de Prática. Por isso as
+      // dificuldades informadas nos exercícios precisam acompanhar também o
+      // material, exatamente como no fluxo do app.py.
+      const dificuldadesDosExercicios = (item.exercicios || [])
+        .flatMap((exercicio) => Array.isArray(exercicio?.dificuldades) ? exercicio.dificuldades : []);
+      const dificuldadesDoMaterial = Array.from(new Set([
+        ...(Array.isArray(item.dificuldades) ? item.dificuldades : []),
+        ...dificuldadesDosExercicios
+      ].map((dificuldade) => String(dificuldade || "").trim()).filter(Boolean)));
+      const temDificuldade = dificuldadesDoMaterial
+        .some((dificuldade) => dificuldade !== "Não apresentou dificuldades");
       const { data: anteriores, error: erroAnteriores } = await banco.from("historico_geral").select("id,Licao_Atual")
         .eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoAnalise).eq("Instrutora", instrutora).order("id", { ascending: false });
       if (erroAnteriores) throw new Error("Não foi possível conferir o registro de Prática já salvo.");
@@ -774,8 +785,9 @@
       const registro = {
         Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoAnalise,
         Licao_Atual: `${material}: ${conteudo}`,
-        Dificuldades: Array.from(new Set(item.dificuldades || [])),
-        Observacao: String(observacao || "").trim(), Status: "Registrado"
+        Dificuldades: dificuldadesDoMaterial,
+        Observacao: String(observacao || "").trim(),
+        Status: temDificuldade ? "Realizada - com dificuldades" : "Realizada - sem pendência"
       };
       const salvar = existente
         ? await banco.from("historico_geral").update(registro).eq("id", existente.id)

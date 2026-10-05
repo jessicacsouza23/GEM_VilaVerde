@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const { PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-const { configurado, sessao } = require("./r2-auth");
+const { configurado, sessaoDoVilaVerde } = require("./r2-auth");
 const { clienteR2, bucket } = require("./r2-client");
 
 const TIPOS = { aluna: "fotos_alunas", professora: "fotos_professoras", secretaria: "fotos_secretaria_gem", logo: "logo_gem" };
@@ -10,7 +10,7 @@ const MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
 module.exports = async function r2UploadUrl(request, response) {
   if (request.method !== "POST") return response.status(405).json({ error: "Método não permitido." });
   if (!configurado()) return response.status(503).json({ error: "R2 ainda não está configurado." });
-  const acesso = sessao(request);
+  const acesso = sessaoDoVilaVerde(request);
   if (acesso?.perfil !== "Secretaria") return response.status(401).json({ error: "Entre como Secretaria para enviar fotos." });
   try {
     const { tipo, nome, contentType, tamanho } = request.body || {};

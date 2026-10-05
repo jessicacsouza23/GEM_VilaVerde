@@ -1,5 +1,5 @@
 const { GetObjectCommand } = require("@aws-sdk/client-s3");
-const { configurado, sessao } = require("./r2-auth");
+const { configurado, sessaoDoVilaVerde } = require("./r2-auth");
 const { clienteR2, bucket } = require("./r2-client");
 
 // As imagens seguem privadas no R2. Em vez de entregar uma URL R2 ao
@@ -8,7 +8,7 @@ const { clienteR2, bucket } = require("./r2-client");
 module.exports = async function r2File(request, response) {
   if (request.method !== "GET") return response.status(405).json({ error: "Método não permitido." });
   if (!configurado()) return response.status(503).json({ error: "R2 ainda não está configurado." });
-  if (!sessao(request)) return response.status(401).json({ error: "Sua sessão de fotos expirou. Entre novamente no GEM." });
+  if (!sessaoDoVilaVerde(request)) return response.status(401).json({ error: "Sua sessão de fotos expirou. Entre novamente no GEM Vila Verde." });
   const chave = String(request.query?.key || "").replace(/^r2:/, "");
   if (!/^(fotos_alunas|fotos_professoras|fotos_secretaria_gem|logo_gem)\/[A-Za-z0-9._-]+$/.test(chave)) {
     return response.status(400).json({ error: "Arquivo inválido." });

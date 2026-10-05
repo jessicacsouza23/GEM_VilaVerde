@@ -15,8 +15,12 @@ function assinar(texto) {
   return crypto.createHmac("sha256", process.env.SESSION_SECRET).update(texto).digest("base64url");
 }
 
-function criarSessao({ nome, perfil }) {
-  const payload = Buffer.from(JSON.stringify({ nome: String(nome || ""), perfil: String(perfil || ""), exp: Math.floor(Date.now() / 1000) + MAX_AGE })).toString("base64url");
+function criarSessao({ nome, perfil, gem = "vila-verde", externo = false }) {
+  const payload = Buffer.from(JSON.stringify({
+    nome: String(nome || ""), perfil: String(perfil || ""),
+    gem: String(gem || "vila-verde"), externo: Boolean(externo),
+    exp: Math.floor(Date.now() / 1000) + MAX_AGE
+  })).toString("base64url");
   return `${payload}.${assinar(payload)}`;
 }
 
@@ -41,6 +45,13 @@ function sessao(request) {
   } catch (_) { return null; }
 }
 
+// Cookies emitidos antes da implantação multi-GEM não possuem `gem`; eles
+// continuam válidos exclusivamente para o Vila Verde até expirarem.
+function sessaoDoVilaVerde(request) {
+  const acesso = sessao(request);
+  return acesso && !acesso.externo && (!acesso.gem || acesso.gem === "vila-verde") ? acesso : null;
+}
+
 function definirCookie(response, token) {
   response.setHeader("Set-Cookie", `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${MAX_AGE}`);
 }
@@ -49,4 +60,4 @@ function limparCookie(response) {
   response.setHeader("Set-Cookie", `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
 }
 
-module.exports = { configurado, sessaoConfigurada, criarSessao, sessao, definirCookie, limparCookie };
+module.exports = { configurado, sessaoConfigurada, criarSessao, sessao, sessaoDoVilaVerde, definirCookie, limparCookie };
