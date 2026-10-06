@@ -5177,10 +5177,8 @@ elif menu == "👩‍🏫 Minhas Aulas":
 
         # --- LÓGICA DE EXIBIÇÃO DE FOLGA ---
         if not aulas_listagem:
-            # 1. Primeiro disparar a animação
-            st.balloons() 
-            
-            # 2. Depois mostrar a interface visual
+            # Mostra a interface de folga sem disparar uma animação a cada
+            # atualização da tela.
             st.markdown(f"""
                 <div style="text-align: center; padding: 40px; background-color: #f8f9fa; border-radius: 20px; border: 2px dashed #d1d5db; margin-top: 20px;">
                     <h1 style="font-size: 60px; margin-bottom: 0;">🎈</h1>
