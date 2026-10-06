@@ -36,9 +36,8 @@
   }
 
   async function r2EstaHabilitado() {
-    // A sessão R2 da Vercel pertence à base padrão. GEMs externos usam o
-    // Storage privado da própria unidade, sem misturar arquivos.
-    if (contextoGem.externo) return false;
+    // O bucket é compartilhado pela plataforma, mas a API separa os objetos
+    // por slug e só libera a pasta do GEM presente na sessão autenticada.
     if (r2Habilitado !== null) return r2Habilitado;
     try {
       const resposta = await fetch("/api/r2-status", { cache: "no-store", credentials: "same-origin" });
@@ -266,6 +265,11 @@
     const banco = await obterCliente();
     const extensao = (arquivo.name.split(".").pop() || "png").toLowerCase();
     let caminho = await enviarFotoParaR2("logo", arquivo);
+    // No Vila Verde, imagens novas sempre pertencem ao R2. Não podemos
+    // voltar ao Storage do Supabase sem avisar, pois isso voltaria a gerar
+    // saída e deixaria a falha de configuração invisível. Os GEMs externos
+    // continuam isolados no Storage da própria unidade.
+    if (!caminho && !contextoGem.externo) throw new Error("O R2 não está configurado para receber a logo.");
     if (!caminho) {
       caminho = `logo_atual.${extensao}`;
       const envio = await banco.storage.from("logo_gem").upload(caminho, arquivo, { upsert: true, contentType: arquivo.type || "image/png" });
@@ -322,6 +326,7 @@
     if (arquivo) {
       const extensao = (arquivo.name.split(".").pop() || "png").toLowerCase();
       foto_path = await enviarFotoParaR2("secretaria", arquivo);
+      if (!foto_path && !contextoGem.externo) throw new Error("O R2 não está configurado para receber a foto da Coordenação.");
       if (!foto_path) {
         foto_path = `coordenacao.${extensao}`;
         const envio = await banco.storage.from("fotos_secretaria_gem").upload(foto_path, arquivo, { upsert: true, contentType: arquivo.type || "image/png" });
@@ -444,9 +449,12 @@
     // Fotos de celular muito grandes multiplicam a saída do Storage. O limite
     // evita cadastrar uma foto desproporcional para o avatar do sistema.
     if (arquivo.size > 5 * 1024 * 1024) throw new Error("A foto deve ter no máximo 5 MB.");
-    const banco = await obterCliente();
     const caminhoR2 = await enviarFotoParaR2(tipo, arquivo);
     if (caminhoR2) return caminhoR2;
+    if (!contextoGem.externo) throw new Error("O R2 não está configurado para receber fotos. Verifique as chaves do R2 na Vercel.");
+    // Cada GEM externo tem sua própria base e seu próprio Storage. Essa é a
+    // única situação em que mantemos o envio para o Supabase.
+    const banco = await obterCliente();
     const bucket = tipo === 'aluna' ? 'fotos_alunas' : 'fotos_professoras';
     const caminho = `${crypto.randomUUID()}_${String(arquivo.name).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '_')}`;
     const { error } = await banco.storage.from(bucket).upload(caminho, arquivo, { contentType: arquivo.type || `image/${extensao === 'jpg' ? 'jpeg' : extensao}` });

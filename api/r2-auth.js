@@ -52,6 +52,14 @@ function sessaoDoVilaVerde(request) {
   return acesso && !acesso.externo && (!acesso.gem || acesso.gem === "vila-verde") ? acesso : null;
 }
 
+// Todas as unidades usam o mesmo bucket, mas cada sessão só enxerga o seu
+// próprio prefixo. Mantemos sessaoDoVilaVerde para compatibilidade com os
+// arquivos antigos, sem restringir os novos GEMs ao Storage do Supabase.
+function sessaoComR2(request) {
+  const acesso = sessao(request);
+  return acesso && String(acesso.gem || "vila-verde").match(/^[a-z0-9]+(?:-[a-z0-9]+)*$/) ? acesso : null;
+}
+
 function definirCookie(response, token) {
   response.setHeader("Set-Cookie", `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${MAX_AGE}`);
 }
@@ -60,4 +68,4 @@ function limparCookie(response) {
   response.setHeader("Set-Cookie", `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
 }
 
-module.exports = { configurado, sessaoConfigurada, criarSessao, sessao, sessaoDoVilaVerde, definirCookie, limparCookie };
+module.exports = { configurado, sessaoConfigurada, criarSessao, sessao, sessaoDoVilaVerde, sessaoComR2, definirCookie, limparCookie };

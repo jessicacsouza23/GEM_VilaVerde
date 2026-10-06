@@ -77,11 +77,11 @@ module.exports = async function r2Session(request, response) {
   if (request.method === "GET") {
     const acesso = sessao(request);
     if (!acesso) return response.status(401).json({ session: false });
-    return response.status(200).json({ enabled: configurado() && !acesso.externo, session: true, nome: acesso.nome, perfil: acesso.perfil, gem: acesso.gem || "vila-verde", externo: Boolean(acesso.externo) });
+    return response.status(200).json({ enabled: configurado(), session: true, nome: acesso.nome, perfil: acesso.perfil, gem: acesso.gem || "vila-verde", externo: Boolean(acesso.externo) });
   }
   if (request.method !== "POST") return response.status(405).json({ error: "Método não permitido." });
-  // A mesma sessão curta protege o R2 e o Analítico IA. O R2 continua
-  // opcional: a sessão pode existir mesmo antes de suas chaves serem salvas.
+  // A mesma sessão curta protege o R2 e o Analítico IA. Todas as unidades
+  // compartilham o bucket, mas os arquivos são separados pelo slug do GEM.
   if (!sessaoConfigurada() || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(200).json({ enabled: false, session: false });
   try {
     const login = String(request.body?.login || "").trim().toLowerCase(), senha = String(request.body?.senha || "");
@@ -91,7 +91,7 @@ module.exports = async function r2Session(request, response) {
       const contaExterna = await validarNoGemExterno(slug, login, senha);
       if (!contaExterna) return response.status(401).json({ error: "Credenciais inválidas." });
       definirCookie(response, criarSessao({ nome: contaExterna.nome, perfil: contaExterna.perfil, gem: slug, externo: true }));
-      return response.status(200).json({ enabled: false, session: true, gem: slug, externo: true });
+      return response.status(200).json({ enabled: configurado(), session: true, gem: slug, externo: true });
     }
     const emailMaster = login === "master" ? "jessicavitorioit@gmail.com" : login;
     if (emailMaster.includes("@")) {
