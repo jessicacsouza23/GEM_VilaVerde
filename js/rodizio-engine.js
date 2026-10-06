@@ -279,11 +279,18 @@
 
   function estabilizarSalas(mapa, horarios, salas, data, escalasAnteriores = []) {
     const porProf = {};
+    const primeiraSalaPorProfessora = {};
     Object.values(mapa).forEach((linha) => Object.entries(linha._detalhes || {}).forEach(([hora, detalhe]) => {
       if (!detalhe.individual) return;
       const valor = String(linha[hora] || ""); const componentes = detalhe.professoras_componentes || {};
       const professora = String(componentes.Prática || valor.split("|").slice(1).join("|").trim());
       if (professora) (porProf[professora] ||= new Set()).add(hora);
+      // A sala sorteada/selecionada no primeiro bloco é a referência do
+      // sábado. Ela não pode ser recalculada nos blocos seguintes.
+      if (hora === horarios[0] && professora) {
+        const salaInicial = valor.split("|", 1)[0].trim();
+        if (salas.includes(salaInicial)) primeiraSalaPorProfessora[professora] = salaInicial;
+      }
     }));
     const profs = Object.keys(porProf); const vizinhas = Object.fromEntries(profs.map((prof) => [prof, new Set()]));
     horarios.forEach((hora) => { const noBloco = profs.filter((prof) => porProf[prof].has(hora)); noBloco.forEach((prof) => noBloco.forEach((outra) => { if (prof !== outra) vizinhas[prof].add(outra); })); });
@@ -301,9 +308,24 @@
     }).length;
     const deslocamento = salas.length ? rodiziosAnteriores % salas.length : 0;
     const ordem = [...salas.slice(deslocamento), ...salas.slice(0, deslocamento)];
-    const porSala = {};
+    // Professoras que começaram no individual têm suas salas travadas. As
+    // demais — por exemplo, quem veio de Teoria/Solfejo para cobrir uma
+    // saída — receberão uma das salas ainda livres e compatíveis.
+    const porSala = { ...primeiraSalaPorProfessora };
     const ordenar = [...profs].sort((a, b) => vizinhas[b].size - vizinhas[a].size || a.localeCompare(b));
-    const tentar = (indice) => { if (indice >= ordenar.length) return true; const prof = ordenar[indice]; const usadas = new Set([...vizinhas[prof]].map((vizinha) => porSala[vizinha]).filter(Boolean)); for (const sala of ordem) { if (usadas.has(sala)) continue; porSala[prof] = sala; if (tentar(indice + 1)) return true; delete porSala[prof]; } return false; };
+    const tentar = (indice) => {
+      if (indice >= ordenar.length) return true;
+      const prof = ordenar[indice];
+      const usadas = new Set([...vizinhas[prof]].map((vizinha) => porSala[vizinha]).filter(Boolean));
+      if (porSala[prof]) return !usadas.has(porSala[prof]) && tentar(indice + 1);
+      for (const sala of ordem) {
+        if (usadas.has(sala)) continue;
+        porSala[prof] = sala;
+        if (tentar(indice + 1)) return true;
+        delete porSala[prof];
+      }
+      return false;
+    };
     if (!tentar(0)) return;
     Object.values(mapa).forEach((linha) => Object.entries(linha._detalhes || {}).forEach(([hora, detalhe]) => { if (!detalhe.individual) return; const valor = String(linha[hora] || ""); const componentes = detalhe.professoras_componentes || {}; const professora = String(componentes.Prática || valor.split("|").slice(1).join("|").trim()); const sala = porSala[professora]; if (!sala) return; detalhe.sala_fixa_professora = sala; linha[hora] = `${sala} | ${valor.split("|").slice(1).join("|").trim()}`; }));
   }
