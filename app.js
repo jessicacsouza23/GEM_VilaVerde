@@ -69,7 +69,7 @@ async function renderMinhasAulas(content) {
   const fotosDasAlunas = (aula, opcoes = {}) => `<div class="lesson-students ${opcoes.selecionavel ? "students-selectable" : ""}">${aula.alunas.map((aluna, indice) => {
     const foto = aula.fotos?.[aluna];
     const iniciais = String(aluna || "?").split(/\s+/).slice(0, 2).map((parte) => parte[0]).join("");
-    const retrato = foto ? `<a href="${escapeHtml(foto)}" target="_blank" rel="noopener" title="Ampliar foto de ${escapeHtml(aluna)}"><img src="${escapeHtml(foto)}" alt="Foto de ${escapeHtml(aluna)}"></a>` : `<span title="${escapeHtml(aluna)}">${escapeHtml(iniciais)}</span>`;
+    const retrato = foto ? `<button class="photo-zoom lesson-photo" type="button" data-foto-zoom="${escapeHtml(foto)}" data-foto-titulo="${escapeHtml(aluna)}" title="Ampliar foto de ${escapeHtml(aluna)}"><img src="${escapeHtml(foto)}" alt="Foto de ${escapeHtml(aluna)}"></button>` : `<span title="${escapeHtml(aluna)}">${escapeHtml(iniciais)}</span>`;
     const status = opcoes.statusChamada?.[aluna] || "Presente";
     const indisponivel = Boolean(opcoes.statusChamada) && /ausente|justificada|falta/i.test(String(status));
     const seletor = opcoes.selecionavel ? `<label class="student-select-check" title="${indisponivel ? `${escapeHtml(aluna)}: ${escapeHtml(status)}` : `Incluir ${escapeHtml(aluna)} no registro`}"><input type="checkbox" data-aluna-turma="${indice}" ${indisponivel ? "disabled" : "checked"}><span aria-hidden="true"></span></label>` : "";
@@ -599,7 +599,7 @@ async function renderChamada(content) {
       const { alunas, chamadas, fotos } = await window.GemData.dadosChamada($("#chamada-data").value);
       if (!alunas.length) { lista.innerHTML = `<div class="empty">Não há rodízio salvo nesta data.</div>`; return; }
       const porAluna = Object.fromEntries(chamadas.map((item) => [item.Aluna, item]));
-      lista.innerHTML = `<div class="attendance-list">${alunas.map((aluna) => { const chamada = porAluna[aluna] || { Status: "Presente", Observacao: "" }; const foto = fotos[aluna] ? `<a href="${escapeHtml(fotos[aluna])}" target="_blank" rel="noopener" title="Abrir foto ampliada"><img src="${escapeHtml(fotos[aluna])}" alt="Foto de ${escapeHtml(aluna)}"></a>` : `<span>${escapeHtml(aluna.slice(0, 1))}</span>`; return `<article class="attendance-row"><div class="attendance-student">${foto}<strong>${escapeHtml(aluna)}</strong></div><div class="attendance-checks"><label><input type="checkbox" data-presente="${escapeHtml(aluna)}" ${chamada.Status === "Presente" ? "checked" : ""}> Presente</label><label><input type="checkbox" data-ausente="${escapeHtml(aluna)}" ${chamada.Status === "Ausente" ? "checked" : ""}> Ausente</label><label><input type="checkbox" data-justificada="${escapeHtml(aluna)}" ${chamada.Status === "Justificada" ? "checked" : ""}> Falta justificada</label></div><input class="${chamada.Status === "Justificada" ? "" : "hidden"}" data-motivo="${escapeHtml(aluna)}" value="${escapeHtml(chamada.Observacao || "")}" placeholder="Motivo da falta justificada"></article>`; }).join("")}</div><button id="salvar-chamada" class="primary-action full-action" type="button">Salvar chamada</button><div id="chamada-retorno"></div>`;
+      lista.innerHTML = `<div class="attendance-list">${alunas.map((aluna) => { const chamada = porAluna[aluna] || { Status: "Presente", Observacao: "" }; const foto = fotos[aluna] ? `<button class="photo-zoom attendance-photo" type="button" data-foto-zoom="${escapeHtml(fotos[aluna])}" data-foto-titulo="${escapeHtml(aluna)}" title="Ampliar foto de ${escapeHtml(aluna)}"><img src="${escapeHtml(fotos[aluna])}" alt="Foto de ${escapeHtml(aluna)}"></button>` : `<span>${escapeHtml(aluna.slice(0, 1))}</span>`; return `<article class="attendance-row"><div class="attendance-student">${foto}<strong>${escapeHtml(aluna)}</strong></div><div class="attendance-checks"><label><input type="checkbox" data-presente="${escapeHtml(aluna)}" ${chamada.Status === "Presente" ? "checked" : ""}> Presente</label><label><input type="checkbox" data-ausente="${escapeHtml(aluna)}" ${chamada.Status === "Ausente" ? "checked" : ""}> Ausente</label><label><input type="checkbox" data-justificada="${escapeHtml(aluna)}" ${chamada.Status === "Justificada" ? "checked" : ""}> Falta justificada</label></div><input class="${chamada.Status === "Justificada" ? "" : "hidden"}" data-motivo="${escapeHtml(aluna)}" value="${escapeHtml(chamada.Observacao || "")}" placeholder="Motivo da falta justificada"></article>`; }).join("")}</div><button id="salvar-chamada" class="primary-action full-action" type="button">Salvar chamada</button><div id="chamada-retorno"></div>`;
       lista.querySelectorAll("input[data-presente],input[data-ausente],input[data-justificada]").forEach((campo) => campo.addEventListener("change", (evento) => {
         const linha = evento.target.closest(".attendance-row");
         const opcoes = [...linha.querySelectorAll("input[data-presente],input[data-ausente],input[data-justificada]")];
@@ -896,7 +896,7 @@ async function renderPessoas(content) {
   const mostrar = (tipo) => {
     const lista = tipo === "aluna" ? dados.alunas : tipo === "professora" ? dados.professoras : dados.secretarias;
     const titulo = tipo === "aluna" ? "Adicionar aluna" : tipo === "professora" ? "Adicionar professora" : "Adicionar secretaria";
-    destino.innerHTML = `<div class="person-add"><h3>${titulo}</h3><div class="form-grid"><input id="pessoa-nome" placeholder="Nome completo">${tipo === "aluna" ? '<input id="pessoa-turma" placeholder="Turma">' : ""}${tipo !== "secretaria" ? '<input id="pessoa-login" placeholder="Login"><label>Foto de perfil (opcional)<input id="pessoa-foto" type="file" accept="image/jpeg,image/png,image/webp"></label>' : ""}<button id="adicionar-pessoa" class="primary-action" type="button">Adicionar</button></div></div><div class="person-list">${lista.length ? lista.map((pessoa, indice) => { const foto = fotos[tipo]?.[pessoa.nome]; const retrato = tipo !== "secretaria" ? (foto ? `<a class="person-photo" href="${escapeHtml(foto)}" target="_blank" rel="noopener" title="Ampliar foto de ${escapeHtml(pessoa.nome)}"><img src="${escapeHtml(foto)}" alt="Foto de ${escapeHtml(pessoa.nome)}"></a>` : `<span class="person-photo initials">${escapeHtml(pessoa.nome.slice(0, 1))}</span>`) : ""; return `<article class="person-row person-card"><div class="person-identity">${retrato}<div><strong>${escapeHtml(pessoa.nome)}</strong><span>${tipo === "aluna" ? escapeHtml(pessoa.turma || "Sem turma") : pessoa.login ? `Login: ${escapeHtml(pessoa.login)}` : ""}</span></div></div><span class="badge ${pessoa.ativo === false ? "inactive" : ""}">${pessoa.ativo === false ? "Desativada" : "Ativa"}</span><div class="person-actions"><button data-editar="${indice}" class="secondary-action" type="button">Editar</button><button data-toggle="${indice}" class="secondary-action" type="button">${pessoa.ativo === false ? "Reativar" : "Desativar"}</button></div><div class="person-editor hidden" data-editor="${indice}"><label>Nome<input data-campo="nome" value="${escapeHtml(pessoa.nome)}"></label>${tipo === "aluna" ? `<label>Turma<input data-campo="turma" value="${escapeHtml(pessoa.turma || "")}"></label>` : ""}${tipo !== "secretaria" ? `<label>Login<input data-campo="login" value="${escapeHtml(pessoa.login || "")}"></label><label>Nova senha <small>(deixe vazia para manter a atual)</small><input data-campo="senha" type="password" autocomplete="new-password" placeholder="Nova senha"></label><label>Trocar foto <small>(JPG, PNG ou WEBP, até 5 MB)</small><input data-campo="foto" type="file" accept="image/jpeg,image/png,image/webp"></label>` : ""}<button data-salvar="${indice}" class="primary-action" type="button">Salvar alterações</button></div></article>`; }).join("") : "<div class=\"empty\">Nenhum cadastro ainda.</div>"}</div>`;
+    destino.innerHTML = `<div class="person-add"><h3>${titulo}</h3><div class="form-grid"><input id="pessoa-nome" placeholder="Nome completo">${tipo === "aluna" ? '<input id="pessoa-turma" placeholder="Turma">' : ""}${tipo !== "secretaria" ? '<input id="pessoa-login" placeholder="Login"><label>Foto de perfil (opcional)<input id="pessoa-foto" type="file" accept="image/jpeg,image/png,image/webp"></label>' : ""}<button id="adicionar-pessoa" class="primary-action" type="button">Adicionar</button></div></div><div class="person-list">${lista.length ? lista.map((pessoa, indice) => { const foto = fotos[tipo]?.[pessoa.nome]; const retrato = tipo !== "secretaria" ? (foto ? `<button class="person-photo photo-zoom" type="button" data-foto-zoom="${escapeHtml(foto)}" data-foto-titulo="${escapeHtml(pessoa.nome)}" title="Ampliar foto de ${escapeHtml(pessoa.nome)}"><img src="${escapeHtml(foto)}" alt="Foto de ${escapeHtml(pessoa.nome)}"></button>` : `<span class="person-photo initials">${escapeHtml(pessoa.nome.slice(0, 1))}</span>`) : ""; return `<article class="person-row person-card"><div class="person-identity">${retrato}<div><strong>${escapeHtml(pessoa.nome)}</strong><span>${tipo === "aluna" ? escapeHtml(pessoa.turma || "Sem turma") : pessoa.login ? `Login: ${escapeHtml(pessoa.login)}` : ""}</span></div></div><span class="badge ${pessoa.ativo === false ? "inactive" : ""}">${pessoa.ativo === false ? "Desativada" : "Ativa"}</span><div class="person-actions"><button data-editar="${indice}" class="secondary-action" type="button">Editar</button><button data-toggle="${indice}" class="secondary-action" type="button">${pessoa.ativo === false ? "Reativar" : "Desativar"}</button></div><div class="person-editor hidden" data-editor="${indice}"><label>Nome<input data-campo="nome" value="${escapeHtml(pessoa.nome)}"></label>${tipo === "aluna" ? `<label>Turma<input data-campo="turma" value="${escapeHtml(pessoa.turma || "")}"></label>` : ""}${tipo !== "secretaria" ? `<label>Login<input data-campo="login" value="${escapeHtml(pessoa.login || "")}"></label><label>Nova senha <small>(deixe vazia para manter a atual)</small><input data-campo="senha" type="password" autocomplete="new-password" placeholder="Nova senha"></label><label>Trocar foto <small>(JPG, PNG ou WEBP, até 5 MB)</small><input data-campo="foto" type="file" accept="image/jpeg,image/png,image/webp"></label>` : ""}<button data-salvar="${indice}" class="primary-action" type="button">Salvar alterações</button></div></article>`; }).join("") : "<div class=\"empty\">Nenhum cadastro ainda.</div>"}</div>`;
     if (tipo === "professora") {
       const professorasAtivas = lista.filter((pessoa) => pessoa.ativo !== false);
       const coordenacaoAtual = coordenacoes.filter((item) => item.inicio <= hoje && item.fim >= hoje);
@@ -1503,7 +1503,49 @@ function aplicarAvatar(url, nome) {
   avatar.style.backgroundImage = url ? `url('${url}')` : "";
   avatar.style.backgroundSize = url ? "cover" : "";
   avatar.style.backgroundPosition = url ? "center" : "";
+  avatar.dataset.fotoZoom = url || "";
+  avatar.dataset.fotoTitulo = nome || "Foto de perfil";
+  avatar.title = url ? "Ampliar foto" : "";
 }
+
+function abrirZoomFoto(url, titulo = "Foto") {
+  if (!url) return;
+  document.querySelector(".photo-modal")?.remove();
+  const modal = document.createElement("div");
+  modal.className = "photo-modal";
+  modal.innerHTML = `<div class="photo-modal-card" role="dialog" aria-modal="true" aria-label="Foto ampliada"><button class="modal-close" type="button" aria-label="Fechar">×</button><img src="${escapeHtml(url)}" alt="Foto ampliada de ${escapeHtml(titulo)}"><strong>${escapeHtml(titulo)}</strong></div>`;
+  const fechar = () => modal.remove();
+  modal.addEventListener("click", (evento) => { if (evento.target === modal) fechar(); });
+  modal.querySelector(".modal-close").addEventListener("click", fechar);
+  document.body.appendChild(modal);
+}
+
+function abrirTrocaFotoProfessora() {
+  document.querySelector(".profile-photo-modal")?.remove();
+  const modal = document.createElement("div");
+  modal.className = "photo-modal profile-photo-modal";
+  modal.innerHTML = `<section class="profile-photo-card" role="dialog" aria-modal="true" aria-label="Alterar foto de perfil"><button class="modal-close" type="button" aria-label="Fechar">×</button><h3>Alterar minha foto</h3><p>A imagem será salva no R2 e aparecerá no seu perfil.</p><label>Nova foto<input data-minha-foto type="file" accept="image/jpeg,image/png,image/webp"></label><button data-salvar-minha-foto class="primary-action" type="button">Salvar foto</button><div data-retorno-foto></div></section>`;
+  const fechar = () => modal.remove();
+  modal.addEventListener("click", (evento) => { if (evento.target === modal) fechar(); });
+  modal.querySelector(".modal-close").addEventListener("click", fechar);
+  modal.querySelector("[data-salvar-minha-foto]").addEventListener("click", async (evento) => {
+    const botao = evento.currentTarget, retorno = modal.querySelector("[data-retorno-foto]"), arquivo = modal.querySelector("[data-minha-foto]").files[0];
+    botao.disabled = true;
+    try {
+      const perfil = await window.GemData.atualizarMinhaFotoProfessora(state.name, arquivo);
+      aplicarAvatar(perfil.fotoUrl, state.name);
+      retorno.innerHTML = `<div class="action-ok">Foto atualizada.</div>`;
+      setTimeout(fechar, 700);
+    } catch (erro) { retorno.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; }
+  });
+  document.body.appendChild(modal);
+}
+
+document.addEventListener("click", (evento) => {
+  const foto = evento.target.closest("[data-foto-zoom]");
+  if (!foto) return;
+  abrirZoomFoto(foto.dataset.fotoZoom, foto.dataset.fotoTitulo || "Foto");
+});
 
 function aplicarNomeGem(nome) {
   const gem = String(nome || "GEM Vila Verde").trim();
@@ -1694,6 +1736,13 @@ async function abrirConta(conta) {
       const perfil = await window.GemData.perfilProfessora(state.name);
       aplicarAvatar(perfil.fotoUrl, state.name);
     } catch (error) { console.warn("Foto de perfil da professora indisponível", error); }
+    document.querySelector(".profile-photo-action")?.remove();
+    const trocarFoto = document.createElement("button");
+    trocarFoto.className = "profile-photo-action";
+    trocarFoto.type = "button";
+    trocarFoto.textContent = "Alterar minha foto";
+    trocarFoto.addEventListener("click", abrirTrocaFotoProfessora);
+    document.querySelector(".profile").appendChild(trocarFoto);
   }
   if (!state.externo && ["Aluna", "Professora"].includes(state.role) && "Notification" in window && "serviceWorker" in navigator) { $("#ativar-notificacoes").classList.remove("hidden"); atualizarBotaoNotificacoes(); }
   renderNavigation(); await renderPage();
