@@ -716,14 +716,14 @@
       const salvar = existenteMesmoMaterial ? await banco.from("historico_geral").update(registro).eq("id", existenteMesmoMaterial.id) : await banco.from("historico_geral").insert(registro);
       if (salvar.error) throw new Error(`Não foi possível salvar o registro de ${aluna}.`);
 
-      // Mesma regra do app.py: o MSA é conferido dentro do registro de
-      // Solfejo. Ao salvar a aula, as lições MSA anteriores são baixadas;
-      // se foi marcada uma dificuldade de “não realizou”, elas permanecem
-      // como não resolvidas para acompanhamento na próxima aula.
-      if (disciplina === "Solfejo") {
+      // Solfejo e Solfejo Melódico são conferidos no próprio registro da aula.
+      // Não existe uma tela de “passou/não passou”: a aula seguinte encerra o
+      // estudo anterior e registra naturalmente a nova lição para casa.
+      if (["Solfejo", "Solfejo Melódico"].includes(disciplina)) {
+        const tipoEstudo = disciplina === "Solfejo" ? "Casa_MSA" : "Casa_Canto";
         const { data: licoesMsa, error: erroMsa } = await banco.from("historico_geral")
-          .select("id,Status").eq("Aluna", aluna).eq("Tipo", "Casa_MSA");
-        if (erroMsa) throw new Error(`A aula foi salva, mas não foi possível atualizar o MSA de ${aluna}.`);
+          .select("id,Status").eq("Aluna", aluna).eq("Tipo", tipoEstudo);
+        if (erroMsa) throw new Error(`A aula foi salva, mas não foi possível atualizar o estudo de ${aluna}.`);
         const statusFinal = ["Resolvido", "Realizada", "Realizada - sem pendência", "Realizadas - sem pendência"];
         const naoRealizou = dificuldadesDaAluna.some((dificuldade) => normalizar(dificuldade).includes("NAO REALIZOU"));
         const pendentesMsa = (licoesMsa || []).filter((licao) => !statusFinal.includes(String(licao.Status || "")));
@@ -731,7 +731,7 @@
           const atualizacao = await banco.from("historico_geral")
             .update({ Status: naoRealizou ? "Não resolvido" : "Resolvido", Observacao: registro.Observacao })
             .eq("id", licao.id);
-          if (atualizacao.error) throw new Error(`A aula foi salva, mas não foi possível atualizar o MSA de ${aluna}.`);
+          if (atualizacao.error) throw new Error(`A aula foi salva, mas não foi possível atualizar o estudo de ${aluna}.`);
         }
       }
       const tipoCasa = casaTipo ? `Casa_${casaTipo}` : "";
@@ -878,9 +878,8 @@
     const banco = await obterCliente();
     const { data, error } = await banco.from("historico_geral").select("*").in("Aluna", alunas || []).order("id", { ascending: false });
     if (error) throw new Error("Não foi possível carregar as lições pendentes.");
-    const tiposPermitidos = tipoAula === "Solfejo" ? ["Casa_MSA"]
-      : tipoAula === "Solfejo Melódico" ? ["Casa_Canto"]
-        : tipoAula === "Teoria" ? ["Casa_Teoria_Prof", "Casa_Apostila_Teoria_Prof", "Casa_Apostila_Teoria"]
+    const tiposPermitidos = ["Solfejo", "Solfejo Melódico"].includes(tipoAula) ? []
+      : tipoAula === "Teoria" ? ["Casa_Teoria_Prof", "Casa_Apostila_Teoria_Prof", "Casa_Apostila_Teoria"]
           : tipoAula === "Prática" ? []
             : null;
     // Mantém na fila tudo o que ainda requer acompanhamento. Em métodos,
