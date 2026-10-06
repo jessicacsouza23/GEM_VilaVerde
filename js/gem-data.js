@@ -879,11 +879,14 @@
           "Não resolvido": "Não resolvido"
         }[item.resultadoLicao];
         if (statusCorrecao) {
+          // Casa_Apostila_Prof é também lida pela Secretaria, mas não entra
+          // na limpeza das novas lições de casa da aula atual. Assim a
+          // correção automática não se perde ao salvar o registro.
           const { data: existenteAutomatico, error: erroBuscaAutomatica } = await banco.from("historico_geral").select("id")
-            .eq("Aluna", aluna).eq("Data", data).eq("Tipo", "Casa_Apostila").eq("Licao_Casa", String(item.licaoPendenteTexto).trim()).limit(1);
+            .eq("Aluna", aluna).eq("Data", data).eq("Tipo", "Casa_Apostila_Prof").eq("Licao_Casa", String(item.licaoPendenteTexto).trim()).limit(1);
           if (erroBuscaAutomatica) throw new Error("Não foi possível preparar a correção da Apostila.");
           const correcaoAutomatica = {
-            Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: "Casa_Apostila",
+            Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: "Casa_Apostila_Prof",
             Licao_Atual: "Definido", Licao_Casa: String(item.licaoPendenteTexto).trim(), Dificuldades: [],
             Observacao: String(item.observacaoCorrecao || "").trim(), Status: statusCorrecao
           };
