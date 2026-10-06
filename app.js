@@ -775,6 +775,11 @@ async function renderRodizio(content) {
       const modeloExibido = modelo || { nome: "Modelo legado — escala histórica", configuracao: {} };
       const config = modeloExibido.configuracao || {};
       const preparacao = modelo ? window.RodizioEngine.prepararModelo(modelo, base.turmas) : { coletivas: {}, turmas: [], blocos: [] };
+      // A ordem cadastrada no modelo pode variar conforme quem criou cada
+      // turma. Na tela, sempre exibimos a sequência humana: Turma 1, 2, 3…
+      // Isso vale para Teoria, Solfejo Melódico e a prévia de rotação, sem
+      // alterar a configuração nem a regra usada pelo motor.
+      preparacao.turmas = [...preparacao.turmas].sort((a, b) => String(a).localeCompare(String(b), "pt-BR", { numeric: true, sensitivity: "base" }));
       const atividades = Object.keys(preparacao.coletivas);
       const todasAlunas = Object.values(base.turmas).flat();
       const normalizarProf = (nome) => String(nome || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
