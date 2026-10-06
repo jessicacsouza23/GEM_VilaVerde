@@ -113,6 +113,11 @@
       turmas.forEach((turma, indice) => { inicioManual[turma] = ordem[(indice - indiceDaTurma + ordem.length) % ordem.length]; });
     }
     const horarios = blocos.map(horario);
+    // Depois do primeiro bloco, quem já estava no individual continua sendo
+    // a equipe prioritária dele. Isso evita trocar, por exemplo, Patrícia da
+    // Sala 1 por uma professora que estava em Teoria no bloco anterior sem
+    // que haja uma saída/indisponibilidade real.
+    let professorasPrioritariasNoIndividual = new Set();
     // No modo automático, a ordem visual das turmas é uma preferência, não
     // pode derrubar uma professora fixa. O app.py procura uma combinação de
     // Teoria / Solfejo / Individual que deixe a fixa livre no bloco certo.
@@ -174,9 +179,20 @@
           const habilitadasDaArea = habilitadas[posicao] || (posicao === "Solfejo Melódico" ? habilitadas.Canto : null) || disponiveis;
           let candidatas = habilitadasDaArea.filter((professora) => disponiveis.includes(professora) && !indisponiveis.includes(professora) && !ocupadas.has(professora) && !professorasReservadas.has(professora));
           const escolhida = coletivas?.[posicao]?.[turma];
+          // A escolha da primeira aula define a equipe do individual. Nos
+          // blocos seguintes, preservamos essa equipe e só a deslocamos para
+          // uma coletiva quando não existe nenhuma outra professora apta.
+          const alternativasSemPrioritarias = indiceBloco > 0
+            ? candidatas.filter((professora) => !professorasPrioritariasNoIndividual.has(professora))
+            : candidatas;
+          if (alternativasSemPrioritarias.length) candidatas = alternativasSemPrioritarias;
           if (escolhida) {
-            if (!candidatas.includes(escolhida)) { erros.push(`${escolhida} não está disponível para ${posicao} de ${turma} no ${hora}. Ajuste a escolha, as folgas ou as habilitações.`); return; }
-            candidatas = [escolhida];
+            // Uma seleção que coincide com a equipe prioritária pode ser
+            // substituída automaticamente por outra habilitada. A seleção
+            // continua literal quando não há alternativa — nesse caso o
+            // individual precisará usar a substituta disponível.
+            if (candidatas.includes(escolhida)) candidatas = [escolhida];
+            else if (!alternativasSemPrioritarias.length) { erros.push(`${escolhida} não está disponível para ${posicao} de ${turma} no ${hora}. Ajuste a escolha, as folgas ou as habilitações.`); return; }
           }
           if (!candidatas.length) { erros.push(`Não há professora disponível/habilitada para ${posicao} no ${hora}.`); return; }
           const professora = candidatas[indiceBloco % candidatas.length];
@@ -235,7 +251,8 @@
               const alunasAtendidas = memoriaHistorica.alunasPorProfessora[item.professora] || new Set();
               const completouARoda = cicloConcluido(alunasAtendidas, alunasDaRoda);
               const repetiuAntesDaRoda = regras.nao_repetir_aluna !== false && !completouARoda && alunasAtendidas.has(aluna);
-              return [Number(regras.nao_repetir_imediata !== false && candidatas.length > 1 && item.professora === mem.ultima), Number(repetiuAntesDaRoda), Number(regras.nao_repetir_sala !== false && new Set(mem.salas).size < individuais.length && mem.salas.includes(item.sala)), item.professora, item.sala];
+              const foraDaEquipeInicial = indiceBloco > 0 && !fixa && !professorasPrioritariasNoIndividual.has(item.professora);
+              return [Number(foraDaEquipeInicial), Number(regras.nao_repetir_imediata !== false && candidatas.length > 1 && item.professora === mem.ultima), Number(repetiuAntesDaRoda), Number(regras.nao_repetir_sala !== false && new Set(mem.salas).size < individuais.length && mem.salas.includes(item.sala)), item.professora, item.sala];
             };
             return pontuar(a).join("|").localeCompare(pontuar(b).join("|"), "pt-BR", { numeric: true });
           });
@@ -249,6 +266,9 @@
         if (!mesmaProf && alocadas.length > 1) {
           const pratica = alocadas.map((item) => item.professora), solfejo = [...pratica.slice(1), pratica[0]];
           alocadas.forEach((item, i) => { escala[item.aluna][hora] = `${item.sala} | Solfejo: ${solfejo[i]} · Prática: ${item.professora}`; escala[item.aluna]._detalhes[hora].professoras_componentes = { Solfejo: solfejo[i], "Prática": item.professora }; });
+        }
+        if (indiceBloco === 0) {
+          professorasPrioritariasNoIndividual = new Set(alocadas.map((item) => item.professora));
         }
       });
     });
