@@ -869,6 +869,30 @@
           if (atualizarCorrecao.error) throw new Error(`O registro de ${material} foi salvo, mas não foi possível atualizar a lição anterior.`);
         }
       }
+      // Registros antigos podem ter conteúdo de Apostila sem a lição de casa
+      // correspondente. Ao a professora informar o resultado, criamos o item
+      // de acompanhamento: só "Resolvido" fica fora da fila da Secretaria.
+      if (!item.licaoPendenteId && item.correcaoApostilaAutomatica && item.resultadoLicao && item.licaoPendenteTexto) {
+        const statusCorrecao = {
+          "Resolvido": "Resolvido",
+          "Resolvido com pendências": "Resolvido com pendências",
+          "Não resolvido": "Não resolvido"
+        }[item.resultadoLicao];
+        if (statusCorrecao) {
+          const { data: existenteAutomatico, error: erroBuscaAutomatica } = await banco.from("historico_geral").select("id")
+            .eq("Aluna", aluna).eq("Data", data).eq("Tipo", "Casa_Apostila").eq("Licao_Casa", String(item.licaoPendenteTexto).trim()).limit(1);
+          if (erroBuscaAutomatica) throw new Error("Não foi possível preparar a correção da Apostila.");
+          const correcaoAutomatica = {
+            Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: "Casa_Apostila",
+            Licao_Atual: "Definido", Licao_Casa: String(item.licaoPendenteTexto).trim(), Dificuldades: [],
+            Observacao: String(item.observacaoCorrecao || "").trim(), Status: statusCorrecao
+          };
+          const salvarAutomatica = existenteAutomatico?.[0]
+            ? await banco.from("historico_geral").update(correcaoAutomatica).eq("id", existenteAutomatico[0].id)
+            : await banco.from("historico_geral").insert(correcaoAutomatica);
+          if (salvarAutomatica.error) throw new Error("O registro foi salvo, mas não foi possível registrar a correção da Apostila.");
+        }
+      }
 
       // Mantém os exercícios separados para consulta futura, mas as suas
       // dificuldades também estão agregadas acima — o Analítico lê o registro
