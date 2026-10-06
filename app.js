@@ -60,7 +60,7 @@ function eResolvida(status) { return ["Resolvido", "Realizada", "Realizadas - se
 
 async function renderMinhasAulas(content) {
   const hoje = new Date().toISOString().slice(0, 10);
-  content.innerHTML = `<section class="intro-card"><p class="eyebrow">REGISTRO DE AULA</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Sua agenda vem do rodízio salvo. Abra uma aula para registrar o conteúdo, as dificuldades e a lição de casa, como no sistema original.</p></section><div class="section-title"><h2>Minhas aulas</h2><p>As fotos das alunas e as turmas também seguem a escala real daquela data.</p></div><section class="panel"><div class="agenda-date"><div><label for="agenda-data">Data da aula</label><input id="agenda-data" type="date" value="${hoje}"></div><button id="carregar-agenda" class="primary-action" type="button">Carregar agenda</button></div><div id="agenda-lista" class="lesson-list"></div><div id="registro-aula"></div></section>`;
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">REGISTRO DE AULA</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Sua agenda vem do rodízio salvo. Abra uma aula para registrar o conteúdo, as dificuldades e a lição de casa, como no sistema original.</p></section><div class="section-title"><h2>Minhas aulas</h2><p>As fotos das alunas e as turmas também seguem a escala real daquela data.</p></div><section class="panel"><div class="agenda-date"><div><label for="agenda-data">Data da aula</label><input id="agenda-data" type="date" value="${hoje}"></div></div><div id="agenda-lista" class="lesson-list"></div><div id="registro-aula"></div></section>`;
   const lista = $("#agenda-lista");
   const areaRegistro = $("#registro-aula");
   let aulasAtuais = [];
@@ -373,6 +373,11 @@ async function renderMinhasAulas(content) {
     });
     areaRegistro.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+  const diaDeDescanso = (dataIso) => {
+    const [ano, mes, dia] = String(dataIso || "").split("-");
+    const data = ano ? `${dia}/${mes}/${ano}` : "a data escolhida";
+    return `<section class="rest-day"><div class="rest-balloons" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><div class="rest-day-icon" aria-hidden="true">🎈</div><h3>Dia de Descanso!</h3><p>Olá, ${escapeHtml(state.name)}!</p><small>Nenhuma aula encontrada para você nesta data.</small><span>🗓️ ${escapeHtml(data)}</span><em>“O descanso é o tempero que torna o trabalho mais saboroso.”</em></section>`;
+  };
   const carregar = async () => {
     lista.innerHTML = `<div class="empty">Carregando agenda...</div>`;
     areaRegistro.innerHTML = "";
@@ -380,12 +385,12 @@ async function renderMinhasAulas(content) {
       const [agenda, metodos] = await Promise.all([window.GemData.agendaProfessora(state.name, $("#agenda-data").value), window.GemData.dadosMetodos().catch(() => [])]);
       aulasAtuais = agenda;
       bibliotecaMetodos = metodos;
-      if (!aulasAtuais.length) { lista.innerHTML = `<div class="empty">Nenhuma aula encontrada para você nesta data.</div>`; return; }
+      if (!aulasAtuais.length) { lista.innerHTML = diaDeDescanso($("#agenda-data").value); return; }
       lista.innerHTML = aulasAtuais.map((aula, indice) => `<article class="agenda-card"><h3>${escapeHtml(aula.horario)} · ${escapeHtml(aula.tipo)}</h3><p><strong>${escapeHtml(aula.local)}</strong></p>${fotosDasAlunas(aula)}<span class="agenda-tag">${aula.individual ? "Aula individual" : `Turma ${escapeHtml(aula.turma || "")}`}</span><button class="secondary-action register-open" type="button" data-registro="${indice}">📝 Registrar aula</button></article>`).join("");
       lista.querySelectorAll("[data-registro]").forEach((botao) => botao.addEventListener("click", () => abrirRegistro(Number(botao.dataset.registro))));
     } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
-  $("#carregar-agenda").addEventListener("click", carregar);
+  $("#agenda-data").addEventListener("change", carregar);
   await carregar();
 }
 
