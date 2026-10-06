@@ -1,4 +1,4 @@
-const CACHE = "gem-vila-verde-v8";
+const CACHE = "gem-vila-verde-v10";
 const RUNTIME_IMAGES = "gem-vila-verde-images-v1";
 const FILES = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon.svg", "./js/gem-data.js", "./js/rodizio-engine.js"];
 self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting())));
@@ -11,6 +11,9 @@ self.addEventListener("fetch", (event) => {
   // abrir telas diferentes ou ao usar o aplicativo instalado.
   const fotoSupabase = url.hostname.endsWith(".supabase.co") && url.pathname.includes("/storage/v1/object/");
   const fotoR2 = url.hostname.endsWith(".r2.cloudflarestorage.com");
+  // A rota /api/r2-file é privada e depende da sessão. Ela não pode ser
+  // guardada neste cache, pois um segundo usuário do mesmo aparelho poderia
+  // receber uma imagem deixada pela conta anterior.
   if (fotoSupabase || fotoR2) {
     event.respondWith(caches.open(RUNTIME_IMAGES).then(async (cache) => {
       const salvo = await cache.match(event.request);

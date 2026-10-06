@@ -56,6 +56,12 @@
   function memoriaDasEscalas(escalaAnteriores, dataSelecionada, alunas, alunasDaRoda, salasIndividuais) {
     const memoria = Object.fromEntries(alunas.map((aluna) => [aluna, { professoras: [], salas: [], ultima: null }]));
     const alunasPorProfessora = {};
+    // Além da roda de cada aluna, guardamos as salas já usadas por cada
+    // professora. Isto é usado na primeira alocação do sábado seguinte para
+    // que ela não volte automaticamente à mesma sala antes de completar a
+    // roda das salas. A sala escolhida nesse primeiro bloco continua fixa
+    // até o fim daquele sábado (ver estabilizarSalas).
+    const salasPorProfessora = {};
     const limite = dataBrParaData(dataSelecionada);
     [...(escalaAnteriores || [])].sort((a, b) => (dataBrParaData(a.id)?.getTime() || 0) - (dataBrParaData(b.id)?.getTime() || 0)).forEach((anterior) => {
       const data = dataBrParaData(anterior.id);
@@ -75,11 +81,12 @@
           item.professoras.push(professora);
           item.salas.push(sala);
           item.ultima = professora;
+          (salasPorProfessora[professora] ||= new Set()).add(sala);
           registrarNoCiclo(alunasPorProfessora, professora, linha.Aluna, alunasDaRoda);
         });
       });
     });
-    return { porAluna: memoria, alunasPorProfessora };
+    return { porAluna: memoria, alunasPorProfessora, salasPorProfessora };
   }
 
   function gerar({ modelo, data, turmasReais, professoras, folgas = [], saidas = {}, fixas = {}, coletivas = {}, turmaInicioTeoria = null, usarFixas = false, escalasAnteriores = [] }) {
@@ -251,8 +258,12 @@
               const alunasAtendidas = memoriaHistorica.alunasPorProfessora[item.professora] || new Set();
               const completouARoda = cicloConcluido(alunasAtendidas, alunasDaRoda);
               const repetiuAntesDaRoda = regras.nao_repetir_aluna !== false && !completouARoda && alunasAtendidas.has(aluna);
+              const salasDaProfessora = memoriaHistorica.salasPorProfessora[item.professora] || new Set();
+              const repetiuSalaDaProfessora = regras.nao_repetir_sala !== false
+                && salasDaProfessora.size < individuais.length
+                && salasDaProfessora.has(item.sala);
               const foraDaEquipeInicial = indiceBloco > 0 && !fixa && !professorasPrioritariasNoIndividual.has(item.professora);
-              return [Number(foraDaEquipeInicial), Number(regras.nao_repetir_imediata !== false && candidatas.length > 1 && item.professora === mem.ultima), Number(repetiuAntesDaRoda), Number(regras.nao_repetir_sala !== false && new Set(mem.salas).size < individuais.length && mem.salas.includes(item.sala)), item.professora, item.sala];
+              return [Number(foraDaEquipeInicial), Number(regras.nao_repetir_imediata !== false && candidatas.length > 1 && item.professora === mem.ultima), Number(repetiuAntesDaRoda), Number(repetiuSalaDaProfessora), Number(regras.nao_repetir_sala !== false && new Set(mem.salas).size < individuais.length && mem.salas.includes(item.sala)), item.professora, item.sala];
             };
             return pontuar(a).join("|").localeCompare(pontuar(b).join("|"), "pt-BR", { numeric: true });
           });
