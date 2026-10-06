@@ -1084,7 +1084,17 @@
     });
     Object.values(turmas).forEach((lista) => lista.sort());
     const professorasFixas = Object.fromEntries((fixas.data || []).filter((item) => item.aluna && item.professora).map((item) => [String(item.aluna).trim().toLowerCase(), item.professora]));
-    return { data, modelos: modelos.data || [], turmas, professoras: (professoras.data || []).filter((professora) => professora.ativo !== false).map((professora) => professora.nome), escala: calendario.data?.escala || [], modeloEscala: calendario.data?.modelo_logistica_id || null, folga: folgas.data || null, escalasAnteriores: anteriores.data || [], professorasFixas };
+    const folgaBruta = folgas.data || null;
+    let professorasDeFolga = folgaBruta?.professoras || [];
+    // Alguns bancos antigos devolvem o jsonb como texto. Normalizamos aqui
+    // para que o motor receba sempre uma lista real de nomes.
+    if (typeof professorasDeFolga === "string") {
+      try { professorasDeFolga = JSON.parse(professorasDeFolga); }
+      catch (_) { professorasDeFolga = professorasDeFolga.split(","); }
+    }
+    if (!Array.isArray(professorasDeFolga)) professorasDeFolga = [];
+    const folga = folgaBruta ? { ...folgaBruta, professoras: professorasDeFolga.map((nome) => String(nome || "").trim()).filter(Boolean) } : null;
+    return { data, modelos: modelos.data || [], turmas, professoras: (professoras.data || []).filter((professora) => professora.ativo !== false).map((professora) => professora.nome), escala: calendario.data?.escala || [], modeloEscala: calendario.data?.modelo_logistica_id || null, folga, escalasAnteriores: anteriores.data || [], professorasFixas };
   }
 
   async function dadosFolgas() {

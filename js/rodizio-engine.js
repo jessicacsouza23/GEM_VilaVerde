@@ -103,7 +103,12 @@
     if (erros.length) return { escala: null, erros };
 
     const habilitadas = config.professoras_habilitadas || {};
-    const disponiveis = professoras.filter((professora) => !folgas.includes(professora));
+    // Folgas vêm de um cadastro e professoras de outro. Comparamos a forma
+    // normalizada para que espaços, acentos ou diferença de maiúsculas nunca
+    // façam uma professora de folga voltar para a escala.
+    const folgasNormalizadas = new Set((Array.isArray(folgas) ? folgas : []).map(limpar));
+    const estaDeFolga = (professora) => folgasNormalizadas.has(limpar(professora));
+    const disponiveis = professoras.filter((professora) => !estaDeFolga(professora));
     const todasAlunas = turmas.flatMap((turma) => turmasReais[turma] || []);
     const alunasDaRoda = todasAlunas.filter((aluna) => !(usarFixas && fixas[String(aluna).trim().toLowerCase()]));
     const memoriaHistorica = memoriaDasEscalas(escalasAnteriores, data, todasAlunas, alunasDaRoda, individuais);
@@ -133,7 +138,7 @@
     let planoAutomatico = null;
     if (!turmaInicioTeoria && usarFixas && turmas.length === posicoes.length && turmas.length <= 6) {
       const permutar = (itens) => itens.length < 2 ? [itens] : itens.flatMap((item, indice) => permutar([...itens.slice(0, indice), ...itens.slice(indice + 1)]).map((restante) => [item, ...restante]));
-      const indisponivelNoBloco = (professora, indiceBloco) => folgas.includes(professora)
+      const indisponivelNoBloco = (professora, indiceBloco) => estaDeFolga(professora)
         || (saidas[professora] && horarios.indexOf(saidas[professora]) < indiceBloco);
       const respeitaFixas = (ordemTurmas, direcao) => blocos.every((_, indiceBloco) => {
         const posicaoDaTurma = (turma) => (ordemTurmas.indexOf(turma) + direcao * indiceBloco + posicoes.length * 10) % posicoes.length;
@@ -238,7 +243,7 @@
             if (fixa) {
               let motivo = "não está disponível para este atendimento.";
               if (!professoras.includes(fixa)) motivo = "não está cadastrada como professora ativa no rodízio.";
-              else if (folgas.includes(fixa)) motivo = "está de folga.";
+              else if (estaDeFolga(fixa)) motivo = "está de folga.";
               else if (indisponiveis.includes(fixa)) motivo = "tem saída antecipada antes deste bloco.";
               else if (!habilitadasIndividuais.includes(fixa)) motivo = `não está habilitada para ${componentes.join(" + ") || "a aula individual"}.`;
               else if (alocadas.some((item) => item.professora === fixa)) motivo = "já está atendendo outra aluna no mesmo horário; uma professora não pode atender duas alunas simultaneamente.";
