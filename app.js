@@ -876,7 +876,22 @@ async function renderVisaoGeral(content) {
       };
       const destaqueSemana = destaque(7), destaqueMes = destaque(30);
       const cardDestaque = (titulo, item) => `<article class="gem-highlight"><span>${titulo}</span><strong>${item ? escapeHtml(item[0]) : "Ainda sem dados"}</strong><small>${item ? `${item[1]} pontos por presença, estudo e registros` : "Aparecerá quando houver registros no período."}</small></article>`;
-      destino.innerHTML = `<div class="grid gem-summary"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas</span></div><div class="metric"><strong>${frequencia === null ? "—" : `${frequencia}%`}</strong><span>Frequência geral</span></div><div class="metric"><strong>${quantidadeSalas || "—"}</strong><span>Salas ativas</span></div><div class="metric"><strong>${professorasAtivas.length}</strong><span>Professoras ativas</span></div><div class="metric"><strong>${disciplinas.length}</strong><span>Disciplinas oferecidas</span></div></div><section class="gem-summary-details"><div><h3>🎼 Disciplinas do GEM</h3><p>${disciplinas.length ? escapeHtml(disciplinas.join(" · ")) : "Defina as disciplinas no modelo de rodízio."}</p></div><div><h3>📅 Referência</h3><p>${dados.alunas.length ? `${dados.alunas.length} aluna(s) no rodízio de hoje · ${presentes} presente(s)` : "Sem rodízio salvo nesta data."}</p></div></section><section class="gem-highlights"><div><h3>🌟 Destaques de desempenho</h3><p>Calculados pelo quadro de desempenho: presença, estudo diário e registros pedagógicos.</p></div><div class="gem-highlight-grid">${cardDestaque("Destaque da semana", destaqueSemana)}${cardDestaque("Destaque do mês", destaqueMes)}</div></section>`;
+      // O ranking de estudo conta dias distintos com pelo menos um horário
+      // marcado. Assim uma aluna não sobe artificialmente no quadro por
+      // selecionar manhã, tarde e noite no mesmo dia.
+      const inicioEstudo = referenciaMs - (29 * 86400000);
+      const estudoPorAluna = new Map(ativas.map((aluna) => [aluna.nome, 0]));
+      (analitico.estudos || []).forEach((estudo) => {
+        const quando = dataEmMs(estudo.data);
+        if (quando >= inicioEstudo && quando <= referenciaMs && estudoPorAluna.has(estudo.aluna) && (estudo.horarios || []).length) {
+          estudoPorAluna.set(estudo.aluna, estudoPorAluna.get(estudo.aluna) + 1);
+        }
+      });
+      const rankingEstudo = [...estudoPorAluna.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
+      const maiorEstudo = rankingEstudo[0] || null;
+      const menorEstudo = rankingEstudo.length ? rankingEstudo[rankingEstudo.length - 1] : null;
+      const cardEstudo = (titulo, item, vazio) => `<article class="gem-highlight"><span>${titulo}</span><strong>${item ? escapeHtml(item[0]) : "Ainda sem dados"}</strong><small>${item ? `${item[1]} dia(s) de estudo nos últimos 30 dias` : vazio}</small></article>`;
+      destino.innerHTML = `<div class="grid gem-summary"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas</span></div><div class="metric"><strong>${frequencia === null ? "—" : `${frequencia}%`}</strong><span>Frequência geral</span></div><div class="metric"><strong>${quantidadeSalas || "—"}</strong><span>Salas ativas</span></div><div class="metric"><strong>${professorasAtivas.length}</strong><span>Professoras ativas</span></div><div class="metric"><strong>${disciplinas.length}</strong><span>Disciplinas oferecidas</span></div></div><section class="gem-summary-details"><div><h3>🎼 Disciplinas do GEM</h3><p>${disciplinas.length ? escapeHtml(disciplinas.join(" · ")) : "Defina as disciplinas no modelo de rodízio."}</p></div><div><h3>📅 Referência</h3><p>${dados.alunas.length ? `${dados.alunas.length} aluna(s) no rodízio de hoje · ${presentes} presente(s)` : "Sem rodízio salvo nesta data."}</p></div></section><section class="gem-highlights"><div><h3>🌟 Destaques de desempenho</h3><p>Calculados pelo quadro de desempenho: presença, estudo diário e registros pedagógicos.</p></div><div class="gem-highlight-grid">${cardDestaque("Destaque da semana", destaqueSemana)}${cardDestaque("Destaque do mês", destaqueMes)}</div></section><section class="gem-highlights"><div><h3>📚 Estudo em casa</h3><p>Ranking de dias estudados nos 30 dias anteriores à data de referência.</p></div><div class="gem-highlight-grid">${cardEstudo("Quem mais estudou", maiorEstudo, "Aparecerá quando houver estudo registrado.")}${cardEstudo("Quem menos estudou", menorEstudo, "Aparecerá quando houver alunas ativas.")}</div></section>`;
     } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
   $("#carregar-visao").addEventListener("click", carregar); await carregar();
