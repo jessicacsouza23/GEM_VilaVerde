@@ -153,7 +153,7 @@ async function renderMinhasAulas(content) {
     const licaoTeoria = `<section class="homework-panel"><h4>🏠 Lição de casa</h4><p>Folha avulsa pode ser encaminhada para a Secretaria ou corrigida por você na próxima aula. Apostila de Teoria é sempre corrigida pela professora.</p><div class="homework-options"><label class="result-check ${!teoriaApostila ? "selected" : ""}"><input type="radio" name="tipo-casa-teoria" value="folha" ${!teoriaApostila ? "checked" : ""}> Folha avulsa</label><label class="result-check ${teoriaApostila ? "selected" : ""}"><input type="radio" name="tipo-casa-teoria" value="apostila" ${teoriaApostila ? "checked" : ""}> Apostila de Teoria</label></div><div id="corretora-folha" class="homework-options"><strong>Quem corrige a folha avulsa?</strong><label class="result-check ${teoriaSecretaria ? "selected" : ""}"><input type="radio" name="corretora-folha" value="Secretaria" ${teoriaSecretaria ? "checked" : ""}> Secretaria</label><label class="result-check ${!teoriaSecretaria ? "selected" : ""}"><input type="radio" name="corretora-folha" value="Professora" ${!teoriaSecretaria ? "checked" : ""}> Eu mesma, na próxima aula</label></div><label>Lição deixada para casa<input id="registro-casa" value="${escapeHtml(casaTeoriaSalva.Licao_Casa || "")}" placeholder="Ex.: folha 3, exercícios 1 a 4"></label></section>`;
     const licaoGenerica = `<div class="record-form"><div><label for="registro-casa-tipo">Lição de casa</label><select id="registro-casa-tipo">${opcoesLicaoGenerica}</select></div><div><label for="registro-casa">Lição deixada para casa</label><input id="registro-casa" value="${escapeHtml(casaGenericaSalva.Licao_Casa || "")}" placeholder="Ex.: página 18, exercícios 1 e 2" disabled></div></div>`;
     const licaoSolfejo = `<section class="homework-panel"><h4>🎼 Estudo para a próxima aula</h4><p>${aula.tipo === "Solfejo Melódico" ? "Registre o estudo que será trabalhado até o próximo encontro." : "Registre a lição de MSA que será trabalhada até o próximo encontro."} Não há etapa separada de “passou/não passou”.</p><label>${aula.tipo === "Solfejo Melódico" ? "Estudo de Solfejo Melódico" : "Lição de Solfejo (MSA)"}<input id="registro-casa" value="${escapeHtml(casaGenericaSalva.Licao_Casa || "")}" placeholder="${aula.tipo === "Solfejo Melódico" ? "Ex.: vocalize, música ou trecho para praticar" : "Ex.: MSA, exercício ou página para estudar"}"></label></section>`;
-    const praticaMarkup = aula.tipo === "Prática" ? `<section class="practice-register"><div class="practice-register-head"><div><h4>🎹 Métodos e apostila conferidos hoje</h4><p>Escolha cada método na lista. Em cada um, registre a lição anterior, as dificuldades e as demais atividades trabalhadas.</p></div><button id="adicionar-material-pratica" class="secondary-action" type="button">＋ Adicionar método</button></div><div id="materiais-pratica"></div><label class="practice-observation">Observações pedagógicas gerais<textarea id="registro-observacao-pratica" placeholder="Observações sobre a aula e a evolução da aluna"></textarea></label></section>` : `<div class="record-form"><div><label for="registro-material">Material usado hoje:</label>${campoMaterial}</div><div><label for="registro-conteudo">Página/Lição trabalhada:</label><input id="registro-conteudo" value="${escapeHtml(conteudoSalvo)}" placeholder="Ex.: MSA: exercício 9, páginas 12 a 15"></div></div>${secaoDificuldades}${aula.tipo === "Teoria" ? licaoTeoria : ["Solfejo", "Solfejo Melódico"].includes(aula.tipo) ? licaoSolfejo : licaoGenerica}`;
+    const praticaMarkup = aula.tipo === "Prática" ? `<section class="practice-register"><div class="practice-register-head"><div><h4>🎹 Métodos e apostila conferidos hoje</h4><p>Escolha o método na lista e faça um registro para cada lição trabalhada.</p></div><button id="adicionar-material-pratica" class="secondary-action" type="button">＋ Adicionar outra lição</button></div><div id="materiais-pratica"></div><label class="practice-observation">Observações pedagógicas gerais<textarea id="registro-observacao-pratica" placeholder="Observações sobre a aula e a evolução da aluna"></textarea></label><section id="licoes-casa-pratica" class="practice-homework-panel"></section></section>` : `<div class="record-form"><div><label for="registro-material">Material usado hoje:</label>${campoMaterial}</div><div><label for="registro-conteudo">Página/Lição trabalhada:</label><input id="registro-conteudo" value="${escapeHtml(conteudoSalvo)}" placeholder="Ex.: MSA: exercício 9, páginas 12 a 15"></div></div>${secaoDificuldades}${aula.tipo === "Teoria" ? licaoTeoria : ["Solfejo", "Solfejo Melódico"].includes(aula.tipo) ? licaoSolfejo : licaoGenerica}`;
     const avisoFalta = registroBloqueadoPorFalta ? `<section class="absence-register"><h4>🚫 Falta registrada</h4><p>${faltaIndividual ? (/justificada/i.test(String(statusChamada[aula.alunas[0]])) ? "Falta justificada" : "Ausente") : "Todas as alunas desta turma estão ausentes ou justificadas"}. Não é possível lançar registro pedagógico para esta aula.</p></section>` : "";
     const corpoRegistro = registroBloqueadoPorFalta ? avisoFalta : `${registrosVisiveis}${correcoesPendentes}${praticaMarkup}<div class="register-actions"><button id="salvar-registro-aula" class="primary-action" type="button">Salvar registro da aula</button><div id="registro-retorno"></div></div>`;
     areaRegistro.innerHTML = `<section class="lesson-register"><div class="register-heading"><div><p class="eyebrow">LANÇAR REGISTRO</p><h3>📝 Registro: ${escapeHtml(aula.tipo)}</h3><p>${escapeHtml(aula.individual ? "Aula individual" : `Aula por turma${aula.turma ? ` · ${aula.turma}` : ""}`)}</p></div><button id="fechar-registro" class="secondary-action" type="button">Fechar</button></div>${fotosDasAlunas(aula, { selecionavel: aulaPorTurma, statusChamada })}${corpoRegistro}</section>`;
@@ -194,6 +194,20 @@ async function renderMinhasAulas(content) {
         return { material, conteudo: partes.join(":").trim(), dificuldades: Array.isArray(registro.Dificuldades) ? registro.Dificuldades : [], licaoCasa: casaSalva?.Licao_Casa || "" };
       }).filter((item) => opcoesPratica.includes(item.material));
       let proximoMaterial = 0;
+      const valorCasaSalva = (tipo) => registrosSalvos.find((item) => item.Tipo === tipo)?.Licao_Casa || "";
+      const atualizarLicoesCasa = () => {
+        const areaCasa = $("#licoes-casa-pratica");
+        if (!areaCasa) return;
+        const extrasSelecionados = [...areaCasa.querySelectorAll("[data-outros-metodos] option:checked")].map((opcao) => opcao.value);
+        const apostilaDigitada = areaCasa.querySelector("[data-casa-apostila]")?.value;
+        const casasDigitadas = Object.fromEntries([...areaCasa.querySelectorAll("[data-casa-metodo], [data-casa-extra]")].map((campo) => [campo.dataset.casaMetodo || campo.dataset.casaExtra, campo.value]));
+        const metodosDoDia = [...new Set([...areaMateriais.querySelectorAll("[data-pratica-material]")].map((campo) => campo.value).filter((nome) => nome && nome !== "Apostila"))];
+        const opcoesExtras = opcoesPratica.filter((nome) => nome !== "Apostila" && !metodosDoDia.includes(nome));
+        const casaApostila = apostilaDigitada ?? valorCasaSalva("Casa_Apostila");
+        const valorCasaMetodo = (metodo) => casasDigitadas[metodo] ?? valorCasaSalva(`Casa_Metodo_${metodo}`);
+        areaCasa.innerHTML = `<h3>🏠 Lição de Casa para a próxima aula</h3><p>📖 Apostila vai para a fila de correção da Secretaria. 🎼 Métodos ficam para acompanhamento da professora.</p><label>📖 Apostila (página/lição — vai para a Secretaria)<input data-casa-apostila value="${escapeHtml(casaApostila)}" placeholder="Ex.: página 20, exercícios 1 e 2"></label>${metodosDoDia.map((metodo) => `<label>🎼 Lição de casa — ${escapeHtml(metodo)}<input data-casa-metodo="${escapeHtml(metodo)}" value="${escapeHtml(valorCasaMetodo(metodo))}" placeholder="Ex.: página 20, exercícios 1 e 2"></label>`).join("")}<label>🎼 Outro(s) método(s) para passar lição (além dos conferidos hoje)<select data-outros-metodos multiple size="${Math.min(4, Math.max(2, opcoesExtras.length || 2))}">${opcoesExtras.map((metodo) => `<option value="${escapeHtml(metodo)}" ${extrasSelecionados.includes(metodo) ? "selected" : ""}>${escapeHtml(metodo)}</option>`).join("")}</select></label><div data-casas-extras>${extrasSelecionados.map((metodo) => `<label>🎼 Lição de casa — ${escapeHtml(metodo)}<input data-casa-extra="${escapeHtml(metodo)}" value="${escapeHtml(valorCasaMetodo(metodo))}" placeholder="Ex.: página 20, exercícios 1 e 2"></label>`).join("")}</div>`;
+        areaCasa.querySelector("[data-outros-metodos]").addEventListener("change", atualizarLicoesCasa);
+      };
       const linhasDificuldadesPratica = (marcadas = []) => dificuldadesPorAula.Prática.map((dificuldade) => `<label><input type="checkbox" data-dificuldade-pratica value="${escapeHtml(dificuldade)}" ${marcadas.includes(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("");
       const novaLinhaExercicio = (exercicio = {}) => `<div class="exercise-row"><label>Lição/exercício trabalhado<input data-exercicio-nome value="${escapeHtml(exercicio.exercicio || "")}" placeholder="Ex.: Estudo 21, exercício 3"></label><div class="difficulty-checks compact">${dificuldadesPorAula.Prática.map((dificuldade) => `<label><input type="checkbox" data-exercicio-dificuldade value="${escapeHtml(dificuldade)}" ${(exercicio.dificuldades || []).includes(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("")}</div><button class="icon-action remover-exercicio" type="button" title="Remover lição/exercício">×</button></div>`;
       const conectarExercicios = (cartao) => {
@@ -208,7 +222,8 @@ async function renderMinhasAulas(content) {
         if (!correcao) return;
         correcao.querySelectorAll('input[type="radio"]').forEach((campo) => campo.addEventListener("change", () => {
           correcao.querySelectorAll(".result-check").forEach((opcao) => opcao.classList.toggle("selected", opcao.querySelector("input").checked));
-          const casa = cartao.querySelector("[data-pratica-casa]");
+          const metodo = cartao.querySelector("[data-pratica-material]").value;
+          const casa = [...$("#licoes-casa-pratica").querySelectorAll("[data-casa-metodo]")].find((campo) => campo.dataset.casaMetodo === metodo);
           if (campo.checked && ["Não passou", "Estudar mais"].includes(campo.value) && casa && !casa.value.trim()) casa.value = correcao.dataset.licaoPendente || "";
         }));
       };
@@ -231,27 +246,21 @@ async function renderMinhasAulas(content) {
           const dificuldadesAnteriores = Array.isArray(anterior.Dificuldades) ? anterior.Dificuldades.filter((item) => item && item !== "Não apresentou dificuldades") : [];
           return `<p class="practice-last-class">📋 <strong>Última aula (${escapeHtml(anterior.Data || "—")}):</strong> ${escapeHtml(conteudoAnterior || "conteúdo não informado")}${dificuldadesAnteriores.length ? ` — ⚠ dificuldades: ${escapeHtml(dificuldadesAnteriores.join(" · "))}` : " — ✓ sem dificuldades"}</p>`;
         };
-        cartao.innerHTML = `<div class="practice-material-title"><label>Métodos/Apostila conferidos hoje<select data-pratica-material>${opcoesPratica.map((opcao) => `<option value="${escapeHtml(opcao)}" ${opcao === material ? "selected" : ""}>${escapeHtml(opcao)}</option>`).join("")}</select></label><button class="icon-action remover-material" type="button" title="Remover material">×</button></div><div data-pratica-resumo-area>${resumoUltimaAula(material)}</div><label>Conteúdo trabalhado hoje — página/lição<input data-pratica-conteudo value="${escapeHtml(registro.conteudo || "")}" placeholder="Ex.: página 18, exercício 4"></label><div data-pratica-correcao-area>${correcaoDoMetodo(material)}</div><p class="field-caption">Dificuldades observadas na lição de casa e no material trabalhado:</p><div class="difficulty-checks">${linhasDificuldadesPratica(registro.dificuldades || [])}</div><div class="practice-homework"><input type="hidden" data-pratica-casa-tipo value="${eApostila ? "Apostila" : "Metodo"}"><label><span data-pratica-casa-titulo>Lição de casa — ${eApostila ? "Apostila" : "Método"}</span><input data-pratica-casa value="${escapeHtml(registro.licaoCasa || "")}" placeholder="Ex.: página 20, exercícios 1 e 2"></label><p class="hint" data-pratica-casa-ajuda>${eApostila ? "A Apostila será enviada para correção da Secretaria." : "A professora avalia este método na próxima aula."}</p></div><div class="exercise-heading"><strong>🎼 Lições/exercícios e dificuldades separadas</strong><button data-adicionar-exercicio class="secondary-action" type="button">＋ Adicionar lição</button></div><p class="hint">Acrescente quantas lições ou exercícios foram trabalhados. Cada um pode ter suas próprias dificuldades.</p><div data-exercicios></div></article>`;
+        cartao.innerHTML = `<div class="practice-material-title"><label>Método/Apostila da lição registrada<select data-pratica-material>${opcoesPratica.map((opcao) => `<option value="${escapeHtml(opcao)}" ${opcao === material ? "selected" : ""}>${escapeHtml(opcao)}</option>`).join("")}</select></label><button class="icon-action remover-material" type="button" title="Remover esta lição">×</button></div><div data-pratica-resumo-area>${resumoUltimaAula(material)}</div><label>Conteúdo trabalhado hoje — página/lição<input data-pratica-conteudo value="${escapeHtml(registro.conteudo || "")}" placeholder="Ex.: página 18, exercício 4"></label><div data-pratica-correcao-area>${correcaoDoMetodo(material)}</div><p class="field-caption">Dificuldades observadas na lição de casa e no material trabalhado:</p><div class="difficulty-checks">${linhasDificuldadesPratica(registro.dificuldades || [])}</div>`;
         areaMateriais.appendChild(cartao);
         conectarCorrecaoPratica(cartao);
-        cartao.querySelector(".remover-material").addEventListener("click", () => { if (areaMateriais.children.length > 1) cartao.remove(); });
-        const atualizarCasaPratica = () => {
-          const apostila = cartao.querySelector("[data-pratica-material]").value === "Apostila";
-          cartao.querySelector("[data-pratica-casa-tipo]").value = apostila ? "Apostila" : "Metodo";
-          cartao.querySelector("[data-pratica-casa-titulo]").textContent = `Lição de casa — ${apostila ? "Apostila" : "Método"}`;
-          cartao.querySelector("[data-pratica-casa-ajuda]").textContent = apostila ? "A Apostila será enviada para correção da Secretaria." : "A professora avalia este método na próxima aula.";
+        cartao.querySelector(".remover-material").addEventListener("click", () => { if (areaMateriais.children.length > 1) { cartao.remove(); atualizarLicoesCasa(); } });
+        const atualizarMaterialPratica = () => {
           cartao.querySelector("[data-pratica-correcao-area]").innerHTML = correcaoDoMetodo(cartao.querySelector("[data-pratica-material]").value);
           cartao.querySelector("[data-pratica-resumo-area]").innerHTML = resumoUltimaAula(cartao.querySelector("[data-pratica-material]").value);
           conectarCorrecaoPratica(cartao);
+          atualizarLicoesCasa();
         };
-        cartao.querySelector("[data-pratica-material]").addEventListener("change", atualizarCasaPratica);
-        let exercicios = [];
-        try { exercicios = await window.GemData.exerciciosDaAula({ dataIso: $("#agenda-data").value, aluna: aula.alunas[0], material }); } catch (erro) { console.warn("Exercícios salvos não carregaram", erro); }
-        cartao.querySelector("[data-exercicios]").innerHTML = exercicios.map(novaLinhaExercicio).join("");
-        conectarExercicios(cartao);
+        cartao.querySelector("[data-pratica-material]").addEventListener("change", atualizarMaterialPratica);
+        atualizarLicoesCasa();
       };
       for (const registro of (materiaisRegistrados.length ? materiaisRegistrados : [{ material: materialSalvo || "Apostila", conteudo: conteudoSalvo, dificuldades: dificuldadesSalvas }])) await adicionarMaterial(registro);
-      $("#adicionar-material-pratica").addEventListener("click", () => adicionarMaterial());
+      $("#adicionar-material-pratica").addEventListener("click", () => adicionarMaterial({ material: opcoesPratica[1] || "Apostila" }));
     } else if (aula.tipo === "Teoria") {
       const atualizarLicaoTeoria = () => {
         const folha = areaRegistro.querySelector('input[name="tipo-casa-teoria"]:checked').value === "folha";
@@ -300,6 +309,9 @@ async function renderMinhasAulas(content) {
       botao.disabled = true;
       try {
         if (aula.tipo === "Prática") {
+          const casaApostila = areaRegistro.querySelector("[data-casa-apostila]")?.value.trim() || "";
+          const casasPorMetodo = Object.fromEntries([...areaRegistro.querySelectorAll("[data-casa-metodo]")].map((campo) => [campo.dataset.casaMetodo, campo.value.trim()]));
+          const licoesExtras = [...areaRegistro.querySelectorAll("[data-casa-extra]")].map((campo) => ({ material: campo.dataset.casaExtra, licaoCasa: campo.value.trim() }));
           const materiais = [...areaRegistro.querySelectorAll(".practice-material-card")].map((cartao) => {
             const correcao = cartao.querySelector("[data-pratica-correcao]");
             return {
@@ -307,16 +319,16 @@ async function renderMinhasAulas(content) {
               conteudo: cartao.querySelector("[data-pratica-conteudo]").value.trim(),
               dificuldades: [...cartao.querySelectorAll("[data-dificuldade-pratica]:checked")].map((campo) => campo.value),
               exercicios: [...cartao.querySelectorAll(".exercise-row")].map((linha) => ({ exercicio: linha.querySelector("[data-exercicio-nome]").value.trim(), dificuldades: [...linha.querySelectorAll("[data-exercicio-dificuldade]:checked")].map((campo) => campo.value) })),
-              casaTipo: cartao.querySelector("[data-pratica-casa-tipo]").value,
-              licaoCasa: cartao.querySelector("[data-pratica-casa]").value.trim(),
+              casaTipo: cartao.querySelector("[data-pratica-material]").value === "Apostila" ? "Apostila" : "Metodo",
+              licaoCasa: cartao.querySelector("[data-pratica-material]").value === "Apostila" ? casaApostila : (casasPorMetodo[cartao.querySelector("[data-pratica-material]").value] || ""),
               licaoPendenteId: correcao?.dataset.licaoPendenteId || "",
               resultadoLicao: correcao?.querySelector('input[type="radio"]:checked')?.value || "",
               observacaoCorrecao: correcao?.querySelector("[data-pratica-obs-correcao]")?.value.trim() || ""
             };
           });
-          const nomesRepetidos = materiais.map((item) => item.material).filter((material, indice, lista) => lista.indexOf(material) !== indice);
-          if (nomesRepetidos.length) throw new Error("Cada método/apostila deve aparecer apenas uma vez nesta aula.");
-          await window.GemData.salvarRegistrosPratica({ dataIso: $("#agenda-data").value, instrutora: state.name, aluna: aula.alunas[0], materiais, observacao: $("#registro-observacao-pratica").value.trim() });
+          const licoesRepetidas = materiais.map((item) => `${item.material}|${item.conteudo}`).filter((chave, indice, lista) => lista.indexOf(chave) !== indice);
+          if (licoesRepetidas.length) throw new Error("Cada registro deve ter uma lição diferente. Use outro conteúdo ou remova o duplicado.");
+          await window.GemData.salvarRegistrosPratica({ dataIso: $("#agenda-data").value, instrutora: state.name, aluna: aula.alunas[0], materiais, licoesExtras, observacao: $("#registro-observacao-pratica").value.trim() });
         } else {
           let casaTipo = $("#registro-casa-tipo")?.value || "", licaoCasa = $("#registro-casa")?.value || "";
           if (aula.tipo === "Solfejo") casaTipo = "MSA";
