@@ -80,9 +80,10 @@ async function renderMinhasAulas(content) {
     let licoesPendentes = [];
     try { registrosSalvos = await window.GemData.registrosDaAula({ dataIso: $("#agenda-data").value, instrutora: state.name, alunas: aula.alunas }); }
     catch (erro) { console.warn("Registros anteriores não puderam ser carregados", erro); }
+    const ehAulaDeSolfejo = String(aula.tipo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().includes("SOLFEJO");
     // Solfejo é conferido no próprio registro da aula seguinte. Nunca abre a
     // fila visual de correções (nem MSA, nem método) nessa tela.
-    try { licoesPendentes = ["Solfejo", "Solfejo Melódico"].includes(aula.tipo) ? [] : await window.GemData.licoesPendentesProfessora({ alunas: aula.alunas, tipoAula: aula.tipo }); }
+    try { licoesPendentes = ehAulaDeSolfejo ? [] : await window.GemData.licoesPendentesProfessora({ alunas: aula.alunas, tipoAula: aula.tipo }); }
     catch (erro) { console.warn("Lições pendentes não puderam ser carregadas", erro); }
     const tipoAnalise = `Analise_${aula.tipo}`;
     const analisesSalvas = registrosSalvos.filter((registro) => registro.Tipo === tipoAnalise);
@@ -111,13 +112,13 @@ async function renderMinhasAulas(content) {
     const camposIndividuais = (aluna, indice) => {
       const salvo = porAluna[aluna] || {};
       const marcadas = new Set(Array.isArray(salvo.Dificuldades) ? salvo.Dificuldades : []);
-      const referenciaLicao = ["Solfejo", "Solfejo Melódico"].includes(aula.tipo);
+      const referenciaLicao = ehAulaDeSolfejo;
       return `<section class="student-record"><h4>${escapeHtml(aluna)}</h4><p class="field-caption">${referenciaLicao ? "Dificuldades observadas na lição de casa apresentada:" : "Dificuldades observadas:"}</p><div class="difficulty-checks">${opcoesDificuldades.map((dificuldade) => `<label><input type="checkbox" data-dificuldade-individual="${indice}" value="${escapeHtml(dificuldade)}" ${marcadas.has(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("")}</div><label>${referenciaLicao ? "Observações sobre a lição apresentada e a aula:" : "Observações pedagógicas:"}<textarea data-observacao-individual="${indice}" placeholder="Observações sobre ${escapeHtml(aluna)}">${escapeHtml(salvo.Observacao || "")}</textarea></label></section>`;
     };
-    const tituloDificuldadesTurma = ["Solfejo", "Solfejo Melódico"].includes(aula.tipo)
+    const tituloDificuldadesTurma = ehAulaDeSolfejo
       ? "Dificuldades observadas na lição de casa apresentada pela turma:"
       : "Dificuldades compartilhadas para a turma:";
-    const tituloObservacaoTurma = ["Solfejo", "Solfejo Melódico"].includes(aula.tipo)
+    const tituloObservacaoTurma = ehAulaDeSolfejo
       ? "Observações sobre a lição apresentada e a aula:"
       : "Observações pedagógicas:";
     const secaoDificuldades = aulaPorTurma

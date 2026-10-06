@@ -679,18 +679,20 @@
         if (!conteudo || !normalizar(conteudo).includes(nomeNormalizado)) continue;
         const detalhe = detalhes[horario] || {};
         const tipoDaEscala = tipoDaAula(conteudo, detalhe);
+        const detalheCombinado = /PRATICA.*SOLFEJO|SOLFEJO.*PRATICA/.test(normalizar(tipoDaEscala));
+        const ehIndividual = Boolean(detalhe.individual) || detalheCombinado;
         // Escalas antigas trazem apenas "Prática + Solfejo" no detalhe. Para
         // a agenda da professora isso são duas aulas diferentes: assim a tela
         // de Solfejo nunca recebe as correções de Método/Prática.
-        const componentes = detalhe.individual && Array.isArray(detalhe.componentes)
+        const componentes = ehIndividual && Array.isArray(detalhe.componentes)
           ? detalhe.componentes
-          : detalhe.individual && /PRATICA.*SOLFEJO|SOLFEJO.*PRATICA/i.test(normalizar(tipoDaEscala))
+          : detalheCombinado
             ? ["Solfejo", "Prática"]
             : [tipoDaEscala];
         for (const tipo of componentes) {
           const professorasComponentes = detalhe.professoras_componentes || {};
           if (professorasComponentes[tipo] && normalizar(professorasComponentes[tipo]) !== nomeNormalizado) continue;
-          const individual = Boolean(detalhe.individual) || tipo === "Prática";
+          const individual = ehIndividual || tipo === "Prática";
           const chave = individual ? `${horario}|${tipo}|${linha.Aluna}` : `${horario}|${tipo}|${conteudo}`;
           if (vistas.has(chave)) continue;
           vistas.add(chave);
@@ -885,7 +887,7 @@
   async function licoesPendentesProfessora({ alunas, tipoAula }) {
     // Solfejo e Solfejo Melódico não têm etapa de correção separada: a lição
     // apresentada entra no próprio registro pedagógico da próxima aula.
-    if (["Solfejo", "Solfejo Melódico"].includes(tipoAula)) return [];
+    if (normalizar(tipoAula).includes("SOLFEJO")) return [];
     const banco = await obterCliente();
     const { data, error } = await banco.from("historico_geral").select("*").in("Aluna", alunas || []).order("id", { ascending: false });
     if (error) throw new Error("Não foi possível carregar as lições pendentes.");
