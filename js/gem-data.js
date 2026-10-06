@@ -824,6 +824,24 @@
         : await banco.from("historico_geral").insert(registro);
       if (salvar.error) throw new Error(`Não foi possível salvar o registro de ${material}.`);
 
+      // A correção do método é feita dentro do registro de Prática (como no
+      // app.py). O conteúdo e as dificuldades ficam na análise de hoje; o
+      // item de casa anterior recebe somente o resultado e a observação.
+      if (item.licaoPendenteId && item.resultadoLicao) {
+        const statusCorrecao = {
+          "Passou": "Resolvido",
+          "Não passou": "Não resolvido",
+          "Estudar mais": "Resolvido com pendências"
+        }[item.resultadoLicao];
+        if (statusCorrecao) {
+          const atualizarCorrecao = await banco.from("historico_geral").update({
+            Status: statusCorrecao,
+            Observacao: String(item.observacaoCorrecao || "").trim()
+          }).eq("id", item.licaoPendenteId);
+          if (atualizarCorrecao.error) throw new Error(`O registro de ${material} foi salvo, mas não foi possível atualizar a lição anterior.`);
+        }
+      }
+
       // Mantém os exercícios separados para consulta futura, mas as suas
       // dificuldades também estão agregadas acima — o Analítico lê o registro
       // principal, como no Streamlit.
