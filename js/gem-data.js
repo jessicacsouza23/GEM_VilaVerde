@@ -832,7 +832,11 @@
         const statusCorrecao = {
           "Passou": "Resolvido",
           "Não passou": "Não resolvido",
-          "Estudar mais": "Resolvido com pendências"
+          "Estudar mais": "Resolvido com pendências",
+          "Resolvido": "Resolvido",
+          "Resolvido com pendências": "Resolvido com pendências",
+          "Não resolvido": "Não resolvido",
+          "Não trouxe a apostila/atividade": "Não trouxe a apostila/atividade"
         }[item.resultadoLicao];
         if (statusCorrecao) {
           const atualizarCorrecao = await banco.from("historico_geral").update({
