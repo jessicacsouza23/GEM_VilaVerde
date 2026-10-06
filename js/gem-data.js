@@ -767,7 +767,7 @@
   // Apostila e mais de um método. Cada material vira seu próprio registro
   // Analise_Prática, exatamente como ocorre no app.py, para não misturar
   // páginas, dificuldades e exercícios de livros diferentes.
-  async function salvarRegistrosPratica({ dataIso, instrutora, aluna, materiais, licoesExtras = [], observacao = "" }) {
+  async function salvarRegistrosPratica({ dataIso, instrutora, aluna, materiais, licoesCasa = [], observacao = "" }) {
     const banco = await obterCliente();
     const data = dataBr(dataIso);
     const lista = (materiais || []).filter((item) => String(item?.material || "").trim() && String(item?.conteudo || "").trim());
@@ -861,48 +861,28 @@
           : `Não foi possível salvar os exercícios de ${material}.`);
       }
 
-      if (item.casaTipo) {
-        // Apostila de Prática é corrigida pela Secretaria; Métodos são
-        // corrigidos pela professora na próxima aula.
-        const tipoCasa = item.casaTipo === "Apostila" ? "Casa_Apostila" : `Casa_Metodo_${material}`;
-        const { data: casas, error: erroCasas } = await banco.from("historico_geral").select("id")
-          .eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoCasa).order("id", { ascending: false }).limit(1);
-        if (erroCasas) throw new Error(`O registro foi salvo, mas não foi possível consultar a lição de ${material}.`);
-        if (!String(item.licaoCasa || "").trim()) {
-          if (casas?.[0]) {
-            const apagarCasa = await banco.from("historico_geral").delete().eq("id", casas[0].id);
-            if (apagarCasa.error) throw new Error(`O registro foi salvo, mas não foi possível remover a lição de ${material}.`);
-          }
-          continue;
-        }
-        const casa = { Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoCasa, Licao_Atual: "Definido", Licao_Casa: String(item.licaoCasa).trim(), Dificuldades: [], Observacao: "", Status: "Pendente" };
-        const salvarCasa = casas?.[0]
-          ? await banco.from("historico_geral").update(casa).eq("id", casas[0].id)
-          : await banco.from("historico_geral").insert(casa);
-        if (salvarCasa.error) throw new Error(`O registro foi salvo, mas não foi possível registrar a lição de ${material}.`);
-      }
     }
 
-    for (const extra of (licoesExtras || [])) {
-      const material = String(extra?.material || "").trim();
-      const licaoCasa = String(extra?.licaoCasa || "").trim();
-      if (!material) continue;
-      const tipoCasa = `Casa_Metodo_${material}`;
-      const { data: casas, error: erroCasas } = await banco.from("historico_geral").select("id")
-        .eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoCasa).order("id", { ascending: false }).limit(1);
-      if (erroCasas) throw new Error(`Não foi possível preparar a lição de casa de ${material}.`);
-      if (!licaoCasa) {
-        if (casas?.[0]) {
-          const apagarCasa = await banco.from("historico_geral").delete().eq("id", casas[0].id);
-          if (apagarCasa.error) throw new Error(`Não foi possível remover a lição de casa de ${material}.`);
-        }
-        continue;
-      }
-      const casa = { Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoCasa, Licao_Atual: "Definido", Licao_Casa: licaoCasa, Dificuldades: [], Observacao: "", Status: "Pendente" };
-      const salvarCasa = casas?.[0]
-        ? await banco.from("historico_geral").update(casa).eq("id", casas[0].id)
-        : await banco.from("historico_geral").insert(casa);
-      if (salvarCasa.error) throw new Error(`Não foi possível registrar a lição de casa de ${material}.`);
+    // Cada linha é uma lição independente. Assim a professora pode passar
+    // várias páginas de Apostila, vários métodos ou repetir um mesmo método
+    // sem que a última entrada apague as anteriores.
+    const { data: casasAnteriores, error: erroCasasAnteriores } = await banco.from("historico_geral").select("id,Tipo")
+      .eq("Aluna", aluna).eq("Data", data).eq("Instrutora", instrutora);
+    if (erroCasasAnteriores) throw new Error("O registro foi salvo, mas não foi possível preparar as lições de casa.");
+    const casasDaPratica = (casasAnteriores || []).filter((item) => item.Tipo === "Casa_Apostila" || String(item.Tipo || "").startsWith("Casa_Metodo_"));
+    for (const casaAnterior of casasDaPratica) {
+      const apagarCasa = await banco.from("historico_geral").delete().eq("id", casaAnterior.id);
+      if (apagarCasa.error) throw new Error("O registro foi salvo, mas não foi possível atualizar as lições de casa.");
+    }
+    const novasCasas = (licoesCasa || []).map((item) => ({ material: String(item?.material || "").trim(), licaoCasa: String(item?.licaoCasa || "").trim() }))
+      .filter((item) => item.material && item.licaoCasa);
+    if (novasCasas.length) {
+      const salvarCasas = await banco.from("historico_geral").insert(novasCasas.map((item) => ({
+        Aluna: aluna, Data: data, Instrutora: instrutora,
+        Tipo: item.material === "Apostila" ? "Casa_Apostila" : `Casa_Metodo_${item.material}`,
+        Licao_Atual: "Definido", Licao_Casa: item.licaoCasa, Dificuldades: [], Observacao: "", Status: "Pendente"
+      })));
+      if (salvarCasas.error) throw new Error("O registro foi salvo, mas não foi possível registrar as lições de casa.");
     }
   }
 
