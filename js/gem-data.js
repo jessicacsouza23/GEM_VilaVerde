@@ -727,7 +727,7 @@
     return aulas.sort((a, b) => a.horario.localeCompare(b.horario));
   }
 
-  async function salvarRegistroAula({ dataIso, instrutora, tipo, alunas, material, conteudo, dificuldades, observacao, registrosPorAluna, casaTipo, licaoCasa, limparCasas = [] }) {
+  async function salvarRegistroAula({ dataIso, instrutora, tipo, alunas, material, conteudo, dificuldades, observacao, registrosPorAluna, casaTipo, licaoCasa, observacaoCasa = "", limparCasas = [] }) {
     const banco = await obterCliente(); const data = dataBr(dataIso), disciplina = tipo === "Canto" ? "Solfejo Melódico" : tipo;
     if (!alunas?.length || !conteudo?.trim()) throw new Error("Informe o conteúdo trabalhado.");
     for (const aluna of alunas) {
@@ -770,7 +770,7 @@
       const tipoCasa = casaTipo ? `Casa_${casaTipo}` : "";
       if (tipoCasa && licaoCasa?.trim()) {
         const pendente = await banco.from("historico_geral").select("id").eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoCasa).order("id", { ascending: false }).limit(1);
-        const casa = { Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoCasa, Licao_Atual: "Definido", Licao_Casa: licaoCasa.trim(), Dificuldades: [], Observacao: "", Status: "Pendente" };
+        const casa = { Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoCasa, Licao_Atual: "Definido", Licao_Casa: licaoCasa.trim(), Dificuldades: [], Observacao: String(observacaoCasa || "").trim(), Status: "Pendente" };
         const salvarCasa = pendente.data?.[0] ? await banco.from("historico_geral").update(casa).eq("id", pendente.data[0].id) : await banco.from("historico_geral").insert(casa);
         if (salvarCasa.error) throw new Error(`A aula foi salva, mas não foi possível registrar a lição de ${aluna}.`);
       }
@@ -901,13 +901,13 @@
       const apagarCasa = await banco.from("historico_geral").delete().eq("id", casaAnterior.id);
       if (apagarCasa.error) throw new Error("O registro foi salvo, mas não foi possível atualizar as lições de casa.");
     }
-    const novasCasas = (licoesCasa || []).map((item) => ({ material: String(item?.material || "").trim(), licaoCasa: String(item?.licaoCasa || "").trim() }))
+    const novasCasas = (licoesCasa || []).map((item) => ({ material: String(item?.material || "").trim(), licaoCasa: String(item?.licaoCasa || "").trim(), observacao: String(item?.observacao || "").trim() }))
       .filter((item) => item.material && item.licaoCasa);
     if (novasCasas.length) {
       const salvarCasas = await banco.from("historico_geral").insert(novasCasas.map((item) => ({
         Aluna: aluna, Data: data, Instrutora: instrutora,
         Tipo: item.material === "Apostila" ? "Casa_Apostila" : `Casa_Metodo_${item.material}`,
-        Licao_Atual: "Definido", Licao_Casa: item.licaoCasa, Dificuldades: [], Observacao: "", Status: "Pendente"
+        Licao_Atual: "Definido", Licao_Casa: item.licaoCasa, Dificuldades: [], Observacao: item.observacao, Status: "Pendente"
       })));
       if (salvarCasas.error) throw new Error("O registro foi salvo, mas não foi possível registrar as lições de casa.");
     }
