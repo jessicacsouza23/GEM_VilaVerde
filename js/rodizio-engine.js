@@ -179,20 +179,20 @@
           const habilitadasDaArea = habilitadas[posicao] || (posicao === "Solfejo Melódico" ? habilitadas.Canto : null) || disponiveis;
           let candidatas = habilitadasDaArea.filter((professora) => disponiveis.includes(professora) && !indisponiveis.includes(professora) && !ocupadas.has(professora) && !professorasReservadas.has(professora));
           const escolhida = coletivas?.[posicao]?.[turma];
-          // A escolha da primeira aula define a equipe do individual. Nos
-          // blocos seguintes, preservamos essa equipe e só a deslocamos para
-          // uma coletiva quando não existe nenhuma outra professora apta.
-          const alternativasSemPrioritarias = indiceBloco > 0
-            ? candidatas.filter((professora) => !professorasPrioritariasNoIndividual.has(professora))
-            : candidatas;
-          if (alternativasSemPrioritarias.length) candidatas = alternativasSemPrioritarias;
           if (escolhida) {
-            // Uma seleção que coincide com a equipe prioritária pode ser
-            // substituída automaticamente por outra habilitada. A seleção
-            // continua literal quando não há alternativa — nesse caso o
-            // individual precisará usar a substituta disponível.
-            if (candidatas.includes(escolhida)) candidatas = [escolhida];
-            else if (!alternativasSemPrioritarias.length) { erros.push(`${escolhida} não está disponível para ${posicao} de ${turma} no ${hora}. Ajuste a escolha, as folgas ou as habilitações.`); return; }
+            // A professora escolhida pela Secretaria para Teoria/Solfejo
+            // nunca é trocada automaticamente. A prioridade do individual
+            // vale para a distribuição das professoras livres, não para
+            // desfazer uma escolha explícita da aula coletiva.
+            if (!candidatas.includes(escolhida)) { erros.push(`${escolhida} não está disponível para ${posicao} de ${turma} no ${hora}. Ajuste a escolha, as folgas ou as habilitações.`); return; }
+            candidatas = [escolhida];
+          } else {
+            // Sem escolha explícita, preservamos a equipe que já começou o
+            // atendimento individual e usamos outra professora na coletiva.
+            const alternativasSemPrioritarias = indiceBloco > 0
+              ? candidatas.filter((professora) => !professorasPrioritariasNoIndividual.has(professora))
+              : candidatas;
+            if (alternativasSemPrioritarias.length) candidatas = alternativasSemPrioritarias;
           }
           if (!candidatas.length) { erros.push(`Não há professora disponível/habilitada para ${posicao} no ${hora}.`); return; }
           const professora = candidatas[indiceBloco % candidatas.length];
