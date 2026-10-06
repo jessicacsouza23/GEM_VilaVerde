@@ -665,8 +665,12 @@
     const turmaPorAluna = Object.fromEntries((alunas || []).map((aluna) => [aluna.nome, aluna.turma]));
     const fotoPorAluna = {};
     await Promise.all((alunas || []).filter((aluna) => aluna.foto_path).map(async (aluna) => {
-      const url = await urlAssinadaEmCache(banco, "fotos_alunas", aluna.foto_path);
-      if (url) fotoPorAluna[aluna.nome] = url;
+      // Uma foto antiga, removida ou sem acesso não pode impedir a professora
+      // de abrir a agenda. Nesse caso a interface mostra as iniciais da aluna.
+      try {
+        const url = await urlAssinadaEmCache(banco, "fotos_alunas", aluna.foto_path);
+        if (url) fotoPorAluna[aluna.nome] = url;
+      } catch (_) { /* foto indisponível: mantém a agenda funcional */ }
     }));
     const nomeNormalizado = normalizar(professora);
     const aulas = [];
@@ -1125,8 +1129,10 @@
     const perfis = alunas.length ? await banco.from("alunas").select("nome,foto_path").in("nome", alunas) : { data: [] };
     const fotos = {};
     await Promise.all((perfis.data || []).filter((perfil) => perfil.foto_path).map(async (perfil) => {
-      const url = await urlAssinadaEmCache(banco, "fotos_alunas", perfil.foto_path);
-      if (url) fotos[perfil.nome] = url;
+      try {
+        const url = await urlAssinadaEmCache(banco, "fotos_alunas", perfil.foto_path);
+        if (url) fotos[perfil.nome] = url;
+      } catch (_) { /* foto indisponível não bloqueia a chamada */ }
     }));
     return { alunas, chamadas: historico.data || [], fotos };
   }
