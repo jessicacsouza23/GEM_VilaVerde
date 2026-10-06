@@ -81,6 +81,7 @@ async function renderMinhasAulas(content) {
     if (!aula) return;
     let registrosSalvos = [];
     let licoesPendentes = [];
+    let historicoPratica = [];
     try { registrosSalvos = await window.GemData.registrosDaAula({ dataIso: $("#agenda-data").value, instrutora: state.name, alunas: aula.alunas }); }
     catch (erro) { console.warn("Registros anteriores não puderam ser carregados", erro); }
     const ehAulaDeSolfejo = String(aula.tipo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().includes("SOLFEJO");
@@ -88,6 +89,10 @@ async function renderMinhasAulas(content) {
     // fila visual de correções (nem MSA, nem método) nessa tela.
     try { licoesPendentes = ehAulaDeSolfejo ? [] : await window.GemData.licoesPendentesProfessora({ alunas: aula.alunas, tipoAula: aula.tipo }); }
     catch (erro) { console.warn("Lições pendentes não puderam ser carregadas", erro); }
+    if (aula.tipo === "Prática") {
+      try { historicoPratica = await window.GemData.contextoPratica({ aluna: aula.alunas[0], dataIso: $("#agenda-data").value }); }
+      catch (erro) { console.warn("Histórico anterior de Prática não pôde ser carregado", erro); }
+    }
     const tipoAnalise = `Analise_${aula.tipo}`;
     const analisesSalvas = registrosSalvos.filter((registro) => registro.Tipo === tipoAnalise);
     const porAluna = Object.fromEntries(analisesSalvas.map((registro) => [registro.Aluna, registro]));
@@ -213,7 +218,14 @@ async function renderMinhasAulas(content) {
           if (!pendente || nomeMaterial === "Apostila") return "";
           return `<section class="practice-correction" data-pratica-correcao data-licao-pendente-id="${escapeHtml(pendente.id)}" data-licao-pendente="${escapeHtml(pendente.Licao_Casa || "")}"><h4>📋 Lição de casa a conferir</h4><p>📚 ${escapeHtml(pendente.Licao_Casa || "Lição não informada")}</p><div class="result-checks"><label class="result-check selected"><input type="radio" name="resultado-pratica-${indice}" value="Passou" checked> <span>Passou</span></label><label class="result-check"><input type="radio" name="resultado-pratica-${indice}" value="Não passou"> <span>Não passou</span></label><label class="result-check"><input type="radio" name="resultado-pratica-${indice}" value="Estudar mais"> <span>Estudar mais</span></label></div><label>Observação da correção<textarea data-pratica-obs-correcao placeholder="Ex.: realizou parcialmente; retomar os exercícios 3 e 4."></textarea></label></section>`;
         };
-        cartao.innerHTML = `<div class="practice-material-title"><label>Método ou apostila<select data-pratica-material>${opcoesPratica.map((opcao) => `<option value="${escapeHtml(opcao)}" ${opcao === material ? "selected" : ""}>${escapeHtml(opcao)}</option>`).join("")}</select></label><button class="icon-action remover-material" type="button" title="Remover material">×</button></div><div data-pratica-correcao-area>${correcaoDoMetodo(material)}</div><label>Página/Lição trabalhada<input data-pratica-conteudo value="${escapeHtml(registro.conteudo || "")}" placeholder="Ex.: página 18, exercício 4"></label><p class="field-caption">Dificuldades observadas na lição de casa e no material trabalhado:</p><div class="difficulty-checks">${linhasDificuldadesPratica(registro.dificuldades || [])}</div><div class="practice-homework"><input type="hidden" data-pratica-casa-tipo value="${eApostila ? "Apostila" : "Metodo"}"><label><span data-pratica-casa-titulo>Lição de casa — ${eApostila ? "Apostila" : "Método"}</span><input data-pratica-casa value="${escapeHtml(registro.licaoCasa || "")}" placeholder="Ex.: página 20, exercícios 1 e 2"></label><p class="hint" data-pratica-casa-ajuda>${eApostila ? "A Apostila será enviada para correção da Secretaria." : "A professora avalia este método na próxima aula."}</p></div><div class="exercise-heading"><strong>🎼 Lições/exercícios e dificuldades separadas</strong><button data-adicionar-exercicio class="secondary-action" type="button">＋ Adicionar lição</button></div><p class="hint">Acrescente quantas lições ou exercícios foram trabalhados. Cada um pode ter suas próprias dificuldades.</p><div data-exercicios></div></article>`;
+        const resumoUltimaAula = (nomeMaterial) => {
+          const anterior = historicoPratica.find((item) => item.Tipo === "Analise_Prática" && String(item.Licao_Atual || "").startsWith(`${nomeMaterial}:`));
+          if (!anterior) return `<p class="practice-last-class">📋 Nenhuma aula anterior encontrada com este método.</p>`;
+          const conteudoAnterior = String(anterior.Licao_Atual || "").split(":").slice(1).join(":").trim();
+          const dificuldadesAnteriores = Array.isArray(anterior.Dificuldades) ? anterior.Dificuldades.filter((item) => item && item !== "Não apresentou dificuldades") : [];
+          return `<p class="practice-last-class">📋 <strong>Última aula (${escapeHtml(anterior.Data || "—")}):</strong> ${escapeHtml(conteudoAnterior || "conteúdo não informado")}${dificuldadesAnteriores.length ? ` — ⚠ dificuldades: ${escapeHtml(dificuldadesAnteriores.join(" · "))}` : " — ✓ sem dificuldades"}</p>`;
+        };
+        cartao.innerHTML = `<div class="practice-material-title"><label>Métodos/Apostila conferidos hoje<select data-pratica-material>${opcoesPratica.map((opcao) => `<option value="${escapeHtml(opcao)}" ${opcao === material ? "selected" : ""}>${escapeHtml(opcao)}</option>`).join("")}</select></label><button class="icon-action remover-material" type="button" title="Remover material">×</button></div><div data-pratica-resumo-area>${resumoUltimaAula(material)}</div><label>Conteúdo trabalhado hoje — página/lição<input data-pratica-conteudo value="${escapeHtml(registro.conteudo || "")}" placeholder="Ex.: página 18, exercício 4"></label><div data-pratica-correcao-area>${correcaoDoMetodo(material)}</div><p class="field-caption">Dificuldades observadas na lição de casa e no material trabalhado:</p><div class="difficulty-checks">${linhasDificuldadesPratica(registro.dificuldades || [])}</div><div class="practice-homework"><input type="hidden" data-pratica-casa-tipo value="${eApostila ? "Apostila" : "Metodo"}"><label><span data-pratica-casa-titulo>Lição de casa — ${eApostila ? "Apostila" : "Método"}</span><input data-pratica-casa value="${escapeHtml(registro.licaoCasa || "")}" placeholder="Ex.: página 20, exercícios 1 e 2"></label><p class="hint" data-pratica-casa-ajuda>${eApostila ? "A Apostila será enviada para correção da Secretaria." : "A professora avalia este método na próxima aula."}</p></div><div class="exercise-heading"><strong>🎼 Lições/exercícios e dificuldades separadas</strong><button data-adicionar-exercicio class="secondary-action" type="button">＋ Adicionar lição</button></div><p class="hint">Acrescente quantas lições ou exercícios foram trabalhados. Cada um pode ter suas próprias dificuldades.</p><div data-exercicios></div></article>`;
         areaMateriais.appendChild(cartao);
         conectarCorrecaoPratica(cartao);
         cartao.querySelector(".remover-material").addEventListener("click", () => { if (areaMateriais.children.length > 1) cartao.remove(); });
@@ -223,6 +235,7 @@ async function renderMinhasAulas(content) {
           cartao.querySelector("[data-pratica-casa-titulo]").textContent = `Lição de casa — ${apostila ? "Apostila" : "Método"}`;
           cartao.querySelector("[data-pratica-casa-ajuda]").textContent = apostila ? "A Apostila será enviada para correção da Secretaria." : "A professora avalia este método na próxima aula.";
           cartao.querySelector("[data-pratica-correcao-area]").innerHTML = correcaoDoMetodo(cartao.querySelector("[data-pratica-material]").value);
+          cartao.querySelector("[data-pratica-resumo-area]").innerHTML = resumoUltimaAula(cartao.querySelector("[data-pratica-material]").value);
           conectarCorrecaoPratica(cartao);
         };
         cartao.querySelector("[data-pratica-material]").addEventListener("change", atualizarCasaPratica);
