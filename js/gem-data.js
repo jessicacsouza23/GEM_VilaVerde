@@ -883,13 +883,15 @@
   }
 
   async function licoesPendentesProfessora({ alunas, tipoAula }) {
+    // Solfejo e Solfejo Melódico não têm etapa de correção separada: a lição
+    // apresentada entra no próprio registro pedagógico da próxima aula.
+    if (["Solfejo", "Solfejo Melódico"].includes(tipoAula)) return [];
     const banco = await obterCliente();
     const { data, error } = await banco.from("historico_geral").select("*").in("Aluna", alunas || []).order("id", { ascending: false });
     if (error) throw new Error("Não foi possível carregar as lições pendentes.");
-    const tiposPermitidos = ["Solfejo", "Solfejo Melódico"].includes(tipoAula) ? []
-      : tipoAula === "Teoria" ? ["Casa_Teoria_Prof", "Casa_Apostila_Teoria_Prof", "Casa_Apostila_Teoria"]
-          : tipoAula === "Prática" ? []
-            : null;
+    const tiposPermitidos = tipoAula === "Teoria" ? ["Casa_Teoria_Prof", "Casa_Apostila_Teoria_Prof", "Casa_Apostila_Teoria"]
+      : tipoAula === "Prática" ? []
+        : null;
     // Mantém na fila tudo o que ainda requer acompanhamento. Em métodos,
     // "Não passou" e "Estudar mais" já criam uma nova lição pendente para a
     // próxima aula; portanto, a versão anterior não deve duplicar a fila.

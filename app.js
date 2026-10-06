@@ -111,10 +111,17 @@ async function renderMinhasAulas(content) {
     const camposIndividuais = (aluna, indice) => {
       const salvo = porAluna[aluna] || {};
       const marcadas = new Set(Array.isArray(salvo.Dificuldades) ? salvo.Dificuldades : []);
-      return `<section class="student-record"><h4>${escapeHtml(aluna)}</h4><p class="field-caption">Dificuldades observadas:</p><div class="difficulty-checks">${opcoesDificuldades.map((dificuldade) => `<label><input type="checkbox" data-dificuldade-individual="${indice}" value="${escapeHtml(dificuldade)}" ${marcadas.has(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("")}</div><label>Observações pedagógicas:<textarea data-observacao-individual="${indice}" placeholder="Observações sobre ${escapeHtml(aluna)}">${escapeHtml(salvo.Observacao || "")}</textarea></label></section>`;
+      const referenciaLicao = ["Solfejo", "Solfejo Melódico"].includes(aula.tipo);
+      return `<section class="student-record"><h4>${escapeHtml(aluna)}</h4><p class="field-caption">${referenciaLicao ? "Dificuldades observadas na lição de casa apresentada:" : "Dificuldades observadas:"}</p><div class="difficulty-checks">${opcoesDificuldades.map((dificuldade) => `<label><input type="checkbox" data-dificuldade-individual="${indice}" value="${escapeHtml(dificuldade)}" ${marcadas.has(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("")}</div><label>${referenciaLicao ? "Observações sobre a lição apresentada e a aula:" : "Observações pedagógicas:"}<textarea data-observacao-individual="${indice}" placeholder="Observações sobre ${escapeHtml(aluna)}">${escapeHtml(salvo.Observacao || "")}</textarea></label></section>`;
     };
+    const tituloDificuldadesTurma = ["Solfejo", "Solfejo Melódico"].includes(aula.tipo)
+      ? "Dificuldades observadas na lição de casa apresentada pela turma:"
+      : "Dificuldades compartilhadas para a turma:";
+    const tituloObservacaoTurma = ["Solfejo", "Solfejo Melódico"].includes(aula.tipo)
+      ? "Observações sobre a lição apresentada e a aula:"
+      : "Observações pedagógicas:";
     const secaoDificuldades = aulaPorTurma
-      ? `<div id="registro-compartilhado" class="student-records shared-record"><p class="field-caption">Dificuldades compartilhadas para a turma:</p>${dificuldades}<label>Observações pedagógicas:<textarea id="registro-observacao-compartilhada" placeholder="Observação sobre a aula da turma">${escapeHtml(primeiroRegistro.Observacao || "")}</textarea></label></div><div id="registro-por-aluna" class="student-records hidden"></div>`
+      ? `<div id="registro-compartilhado" class="student-records shared-record"><p class="field-caption">${tituloDificuldadesTurma}</p>${dificuldades}<label>${tituloObservacaoTurma}<textarea id="registro-observacao-compartilhada" placeholder="Observação sobre a aula da turma">${escapeHtml(primeiroRegistro.Observacao || "")}</textarea></label></div><div id="registro-por-aluna" class="student-records hidden"></div>`
       : `<div class="student-records"><section class="student-record"><h4>${escapeHtml(aula.alunas[0])}</h4><p class="field-caption">Dificuldades observadas:</p>${dificuldades}<label>Observações pedagógicas:<textarea data-observacao-aluna="${escapeHtml(aula.alunas[0])}" placeholder="Observações sobre a aula">${escapeHtml(primeiroRegistro.Observacao || "")}</textarea></label></section></div>`;
     const opcoesLicaoGenerica = `<option value="">Não deixar lição</option>`;
     const opcoesPratica = ["Apostila", ...bibliotecaMetodos.filter((metodo) => metodo.categoria === "Prática").map((metodo) => metodo.nome)];
