@@ -219,9 +219,10 @@ async function renderMinhasAulas(content) {
       };
       const conectarCorrecaoPratica = (cartao) => {
         const correcao = cartao.querySelector("[data-pratica-correcao]");
-        if (!correcao) return;
-        correcao.querySelectorAll('input[type="radio"]').forEach((campo) => campo.addEventListener("change", () => {
-          correcao.querySelectorAll(".result-check").forEach((opcao) => opcao.classList.toggle("selected", opcao.querySelector("input").checked));
+        const resultado = cartao.querySelector("[data-pratica-resultado]");
+        if (!correcao || !resultado) return;
+        resultado.querySelectorAll('input[type="radio"]').forEach((campo) => campo.addEventListener("change", () => {
+          resultado.querySelectorAll(".result-check").forEach((opcao) => opcao.classList.toggle("selected", opcao.querySelector("input").checked));
           const metodo = cartao.querySelector("[data-pratica-material]").value;
           const casa = [...$("#licoes-casa-pratica").querySelectorAll("[data-casa-metodo]")].find((campo) => campo.dataset.casaMetodo === metodo);
           if (campo.checked && ["Não passou", "Estudar mais"].includes(campo.value) && casa && !casa.value.trim()) casa.value = correcao.dataset.licaoPendente || "";
@@ -237,7 +238,12 @@ async function renderMinhasAulas(content) {
         const correcaoDoMetodo = (nomeMaterial) => {
           const pendente = licoesPendentes.find((licao) => String(licao.Tipo || "") === `Casa_Metodo_${nomeMaterial}`);
           if (!pendente || nomeMaterial === "Apostila") return "";
-          return `<section class="practice-correction" data-pratica-correcao data-licao-pendente-id="${escapeHtml(pendente.id)}" data-licao-pendente="${escapeHtml(pendente.Licao_Casa || "")}"><h4>📋 Lição de casa a conferir</h4><p>📚 ${escapeHtml(pendente.Licao_Casa || "Lição não informada")}</p><div class="result-checks"><label class="result-check selected"><input type="radio" name="resultado-pratica-${indice}" value="Passou" checked> <span>Passou</span></label><label class="result-check"><input type="radio" name="resultado-pratica-${indice}" value="Não passou"> <span>Não passou</span></label><label class="result-check"><input type="radio" name="resultado-pratica-${indice}" value="Estudar mais"> <span>Estudar mais</span></label></div><label>Observação da correção<textarea data-pratica-obs-correcao placeholder="Ex.: realizou parcialmente; retomar os exercícios 3 e 4."></textarea></label></section>`;
+          return `<section class="practice-correction" data-pratica-correcao data-licao-pendente-id="${escapeHtml(pendente.id)}" data-licao-pendente="${escapeHtml(pendente.Licao_Casa || "")}"><h4>📋 Lição de casa a conferir</h4><p>📚 ${escapeHtml(pendente.Licao_Casa || "Lição não informada")}</p></section>`;
+        };
+        const resultadoDaCorrecao = (nomeMaterial) => {
+          const pendente = licoesPendentes.find((licao) => String(licao.Tipo || "") === `Casa_Metodo_${nomeMaterial}`);
+          if (!pendente || nomeMaterial === "Apostila") return "";
+          return `<div class="practice-result" data-pratica-resultado><strong>Resultado da correção</strong><div class="result-checks"><label class="result-check selected"><input type="radio" name="resultado-pratica-${indice}" value="Passou" checked> <span>Passou</span></label><label class="result-check"><input type="radio" name="resultado-pratica-${indice}" value="Não passou"> <span>Não passou</span></label><label class="result-check"><input type="radio" name="resultado-pratica-${indice}" value="Estudar mais"> <span>Estudar mais</span></label></div></div>`;
         };
         const resumoUltimaAula = (nomeMaterial) => {
           const anterior = historicoPratica.find((item) => item.Tipo === "Analise_Prática" && String(item.Licao_Atual || "").startsWith(`${nomeMaterial}:`));
@@ -246,12 +252,14 @@ async function renderMinhasAulas(content) {
           const dificuldadesAnteriores = Array.isArray(anterior.Dificuldades) ? anterior.Dificuldades.filter((item) => item && item !== "Não apresentou dificuldades") : [];
           return `<p class="practice-last-class">📋 <strong>Última aula (${escapeHtml(anterior.Data || "—")}):</strong> ${escapeHtml(conteudoAnterior || "conteúdo não informado")}${dificuldadesAnteriores.length ? ` — ⚠ dificuldades: ${escapeHtml(dificuldadesAnteriores.join(" · "))}` : " — ✓ sem dificuldades"}</p>`;
         };
-        cartao.innerHTML = `<div class="practice-material-title"><label>Método/Apostila da lição registrada<select data-pratica-material>${opcoesPratica.map((opcao) => `<option value="${escapeHtml(opcao)}" ${opcao === material ? "selected" : ""}>${escapeHtml(opcao)}</option>`).join("")}</select></label><button class="icon-action remover-material" type="button" title="Remover esta lição">×</button></div><div data-pratica-resumo-area>${resumoUltimaAula(material)}</div><label>Conteúdo trabalhado hoje — página/lição<input data-pratica-conteudo value="${escapeHtml(registro.conteudo || "")}" placeholder="Ex.: página 18, exercício 4"></label><div data-pratica-correcao-area>${correcaoDoMetodo(material)}</div><p class="field-caption">Dificuldades observadas na lição de casa e no material trabalhado:</p><div class="difficulty-checks">${linhasDificuldadesPratica(registro.dificuldades || [])}</div>`;
+        cartao.innerHTML = `<div class="practice-material-title"><label>Método/Apostila da lição registrada<select data-pratica-material>${opcoesPratica.map((opcao) => `<option value="${escapeHtml(opcao)}" ${opcao === material ? "selected" : ""}>${escapeHtml(opcao)}</option>`).join("")}</select></label><button class="icon-action remover-material" type="button" title="Remover esta lição">×</button></div><div data-pratica-resumo-area>${resumoUltimaAula(material)}</div><label>Conteúdo trabalhado hoje — página/lição<input data-pratica-conteudo value="${escapeHtml(registro.conteudo || "")}" placeholder="Ex.: página 18, exercício 4"></label><div data-pratica-correcao-area>${correcaoDoMetodo(material)}</div><p class="field-caption">Dificuldades observadas na lição de casa e no material trabalhado:</p><div class="difficulty-checks">${linhasDificuldadesPratica(registro.dificuldades || [])}</div><div data-pratica-resultado-area>${resultadoDaCorrecao(material)}</div><button data-adicionar-outra-licao class="secondary-action" type="button">＋ Adicionar outra lição</button>`;
         areaMateriais.appendChild(cartao);
         conectarCorrecaoPratica(cartao);
         cartao.querySelector(".remover-material").addEventListener("click", () => { if (areaMateriais.children.length > 1) { cartao.remove(); atualizarLicoesCasa(); } });
+        cartao.querySelector("[data-adicionar-outra-licao]").addEventListener("click", () => adicionarMaterial({ material: cartao.querySelector("[data-pratica-material]").value }));
         const atualizarMaterialPratica = () => {
           cartao.querySelector("[data-pratica-correcao-area]").innerHTML = correcaoDoMetodo(cartao.querySelector("[data-pratica-material]").value);
+          cartao.querySelector("[data-pratica-resultado-area]").innerHTML = resultadoDaCorrecao(cartao.querySelector("[data-pratica-material]").value);
           cartao.querySelector("[data-pratica-resumo-area]").innerHTML = resumoUltimaAula(cartao.querySelector("[data-pratica-material]").value);
           conectarCorrecaoPratica(cartao);
           atualizarLicoesCasa();
@@ -314,6 +322,7 @@ async function renderMinhasAulas(content) {
           const licoesExtras = [...areaRegistro.querySelectorAll("[data-casa-extra]")].map((campo) => ({ material: campo.dataset.casaExtra, licaoCasa: campo.value.trim() }));
           const materiais = [...areaRegistro.querySelectorAll(".practice-material-card")].map((cartao) => {
             const correcao = cartao.querySelector("[data-pratica-correcao]");
+            const resultado = cartao.querySelector("[data-pratica-resultado]");
             return {
               material: cartao.querySelector("[data-pratica-material]").value,
               conteudo: cartao.querySelector("[data-pratica-conteudo]").value.trim(),
@@ -322,8 +331,8 @@ async function renderMinhasAulas(content) {
               casaTipo: cartao.querySelector("[data-pratica-material]").value === "Apostila" ? "Apostila" : "Metodo",
               licaoCasa: cartao.querySelector("[data-pratica-material]").value === "Apostila" ? casaApostila : (casasPorMetodo[cartao.querySelector("[data-pratica-material]").value] || ""),
               licaoPendenteId: correcao?.dataset.licaoPendenteId || "",
-              resultadoLicao: correcao?.querySelector('input[type="radio"]:checked')?.value || "",
-              observacaoCorrecao: correcao?.querySelector("[data-pratica-obs-correcao]")?.value.trim() || ""
+              resultadoLicao: resultado?.querySelector('input[type="radio"]:checked')?.value || "",
+              observacaoCorrecao: ""
             };
           });
           const licoesRepetidas = materiais.map((item) => `${item.material}|${item.conteudo}`).filter((chave, indice, lista) => lista.indexOf(chave) !== indice);
