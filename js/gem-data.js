@@ -678,7 +678,15 @@
         const conteudo = String(linha[horario] || "");
         if (!conteudo || !normalizar(conteudo).includes(nomeNormalizado)) continue;
         const detalhe = detalhes[horario] || {};
-        const componentes = detalhe.individual && Array.isArray(detalhe.componentes) ? detalhe.componentes : [tipoDaAula(conteudo, detalhe)];
+        const tipoDaEscala = tipoDaAula(conteudo, detalhe);
+        // Escalas antigas trazem apenas "Prática + Solfejo" no detalhe. Para
+        // a agenda da professora isso são duas aulas diferentes: assim a tela
+        // de Solfejo nunca recebe as correções de Método/Prática.
+        const componentes = detalhe.individual && Array.isArray(detalhe.componentes)
+          ? detalhe.componentes
+          : detalhe.individual && /PRATICA.*SOLFEJO|SOLFEJO.*PRATICA/i.test(normalizar(tipoDaEscala))
+            ? ["Solfejo", "Prática"]
+            : [tipoDaEscala];
         for (const tipo of componentes) {
           const professorasComponentes = detalhe.professoras_componentes || {};
           if (professorasComponentes[tipo] && normalizar(professorasComponentes[tipo]) !== nomeNormalizado) continue;
