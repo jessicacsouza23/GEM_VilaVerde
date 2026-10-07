@@ -56,14 +56,14 @@ begin
       raise exception 'A senha inicial deve ter pelo menos 6 caracteres.';
     end if;
     insert into public.gem_secretarias (gem_id, nome, login, senha_hash, ativo)
-    values (p_gem_id, v_nome, v_login, crypt(p_senha, gen_salt('bf')), coalesce(p_ativo, true));
+    values (p_gem_id, v_nome, v_login, extensions.crypt(p_senha, extensions.gen_salt('bf')), coalesce(p_ativo, true));
   else
     update public.gem_secretarias
     set gem_id = p_gem_id,
         nome = v_nome,
         login = v_login,
         ativo = coalesce(p_ativo, true),
-        senha_hash = case when coalesce(p_senha, '') = '' then senha_hash else crypt(p_senha, gen_salt('bf')) end,
+        senha_hash = case when coalesce(p_senha, '') = '' then senha_hash else extensions.crypt(p_senha, extensions.gen_salt('bf')) end,
         updated_at = now()
     where id = p_id;
     if not found then raise exception 'Secretaria não encontrada.'; end if;
@@ -92,7 +92,7 @@ as $$
     and g.slug = lower(trim(coalesce(p_slug, '')))
     and s.ativo = true
     and lower(s.login) = lower(trim(coalesce(p_login, '')))
-    and s.senha_hash = crypt(coalesce(p_senha, ''), s.senha_hash)
+    and s.senha_hash = extensions.crypt(coalesce(p_senha, ''), s.senha_hash)
   limit 1;
 $$;
 
