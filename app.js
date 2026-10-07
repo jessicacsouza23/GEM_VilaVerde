@@ -1186,30 +1186,42 @@ async function renderRelatorios(content) {
       const nomePdf = `Relatorio_GEM_${dados.data.replaceAll("/", "-")}.pdf`;
       const gerarPdf = async () => {
         if (!window.html2canvas || !window.jspdf?.jsPDF) { alert("A ferramenta de PDF ainda está carregando. Tente novamente em alguns segundos."); return; }
-        const alvo = $("#report-print"), blocos = [...alvo.querySelectorAll(".report-header, .student-report")];
+        const alvo = $("#report-print");
+        // Cada cartão é exportado separadamente. Assim, o fim de um registro
+        // nunca é cortado no meio ao passar para a página seguinte do PDF.
+        const temporarios = [];
+        const blocos = [alvo.querySelector(".report-header")];
+        alvo.querySelectorAll(".student-report").forEach((secao) => {
+          const titulo = secao.querySelector("h3");
+          const registros = [...secao.querySelectorAll(".report-record, .report-empty")];
+          registros.forEach((registro, indice) => {
+            const bloco = document.createElement("section");
+            bloco.className = "student-report pdf-export-block";
+            if (indice === 0 && titulo) bloco.append(titulo.cloneNode(true));
+            bloco.append(registro.cloneNode(true));
+            document.body.append(bloco);
+            temporarios.push(bloco);
+            blocos.push(bloco);
+          });
+        });
         const pdf = new window.jspdf.jsPDF({ orientation: "p", unit: "mm", format: "a4", compress: true }), larguraPagina = 190, alturaPagina = 277;
-        let primeiraPagina = true;
-        for (const bloco of blocos) {
-          // A resolução 1.35 mantém o texto legível no WhatsApp e reduz mais
-          // da metade dos pixels que precisavam ser processados na versão 2.
-          const canvas = await window.html2canvas(bloco, { scale: 1.35, backgroundColor: "#ffffff", useCORS: true, windowWidth: bloco.scrollWidth });
-          // Cada bloco mantém a mesma largura no PDF. Se o histórico da
-          // aluna for longo, recortamos o canvas em páginas em vez de
-          // diminuí-lo até ficar ilegível ou perder o fim do conteúdo.
-          const pixelsPorMm = canvas.width / larguraPagina;
-          const alturaMaximaEmPixels = Math.max(1, Math.floor(alturaPagina * pixelsPorMm));
-          for (let inicioY = 0; inicioY < canvas.height; inicioY += alturaMaximaEmPixels) {
-            const alturaTrecho = Math.min(alturaMaximaEmPixels, canvas.height - inicioY);
-            const paginaCanvas = document.createElement("canvas");
-            paginaCanvas.width = canvas.width;
-            paginaCanvas.height = alturaTrecho;
-            paginaCanvas.getContext("2d").drawImage(canvas, 0, inicioY, canvas.width, alturaTrecho, 0, 0, canvas.width, alturaTrecho);
-            if (!primeiraPagina) pdf.addPage();
-            primeiraPagina = false;
-            const alturaNoPdf = alturaTrecho / pixelsPorMm;
-            pdf.addImage(paginaCanvas.toDataURL("image/jpeg", .86), "JPEG", 10, 10, larguraPagina, alturaNoPdf);
+        let paginaIniciada = false, posicaoY = 10;
+        try {
+          for (const bloco of blocos.filter(Boolean)) {
+            const canvas = await window.html2canvas(bloco, { scale: 1.35, backgroundColor: "#ffffff", useCORS: true, windowWidth: bloco.scrollWidth });
+            const pixelsPorMm = canvas.width / larguraPagina;
+            const alturaNoPdf = canvas.height / pixelsPorMm;
+            // Registros normais sempre cabem em uma página. Para uma
+            // observação excepcionalmente extensa, reduzimos apenas aquele
+            // cartão, preservando o conteúdo completo em vez de recortá-lo.
+            const escala = alturaNoPdf > alturaPagina ? alturaPagina / alturaNoPdf : 1;
+            const larguraFinal = larguraPagina * escala, alturaFinal = alturaNoPdf * escala;
+            if (paginaIniciada && posicaoY + alturaFinal > 287) { pdf.addPage(); posicaoY = 10; }
+            paginaIniciada = true;
+            pdf.addImage(canvas.toDataURL("image/jpeg", .86), "JPEG", 10, posicaoY, larguraFinal, alturaFinal);
+            posicaoY += alturaFinal + 4;
           }
-        }
+        } finally { temporarios.forEach((bloco) => bloco.remove()); }
         return pdf;
       };
       $("#baixar-relatorio-pdf").addEventListener("click", async () => {
