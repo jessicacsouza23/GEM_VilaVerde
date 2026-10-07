@@ -35,7 +35,7 @@ function renderNavigation() {
     state.page = button.dataset.page;
     nav.querySelectorAll("button").forEach((link) => link.classList.toggle("active", link === button));
     renderPage();
-    $(".sidebar").classList.remove("open");
+    definirMenuAberto(false);
   }));
 }
 
@@ -2064,7 +2064,67 @@ $("#entrar").addEventListener("click", async () => {
   botao.textContent = "Entrar";
 });
 $("#sair").addEventListener("click", async () => { try { await window.GemData?.encerrarSessao?.(); } finally { state.coordenadora = false; state.externo = false; $("#ativar-notificacoes").classList.add("hidden"); $("#senha").value = ""; $("#app-screen").classList.add("hidden"); $("#login-screen").classList.remove("hidden"); } });
-$("#menu-button").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
+const menuMobile = window.matchMedia("(max-width:760px)");
+const fundoMenu = document.createElement("button");
+fundoMenu.className = "menu-backdrop";
+fundoMenu.type = "button";
+fundoMenu.setAttribute("aria-label", "Fechar menu");
+fundoMenu.hidden = true;
+$("#app-screen").append(fundoMenu);
+$(".sidebar").id = "menu-lateral";
+$("#menu-button").setAttribute("aria-controls", "menu-lateral");
+
+function definirMenuAberto(abrir) {
+  const aberto = Boolean(abrir && menuMobile.matches && !$("#app-screen").classList.contains("hidden"));
+  const lateral = $(".sidebar");
+  lateral.classList.toggle("open", aberto);
+  lateral.inert = menuMobile.matches && !aberto;
+  fundoMenu.hidden = !aberto;
+  document.body.classList.toggle("menu-open", aberto);
+  $("#menu-button").setAttribute("aria-expanded", String(aberto));
+  $("#menu-button").setAttribute("aria-label", aberto ? "Fechar menu" : "Abrir menu");
+  if (!aberto && lateral.contains(document.activeElement)) $("#menu-button").focus({ preventScroll: true });
+}
+$("#menu-button").addEventListener("click", () => definirMenuAberto(!$(".sidebar").classList.contains("open")));
+fundoMenu.addEventListener("click", () => definirMenuAberto(false));
+$("#sair").addEventListener("click", () => definirMenuAberto(false));
+document.addEventListener("keydown", (evento) => { if (evento.key === "Escape") definirMenuAberto(false); });
+menuMobile.addEventListener("change", () => definirMenuAberto(false));
+definirMenuAberto(false);
+
+// O gesto pode começar em qualquer altura da página. Rolagem vertical,
+// edição de campos e tabelas com rolagem lateral preservam seus gestos.
+let gestoMenu = null, ignorarCliqueMenuAte = 0;
+document.addEventListener("touchstart", (evento) => {
+  gestoMenu = null;
+  if (!menuMobile.matches || evento.touches.length !== 1 || $("#app-screen").classList.contains("hidden")) return;
+  const alvo = evento.target;
+  if (!$("#app-screen").contains(alvo) || alvo.closest("input, textarea, select, [contenteditable], [role=slider]")) return;
+  for (let elemento = alvo; elemento && elemento !== document.body; elemento = elemento.parentElement) {
+    if (elemento.scrollWidth > elemento.clientWidth + 2 && /auto|scroll/.test(getComputedStyle(elemento).overflowX)) return;
+  }
+  const toque = evento.touches[0];
+  gestoMenu = { x: toque.clientX, y: toque.clientY, id: toque.identifier, aberto: $(".sidebar").classList.contains("open") };
+}, { passive: true });
+document.addEventListener("touchmove", (evento) => {
+  if (!gestoMenu) return;
+  if (evento.touches.length !== 1) { gestoMenu = null; return; }
+  const toque = evento.touches[0];
+  const dx = toque.clientX - gestoMenu.x, dy = toque.clientY - gestoMenu.y;
+  if (Math.abs(dy) > 20 && Math.abs(dy) > Math.abs(dx)) { gestoMenu = null; return; }
+  if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2) return;
+  const abrir = dx > 0;
+  if (abrir !== gestoMenu.aberto) {
+    definirMenuAberto(abrir);
+    ignorarCliqueMenuAte = Date.now() + 500;
+  }
+  gestoMenu = null;
+}, { passive: true });
+document.addEventListener("touchend", () => { gestoMenu = null; }, { passive: true });
+document.addEventListener("touchcancel", () => { gestoMenu = null; }, { passive: true });
+document.addEventListener("click", (evento) => {
+  if (Date.now() < ignorarCliqueMenuAte) { evento.preventDefault(); evento.stopPropagation(); }
+}, true);
 $("#ativar-notificacoes").addEventListener("click", ativarNotificacoes);
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
