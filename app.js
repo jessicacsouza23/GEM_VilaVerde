@@ -1168,7 +1168,7 @@ async function renderLogistica(content) {
 
 async function renderRelatorios(content) {
   const hoje = new Date().toISOString().slice(0, 10);
-  content.innerHTML = `<section class="intro-card"><p class="eyebrow">RELATÓRIOS</p><h2>Relatório diário</h2><p>Consulte a escala, a chamada e os registros pedagógicos de qualquer sábado já salvo.</p></section><section class="panel"><div class="agenda-date"><div><label for="relatorio-data">Data</label><input id="relatorio-data" type="date" value="${hoje}"></div><button id="gerar-relatorio" class="primary-action" type="button">Gerar relatório</button></div><div id="relatorio-conteudo"></div></section>`;
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">RELATÓRIOS</p><h2>Relatório diário</h2><p>Consulte a escala, a chamada e os registros pedagógicos de qualquer sábado já salvo.</p></section><section class="panel"><div class="agenda-date"><div><label for="relatorio-data">Data</label><input id="relatorio-data" type="date" value="${hoje}"></div><button id="gerar-relatorio" class="primary-action" type="button">Gerar relatório</button></div><div id="relatorio-conteudo"></div></section><section class="panel report-export-panel"><div class="section-title"><div><h2>Exportar conteúdos para Excel</h2><p>Baixe somente os conteúdos de aula já lançados, sem fotos, senhas ou dados de chamada.</p></div></div><div class="analytics-filters"><label>Relatório<select id="excel-escopo"><option value="geral">Geral do GEM</option><option value="aluna">Por aluna</option></select></label><label id="excel-aluna-wrap" class="hidden">Aluna<select id="excel-aluna"></select></label><label>De <small>(opcional)</small><input id="excel-inicio" type="date"></label><label>Até <small>(opcional)</small><input id="excel-fim" type="date"></label><button id="baixar-relatorio-excel" class="primary-action" type="button">Baixar Excel</button></div><p id="excel-resumo" class="hint">Carregando conteúdos disponíveis…</p></section>`;
   const carregar = async () => {
     const destino = $("#relatorio-conteudo"); destino.innerHTML = `<div class="empty">Gerando relatório...</div>`;
     try {
@@ -1242,7 +1242,75 @@ async function renderRelatorios(content) {
       });
     } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
-  $("#gerar-relatorio").addEventListener("click", carregar); await carregar();
+  const prepararExportacaoExcel = async () => {
+    const resumo = $("#excel-resumo"), seletorAluna = $("#excel-aluna");
+    try {
+      const base = await window.GemData.dadosExportacaoRelatorio();
+      const normalizarData = (valor) => {
+        const texto = String(valor || "").trim();
+        if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return texto.slice(0, 10);
+        const [dia, mes, ano] = texto.split("/");
+        return ano ? `${ano}-${mes}-${dia}` : "";
+      };
+      const disciplina = (tipo) => {
+        const texto = String(tipo || "").replace(/^Analise_/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+        return texto === "CANTO" || texto === "SOLFEJO MELODICO" ? "Solfejo Melódico" : texto === "PRATICA" ? "Prática" : texto === "TEORIA" ? "Teoria" : texto === "SOLFEJO" ? "Solfejo" : "";
+      };
+      const textoDificuldades = (valor) => {
+        if (Array.isArray(valor)) return valor.filter(Boolean).join("; ");
+        const texto = String(valor || "").trim();
+        if (!texto || /^\[\]$|^null$/i.test(texto)) return "";
+        try { const lista = JSON.parse(texto); if (Array.isArray(lista)) return lista.filter(Boolean).join("; "); } catch (_) { /* histórico antigo em texto */ }
+        return texto.replace(/^\[|\]$/g, "").replace(/[\"']/g, "");
+      };
+      const conteudos = base.historico.filter((registro) => disciplina(registro.Tipo) && String(registro.Licao_Atual || "").trim());
+      seletorAluna.innerHTML = base.alunas.filter((aluna) => aluna.ativo !== false).map((aluna) => `<option value="${escapeHtml(aluna.nome)}">${escapeHtml(aluna.nome)}</option>`).join("");
+      const atualizarResumo = () => {
+        const escopo = $("#excel-escopo").value, aluna = seletorAluna.value, inicio = $("#excel-inicio").value, fim = $("#excel-fim").value;
+        $("#excel-aluna-wrap").classList.toggle("hidden", escopo !== "aluna");
+        const selecionados = conteudos.filter((registro) => {
+          const data = normalizarData(registro.Data);
+          return (!inicio || data >= inicio) && (!fim || data <= fim) && (escopo !== "aluna" || registro.Aluna === aluna);
+        });
+        resumo.textContent = `${selecionados.length} conteúdo(s) de aula selecionado(s)${escopo === "aluna" && aluna ? ` para ${aluna}` : ""}.`;
+        return selecionados;
+      };
+      const nomeSeguro = (valor) => String(valor || "GEM").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "GEM";
+      const baixarExcel = () => {
+        if (!window.XLSX) { alert("A ferramenta de Excel ainda está carregando. Verifique sua conexão e tente novamente."); return; }
+        const selecionados = atualizarResumo();
+        if (!selecionados.length) { alert("Não há conteúdos de aula no filtro escolhido."); return; }
+        const botao = $("#baixar-relatorio-excel"); botao.disabled = true; botao.textContent = "Gerando Excel…";
+        try {
+          const linhas = selecionados.sort((a, b) => normalizarData(a.Data).localeCompare(normalizarData(b.Data)) || String(a.Aluna).localeCompare(String(b.Aluna), "pt-BR")).map((registro) => {
+            const licao = String(registro.Licao_Atual || "").trim(), separador = licao.indexOf(":");
+            const material = separador > 0 ? licao.slice(0, separador).trim() : "";
+            const conteudo = separador > 0 ? licao.slice(separador + 1).trim() : licao;
+            const data = normalizarData(registro.Data), [ano, mes, dia] = data.split("-").map(Number);
+            return [data ? new Date(ano, mes - 1, dia) : "", registro.Aluna || "", disciplina(registro.Tipo), material, conteudo, registro.Instrutora || "", textoDificuldades(registro.Dificuldades), registro.Observacao || "", registro.Status || ""];
+          });
+          const cabecalhos = ["Data", "Aluna", "Disciplina", "Material", "Conteúdo trabalhado", "Professora", "Dificuldades observadas", "Observações", "Situação"];
+          const planilha = XLSX.utils.aoa_to_sheet([cabecalhos, ...linhas], { cellDates: true });
+          planilha["!cols"] = [{ wch: 13 }, { wch: 28 }, { wch: 20 }, { wch: 24 }, { wch: 48 }, { wch: 28 }, { wch: 45 }, { wch: 45 }, { wch: 24 }];
+          planilha["!autofilter"] = { ref: `A1:I${Math.max(1, linhas.length + 1)}` };
+          for (let linha = 2; linha <= linhas.length + 1; linha += 1) if (planilha[`A${linha}`]) planilha[`A${linha}`].z = "dd/mm/yyyy";
+          const arquivo = XLSX.utils.book_new();
+          const escopo = $("#excel-escopo").value, aluna = seletorAluna.value, inicio = $("#excel-inicio").value || "Início", fim = $("#excel-fim").value || "Hoje";
+          const resumoPlanilha = XLSX.utils.aoa_to_sheet([["Relatório de conteúdos"], ["GEM", state.gem || "GEM Musical"], ["Escopo", escopo === "aluna" ? `Aluna: ${aluna}` : "Geral do GEM"], ["Período", `${inicio} até ${fim}`], ["Conteúdos exportados", linhas.length], ["Gerado em", new Date()]], { cellDates: true });
+          resumoPlanilha["!cols"] = [{ wch: 24 }, { wch: 50 }];
+          XLSX.utils.book_append_sheet(arquivo, resumoPlanilha, "Resumo");
+          XLSX.utils.book_append_sheet(arquivo, planilha, "Conteúdos");
+          XLSX.writeFile(arquivo, `Conteudos_${nomeSeguro(state.gem)}_${escopo === "aluna" ? nomeSeguro(aluna) : "Geral"}.xlsx`, { compression: true, cellDates: true });
+        } catch (erro) { alert(`Não foi possível gerar o Excel: ${erro.message}`); }
+        finally { botao.disabled = false; botao.textContent = "Baixar Excel"; }
+      };
+      $("#excel-escopo").addEventListener("change", atualizarResumo);
+      [seletorAluna, $("#excel-inicio"), $("#excel-fim")].forEach((campo) => campo.addEventListener("change", atualizarResumo));
+      $("#baixar-relatorio-excel").addEventListener("click", baixarExcel);
+      atualizarResumo();
+    } catch (erro) { resumo.textContent = erro.message || "Não foi possível preparar a exportação."; resumo.className = "action-error"; }
+  };
+  $("#gerar-relatorio").addEventListener("click", carregar); await carregar(); await prepararExportacaoExcel();
 }
 
 async function renderCorrecoesLicoes(content) {

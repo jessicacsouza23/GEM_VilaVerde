@@ -614,6 +614,16 @@
     return { historico: historico.data || [], alunas: alunas.data || [], avaliacoes: avaliacoes.data || [], notas: notas.data || [], estudos: estudos.error ? [] : estudos.data || [], objetivos: objetivos.error ? [] : objetivos.data || [] };
   }
 
+  async function dadosExportacaoRelatorio() {
+    const banco = await obterCliente();
+    const [historico, alunas] = await Promise.all([
+      banco.from("historico_geral").select("id,Data,Aluna,Tipo,Instrutora,Licao_Atual,Dificuldades,Observacao,Status").order("id", { ascending: false }),
+      banco.from("alunas").select("nome,ativo").order("nome")
+    ]);
+    if (historico.error || alunas.error) throw new Error("Não foi possível carregar os conteúdos para a exportação.");
+    return { historico: historico.data || [], alunas: alunas.data || [] };
+  }
+
   async function salvarObjetivoPedagogico({ aluna, texto, professora }) {
     const banco = await obterCliente();
     if (!String(aluna || "").trim()) throw new Error("Escolha a aluna antes de salvar o objetivo.");
@@ -1258,5 +1268,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, removerModeloLogistica, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, alterarStatusGem, removerGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosExportacaoRelatorio, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, removerModeloLogistica, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, alterarStatusGem, removerGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();
