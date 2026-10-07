@@ -389,8 +389,8 @@
     const banco = await obterCliente(); const data = dataBr(dataIso);
     const [calendario, historico, estudos] = await Promise.all([
       banco.from("calendario").select("escala").eq("id", data).maybeSingle(),
-      banco.from("historico_geral").select("*").eq("Data", data).order("id", { ascending: true }),
-      banco.from("estudo_diario").select("*").eq("data", data)
+      banco.from("historico_geral").select("id,Data,Aluna,Tipo,Status,Observacao,Licao_Atual,Licao_Casa,Dificuldades,Instrutora,Secretaria").eq("Data", data).order("id", { ascending: true }),
+      banco.from("estudo_diario").select("aluna,data,horarios").eq("data", data)
     ]);
     if (calendario.error || historico.error) throw new Error("Não foi possível carregar a visão geral desta data.");
     const alunas = [...new Set((calendario.data?.escala || []).map((linha) => linha.Aluna).filter(Boolean))];
@@ -404,9 +404,9 @@
     const banco = await obterCliente();
     const plataforma = contextoGem.externo ? criarCliente(await obterConfigPrincipal(), false) : null;
     const [alunas, professoras, secretarias, secretariasCentralizadas] = await Promise.all([
-      banco.from("alunas").select("*").order("turma").order("nome"),
-      banco.from("professoras").select("*").order("nome"),
-      banco.from("secretarias").select("*").order("nome"),
+      banco.from("alunas").select("id,nome,turma,login,ativo,foto_path").order("turma").order("nome"),
+      banco.from("professoras").select("id,nome,login,ativo,foto_path").order("nome"),
+      banco.from("secretarias").select("id,nome,ativo").order("nome"),
       plataforma ? plataforma.rpc("listar_secretarias_gem_publicas", { p_slug: contextoGem.slug }) : Promise.resolve({ data: [] })
     ]);
     if (alunas.error || professoras.error) {
@@ -794,7 +794,9 @@
 
   async function salvarRegistroAula({ dataIso, instrutora, tipo, alunas, material, conteudo, dificuldades, observacao, registrosPorAluna, casaTipo, licaoCasa, observacaoCasa = "", limparCasas = [] }) {
     const banco = await obterCliente(); const data = dataBr(dataIso), disciplina = tipo === "Canto" ? "Solfejo Melódico" : tipo;
-    if (!alunas?.length || !conteudo?.trim()) throw new Error("Informe o conteúdo trabalhado.");
+    if (!alunas?.length) throw new Error("Selecione ao menos uma aluna.");
+    if (!material?.trim() && !conteudo?.trim()) throw new Error("Informe o material usado hoje.");
+    conteudo = String(conteudo || "").trim();
     for (const aluna of alunas) {
       const registroIndividual = registrosPorAluna?.[aluna] || {};
       const tipoAnalise = `Analise_${disciplina}`;
