@@ -395,8 +395,28 @@ async function renderMinhasAulas(content) {
 }
 
 async function renderConfigurarMetodos(content) {
-  content.innerHTML = `<section class="intro-card"><p class="eyebrow">BIBLIOTECA DA PROFESSORA</p><h2>Configurar métodos</h2><p>Cadastre os livros e métodos que aparecem no Registro de Aula. Eles permanecem disponíveis para todas as professoras do GEM, como no app.py.</p></section><section class="panel"><h3>Adicionar método</h3><div class="form-grid"><div><label for="metodo-nome">Nome do método</label><input id="metodo-nome" placeholder="Ex.: Kohler, Burgmüller, MSA"></div><div><label for="metodo-categoria">Área</label><select id="metodo-categoria"><option>Prática</option><option>Teoria</option><option>Solfejo</option><option>Solfejo Melódico</option></select></div><button id="adicionar-metodo" class="primary-action" type="button">Adicionar</button></div><div id="metodo-feedback"></div></section><section class="panel"><h3>Biblioteca cadastrada</h3><div id="lista-metodos" class="lesson-list"><div class="empty">Carregando métodos...</div></div></section>`;
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">BIBLIOTECA DA PROFESSORA</p><h2>Configurar métodos</h2><p>Cadastre os livros e métodos que aparecem no Registro de Aula. As áreas seguem as disciplinas do modelo de Logística ativo.</p></section><section class="panel"><h3>Adicionar método</h3><div class="form-grid"><div><label for="metodo-nome">Nome do método</label><input id="metodo-nome" placeholder="Ex.: Kohler, Burgmüller, MSA"></div><div><label for="metodo-categoria">Área</label><select id="metodo-categoria" disabled><option>Carregando disciplinas...</option></select><small id="metodo-area-ajuda" class="hint"></small></div><button id="adicionar-metodo" class="primary-action" type="button">Adicionar</button></div><div id="metodo-feedback"></div></section><section class="panel"><h3>Biblioteca cadastrada</h3><div id="lista-metodos" class="lesson-list"><div class="empty">Carregando métodos...</div></div></section>`;
   const lista = $("#lista-metodos");
+  const carregarAreas = async () => {
+    const seletor = $("#metodo-categoria"), ajuda = $("#metodo-area-ajuda");
+    try {
+      const modelos = await window.GemData.dadosLogistica();
+      const hoje = new Date().toISOString().slice(0, 10);
+      const modelo = window.GemData.modeloParaData(modelos, hoje) || modelos.find((item) => item.status !== "encerrado") || null;
+      const areas = [...new Set((modelo?.configuracao?.atividades || []).map((atividade) => String(atividade.Atividade || "").trim()).filter(Boolean))];
+      if (!areas.length) {
+        seletor.innerHTML = `<option value="">Cadastre disciplinas na Logística</option>`; seletor.disabled = true;
+        ajuda.textContent = "Crie ou edite um modelo de Logística e inclua as atividades antes de cadastrar métodos.";
+        return;
+      }
+      seletor.innerHTML = areas.map((area) => `<option value="${escapeHtml(area)}">${escapeHtml(area)}</option>`).join("");
+      seletor.disabled = false;
+      ajuda.textContent = `Áreas disponíveis no modelo “${modelo.nome}”.`;
+    } catch (_) {
+      seletor.innerHTML = `<option value="">Não foi possível carregar a Logística</option>`; seletor.disabled = true;
+      ajuda.textContent = "Confira se há um modelo salvo na Logística.";
+    }
+  };
   const carregar = async () => {
     try {
       const metodos = await window.GemData.dadosMetodos();
@@ -411,10 +431,11 @@ async function renderConfigurarMetodos(content) {
   $("#adicionar-metodo").addEventListener("click", async () => {
     const feedback = $("#metodo-feedback"), nome = $("#metodo-nome").value.trim();
     if (!nome) { feedback.innerHTML = `<div class="action-error">Informe o nome do método.</div>`; return; }
+    if ($("#metodo-categoria").disabled || !$("#metodo-categoria").value) { feedback.innerHTML = `<div class="action-error">Cadastre as disciplinas na Logística antes de adicionar um método.</div>`; return; }
     try { await window.GemData.criarMetodo(nome, $("#metodo-categoria").value); $("#metodo-nome").value = ""; feedback.innerHTML = `<div class="action-ok">Método salvo na biblioteca.</div>`; await carregar(); }
     catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
   });
-  await carregar();
+  await Promise.all([carregarAreas(), carregar()]);
 }
 
 function formularioDocumento(prefixo, pessoas) {
