@@ -7,6 +7,7 @@
   let configPrincipal = null;
   let contextoGem = { nome: "GEM Vila Verde", slug: "vila-verde", externo: false, perfilSchema: "gem-pwa-v1" };
   let r2Habilitado = null;
+  const tabelasPessoasSemId = new Set();
   // v2 invalida somente URLs antigas do R2 que eram assinadas diretamente.
   const CACHE_URL_ASSINADA = "gem-url-assinada-v2:";
 
@@ -403,10 +404,25 @@
   async function dadosPessoas() {
     const banco = await obterCliente();
     const plataforma = contextoGem.externo ? criarCliente(await obterConfigPrincipal(), false) : null;
+    const consultar = async (tabela, campos, ordem) => {
+      const buscar = (semId) => {
+        let consulta = banco.from(tabela).select(semId ? campos : `id,${campos}`);
+        ordem.forEach((campo) => { consulta = consulta.order(campo); });
+        return consulta;
+      };
+      let resultado = await buscar(tabelasPessoasSemId.has(tabela));
+      // A base original identifica pessoas pelo nome; GEMs novos têm UUID.
+      // Mantém os dois formatos e não consulta senhas para montar a lista.
+      if (["42703", "PGRST204"].includes(resultado.error?.code) && /\bid\b/i.test(resultado.error.message || "")) {
+        tabelasPessoasSemId.add(tabela);
+        resultado = await buscar(true);
+      }
+      return resultado;
+    };
     const [alunas, professoras, secretarias, secretariasCentralizadas] = await Promise.all([
-      banco.from("alunas").select("id,nome,turma,login,ativo,foto_path").order("turma").order("nome"),
-      banco.from("professoras").select("id,nome,login,ativo,foto_path").order("nome"),
-      banco.from("secretarias").select("id,nome,ativo").order("nome"),
+      consultar("alunas", "nome,turma,login,ativo,foto_path", ["turma", "nome"]),
+      consultar("professoras", "nome,login,ativo,foto_path", ["nome"]),
+      consultar("secretarias", "nome,ativo", ["nome"]),
       plataforma ? plataforma.rpc("listar_secretarias_gem_publicas", { p_slug: contextoGem.slug }) : Promise.resolve({ data: [] })
     ]);
     if (alunas.error || professoras.error) {
