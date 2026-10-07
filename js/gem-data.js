@@ -137,6 +137,16 @@
     const usuario = String(login || "").trim().toLowerCase();
     if (!usuario || !senha) throw new Error("Informe usuário e senha.");
 
+    // As Secretarias de unidades novas são administradas pela Master na base
+    // central. Depois do login, elas continuam usando exclusivamente os dados
+    // pedagógicos da base do GEM selecionado.
+    if (contextoGem.externo) {
+      const plataforma = criarCliente(await obterConfigPrincipal(), false);
+      const secretariaCentral = await plataforma.rpc("validar_acesso_secretaria_gem", { p_slug: contextoGem.slug, p_login: usuario, p_senha: senha });
+      const contaCentral = secretariaCentral.data?.[0];
+      if (contaCentral?.perfil === "secretaria") return { role: "Secretaria", name: contaCentral.nome || "Coordenação", gem: contextoGem.nome, externo: true };
+    }
+
     // Contas novas (incluindo Master) usam Supabase Auth. A senha não passa
     // pelas tabelas pedagógicas e a sessão retornada é a sessão oficial. A
     // primeira administradora pode entrar por "master" ou pelo e-mail que
@@ -256,6 +266,26 @@
     return { gems: gems.data || [], usuarios: usuarios.data || [], acessos: acessos.data || [] };
   }
 
+  async function dadosSecretariasGems() {
+    const banco = await obterCliente();
+    const [gems, secretarias] = await Promise.all([
+      banco.from("gems").select("id,nome,slug,ativo").order("nome"),
+      banco.from("gem_secretarias").select("id,gem_id,nome,login,ativo,created_at").order("nome")
+    ]);
+    const falha = [gems, secretarias].find((resultado) => resultado.error)?.error;
+    if (falha) throw new Error("Não foi possível carregar as Secretarias dos GEMs. Execute a migration 011 na base principal.");
+    return { gems: gems.data || [], secretarias: secretarias.data || [] };
+  }
+
+  async function salvarSecretariaGem({ id = null, gemId, nome, login, senha = "", ativo = true }) {
+    if (!gemId || !String(nome || "").trim() || !String(login || "").trim()) throw new Error("Escolha o GEM e informe nome e usuário da Secretaria.");
+    if (!id && String(senha || "").length < 6) throw new Error("Informe uma senha inicial com pelo menos 6 caracteres.");
+    if (id && senha && String(senha).length < 6) throw new Error("A nova senha deve ter pelo menos 6 caracteres.");
+    const banco = await obterCliente();
+    const { error } = await banco.rpc("salvar_secretaria_gem", { p_id: id, p_gem_id: gemId, p_nome: String(nome).trim(), p_login: String(login).trim().toLowerCase(), p_senha: String(senha || ""), p_ativo: Boolean(ativo) });
+    if (error) throw new Error(error.message || "Não foi possível salvar a Secretaria.");
+  }
+
   function normalizar(texto) {
     return String(texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
   }
@@ -358,16 +388,20 @@
 
   async function dadosPessoas() {
     const banco = await obterCliente();
-    const [alunas, professoras, secretarias] = await Promise.all([
+    const plataforma = contextoGem.externo ? criarCliente(await obterConfigPrincipal(), false) : null;
+    const [alunas, professoras, secretarias, secretariasCentralizadas] = await Promise.all([
       banco.from("alunas").select("*").order("turma").order("nome"),
       banco.from("professoras").select("*").order("nome"),
-      banco.from("secretarias").select("*").order("nome")
+      banco.from("secretarias").select("*").order("nome"),
+      plataforma ? plataforma.rpc("listar_secretarias_gem_publicas", { p_slug: contextoGem.slug }) : Promise.resolve({ data: [] })
     ]);
     if (alunas.error || professoras.error) {
       const erro = alunas.error || professoras.error;
       throw new Error(`Não foi possível carregar turmas e pessoas: ${erro.message || "verifique as permissões do Supabase."}`);
     }
-    return { alunas: alunas.data || [], professoras: professoras.data || [], secretarias: secretarias.data || [] };
+    const nomesLocais = new Set((secretarias.data || []).map((item) => normalizar(item.nome)));
+    const centralizadas = (secretariasCentralizadas.data || []).filter((item) => !nomesLocais.has(normalizar(item.nome))).map((item) => ({ id: `central-${item.login}`, nome: item.nome, login: item.login, ativo: true, origem_master: true }));
+    return { alunas: alunas.data || [], professoras: professoras.data || [], secretarias: [...(secretarias.data || []), ...centralizadas] };
   }
 
   async function fotosPessoas() {
@@ -1203,5 +1237,5 @@
     if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
   }
 
-  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, gemAtivo, dadosPlataformaMaster, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
 })();

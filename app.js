@@ -1,5 +1,5 @@
 const navByRole = {
-  Master: ["GEMs", "Usuários mestres", "Visão da plataforma"],
+  Master: ["GEMs", "Secretarias dos GEMs", "Usuários mestres", "Visão da plataforma"],
   Secretaria: ["Visão geral", "Planejamento e rodízio", "Folgas", "Turmas e pessoas", "Chamada", "Correção de lições", "Relatórios", "Analítico", "Documentos", "Provas", "Mensagens", "Logística", "Ajustes"],
   Professora: ["Minhas aulas", "Configurar Métodos", "Envio de documentos", "Provas", "Analítico IA", "Mensagens"],
   Aluna: ["Minhas lições", "Boletim", "Documentos", "Mensagens"]
@@ -1509,6 +1509,48 @@ async function renderMasterUsuarios(content) {
   } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
 }
 
+async function renderMasterSecretarias(content) {
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ADMINISTRAÇÃO DA PLATAFORMA</p><h2>Secretarias dos GEMs</h2><p>Cadastre e edite os acessos das Secretarias. Cada conta entra somente pelo link do GEM escolhido e recebe todas as telas administrativas daquela unidade.</p></section><section class="panel"><h3>Cadastrar usuária Secretaria</h3><div class="master-gem-form"><label>GEM<select id="secretaria-gem"></select></label><label>Nome completo<input id="secretaria-nome" placeholder="Ex.: Maria da Silva"></label><label>Usuário ou e-mail<input id="secretaria-login" autocomplete="username" placeholder="Ex.: maria ou maria@email.com"></label><label>Senha inicial<input id="secretaria-senha" type="password" autocomplete="new-password" placeholder="Mínimo de 6 caracteres"></label><button id="cadastrar-secretaria-gem" class="primary-action" type="button">Cadastrar Secretaria</button></div><p id="secretaria-gem-feedback" class="hidden" role="status"></p></section><section class="panel"><div class="section-title"><div><h3>Usuárias cadastradas</h3><p>Use Editar para alterar nome, usuário, senha ou bloquear o acesso sem apagar o histórico.</p></div><label>Filtrar por GEM<select id="filtro-secretaria-gem"><option value="">Todos os GEMs</option></select></label></div><div id="lista-secretarias-gems"><div class="empty">Carregando Secretarias...</div></div></section>`;
+  const destino = $("#lista-secretarias-gems");
+  let base = { gems: [], secretarias: [] };
+  const nomeGem = (gemId) => base.gems.find((gem) => gem.id === gemId)?.nome || "GEM removido";
+  const preencherSeletores = () => {
+    const opcoes = base.gems.filter((gem) => gem.ativo).map((gem) => `<option value="${escapeHtml(gem.id)}">${escapeHtml(gem.nome)}</option>`).join("");
+    $("#secretaria-gem").innerHTML = `<option value="">Escolha o GEM</option>${opcoes}`;
+    $("#filtro-secretaria-gem").innerHTML = `<option value="">Todos os GEMs</option>${opcoes}`;
+  };
+  const mostrar = () => {
+    const filtro = $("#filtro-secretaria-gem").value;
+    const lista = base.secretarias.filter((item) => !filtro || item.gem_id === filtro).sort((a, b) => nomeGem(a.gem_id).localeCompare(nomeGem(b.gem_id), "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR"));
+    destino.innerHTML = lista.length ? lista.map((item) => `<article class="person-row person-card"><div class="person-identity"><span class="person-photo initials">${escapeHtml(item.nome.slice(0, 1))}</span><div><strong>${escapeHtml(item.nome)}</strong><span>${escapeHtml(nomeGem(item.gem_id))} · Login: ${escapeHtml(item.login)}</span></div></div><span class="badge ${item.ativo ? "" : "inactive"}">${item.ativo ? "Ativa" : "Bloqueada"}</span><div class="person-actions"><button class="secondary-action" type="button" data-editar-secretaria="${escapeHtml(item.id)}">Editar</button></div><div class="person-editor hidden" data-editor-secretaria="${escapeHtml(item.id)}"><label>GEM<select data-secretaria-campo="gem_id">${base.gems.filter((gem) => gem.ativo || gem.id === item.gem_id).map((gem) => `<option value="${escapeHtml(gem.id)}" ${gem.id === item.gem_id ? "selected" : ""}>${escapeHtml(gem.nome)}</option>`).join("")}</select></label><label>Nome<input data-secretaria-campo="nome" value="${escapeHtml(item.nome)}"></label><label>Usuário ou e-mail<input data-secretaria-campo="login" value="${escapeHtml(item.login)}"></label><label>Nova senha <small>(deixe vazia para manter a atual)</small><input data-secretaria-campo="senha" type="password" autocomplete="new-password" placeholder="Nova senha"></label><label class="checkbox-row"><input data-secretaria-campo="ativo" type="checkbox" ${item.ativo ? "checked" : ""}> Acesso ativo</label><button class="primary-action" type="button" data-salvar-secretaria="${escapeHtml(item.id)}">Salvar alterações</button></div></article>`).join("") : `<div class="empty">Nenhuma Secretaria cadastrada para este filtro.</div>`;
+    destino.querySelectorAll("[data-editar-secretaria]").forEach((botao) => botao.addEventListener("click", () => destino.querySelector(`[data-editor-secretaria="${botao.dataset.editarSecretaria}"]`)?.classList.toggle("hidden")));
+    destino.querySelectorAll("[data-salvar-secretaria]").forEach((botao) => botao.addEventListener("click", async () => {
+      const item = base.secretarias.find((secretaria) => secretaria.id === botao.dataset.salvarSecretaria);
+      const editor = destino.querySelector(`[data-editor-secretaria="${botao.dataset.salvarSecretaria}"]`);
+      const dados = { id: item?.id, gemId: editor.querySelector('[data-secretaria-campo="gem_id"]').value, nome: editor.querySelector('[data-secretaria-campo="nome"]').value.trim(), login: editor.querySelector('[data-secretaria-campo="login"]').value.trim(), senha: editor.querySelector('[data-secretaria-campo="senha"]').value, ativo: editor.querySelector('[data-secretaria-campo="ativo"]').checked };
+      botao.disabled = true;
+      try { await window.GemData.salvarSecretariaGem(dados); base = await window.GemData.dadosSecretariasGems(); mostrar(); }
+      catch (erro) { editor.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(erro.message)}</div>`); botao.disabled = false; }
+    }));
+  };
+  try {
+    base = await window.GemData.dadosSecretariasGems();
+    preencherSeletores(); mostrar();
+    $("#filtro-secretaria-gem").addEventListener("change", mostrar);
+    $("#cadastrar-secretaria-gem").addEventListener("click", async () => {
+      const botao = $("#cadastrar-secretaria-gem"), feedback = $("#secretaria-gem-feedback");
+      botao.disabled = true; feedback.className = "hidden";
+      try {
+        await window.GemData.salvarSecretariaGem({ gemId: $("#secretaria-gem").value, nome: $("#secretaria-nome").value.trim(), login: $("#secretaria-login").value.trim(), senha: $("#secretaria-senha").value, ativo: true });
+        feedback.textContent = "Secretaria cadastrada. Ela já pode entrar pelo link do GEM selecionado."; feedback.className = "action-ok";
+        $("#secretaria-nome").value = ""; $("#secretaria-login").value = ""; $("#secretaria-senha").value = "";
+        base = await window.GemData.dadosSecretariasGems(); preencherSeletores(); mostrar();
+      } catch (erro) { feedback.textContent = erro.message; feedback.className = "action-error"; }
+      botao.disabled = false;
+    });
+  } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+}
+
 async function renderMasterVisao(content) {
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">PLATAFORMA GEM</p><h2>Visão da plataforma</h2><p>Resumo das unidades e dos acessos já configurados. Os dados pedagógicos de cada GEM permanecem separados.</p></section><div id="master-visao"><div class="empty">Carregando plataforma...</div></div>`;
   const destino = $("#master-visao");
@@ -1724,6 +1766,10 @@ async function renderPage() {
   }
   if (state.role === "Master" && state.page === "Usuários mestres") {
     await renderMasterUsuarios(content);
+    return;
+  }
+  if (state.role === "Master" && state.page === "Secretarias dos GEMs") {
+    await renderMasterSecretarias(content);
     return;
   }
   if (state.role === "Master" && state.page === "Visão da plataforma") {

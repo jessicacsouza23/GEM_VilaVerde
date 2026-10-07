@@ -69,6 +69,21 @@ async function validarMaster(email, senha) {
   return conta?.papel === "master" && conta.ativo && conta.status_convite === "ativo" ? conta : null;
 }
 
+// As contas de Secretaria das unidades criadas pela Master ficam na base
+// central da plataforma. Isso evita que a Master precise guardar service keys
+// das bases isoladas de cada GEM apenas para criar ou editar um login.
+async function validarSecretariaDaPlataforma(slug, login, senha) {
+  try {
+    const conta = await supabaseRpc("validar_acesso_secretaria_gem", { p_slug: slug, p_login: login, p_senha: senha });
+    const secretaria = conta?.[0];
+    return secretaria?.perfil === "secretaria" ? secretaria : null;
+  } catch (_) {
+    // Enquanto a migration 011 ainda não foi instalada, professoras e alunas
+    // dos GEMs existentes continuam usando a validação local normalmente.
+    return null;
+  }
+}
+
 module.exports = async function r2Session(request, response) {
   if (request.method === "DELETE") { limparCookie(response); return response.status(204).end(); }
   // O cookie é HttpOnly: o navegador o envia, mas nenhum script consegue lê-lo.
@@ -88,6 +103,11 @@ module.exports = async function r2Session(request, response) {
     if (!login || !senha) return response.status(400).json({ error: "Dados de acesso ausentes." });
     const slug = slugValido(request.body?.gem) || "vila-verde";
     if (slug !== "vila-verde") {
+      const secretaria = await validarSecretariaDaPlataforma(slug, login, senha);
+      if (secretaria) {
+        definirCookie(response, criarSessao({ nome: secretaria.nome || "Coordenação", perfil: "Secretaria", gem: slug, externo: true }));
+        return response.status(200).json({ enabled: configurado(), session: true, gem: slug, externo: true });
+      }
       const contaExterna = await validarNoGemExterno(slug, login, senha);
       if (!contaExterna) return response.status(401).json({ error: "Credenciais inválidas." });
       definirCookie(response, criarSessao({ nome: contaExterna.nome, perfil: contaExterna.perfil, gem: slug, externo: true }));
