@@ -1,7 +1,7 @@
 const navByRole = {
   Master: ["GEMs", "Secretarias dos GEMs", "Usuários mestres", "Visão da plataforma"],
   Secretaria: ["Visão geral", "Planejamento e rodízio", "Folgas", "Turmas e pessoas", "Chamada", "Correção de lições", "Relatórios", "Analítico", "Documentos", "Provas", "Mensagens", "Logística", "Ajustes"],
-  Professora: ["Minhas aulas", "Configurar Métodos", "Envio de documentos", "Provas", "Analítico IA", "Mensagens"],
+  Professora: ["Visão geral", "Minhas aulas", "Configurar Métodos", "Envio de documentos", "Provas", "Analítico IA", "Mensagens"],
   Aluna: ["Minhas lições", "Boletim", "Documentos", "Mensagens"]
 };
 
@@ -870,6 +870,72 @@ async function renderRodizio(content) {
   await carregar();
 }
 
+async function renderVisaoGeralProfessora(content) {
+  const agora = new Date();
+  const hoje = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">VISÃO GERAL DA PROFESSORA</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Acompanhe os destaques e os estudos das alunas do ${escapeHtml(state.gem)}.</p><button id="resumo-minhas-aulas" class="primary-action" type="button">Ver minhas aulas</button></section><section class="panel"><div class="agenda-date"><div><label for="professora-resumo-data">Data de referência</label><input id="professora-resumo-data" type="date" value="${hoje}"></div><button id="professora-resumo-atualizar" class="secondary-action" type="button">Atualizar resumo</button></div><div id="professora-resumo" aria-live="polite"></div></section>`;
+  const data = content.querySelector("#professora-resumo-data");
+  const destino = content.querySelector("#professora-resumo");
+  let pedido = 0;
+  const carregar = async () => {
+    const atual = ++pedido, referencia = data.value;
+    if (!referencia) { destino.innerHTML = `<div class="empty">Selecione uma data para ver os destaques.</div>`; return; }
+    destino.innerHTML = `<div class="empty">Carregando destaques...</div>`;
+    try {
+      const dados = await window.GemData.dadosResumoProfessora(referencia);
+      if (atual !== pedido || !destino.isConnected) return;
+      const ativas = dados.alunas.filter((aluna) => aluna.ativo !== false);
+      const nomes = new Set(ativas.map((aluna) => aluna.nome));
+      const chamadas = dados.historico.filter((item) => nomes.has(item.Aluna) && item.Tipo === "Chamada" && ["Presente", "Ausente", "Justificada"].includes(item.Status));
+      const frequencia = chamadas.length ? `${Math.round(chamadas.filter((item) => item.Status === "Presente").length / chamadas.length * 100)}%` : "—";
+      destino.innerHTML = `<div class="grid"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas no GEM</span></div><div class="metric"><strong>${frequencia}</strong><span>Frequência nos últimos 30 dias</span></div></div>${destaquesGemMarkup(ativas, dados, referencia)}`;
+    } catch (erro) {
+      if (atual === pedido && destino.isConnected) destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`;
+    }
+  };
+  content.querySelector("#resumo-minhas-aulas").addEventListener("click", async () => {
+    state.page = "Minhas aulas"; renderNavigation(); await renderPage();
+  });
+  data.addEventListener("change", carregar);
+  content.querySelector("#professora-resumo-atualizar").addEventListener("click", carregar);
+  await carregar();
+}
+
+function destaquesGemMarkup(ativas, analitico, dataReferencia) {
+  const historicoGeral = analitico.historico || [];
+  const dataEmMs = (valor) => { const texto = String(valor || ""); if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return new Date(`${texto.slice(0, 10)}T12:00:00`).getTime(); const [dia, mes, ano] = texto.split("/"); return ano ? new Date(`${ano}-${mes}-${dia}T12:00:00`).getTime() : 0; };
+  const referenciaMs = new Date(`${dataReferencia}T12:00:00`).getTime();
+  const destaque = (dias) => {
+    const inicio = referenciaMs - ((dias - 1) * 86400000), pontos = new Map(ativas.map((aluna) => [aluna.nome, 0]));
+    historicoGeral.forEach((item) => {
+      if (dataEmMs(item.Data) < inicio || dataEmMs(item.Data) > referenciaMs || !pontos.has(item.Aluna)) return;
+      if (item.Tipo === "Chamada") pontos.set(item.Aluna, pontos.get(item.Aluna) + (item.Status === "Presente" ? 3 : -2));
+      if (String(item.Tipo || "").startsWith("Analise_")) { const dificuldades = Array.isArray(item.Dificuldades) ? item.Dificuldades.filter((dificuldade) => dificuldade && !/não apresentou dificuldade/i.test(dificuldade)) : []; pontos.set(item.Aluna, pontos.get(item.Aluna) + (dificuldades.length ? 1 : 2)); }
+    });
+    (analitico.estudos || []).forEach((estudo) => { const dataEstudo = dataEmMs(estudo.data); if (dataEstudo >= inicio && dataEstudo <= referenciaMs && pontos.has(estudo.aluna) && (estudo.horarios || []).length) pontos.set(estudo.aluna, pontos.get(estudo.aluna) + 2); });
+    const ordenado = [...pontos.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
+    return ordenado[0]?.[1] > 0 ? ordenado[0] : null;
+  };
+  const destaqueSemana = destaque(7), destaqueMes = destaque(30);
+  const cardDestaque = (titulo, item) => `<article class="gem-highlight"><span>${titulo}</span><strong>${item ? escapeHtml(item[0]) : "Ainda sem dados"}</strong><small>${item ? `${item[1]} pontos por presença, estudo e registros` : "Aparecerá quando houver registros no período."}</small></article>`;
+  // O ranking de estudo conta dias distintos com pelo menos um horário
+  // marcado. Assim uma aluna não sobe artificialmente no quadro por
+  // selecionar manhã, tarde e noite no mesmo dia.
+  const inicioEstudo = referenciaMs - (29 * 86400000);
+  const estudoPorAluna = new Map(ativas.map((aluna) => [aluna.nome, 0]));
+  (analitico.estudos || []).forEach((estudo) => {
+    const quando = dataEmMs(estudo.data);
+    if (quando >= inicioEstudo && quando <= referenciaMs && estudoPorAluna.has(estudo.aluna) && (estudo.horarios || []).length) {
+      estudoPorAluna.set(estudo.aluna, estudoPorAluna.get(estudo.aluna) + 1);
+    }
+  });
+  const rankingEstudo = [...estudoPorAluna.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
+  const maiorEstudo = rankingEstudo[0] || null;
+  const menorEstudo = rankingEstudo.length ? rankingEstudo[rankingEstudo.length - 1] : null;
+  const cardEstudo = (titulo, item, vazio) => `<article class="gem-highlight"><span>${titulo}</span><strong>${item ? escapeHtml(item[0]) : "Ainda sem dados"}</strong><small>${item ? `${item[1]} dia(s) de estudo nos últimos 30 dias` : vazio}</small></article>`;
+  return `<section class="gem-highlights"><div><h3>🌟 Destaques de desempenho</h3><p>Calculados pelo quadro de desempenho: presença, estudo diário e registros pedagógicos.</p></div><div class="gem-highlight-grid">${cardDestaque("Destaque da semana", destaqueSemana)}${cardDestaque("Destaque do mês", destaqueMes)}</div></section><section class="gem-highlights"><div><h3>📚 Estudo em casa</h3><p>Ranking de dias estudados nos 30 dias anteriores à data de referência.</p></div><div class="gem-highlight-grid">${cardEstudo("Quem mais estudou", maiorEstudo, "Aparecerá quando houver estudo registrado.")}${cardEstudo("Quem menos estudou", menorEstudo, "Aparecerá quando houver alunas ativas.")}</div></section>`;
+}
+
 async function renderVisaoGeral(content) {
   const hoje = new Date().toISOString().slice(0, 10);
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">COORDENAÇÃO</p><h2>Resumo do GEM</h2><p>Indicadores gerais da escola, frequência, estrutura e alunas em destaque.</p></section><section class="panel"><div class="agenda-date"><div><label for="visao-data">Referência para o resumo</label><input id="visao-data" type="date" value="${hoje}"></div><button id="carregar-visao" class="primary-action" type="button">Atualizar resumo</button></div><div id="visao-conteudo"><div class="empty">Carregando dados...</div></div></section><section class="panel branding-panel"><h2>Marca e perfil da Coordenação</h2><p>A logo aparece no login e na barra lateral. A foto substitui a letra do perfil da Coordenação neste aplicativo.</p><div class="branding-grid"><label>Nova logo do GEM<input id="logo-gem" type="file" accept="image/png,image/jpeg,image/webp"></label><button id="salvar-logo" class="secondary-action" type="button">Salvar logo</button><label>Nome exibido<input id="nome-coordenacao" value="${escapeHtml(state.name)}"></label><label>Foto da Coordenação<input id="foto-coordenacao" type="file" accept="image/png,image/jpeg,image/webp"></label><button id="salvar-perfil" class="secondary-action" type="button">Salvar perfil</button></div><div id="marca-feedback"></div></section>`;
@@ -960,37 +1026,7 @@ async function renderVisaoGeral(content) {
       const historicoGeral = analitico.historico || [];
       const chamadasGerais = historicoGeral.filter((item) => item.Tipo === "Chamada" && ["Presente", "Ausente", "Justificada"].includes(item.Status));
       const frequencia = chamadasGerais.length ? Math.round((chamadasGerais.filter((item) => item.Status === "Presente").length / chamadasGerais.length) * 100) : null;
-      const dataEmMs = (valor) => { const texto = String(valor || ""); if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return new Date(`${texto.slice(0, 10)}T12:00:00`).getTime(); const [dia, mes, ano] = texto.split("/"); return ano ? new Date(`${ano}-${mes}-${dia}T12:00:00`).getTime() : 0; };
-      const referenciaMs = new Date(`${dataReferencia}T12:00:00`).getTime();
-      const destaque = (dias) => {
-        const inicio = referenciaMs - ((dias - 1) * 86400000), pontos = new Map(ativas.map((aluna) => [aluna.nome, 0]));
-        historicoGeral.forEach((item) => {
-          if (dataEmMs(item.Data) < inicio || dataEmMs(item.Data) > referenciaMs || !pontos.has(item.Aluna)) return;
-          if (item.Tipo === "Chamada") pontos.set(item.Aluna, pontos.get(item.Aluna) + (item.Status === "Presente" ? 3 : -2));
-          if (String(item.Tipo || "").startsWith("Analise_")) { const dificuldades = Array.isArray(item.Dificuldades) ? item.Dificuldades.filter((dificuldade) => dificuldade && !/não apresentou dificuldade/i.test(dificuldade)) : []; pontos.set(item.Aluna, pontos.get(item.Aluna) + (dificuldades.length ? 1 : 2)); }
-        });
-        (analitico.estudos || []).forEach((estudo) => { const dataEstudo = dataEmMs(estudo.data); if (dataEstudo >= inicio && dataEstudo <= referenciaMs && pontos.has(estudo.aluna) && (estudo.horarios || []).length) pontos.set(estudo.aluna, pontos.get(estudo.aluna) + 2); });
-        const ordenado = [...pontos.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
-        return ordenado[0]?.[1] > 0 ? ordenado[0] : null;
-      };
-      const destaqueSemana = destaque(7), destaqueMes = destaque(30);
-      const cardDestaque = (titulo, item) => `<article class="gem-highlight"><span>${titulo}</span><strong>${item ? escapeHtml(item[0]) : "Ainda sem dados"}</strong><small>${item ? `${item[1]} pontos por presença, estudo e registros` : "Aparecerá quando houver registros no período."}</small></article>`;
-      // O ranking de estudo conta dias distintos com pelo menos um horário
-      // marcado. Assim uma aluna não sobe artificialmente no quadro por
-      // selecionar manhã, tarde e noite no mesmo dia.
-      const inicioEstudo = referenciaMs - (29 * 86400000);
-      const estudoPorAluna = new Map(ativas.map((aluna) => [aluna.nome, 0]));
-      (analitico.estudos || []).forEach((estudo) => {
-        const quando = dataEmMs(estudo.data);
-        if (quando >= inicioEstudo && quando <= referenciaMs && estudoPorAluna.has(estudo.aluna) && (estudo.horarios || []).length) {
-          estudoPorAluna.set(estudo.aluna, estudoPorAluna.get(estudo.aluna) + 1);
-        }
-      });
-      const rankingEstudo = [...estudoPorAluna.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
-      const maiorEstudo = rankingEstudo[0] || null;
-      const menorEstudo = rankingEstudo.length ? rankingEstudo[rankingEstudo.length - 1] : null;
-      const cardEstudo = (titulo, item, vazio) => `<article class="gem-highlight"><span>${titulo}</span><strong>${item ? escapeHtml(item[0]) : "Ainda sem dados"}</strong><small>${item ? `${item[1]} dia(s) de estudo nos últimos 30 dias` : vazio}</small></article>`;
-      destino.innerHTML = `<div class="grid gem-summary"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas</span></div><div class="metric"><strong>${frequencia === null ? "—" : `${frequencia}%`}</strong><span>Frequência geral</span></div><div class="metric"><strong>${quantidadeSalas || "—"}</strong><span>Salas ativas</span></div><div class="metric"><strong>${professorasAtivas.length}</strong><span>Professoras ativas</span></div><div class="metric"><strong>${disciplinas.length}</strong><span>Disciplinas oferecidas</span></div></div><section class="gem-summary-details"><div><h3>🎼 Disciplinas do GEM</h3><p>${disciplinas.length ? escapeHtml(disciplinas.join(" · ")) : "Defina as disciplinas no modelo de rodízio."}</p></div><div><h3>📅 Referência</h3><p>${dados.alunas.length ? `${dados.alunas.length} aluna(s) no rodízio de hoje · ${presentes} presente(s)` : "Sem rodízio salvo nesta data."}</p></div></section>${conferenciaRegistros}<section class="gem-highlights"><div><h3>🌟 Destaques de desempenho</h3><p>Calculados pelo quadro de desempenho: presença, estudo diário e registros pedagógicos.</p></div><div class="gem-highlight-grid">${cardDestaque("Destaque da semana", destaqueSemana)}${cardDestaque("Destaque do mês", destaqueMes)}</div></section><section class="gem-highlights"><div><h3>📚 Estudo em casa</h3><p>Ranking de dias estudados nos 30 dias anteriores à data de referência.</p></div><div class="gem-highlight-grid">${cardEstudo("Quem mais estudou", maiorEstudo, "Aparecerá quando houver estudo registrado.")}${cardEstudo("Quem menos estudou", menorEstudo, "Aparecerá quando houver alunas ativas.")}</div></section>`;
+      destino.innerHTML = `<div class="grid gem-summary"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas</span></div><div class="metric"><strong>${frequencia === null ? "—" : `${frequencia}%`}</strong><span>Frequência geral</span></div><div class="metric"><strong>${quantidadeSalas || "—"}</strong><span>Salas ativas</span></div><div class="metric"><strong>${professorasAtivas.length}</strong><span>Professoras ativas</span></div><div class="metric"><strong>${disciplinas.length}</strong><span>Disciplinas oferecidas</span></div></div><section class="gem-summary-details"><div><h3>🎼 Disciplinas do GEM</h3><p>${disciplinas.length ? escapeHtml(disciplinas.join(" · ")) : "Defina as disciplinas no modelo de rodízio."}</p></div><div><h3>📅 Referência</h3><p>${dados.alunas.length ? `${dados.alunas.length} aluna(s) no rodízio de hoje · ${presentes} presente(s)` : "Sem rodízio salvo nesta data."}</p></div></section>${conferenciaRegistros}${destaquesGemMarkup(ativas, analitico, dataReferencia)}`;
     } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
   $("#carregar-visao").addEventListener("click", carregar); await carregar();
@@ -1901,6 +1937,10 @@ async function renderPage() {
   }
   if (state.role === "Master" && state.page === "Visão da plataforma") {
     await renderMasterVisao(content);
+    return;
+  }
+  if (state.role === "Professora" && state.page === "Visão geral") {
+    await renderVisaoGeralProfessora(content);
     return;
   }
   if (state.role === "Professora" && state.page === "Minhas aulas") {

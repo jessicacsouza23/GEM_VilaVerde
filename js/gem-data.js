@@ -600,6 +600,35 @@
     if (error) throw new Error("Não foi possível enviar a mensagem.");
   }
 
+  async function dadosResumoProfessora(dataIso) {
+    const banco = await obterCliente();
+    const referencia = new Date(`${dataIso}T12:00:00`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataIso) || !Number.isFinite(referencia.getTime())) throw new Error("Selecione uma data válida.");
+    const datas = [];
+    for (let dia = 0; dia < 30; dia++) {
+      const data = new Date(referencia); data.setDate(data.getDate() - dia);
+      const iso = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+      datas.push(iso, dataBr(iso));
+    }
+    // Busca somente os campos do resumo, sem fotos, contas ou avaliações.
+    // Paginação evita truncar o ranking em GEMs com mais registros.
+    const lerPaginas = async (consulta) => {
+      const itens = [];
+      for (let inicio = 0; ; inicio += 1000) {
+        const { data, error } = await consulta().range(inicio, inicio + 999);
+        if (error) throw new Error("Não foi possível carregar os destaques do GEM. Tente atualizar novamente.");
+        itens.push(...(data || []));
+        if (!data || data.length < 1000) return itens;
+      }
+    };
+    const [alunas, historico, estudos] = await Promise.all([
+      lerPaginas(() => banco.from("alunas").select("nome,ativo").order("nome")),
+      lerPaginas(() => banco.from("historico_geral").select("Data,Aluna,Tipo,Status,Dificuldades").in("Data", datas).order("id")),
+      lerPaginas(() => banco.from("estudo_diario").select("aluna,data,horarios").in("data", datas).order("aluna").order("data"))
+    ]);
+    return { alunas, historico, estudos };
+  }
+
   async function dadosAnalitico() {
     const banco = await obterCliente();
     const [historico, alunas, avaliacoes, notas, estudos, objetivos] = await Promise.all([
@@ -741,7 +770,7 @@
   async function agendaProfessora(professora, dataIso) {
     const banco = await obterCliente();
     const data = dataBr(dataIso);
-    const { data: calendario, error } = await banco.from("calendario").select("id, escala").eq("id", data).maybeSingle();
+    const { data: calendario, error } = await banco.from("calendario").select("id, escala, modelo_logistica_id").eq("id", data).maybeSingle();
     if (error) throw new Error("Não foi possível carregar a agenda desta data.");
     const escala = calendario?.escala || [];
     if (!escala.length) return [];
@@ -756,6 +785,22 @@
         if (url) fotoPorAluna[aluna.nome] = url;
       } catch (_) { /* foto indisponível: mantém a agenda funcional */ }
     }));
+    // Escalas novas preservam os horários por componente. Nas antigas,
+    // consulta o modelo vinculado (ou vigente na data), sem minutos fixos.
+    let atividadesModelo = [];
+    const precisaModelo = escala.some((linha) => Object.values(linha._detalhes || {}).some((detalhe) =>
+      (detalhe.componentes?.length > 1 || /PRATICA.*SOLFEJO|SOLFEJO.*PRATICA/.test(normalizar(detalhe.tipo)))
+      && !Object.keys(detalhe.horarios_componentes || {}).length
+    ));
+    if (precisaModelo) {
+      try {
+        const modelos = await dadosLogistica();
+        const modelo = calendario.modelo_logistica_id
+          ? modelos.find((item) => item.id === calendario.modelo_logistica_id)
+          : modeloParaData(modelos, dataIso);
+        atividadesModelo = modelo?.configuracao?.atividades || [];
+      } catch (_) { /* Sem duração confirmada, mantém o horário do bloco. */ }
+    }
     const nomeNormalizado = normalizar(professora);
     const aulas = [];
     const vistas = new Set();
@@ -777,6 +822,9 @@
           : detalheCombinado
             ? ["Solfejo", "Prática"]
             : [tipoDaEscala];
+        const horariosPorTipo = Object.keys(detalhe.horarios_componentes || {}).length
+          ? detalhe.horarios_componentes
+          : window.RodizioEngine?.horariosComponentes(horario, componentes, atividadesModelo) || {};
         for (const tipo of componentes) {
           const professorasComponentes = detalhe.professoras_componentes || {};
           if (professorasComponentes[tipo] && normalizar(professorasComponentes[tipo]) !== nomeNormalizado) continue;
@@ -785,7 +833,7 @@
           if (vistas.has(chave)) continue;
           vistas.add(chave);
           const alunasDaAula = individual ? [linha.Aluna] : escala.filter((outra) => String(outra[horario] || "") === conteudo).map((outra) => outra.Aluna).filter(Boolean);
-          aulas.push({ horario, tipo, local: conteudo.split("|")[0].trim(), individual, alunas: alunasDaAula, fotos: Object.fromEntries(alunasDaAula.map((aluna) => [aluna, fotoPorAluna[aluna] || null])), turma: turmaPorAluna[linha.Aluna] || "" });
+          aulas.push({ horario: horariosPorTipo[tipo] || horario, tipo, local: conteudo.split("|")[0].trim(), individual, alunas: alunasDaAula, fotos: Object.fromEntries(alunasDaAula.map((aluna) => [aluna, fotoPorAluna[aluna] || null])), turma: turmaPorAluna[linha.Aluna] || "" });
         }
       }
     }
@@ -1271,4 +1319,5 @@
   }
 
   window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosExportacaoRelatorio, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, removerModeloLogistica, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, alterarStatusGem, removerGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData.dadosResumoProfessora = dadosResumoProfessora;
 })();
