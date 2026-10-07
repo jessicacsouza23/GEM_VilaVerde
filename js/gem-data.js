@@ -824,7 +824,7 @@
             : [tipoDaEscala];
         const horariosPorTipo = Object.keys(detalhe.horarios_componentes || {}).length
           ? detalhe.horarios_componentes
-          : window.RodizioEngine?.horariosComponentes(horario, componentes, atividadesModelo) || {};
+          : window.RodizioEngine?.horariosComponentes?.(horario, componentes, atividadesModelo) || {};
         for (const tipo of componentes) {
           const professorasComponentes = detalhe.professoras_componentes || {};
           if (professorasComponentes[tipo] && normalizar(professorasComponentes[tipo]) !== nomeNormalizado) continue;

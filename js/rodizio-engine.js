@@ -13,6 +13,27 @@
     const nome = String(bloco.Bloco || bloco.nome || `Bloco ${indice + 1}`).trim();
     return inicio && fim ? `${inicio} - ${fim} (${nome})` : nome;
   };
+  function horariosComponentes(hora, componentes, atividades = []) {
+    if (!Array.isArray(componentes) || componentes.length < 2) return {};
+    const partes = String(hora || "").match(/^(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})(.*)$/);
+    if (!partes) return {};
+    const [, hi, mi, hf, mf, sufixo] = partes;
+    if (+hi > 23 || +hf > 23 || +mi > 59 || +mf > 59) return {};
+    let minuto = +hi * 60 + +mi;
+    const fim = +hf * 60 + +mf;
+    // Mantém a ordem dos componentes do rodízio e usa os minutos do modelo.
+    const duracoes = componentes.map((tipo) => Number(atividades.find((item) =>
+      limpar(item.Formato) === "INDIVIDUAL" && limpar(nomeArea(item.Atividade)) === limpar(nomeArea(tipo))
+    )?.["Duração (min)"]));
+    if (duracoes.some((valor) => !Number.isInteger(valor) || valor <= 0) || duracoes.reduce((a, b) => a + b, 0) > fim - minuto) return {};
+    const formatar = (valor) => `${String(Math.floor(valor / 60)).padStart(2, "0")}:${String(valor % 60).padStart(2, "0")}`;
+    return Object.fromEntries(componentes.map((tipo, indice) => {
+      const inicio = minuto;
+      minuto += duracoes[indice];
+      return [tipo, `${formatar(inicio)} - ${formatar(minuto)}${sufixo}`];
+    }));
+  }
+
   const dataBrParaData = (valor) => {
     const [dia, mes, ano] = String(valor || "").split("/").map(Number);
     return ano && mes && dia ? new Date(ano, mes - 1, dia) : null;
@@ -274,7 +295,7 @@
           });
           const { professora, sala } = pares[0];
           escala[aluna][hora] = `${sala} | ${professora}`;
-          escala[aluna]._detalhes[hora] = { tipo: componentes.length > 1 ? "Prática + Solfejo" : componentes[0], componentes: [...componentes], individual: true, turma, mesma_professora_componentes: mesmaProf };
+          escala[aluna]._detalhes[hora] = { tipo: componentes.length > 1 ? "Prática + Solfejo" : componentes[0], componentes: [...componentes], horarios_componentes: horariosComponentes(hora, componentes, config.atividades), individual: true, turma, mesma_professora_componentes: mesmaProf };
           alocadas.push({ aluna, sala, professora }); profsLivres.splice(profsLivres.indexOf(professora), 1); salasLivres.splice(salasLivres.indexOf(sala), 1);
           mem.professoras.push(professora); mem.salas.push(sala); mem.ultima = professora;
           registrarNoCiclo(memoriaHistorica.alunasPorProfessora, professora, aluna, alunasDaRoda);
@@ -346,5 +367,5 @@
     Object.values(mapa).forEach((linha) => Object.entries(linha._detalhes || {}).forEach(([hora, detalhe]) => { if (!detalhe.individual) return; const valor = String(linha[hora] || ""); const componentes = detalhe.professoras_componentes || {}; const professora = String(componentes.Prática || valor.split("|").slice(1).join("|").trim()); const sala = porSala[professora]; if (!sala) return; detalhe.sala_fixa_professora = sala; linha[hora] = `${sala} | ${valor.split("|").slice(1).join("|").trim()}`; }));
   }
 
-  window.RodizioEngine = { gerar, prepararModelo, horario, nomeArea };
+  window.RodizioEngine = { gerar, prepararModelo, horario, nomeArea, horariosComponentes };
 })();

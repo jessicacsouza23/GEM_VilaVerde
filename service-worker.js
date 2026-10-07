@@ -1,6 +1,6 @@
-const CACHE = "gem-vila-verde-v11";
+const CACHE = "gem-vila-verde-v12";
 const RUNTIME_IMAGES = "gem-vila-verde-images-v1";
-const FILES = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon.svg", "./js/gem-data.js", "./js/rodizio-engine.js", "./js/pwa-identity.js"];
+const FILES = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon.svg", "./js/gem-data.js?v=20261007-horarios-2", "./js/rodizio-engine.js?v=20261007-horarios-2", "./js/pwa-identity.js"];
 self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting())));
 self.addEventListener("activate", (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE && key !== RUNTIME_IMAGES).map((key) => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", (event) => {
