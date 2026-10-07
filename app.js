@@ -390,7 +390,7 @@ async function renderMinhasAulas(content) {
       aulasAtuais = agenda;
       bibliotecaMetodos = metodos;
       if (!aulasAtuais.length) { lista.innerHTML = diaDeDescanso($("#agenda-data").value); return; }
-      lista.innerHTML = aulasAtuais.map((aula, indice) => `<article class="agenda-card"><h3>${escapeHtml(aula.horario)} · ${escapeHtml(aula.tipo)}</h3><p><strong>${escapeHtml(aula.local)}</strong></p>${fotosDasAlunas(aula)}<span class="agenda-tag">${aula.individual ? "Aula individual" : `Turma ${escapeHtml(aula.turma || "")}`}</span><button class="secondary-action register-open" type="button" data-registro="${indice}">📝 Registrar aula</button></article>`).join("");
+      lista.innerHTML = aulasAtuais.map((aula, indice) => `<article class="agenda-card"><h3>${escapeHtml(String(aula.horario || "").replace(/\s*\(Bloco[^)]*\)/gi, "").trim())} · ${escapeHtml(aula.tipo)}</h3><p><strong>${escapeHtml(aula.local)}</strong></p>${fotosDasAlunas(aula)}<span class="agenda-tag">${aula.individual ? "Aula individual" : `Turma ${escapeHtml(aula.turma || "")}`}</span><button class="secondary-action register-open" type="button" data-registro="${indice}">📝 Registrar aula</button></article>`).join("");
       lista.querySelectorAll("[data-registro]").forEach((botao) => botao.addEventListener("click", () => abrirRegistro(Number(botao.dataset.registro))));
     } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
@@ -834,7 +834,7 @@ async function renderRodizio(content) {
     area.innerHTML = `<div class="empty">Carregando turmas, professoras, modelo e escala...</div>`;
     try {
       const base = await window.GemData.dadosRodizio($("#rodizio-data").value);
-      const modelo = base.modeloEscala ? base.modelos.find((item) => item.id === base.modeloEscala) : window.GemData.modeloParaData(base.modelos, $("#rodizio-data").value);
+      const modelo = base.modeloEscala ? base.modelos.find((item) => item.id === base.modeloEscala) : window.GemData.modeloParaData(base.modelos.filter((item) => item.status !== "encerrado"), $("#rodizio-data").value);
       if (!modelo && !base.escala.length) {
         area.innerHTML = `<div class="action-error">Não há modelo logístico programado para esta data. Cadastre ou programe o modelo em Logística, sem alterar os rodízios anteriores.</div>`;
         return;
@@ -1108,15 +1108,15 @@ async function renderLogistica(content) {
   }
   const statusVisualModelo = (modelo) => {
     const hoje = new Date().toISOString().slice(0, 10);
-    if (modelo.status === "encerrado" || (modelo.vigencia_fim && modelo.vigencia_fim < hoje)) return "encerrado";
+    if (modelo.status === "encerrado") return "encerrado";
     if (modelo.status === "programado" && modelo.vigencia_inicio <= hoje) return "vigente";
     return modelo.status || "rascunho";
   };
   const renderLista = () => { lista.innerHTML = modelos.length ? modelos.map((modelo, indice) => {
     const config = modelo.configuracao || {}, statusVisual = statusVisualModelo(modelo);
-    const periodo = `${modelo.vigencia_inicio || "—"} até ${modelo.vigencia_fim || "sem data final"}`;
-    const acoes = statusVisual === "vigente"
-      ? `<label class="model-end-date">Encerrar em <input data-fim-modelo="${indice}" type="date" min="${new Date().toISOString().slice(0, 10)}" value="${new Date().toISOString().slice(0, 10)}"></label><button data-encerrar-modelo="${indice}" class="secondary-action danger-action" type="button">Encerrar modelo</button>`
+    const periodo = `${modelo.vigencia_inicio || "—"} até ${modelo.status === "encerrado" ? modelo.vigencia_fim || "encerramento manual" : "encerramento manual"}`;
+    const acoes = ["vigente", "ativo"].includes(statusVisual)
+      ? `<button data-encerrar-modelo="${indice}" class="secondary-action danger-action" type="button">Encerrar modelo</button>`
       : modelo.status === "programado"
         ? `<button data-rascunho-modelo="${indice}" class="secondary-action" type="button">Voltar a rascunho</button>`
         : modelo.status !== "encerrado"
@@ -1194,12 +1194,10 @@ async function renderLogistica(content) {
     });
     lista.querySelectorAll("[data-encerrar-modelo]").forEach((botao) => botao.onclick = async () => {
       const indice = Number(botao.dataset.encerrarModelo), modelo = modelos[indice];
-      const dataFim = lista.querySelector(`[data-fim-modelo="${indice}"]`)?.value;
-      if (!dataFim) { alert("Informe a data de encerramento."); return; }
-      if (!confirm(`Encerrar “${modelo.nome}” para novas escalas a partir de ${dataFim}? As escalas já salvas serão preservadas.`)) return;
+      if (!confirm(`Encerrar “${modelo.nome}” agora? As escalas já salvas serão preservadas.`)) return;
       try {
-        await window.GemData.alterarStatusModelo(modelo.id, "encerrado", dataFim);
-        modelo.status = "encerrado"; modelo.vigencia_fim = dataFim; renderLista();
+        const alteracao = await window.GemData.alterarStatusModelo(modelo.id, "encerrado");
+        modelo.status = "encerrado"; modelo.vigencia_fim = alteracao.vigencia_fim; renderLista();
       } catch (error) { alert(error.message); }
     });
   };
@@ -1843,6 +1841,7 @@ function abrirZoomFoto(url, titulo = "Foto") {
 }
 
 function abrirTrocaFotoProfessora() {
+  if (state.role !== "Professora") return;
   document.querySelector(".profile-photo-modal")?.remove();
   const modal = document.createElement("div");
   modal.className = "photo-modal profile-photo-modal";
@@ -1851,6 +1850,7 @@ function abrirTrocaFotoProfessora() {
   modal.addEventListener("click", (evento) => { if (evento.target === modal) fechar(); });
   modal.querySelector(".modal-close").addEventListener("click", fechar);
   modal.querySelector("[data-salvar-minha-foto]").addEventListener("click", async (evento) => {
+    if (state.role !== "Professora") { fechar(); return; }
     const botao = evento.currentTarget, retorno = modal.querySelector("[data-retorno-foto]"), arquivo = modal.querySelector("[data-minha-foto]").files[0];
     botao.disabled = true;
     try {
@@ -2040,6 +2040,7 @@ async function renderPage() {
 }
 
 async function abrirConta(conta) {
+  document.querySelectorAll(".profile-photo-action, .profile-photo-modal").forEach((elemento) => elemento.remove());
   state.role = conta.role;
   state.name = conta.name;
   state.gem = conta.gem || "GEM Musical";
@@ -2131,7 +2132,10 @@ function definirMenuAberto(abrir) {
 }
 $("#menu-button").addEventListener("click", () => definirMenuAberto(!$(".sidebar").classList.contains("open")));
 fundoMenu.addEventListener("click", () => definirMenuAberto(false));
-$("#sair").addEventListener("click", () => definirMenuAberto(false));
+$("#sair").addEventListener("click", () => {
+  definirMenuAberto(false);
+  document.querySelectorAll(".profile-photo-action, .profile-photo-modal").forEach((elemento) => elemento.remove());
+});
 document.addEventListener("keydown", (evento) => { if (evento.key === "Escape") definirMenuAberto(false); });
 menuMobile.addEventListener("change", () => definirMenuAberto(false));
 definirMenuAberto(false);

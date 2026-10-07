@@ -740,10 +740,14 @@
     return data;
   }
 
-  async function alterarStatusModelo(id, status, vigenciaFim = null) {
-    const banco = await obterCliente(); const dados = { status, updated_at: new Date().toISOString() }; if (vigenciaFim) dados.vigencia_fim = vigenciaFim;
+  async function alterarStatusModelo(id, status) {
+    const agora = new Date();
+    const hoje = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+    const banco = await obterCliente();
+    const dados = { status, updated_at: agora.toISOString(), vigencia_fim: status === "encerrado" ? hoje : null };
     const { error } = await banco.from("modelos_logistica").update(dados).eq("id", id);
     if (error) throw new Error("Não foi possível alterar o status do modelo.");
+    return dados;
   }
 
   async function removerModeloLogistica(id) {
@@ -1284,7 +1288,7 @@
   function modeloParaData(modelos, dataIso) {
     return (modelos || []).filter((modelo) => {
       if (!modelo.vigencia_inicio || !["programado", "vigente", "encerrado", "ativo"].includes(modelo.status)) return false;
-      return modelo.vigencia_inicio <= dataIso && (!modelo.vigencia_fim || modelo.vigencia_fim >= dataIso);
+      return modelo.vigencia_inicio <= dataIso && (modelo.status !== "encerrado" || (modelo.vigencia_fim && modelo.vigencia_fim >= dataIso));
     }).sort((a, b) => String(b.vigencia_inicio).localeCompare(String(a.vigencia_inicio)))[0] || null;
   }
 
