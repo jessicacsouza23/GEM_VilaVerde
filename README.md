@@ -49,9 +49,12 @@ aplicativo, sem escolher “entrar como”.
 ## Vários GEMs
 
 O Vila Verde continua na base atual, sem mexer no Streamlit. Para uma unidade
-nova, a Master cria primeiro um projeto Supabase **separado** e executa nele as
-migrations e estruturas usadas pelo aplicativo. Depois, no login Master do
-Vila Verde, informe no cadastro do GEM novo:
+nova, a Master cria primeiro um projeto Supabase **separado**. No SQL Editor
+desse projeto novo, execute primeiro `supabase/migrations/012_base_pedagogica_novo_gem.sql`
+e depois `supabase/migrations/001_validar_login_professoras_alunas.sql`. A
+primeira cria todas as tabelas pedagógicas vazias; a segunda ativa o login de
+professoras e alunas. Depois, no login Master do Vila Verde, informe no cadastro
+do GEM novo:
 
 - nome e identificador;
 - URL do projeto Supabase novo;
@@ -62,10 +65,10 @@ Esse endereço abre o aplicativo conectado somente à base daquela unidade. A
 chave `anon` é pública por definição do Supabase; as políticas RLS da base de
 cada GEM continuam sendo responsáveis pela proteção dos dados.
 
-O perfil atual suportado é `gem-pwa-v1`: a nova base precisa ter o mesmo
-esquema funcional do GEM PWA. Uma unidade com tabelas totalmente diferentes
-precisa de um perfil/adaptador próprio antes de ser ativada; ela não deve ser
-cadastrada como se fosse compatível.
+O perfil atual suportado é `gem-pwa-v1`. Não é necessário copiar os dados do
+Vila Verde: a migration 012 já prepara o mesmo esquema funcional, vazio, para
+a nova unidade. Uma unidade com tabelas totalmente diferentes precisa de um
+perfil/adaptador próprio antes de ser ativada.
 
 As integrações de servidor já configuradas para o Vila Verde (R2, IA e
 notificações push) permanecem isoladas nele. O núcleo pedagógico do PWA usa a
