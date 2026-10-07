@@ -1196,7 +1196,7 @@ async function renderRelatorios(content) {
       }).join("\n\n");
       const textoWhatsApp = `🎼 *${state.gem || "GEM Vila Verde"} — Relatório ${dados.data}*\n\n${linhasWhatsApp || "Não há alunas na escala deste sábado."}`;
       const corpo = porAluna.size ? [...porAluna.entries()].sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([aluna, registros]) => `<section class="student-report"><h3>👧 ${escapeHtml(aluna)}</h3>${registros.length ? registros.map(card).join("") : `<div class="report-empty">Nenhum registro lançado ainda para esta aluna.</div>`}</section>`).join("") : `<div class="empty">Não há escala salva para esta data.</div>`;
-      destino.innerHTML = `<div class="report-actions"><button id="copiar-relatorio-whatsapp" class="secondary-action" type="button">📋 Copiar para WhatsApp</button><button id="abrir-relatorio-whatsapp" class="secondary-action" type="button">💬 Abrir no WhatsApp</button><button id="baixar-relatorio-pdf" class="primary-action" type="button">Baixar relatório em PDF</button></div><div id="report-print"><section class="compact-panel report-header"><h3>Relatório completo — ${escapeHtml(dados.data)}</h3><p><strong>${dados.alunas.length}</strong> aluna(s) na escala · <strong>${dados.ausentes.length}</strong> ausência(s) · <strong>${dados.analises.length}</strong> registro(s) pedagógico(s).</p></section>${corpo}</div>`;
+      destino.innerHTML = `<div class="report-actions"><button id="copiar-relatorio-whatsapp" class="secondary-action" type="button">📋 Copiar para WhatsApp</button><button id="abrir-relatorio-whatsapp" class="secondary-action" type="button">💬 Enviar PDF pelo WhatsApp</button><button id="baixar-relatorio-pdf" class="primary-action" type="button">Baixar relatório em PDF</button></div><div id="report-print"><section class="compact-panel report-header"><h3>Relatório completo — ${escapeHtml(dados.data)}</h3><p><strong>${dados.alunas.length}</strong> aluna(s) na escala · <strong>${dados.ausentes.length}</strong> ausência(s) · <strong>${dados.analises.length}</strong> registro(s) pedagógico(s).</p></section>${corpo}</div>`;
       $("#copiar-relatorio-whatsapp").addEventListener("click", async () => {
         const botao = $("#copiar-relatorio-whatsapp");
         try {
@@ -1206,39 +1206,53 @@ async function renderRelatorios(content) {
           setTimeout(() => { botao.textContent = "📋 Copiar para WhatsApp"; }, 2500);
         } catch (erro) { alert(`${erro.message}\n\nCopie o texto abaixo:\n\n${textoWhatsApp}`); }
       });
-      $("#abrir-relatorio-whatsapp").addEventListener("click", () => {
-        // Abre apenas a composição: a Secretaria confere o destinatário e
-        // envia quando quiser, como acontece no comando do Streamlit.
-        window.open(`https://wa.me/?text=${encodeURIComponent(textoWhatsApp)}`, "_blank", "noopener,noreferrer");
+      const nomePdf = `Relatorio_GEM_${dados.data.replaceAll("/", "-")}.pdf`;
+      const gerarPdf = async () => {
+        if (!window.html2canvas || !window.jspdf?.jsPDF) { alert("A ferramenta de PDF ainda está carregando. Tente novamente em alguns segundos."); return; }
+        const alvo = $("#report-print"), blocos = [...alvo.querySelectorAll(".report-header, .student-report")];
+        const pdf = new window.jspdf.jsPDF("p", "mm", "a4"), larguraPagina = 190, alturaPagina = 277;
+        let primeiraPagina = true;
+        for (const bloco of blocos) {
+          const canvas = await window.html2canvas(bloco, { scale: 2, backgroundColor: "#ffffff", useCORS: true, windowWidth: bloco.scrollWidth });
+          // Cada bloco mantém a mesma largura no PDF. Se o histórico da
+          // aluna for longo, recortamos o canvas em páginas em vez de
+          // diminuí-lo até ficar ilegível ou perder o fim do conteúdo.
+          const pixelsPorMm = canvas.width / larguraPagina;
+          const alturaMaximaEmPixels = Math.max(1, Math.floor(alturaPagina * pixelsPorMm));
+          for (let inicioY = 0; inicioY < canvas.height; inicioY += alturaMaximaEmPixels) {
+            const alturaTrecho = Math.min(alturaMaximaEmPixels, canvas.height - inicioY);
+            const paginaCanvas = document.createElement("canvas");
+            paginaCanvas.width = canvas.width;
+            paginaCanvas.height = alturaTrecho;
+            paginaCanvas.getContext("2d").drawImage(canvas, 0, inicioY, canvas.width, alturaTrecho, 0, 0, canvas.width, alturaTrecho);
+            if (!primeiraPagina) pdf.addPage();
+            primeiraPagina = false;
+            const alturaNoPdf = alturaTrecho / pixelsPorMm;
+            pdf.addImage(paginaCanvas.toDataURL("image/png"), "PNG", 10, 10, larguraPagina, alturaNoPdf);
+          }
+        }
+        return pdf;
+      };
+      $("#abrir-relatorio-whatsapp").addEventListener("click", async () => {
+        const botao = $("#abrir-relatorio-whatsapp"); botao.disabled = true; botao.textContent = "Gerando PDF...";
+        try {
+          const pdf = await gerarPdf(); if (!pdf) return;
+          const arquivo = new File([pdf.output("blob")], nomePdf, { type: "application/pdf" });
+          if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [arquivo] }))) {
+            await navigator.share({ title: "Relatório GEM", text: `Relatório ${dados.data}`, files: [arquivo] });
+          } else {
+            pdf.save(nomePdf);
+            window.open("https://web.whatsapp.com/", "_blank", "noopener,noreferrer");
+            alert("O PDF foi baixado. No WhatsApp, clique em Anexar e selecione esse arquivo para enviar.");
+          }
+        } catch (erro) { if (erro?.name !== "AbortError") alert("Não foi possível preparar o PDF: " + erro.message); }
+        finally { botao.disabled = false; botao.textContent = "💬 Enviar PDF pelo WhatsApp"; }
       });
       $("#baixar-relatorio-pdf").addEventListener("click", async () => {
-        if (!window.html2canvas || !window.jspdf?.jsPDF) { alert("A ferramenta de PDF ainda está carregando. Tente novamente em alguns segundos."); return; }
         const botao = $("#baixar-relatorio-pdf"); botao.disabled = true; botao.textContent = "Gerando PDF...";
-        try {
-          const alvo = $("#report-print"), blocos = [...alvo.querySelectorAll(".report-header, .student-report")];
-          const pdf = new window.jspdf.jsPDF("p", "mm", "a4"), larguraPagina = 190, alturaPagina = 277;
-          let primeiraPagina = true;
-          for (const bloco of blocos) {
-            const canvas = await window.html2canvas(bloco, { scale: 2, backgroundColor: "#ffffff", useCORS: true, windowWidth: bloco.scrollWidth });
-            // Cada bloco mantém a mesma largura no PDF. Se o histórico da
-            // aluna for longo, recortamos o canvas em páginas em vez de
-            // diminuí-lo até ficar ilegível ou perder o fim do conteúdo.
-            const pixelsPorMm = canvas.width / larguraPagina;
-            const alturaMaximaEmPixels = Math.max(1, Math.floor(alturaPagina * pixelsPorMm));
-            for (let inicioY = 0; inicioY < canvas.height; inicioY += alturaMaximaEmPixels) {
-              const alturaTrecho = Math.min(alturaMaximaEmPixels, canvas.height - inicioY);
-              const paginaCanvas = document.createElement("canvas");
-              paginaCanvas.width = canvas.width;
-              paginaCanvas.height = alturaTrecho;
-              paginaCanvas.getContext("2d").drawImage(canvas, 0, inicioY, canvas.width, alturaTrecho, 0, 0, canvas.width, alturaTrecho);
-              if (!primeiraPagina) pdf.addPage();
-              primeiraPagina = false;
-              const alturaNoPdf = alturaTrecho / pixelsPorMm;
-              pdf.addImage(paginaCanvas.toDataURL("image/png"), "PNG", 10, 10, larguraPagina, alturaNoPdf);
-            }
-          }
-          pdf.save(`Relatorio_GEM_${dados.data.replaceAll("/", "-")}.pdf`);
-        } catch (error) { alert("Não foi possível gerar o PDF: " + error.message); } finally { botao.disabled = false; botao.textContent = "Baixar relatório em PDF"; }
+        try { const pdf = await gerarPdf(); if (pdf) pdf.save(nomePdf); }
+        catch (error) { alert("Não foi possível gerar o PDF: " + error.message); }
+        finally { botao.disabled = false; botao.textContent = "Baixar relatório em PDF"; }
       });
     } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
