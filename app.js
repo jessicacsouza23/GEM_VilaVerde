@@ -1779,7 +1779,8 @@ async function ativarNotificacoes() {
     const { publicKey } = await respostaChave.json();
     const registro = await navigator.serviceWorker.ready;
     const subscription = await registro.pushManager.getSubscription() || await registro.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: chavePushParaBytes(publicKey) });
-    const resposta = await fetch("/api/push-subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ usuario: state.role === "Secretaria" ? "Secretaria" : state.name, perfil: state.role, subscription }) });
+    const contextoGem = await window.GemData.gemAtivo();
+    const resposta = await fetch("/api/push-subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ usuario: state.role === "Secretaria" ? "Secretaria" : state.name, perfil: state.role, gem: contextoGem.slug, subscription }) });
     if (!resposta.ok) throw new Error("Não foi possível registrar este aparelho para os lembretes.");
     botao.textContent = "🔔 Lembretes ativos";
   } catch (erro) {
@@ -1950,7 +1951,7 @@ async function abrirConta(conta) {
     trocarFoto.addEventListener("click", abrirTrocaFotoProfessora);
     document.querySelector(".profile").appendChild(trocarFoto);
   }
-  if (!state.externo && ["Aluna", "Professora"].includes(state.role) && "Notification" in window && "serviceWorker" in navigator) { $("#ativar-notificacoes").classList.remove("hidden"); atualizarBotaoNotificacoes(); }
+  if (["Aluna", "Professora"].includes(state.role) && "Notification" in window && "serviceWorker" in navigator) { $("#ativar-notificacoes").classList.remove("hidden"); atualizarBotaoNotificacoes(); }
   renderNavigation(); await renderPage();
 }
 
