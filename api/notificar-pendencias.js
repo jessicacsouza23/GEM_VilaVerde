@@ -13,8 +13,21 @@ async function banco(path, options = {}) {
   const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("Supabase não configurado para o envio automático.");
   const resultado = await fetch(`${url}/rest/v1/${path}`, { ...options, headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...(options.headers || {}) } });
-  if (!resultado.ok) throw new Error(await resultado.text());
-  return resultado.status === 204 ? null : resultado.json();
+  const texto = await resultado.text();
+  if (!resultado.ok) throw new Error(texto);
+  return texto ? JSON.parse(texto) : null;
+}
+
+async function bancoDaUnidade(unidade, path) {
+  const url = String(unidade.supabase_url || "").replace(/\/$/, "");
+  const key = String(unidade.supabase_anon_key || "");
+  if (!url || !key) throw new Error("Base da unidade não configurada.");
+  const resultado = await fetch(`${url}/rest/v1/${path}`, {
+    headers: { apikey: key, Authorization: `Bearer ${key}` }
+  });
+  const texto = await resultado.text();
+  if (!resultado.ok) throw new Error(texto);
+  return texto ? JSON.parse(texto) : [];
 }
 
 function normalizar(valor) {
@@ -48,11 +61,11 @@ async function enviarFila(fila) {
     if (jaEnviada?.length) continue;
     try {
       await webpush.sendNotification(item.sub.subscription, JSON.stringify(item.payload));
-      await banco("notificacoes_enviadas", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ chave: item.chave, usuario: item.sub.usuario, tipo: item.tipo }) });
+      await banco("notificacoes_enviadas", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ chave: item.chave, gem_slug: item.gemSlug, usuario: item.sub.usuario, tipo: item.tipo }) });
       enviadas += 1;
     } catch (error) {
       if ([404, 410].includes(error.statusCode)) {
-        await banco(`push_subscriptions?endpoint=eq.${encodeURIComponent(item.sub.endpoint)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ ativo: false }) });
+        await banco(`push_subscriptions?gem_slug=eq.${encodeURIComponent(item.gemSlug)}&endpoint=eq.${encodeURIComponent(item.sub.endpoint)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ ativo: false }) });
       }
     }
   }
@@ -100,15 +113,35 @@ function professorasComPendencias(calendarios, historico, inicioHoje) {
   return pendentes;
 }
 
+async function pendenciasPorUnidade(inicioHoje) {
+  const gems = await banco("gems?ativo=eq.true&select=slug,supabase_url,supabase_anon_key");
+  const unidades = [{ slug: "vila-verde", principal: true }, ...(gems || []).filter((gem) => gem.slug !== "vila-verde")];
+  const pendencias = new Map();
+  await Promise.all(unidades.map(async (unidade) => {
+    try {
+      const [calendarios, historico] = unidade.principal
+        ? await Promise.all([
+          banco("calendario?select=id,escala"),
+          banco("historico_geral?select=Data,Aluna,Instrutora,Tipo,Status")
+        ])
+        : await Promise.all([
+          bancoDaUnidade(unidade, "calendario?select=id,escala"),
+          bancoDaUnidade(unidade, "historico_geral?select=Data,Aluna,Instrutora,Tipo,Status")
+        ]);
+      pendencias.set(unidade.slug, professorasComPendencias(calendarios, historico, inicioHoje));
+    } catch (erro) {
+      // Uma unidade ainda em configuração não pode impedir os lembretes das demais.
+      pendencias.set(unidade.slug, new Set());
+    }
+  }));
+  return pendencias;
+}
+
 module.exports = async function notificarPendencias(request, response) {
   if (!cronAutorizado(request)) return response.status(401).json({ error: "Não autorizado." });
   try {
     configurarPush();
-    const [subscriptions, calendarios, historico] = await Promise.all([
-      banco("push_subscriptions?ativo=eq.true&select=*"),
-      banco("calendario?select=id,escala"),
-      banco("historico_geral?select=Data,Aluna,Instrutora,Tipo,Status")
-    ]);
+    const subscriptions = await banco("push_subscriptions?ativo=eq.true&select=*");
     const hoje = new Date(), chaveHoje = dataBrasil(hoje), inicioHoje = dataValida(chaveHoje);
     const horaBrasil = Number(new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", hourCycle: "h23" }).format(hoje));
     const periodoEstudo = horaBrasil < 12 ? "manha" : horaBrasil < 18 ? "tarde" : "noite";
@@ -117,19 +150,23 @@ module.exports = async function notificarPendencias(request, response) {
       tarde: { title: "🎼 Lembrete de estudo", body: "Que tal separar um momento desta tarde para estudar sua lição do GEM?" },
       noite: { title: "🌙 Antes de encerrar o dia", body: "Faça uma breve prática da sua lição do GEM para continuar evoluindo." }
     };
-    const pendenciasProfessoras = professorasComPendencias(calendarios, historico, inicioHoje);
+    const pendenciasProfessoras = await pendenciasPorUnidade(inicioHoje);
     const fila = [];
     (subscriptions || []).forEach((sub) => {
+      const gemSlug = String(sub.gem_slug || "vila-verde");
+      const urlDoGem = gemSlug === "vila-verde" ? "/" : `/?gem=${encodeURIComponent(gemSlug)}`;
       if (sub.perfil === "Aluna") {
-        fila.push({ sub, chave: `estudo:${periodoEstudo}:${chaveHoje}:${sub.endpoint}`, tipo: `estudo_${periodoEstudo}`, payload: { ...mensagensEstudo[periodoEstudo], url: "/" } });
+        fila.push({ sub, gemSlug, chave: `estudo:${gemSlug}:${periodoEstudo}:${chaveHoje}:${sub.endpoint}`, tipo: `estudo_${periodoEstudo}`, payload: { ...mensagensEstudo[periodoEstudo], url: urlDoGem } });
       }
       // A cobrança pedagógica é enviada apenas pela execução da manhã.
-      if (periodoEstudo === "manha" && sub.perfil === "Professora" && [...pendenciasProfessoras].some((professora) => normalizar(professora) === normalizar(sub.usuario))) {
-        fila.push({ sub, chave: `registro:${chaveHoje}:${sub.endpoint}`, tipo: "registro_pendente", payload: { title: "📝 Registro de aula pendente", body: "Há aula(s) escalada(s) sem registro. Abra o GEM e conclua o lançamento.", url: "/" } });
+      const pendenciasDaUnidade = pendenciasProfessoras.get(gemSlug) || new Set();
+      if (periodoEstudo === "manha" && sub.perfil === "Professora" && [...pendenciasDaUnidade].some((professora) => normalizar(professora) === normalizar(sub.usuario))) {
+        fila.push({ sub, gemSlug, chave: `registro:${gemSlug}:${chaveHoje}:${sub.endpoint}`, tipo: "registro_pendente", payload: { title: "📝 Registro de aula pendente", body: "Há aula(s) escalada(s) sem registro. Abra o GEM e conclua o lançamento.", url: urlDoGem } });
       }
     });
     const enviadas = await enviarFila(fila);
-    return response.status(200).json({ ok: true, periodoEstudo, enviadas, pendenciasProfessoras: pendenciasProfessoras.size });
+    const totalPendencias = [...pendenciasProfessoras.values()].reduce((total, professoras) => total + professoras.size, 0);
+    return response.status(200).json({ ok: true, periodoEstudo, enviadas, pendenciasProfessoras: totalPendencias });
   } catch (error) {
     return response.status(500).json({ error: "Falha no envio automático de notificações." });
   }
