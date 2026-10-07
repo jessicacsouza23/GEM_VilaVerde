@@ -1521,8 +1521,24 @@ async function renderMasterGems(content) {
   const carregar = async () => {
     try {
       const gems = await window.GemData.listarGems();
-      lista.innerHTML = gems.length ? gems.map((gem) => { const origemPublica = String(window.GEM_SUPABASE?.publicUrl || window.location.origin).replace(/\/$/, ""); const link = `${origemPublica}/?gem=${encodeURIComponent(gem.slug)}`; const conectado = Boolean(gem.supabase_url && gem.supabase_anon_key) || gem.slug === "vila-verde"; return `<article class="gem-row"><div><strong>${escapeHtml(gem.nome)}</strong><span>${escapeHtml(gem.slug)} · ${conectado ? "Base Supabase vinculada" : "Base ainda não vinculada"}</span><small class="gem-login-link">${escapeHtml(link)}</small></div><div class="person-actions"><button class="secondary-action" type="button" data-copiar-link-gem="${escapeHtml(link)}">Copiar link</button><span class="badge ${gem.ativo ? "" : "inactive"}">${gem.ativo ? "Ativo" : "Inativo"}</span></div></article>`; }).join("") : `<div class="empty">Nenhum GEM cadastrado.</div>`;
+      lista.innerHTML = gems.length ? gems.map((gem) => { const origemPublica = String(window.GEM_SUPABASE?.publicUrl || window.location.origin).replace(/\/$/, ""); const link = `${origemPublica}/?gem=${encodeURIComponent(gem.slug)}`; const conectado = Boolean(gem.supabase_url && gem.supabase_anon_key) || gem.slug === "vila-verde"; const principal = gem.slug === "vila-verde"; return `<article class="gem-row"><div><strong>${escapeHtml(gem.nome)}</strong><span>${escapeHtml(gem.slug)} · ${conectado ? "Base Supabase vinculada" : "Base ainda não vinculada"}</span><small class="gem-login-link">${escapeHtml(link)}</small>${principal ? "<small>Unidade principal: não pode ser desativada ou excluída nesta tela.</small>" : ""}</div><div class="person-actions"><button class="secondary-action" type="button" data-copiar-link-gem="${escapeHtml(link)}">Copiar link</button><span class="badge ${gem.ativo ? "" : "inactive"}">${gem.ativo ? "Ativo" : "Inativo"}</span>${principal ? "" : `<button class="secondary-action" type="button" data-status-gem="${escapeHtml(gem.id)}">${gem.ativo ? "Desativar" : "Reativar"}</button><button class="secondary-action danger-action" type="button" data-excluir-gem="${escapeHtml(gem.id)}">Excluir</button>`}</div></article>`; }).join("") : `<div class="empty">Nenhum GEM cadastrado.</div>`;
       lista.querySelectorAll("[data-copiar-link-gem]").forEach((botao) => botao.addEventListener("click", async () => { try { await navigator.clipboard.writeText(botao.dataset.copiarLinkGem); botao.textContent = "Link copiado ✓"; } catch (_) { prompt("Copie o link do GEM:", botao.dataset.copiarLinkGem); } }));
+      lista.querySelectorAll("[data-status-gem]").forEach((botao) => botao.addEventListener("click", async () => {
+        const gem = gems.find((item) => String(item.id) === String(botao.dataset.statusGem));
+        if (!gem || !confirm(`${gem.ativo ? "Desativar" : "Reativar"} o GEM “${gem.nome}”? ${gem.ativo ? "Os dados serão preservados e novos logins ficarão bloqueados." : "Os logins voltarão a ser permitidos."}`)) return;
+        botao.disabled = true;
+        try { await window.GemData.alterarStatusGem(gem.id, !gem.ativo); await carregar(); }
+        catch (erro) { alert(erro.message); botao.disabled = false; }
+      }));
+      lista.querySelectorAll("[data-excluir-gem]").forEach((botao) => botao.addEventListener("click", async () => {
+        const gem = gems.find((item) => String(item.id) === String(botao.dataset.excluirGem));
+        if (!gem) return;
+        const confirmacao = prompt(`Esta ação remove o cadastro da plataforma e as Secretarias vinculadas. A base Supabase e as fotos no R2 não serão apagadas.\n\nPara confirmar, digite EXCLUIR ${gem.slug}`);
+        if (confirmacao !== `EXCLUIR ${gem.slug}`) return;
+        botao.disabled = true;
+        try { await window.GemData.removerGem(gem.id, gem.slug); await carregar(); }
+        catch (erro) { alert(erro.message); botao.disabled = false; }
+      }));
     } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
   $("#criar-gem").addEventListener("click", async () => {
