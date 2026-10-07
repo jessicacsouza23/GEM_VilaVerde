@@ -1181,7 +1181,13 @@ async function renderRelatorios(content) {
         const tipo = String(item.Tipo || ""), casa = tipo.startsWith("Casa_"), presenca = tipo === "Chamada", conteudo = casa ? (item.Licao_Casa || item.Licao_Atual) : item.Licao_Atual, dificuldade = mostrarDificuldades(item.Dificuldades);
         return `<article class="report-record ${casa ? "homework-record" : ""}"><h4>${escapeHtml(rotulo(tipo))}${item.Instrutora ? ` <small>— Professora: ${escapeHtml(item.Instrutora)}</small>` : ""}</h4>${presenca ? `<p><strong>Status:</strong> ${escapeHtml(item.Status || "Presente")}${item.Observacao ? ` · ${escapeHtml(item.Observacao)}` : ""}</p>` : ""}${conteudo ? `<p><strong>${casa ? "Lição deixada para casa" : "Conteúdo/atividade de hoje"}:</strong> ${escapeHtml(conteudo)}</p>` : ""}${dificuldade && dificuldade !== "Não apresentou dificuldades" ? `<p class="report-warning"><strong>⚠ Dificuldades:</strong> ${escapeHtml(dificuldade)}</p>` : dificuldade === "Não apresentou dificuldades" ? `<p class="report-ok">✓ Sem dificuldades registradas nesta aula.</p>` : ""}${item.Observacao && !presenca ? `<p class="report-note"><strong>📝 Observação da professora/Secretaria:</strong> ${escapeHtml(item.Observacao)}</p>` : ""}${item.Status && !presenca ? `<p class="report-status"><strong>Situação:</strong> ${escapeHtml(item.Status)}</p>` : ""}</article>`;
       };
-      const corpo = porAluna.size ? [...porAluna.entries()].sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([aluna, registros]) => `<section class="student-report"><h3>👧 ${escapeHtml(aluna)}</h3>${registros.length ? registros.map(card).join("") : `<div class="report-empty">Nenhum registro lançado ainda para esta aluna.</div>`}</section>`).join("") : `<div class="empty">Não há escala salva para esta data.</div>`;
+      const corpo = porAluna.size ? [...porAluna.entries()].sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([aluna, registros]) => {
+        const chamada = registros.filter((item) => item.Tipo === "Chamada").at(-1);
+        const presenca = chamada?.Status || "Ainda não registrada";
+        const classePresenca = /presente/i.test(presenca) ? "present" : /justificada/i.test(presenca) ? "justified" : "absent";
+        const demaisRegistros = registros.filter((item) => item.Tipo !== "Chamada");
+        return `<section class="student-report"><div class="student-report-heading"><h3>👧 ${escapeHtml(aluna)}</h3><span class="report-attendance ${classePresenca}">📍 ${escapeHtml(presenca)}</span></div>${demaisRegistros.length ? demaisRegistros.map(card).join("") : `<div class="report-empty">Nenhum registro pedagógico lançado ainda para esta aluna.</div>`}</section>`;
+      }).join("") : `<div class="empty">Não há escala salva para esta data.</div>`;
       destino.innerHTML = `<div class="report-actions"><button id="baixar-relatorio-pdf" class="primary-action" type="button">Baixar relatório em PDF</button></div><div id="report-print"><section class="compact-panel report-header"><h3>Relatório completo — ${escapeHtml(dados.data)}</h3><p><strong>${dados.alunas.length}</strong> aluna(s) na escala · <strong>${dados.ausentes.length}</strong> ausência(s) · <strong>${dados.analises.length}</strong> registro(s) pedagógico(s).</p></section>${corpo}</div>`;
       const nomePdf = `Relatorio_GEM_${dados.data.replaceAll("/", "-")}.pdf`;
       const gerarPdf = async () => {
@@ -1192,7 +1198,7 @@ async function renderRelatorios(content) {
         const temporarios = [];
         const blocos = [alvo.querySelector(".report-header")];
         alvo.querySelectorAll(".student-report").forEach((secao) => {
-          const titulo = secao.querySelector("h3");
+          const titulo = secao.querySelector(".student-report-heading, h3");
           const registros = [...secao.querySelectorAll(".report-record, .report-empty")];
           registros.forEach((registro, indice) => {
             const bloco = document.createElement("section");
