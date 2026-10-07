@@ -1181,39 +1181,18 @@ async function renderRelatorios(content) {
         const tipo = String(item.Tipo || ""), casa = tipo.startsWith("Casa_"), presenca = tipo === "Chamada", conteudo = casa ? (item.Licao_Casa || item.Licao_Atual) : item.Licao_Atual, dificuldade = mostrarDificuldades(item.Dificuldades);
         return `<article class="report-record ${casa ? "homework-record" : ""}"><h4>${escapeHtml(rotulo(tipo))}${item.Instrutora ? ` <small>— Professora: ${escapeHtml(item.Instrutora)}</small>` : ""}</h4>${presenca ? `<p><strong>Status:</strong> ${escapeHtml(item.Status || "Presente")}${item.Observacao ? ` · ${escapeHtml(item.Observacao)}` : ""}</p>` : ""}${conteudo ? `<p><strong>${casa ? "Lição deixada para casa" : "Conteúdo/atividade de hoje"}:</strong> ${escapeHtml(conteudo)}</p>` : ""}${dificuldade && dificuldade !== "Não apresentou dificuldades" ? `<p class="report-warning"><strong>⚠ Dificuldades:</strong> ${escapeHtml(dificuldade)}</p>` : dificuldade === "Não apresentou dificuldades" ? `<p class="report-ok">✓ Sem dificuldades registradas nesta aula.</p>` : ""}${item.Observacao && !presenca ? `<p class="report-note"><strong>📝 Observação da professora/Secretaria:</strong> ${escapeHtml(item.Observacao)}</p>` : ""}${item.Status && !presenca ? `<p class="report-status"><strong>Situação:</strong> ${escapeHtml(item.Status)}</p>` : ""}</article>`;
       };
-      const linhasWhatsApp = [...porAluna.entries()].sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([aluna, registros]) => {
-        const chamada = registros.filter((item) => item.Tipo === "Chamada").at(-1);
-        const linhas = [`👤 *${String(aluna).toUpperCase()}*`, `📍 Presença: ${chamada?.Status || "Ainda não registrada"}`];
-        registros.filter((item) => item.Tipo !== "Chamada" && item.Tipo).forEach((item) => {
-          const tipo = String(item.Tipo), casa = tipo.startsWith("Casa_");
-          const conteudo = casa ? item.Licao_Casa : item.Licao_Atual;
-          if (conteudo) linhas.push(`${casa ? "📚" : "📖"} *${rotulo(tipo).replace(/^📚 |^📖 |^🎤 /, "")}*: ${conteudo}`);
-          const dificuldades = mostrarDificuldades(item.Dificuldades);
-          if (dificuldades && !/não apresentou dificuldade/i.test(dificuldades)) linhas.push(`⚠ Dificuldades: ${dificuldades}`);
-          if (item.Observacao && item.Tipo !== "Chamada") linhas.push(`📝 ${item.Observacao}`);
-        });
-        return linhas.join("\n");
-      }).join("\n\n");
-      const textoWhatsApp = `🎼 *${state.gem || "GEM Vila Verde"} — Relatório ${dados.data}*\n\n${linhasWhatsApp || "Não há alunas na escala deste sábado."}`;
       const corpo = porAluna.size ? [...porAluna.entries()].sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([aluna, registros]) => `<section class="student-report"><h3>👧 ${escapeHtml(aluna)}</h3>${registros.length ? registros.map(card).join("") : `<div class="report-empty">Nenhum registro lançado ainda para esta aluna.</div>`}</section>`).join("") : `<div class="empty">Não há escala salva para esta data.</div>`;
-      destino.innerHTML = `<div class="report-actions"><button id="copiar-relatorio-whatsapp" class="secondary-action" type="button">📋 Copiar para WhatsApp</button><button id="abrir-relatorio-whatsapp" class="secondary-action" type="button">💬 Enviar PDF pelo WhatsApp</button><button id="baixar-relatorio-pdf" class="primary-action" type="button">Baixar relatório em PDF</button></div><div id="report-print"><section class="compact-panel report-header"><h3>Relatório completo — ${escapeHtml(dados.data)}</h3><p><strong>${dados.alunas.length}</strong> aluna(s) na escala · <strong>${dados.ausentes.length}</strong> ausência(s) · <strong>${dados.analises.length}</strong> registro(s) pedagógico(s).</p></section>${corpo}</div>`;
-      $("#copiar-relatorio-whatsapp").addEventListener("click", async () => {
-        const botao = $("#copiar-relatorio-whatsapp");
-        try {
-          if (!navigator.clipboard?.writeText) throw new Error("A cópia automática não é suportada neste navegador.");
-          await navigator.clipboard.writeText(textoWhatsApp);
-          botao.textContent = "✓ Texto copiado";
-          setTimeout(() => { botao.textContent = "📋 Copiar para WhatsApp"; }, 2500);
-        } catch (erro) { alert(`${erro.message}\n\nCopie o texto abaixo:\n\n${textoWhatsApp}`); }
-      });
+      destino.innerHTML = `<div class="report-actions"><button id="baixar-relatorio-pdf" class="primary-action" type="button">Baixar relatório em PDF</button></div><div id="report-print"><section class="compact-panel report-header"><h3>Relatório completo — ${escapeHtml(dados.data)}</h3><p><strong>${dados.alunas.length}</strong> aluna(s) na escala · <strong>${dados.ausentes.length}</strong> ausência(s) · <strong>${dados.analises.length}</strong> registro(s) pedagógico(s).</p></section>${corpo}</div>`;
       const nomePdf = `Relatorio_GEM_${dados.data.replaceAll("/", "-")}.pdf`;
       const gerarPdf = async () => {
         if (!window.html2canvas || !window.jspdf?.jsPDF) { alert("A ferramenta de PDF ainda está carregando. Tente novamente em alguns segundos."); return; }
         const alvo = $("#report-print"), blocos = [...alvo.querySelectorAll(".report-header, .student-report")];
-        const pdf = new window.jspdf.jsPDF("p", "mm", "a4"), larguraPagina = 190, alturaPagina = 277;
+        const pdf = new window.jspdf.jsPDF({ orientation: "p", unit: "mm", format: "a4", compress: true }), larguraPagina = 190, alturaPagina = 277;
         let primeiraPagina = true;
         for (const bloco of blocos) {
-          const canvas = await window.html2canvas(bloco, { scale: 2, backgroundColor: "#ffffff", useCORS: true, windowWidth: bloco.scrollWidth });
+          // A resolução 1.35 mantém o texto legível no WhatsApp e reduz mais
+          // da metade dos pixels que precisavam ser processados na versão 2.
+          const canvas = await window.html2canvas(bloco, { scale: 1.35, backgroundColor: "#ffffff", useCORS: true, windowWidth: bloco.scrollWidth });
           // Cada bloco mantém a mesma largura no PDF. Se o histórico da
           // aluna for longo, recortamos o canvas em páginas em vez de
           // diminuí-lo até ficar ilegível ou perder o fim do conteúdo.
@@ -1228,39 +1207,11 @@ async function renderRelatorios(content) {
             if (!primeiraPagina) pdf.addPage();
             primeiraPagina = false;
             const alturaNoPdf = alturaTrecho / pixelsPorMm;
-            pdf.addImage(paginaCanvas.toDataURL("image/png"), "PNG", 10, 10, larguraPagina, alturaNoPdf);
+            pdf.addImage(paginaCanvas.toDataURL("image/jpeg", .86), "JPEG", 10, 10, larguraPagina, alturaNoPdf);
           }
         }
         return pdf;
       };
-      let arquivoPdfPronto = null;
-      const dispositivoCompartilhaArquivo = (arquivo) => Boolean(navigator.share && (!navigator.canShare || navigator.canShare({ files: [arquivo] })));
-      $("#abrir-relatorio-whatsapp").addEventListener("click", async () => {
-        const botao = $("#abrir-relatorio-whatsapp");
-        // O share precisa ser chamado diretamente por um clique. Depois que
-        // o PDF foi gerado no primeiro clique, este segundo clique preserva
-        // o gesto exigido pelo navegador e abre o compartilhamento nativo.
-        if (arquivoPdfPronto && dispositivoCompartilhaArquivo(arquivoPdfPronto)) {
-          navigator.share({ title: "Relatório GEM", text: `Relatório ${dados.data}`, files: [arquivoPdfPronto] })
-            .catch((erro) => { if (erro?.name !== "AbortError") alert("Não foi possível compartilhar o PDF: " + erro.message); });
-          return;
-        }
-        botao.disabled = true; botao.textContent = "Gerando PDF...";
-        try {
-          const pdf = await gerarPdf(); if (!pdf) return;
-          const arquivo = new File([pdf.output("blob")], nomePdf, { type: "application/pdf" });
-          if (dispositivoCompartilhaArquivo(arquivo)) {
-            arquivoPdfPronto = arquivo;
-            botao.textContent = "💬 Compartilhar PDF";
-            alert("PDF pronto. Clique novamente em “Compartilhar PDF” para escolher o WhatsApp.");
-          } else {
-            pdf.save(nomePdf);
-            window.open("https://web.whatsapp.com/", "_blank", "noopener,noreferrer");
-            alert("O PDF foi baixado. No WhatsApp, clique em Anexar e selecione esse arquivo para enviar.");
-          }
-        } catch (erro) { if (erro?.name !== "AbortError") alert("Não foi possível preparar o PDF: " + erro.message); }
-        finally { botao.disabled = false; if (!arquivoPdfPronto) botao.textContent = "💬 Enviar PDF pelo WhatsApp"; }
-      });
       $("#baixar-relatorio-pdf").addEventListener("click", async () => {
         const botao = $("#baixar-relatorio-pdf"); botao.disabled = true; botao.textContent = "Gerando PDF...";
         try { const pdf = await gerarPdf(); if (pdf) pdf.save(nomePdf); }
