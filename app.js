@@ -582,11 +582,32 @@ async function renderMinhasLicoes(content) {
   };
   const mostrarLicoes = () => {
     const idsFeitos = new Set(dadosAluna.feitas.map((item) => String(item.historico_id)));
-    // A tela da aluna é uma lista de pendências, não o arquivo completo.
-    // Uma lição resolvida continua em historico_geral com seu resultado e
-    // observações, aparecendo no relatório e no prontuário, mas sai daqui.
-    const licoes = dadosAluna.historico.filter((item) => String(item.Tipo || "").startsWith("Casa_") && !eResolvida(item.Status));
-    destino.innerHTML = `<div class="section-title"><div><h2>Lições de casa</h2><p>Somente lições pendentes aparecem aqui. As resolvidas ficam preservadas no histórico pedagógico.</p></div></div>${licoes.length ? `<div class="lesson-list">${licoes.map((licao) => { const feito = idsFeitos.has(String(licao.id)); return `<article class="lesson-card"><h3>${escapeHtml(casaCategoria(licao.Tipo))}</h3><p><strong>Lição:</strong> ${escapeHtml(licao.Licao_Casa || "—")}</p><span class="lesson-meta">Lançada em ${escapeHtml(licao.Data || "—")}</span><br><button class="lesson-action ${feito ? "done" : ""}" data-licao="${escapeHtml(licao.id)}" data-feito="${feito}">${feito ? "✓ Feito — desfazer" : "✓ Marcar como feito"}</button></article>`; }).join("")}</div>` : `<div class="empty">✅ Nenhuma lição pendente agora. As lições resolvidas continuam no seu histórico.</div>`}`;
+    const casas = dadosAluna.historico.filter((item) => String(item.Tipo || "").startsWith("Casa_"));
+    const maisRecente = (itens) => itens.reduce((atual, item) => !atual || dataIso(item.Data) > dataIso(atual.Data) || (dataIso(item.Data) === dataIso(atual.Data) && Number(item.id || 0) > Number(atual.id || 0)) ? item : atual, null);
+    // Método é sempre a lição do último sábado: se a professora lançar uma
+    // nova, a anterior sai da lista mesmo que tenha ficado pendente. MSA e
+    // Solfejo Melódico seguem a mesma regra. Apostila mantém pendências
+    // separadas porque a Secretaria ainda precisa acompanhá-las.
+    const ultimaDataPratica = maisRecente(casas.filter((item) => String(item.Tipo || "").startsWith("Casa_Metodo_")))?.Data;
+    const ultimaMsa = maisRecente(casas.filter((item) => item.Tipo === "Casa_MSA"));
+    const ultimoCanto = maisRecente(casas.filter((item) => item.Tipo === "Casa_Canto"));
+    const materialDaLicao = (tipo) => {
+      if (["Casa_Apostila", "Casa_Apostila_Prof"].includes(tipo)) return "Apostila";
+      if (String(tipo || "").startsWith("Casa_Metodo_")) return String(tipo).replace(/^Casa_Metodo_/, "");
+      if (tipo === "Casa_MSA") return "MSA";
+      if (tipo === "Casa_Canto") return "Solfejo Melódico";
+      if (String(tipo || "").includes("Apostila")) return "Apostila de Teoria";
+      return "Folha avulsa de Teoria";
+    };
+    const licoes = casas.filter((item) => {
+      if (eResolvida(item.Status)) return false;
+      const tipo = String(item.Tipo || "");
+      if (tipo.startsWith("Casa_Metodo_")) return item.Data === ultimaDataPratica;
+      if (tipo === "Casa_MSA") return String(item.id) === String(ultimaMsa?.id);
+      if (tipo === "Casa_Canto") return String(item.id) === String(ultimoCanto?.id);
+      return true;
+    });
+    destino.innerHTML = `<div class="section-title"><div><h2>Lições de casa</h2><p>Em Método, MSA e Solfejo Melódico aparece sempre a orientação mais recente. A Apostila permanece até ser resolvida.</p></div></div>${licoes.length ? `<div class="lesson-list">${licoes.map((licao) => { const feito = idsFeitos.has(String(licao.id)); return `<article class="lesson-card"><h3>${escapeHtml(casaCategoria(licao.Tipo))}</h3><p><strong>Material:</strong> ${escapeHtml(materialDaLicao(licao.Tipo))}</p><p><strong>Lição:</strong> ${escapeHtml(licao.Licao_Casa || "—")}</p>${licao.Observacao ? `<p class="report-note">📝 ${escapeHtml(String(licao.Observacao).replace(/^Sec:\s*/i, ""))}</p>` : ""}<span class="lesson-meta">Lançada em ${escapeHtml(licao.Data || "—")}</span><br><button class="lesson-action ${feito ? "done" : ""}" data-licao="${escapeHtml(licao.id)}" data-feito="${feito}">${feito ? "✓ Feito — desfazer" : "✓ Marcar como feito"}</button></article>`; }).join("")}</div>` : `<div class="empty">✅ Nenhuma lição pendente agora. As lições resolvidas continuam no seu histórico.</div>`}`;
     destino.querySelectorAll("button[data-licao]").forEach((botao) => botao.addEventListener("click", async () => { botao.disabled = true; try { await window.GemData.marcarLicaoFeita(state.name, botao.dataset.licao, botao.dataset.feito !== "true"); dadosAluna = await window.GemData.dadosAluna(state.name); mostrarLicoes(); } catch (erro) { botao.disabled = false; alert(erro.message); } }));
   };
   const mostrarHistorico = () => {
@@ -1220,6 +1241,28 @@ async function renderAnalitico(content, opcoes = {}) {
   // como "sem registros" só porque não recebeu o prefixo Analise_.
   const ehRegistroPedagogico = (registro) => Boolean(disciplinaAnalise(registro.Tipo)) && !String(registro.Tipo || "").startsWith("Casa_");
   const classificacao = (registros) => { if (!registros.length) return { icone: "🥉", nome: "Sem registros", nota: null }; const limpos = registros.filter((registro) => !dificuldades(registro.Dificuldades).some((item) => !/não apresentou dificuldade/i.test(item))); const nota = Math.round(limpos.length / registros.length * 100); return nota >= 80 ? { icone: "🥇", nome: "Ouro", nota } : nota >= 50 ? { icone: "🥈", nome: "Prata", nota } : { icone: "🥉", nome: "Bronze", nota }; };
+  const graficoBarras = (titulo, itens, maximoFixo) => {
+    const maximo = maximoFixo || Math.max(1, ...itens.map((item) => Number(item.valor) || 0));
+    if (!itens.some((item) => Number(item.valor))) return `<article class="analytics-chart empty-chart"><h4>${escapeHtml(titulo)}</h4><p>Ainda não há dados no período escolhido.</p></article>`;
+    return `<article class="analytics-chart"><h4>${escapeHtml(titulo)}</h4><div class="bar-chart">${itens.map((item) => `<div class="bar-item"><div class="bar-track"><i style="height:${Math.max(3, Math.round((Number(item.valor) || 0) / maximo * 100))}%;background:${escapeHtml(item.cor || "#577db8")}"></i></div><strong>${escapeHtml(item.valor)}</strong><small>${escapeHtml(item.rotulo)}</small></div>`).join("")}</div></article>`;
+  };
+  const graficoAssiduidade = (chamadas) => {
+    const porDia = new Map();
+    chamadas.forEach((item) => { const data = dataRegistro(item.Data); if (data) porDia.set(data, item.Status === "Presente" ? 1 : item.Status === "Justificada" ? .5 : 0); });
+    const pontos = [...porDia.entries()].sort(([a], [b]) => a.localeCompare(b));
+    if (!pontos.length) return `<article class="analytics-chart empty-chart"><h4>Linha do tempo de assiduidade</h4><p>Ainda não há chamada no período escolhido.</p></article>`;
+    const largura = 520, altura = 170, margem = 20;
+    const coordenadas = pontos.map(([_, nivel], indice) => {
+      const x = pontos.length === 1 ? largura / 2 : margem + indice * ((largura - margem * 2) / (pontos.length - 1));
+      const y = margem + (1 - nivel) * (altura - margem * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+    return `<article class="analytics-chart attendance-chart"><h4>Linha do tempo de assiduidade</h4><svg viewBox="0 0 ${largura} ${altura}" role="img" aria-label="Assiduidade no período"><line x1="${margem}" y1="${margem}" x2="${largura - margem}" y2="${margem}"/><line x1="${margem}" y1="${altura / 2}" x2="${largura - margem}" y2="${altura / 2}"/><line x1="${margem}" y1="${altura - margem}" x2="${largura - margem}" y2="${altura - margem}"/><polyline points="${coordenadas}"/></svg><div class="chart-legend"><span>● Presente</span><span>● Justificada</span><span>● Ausente</span></div><small>${pontos.map(([data]) => escapeHtml(data.split("-").reverse().join("/"))).join(" · ")}</small></article>`;
+  };
+  const graficoProvas = (itens) => {
+    if (!itens.length) return `<div class="empty-chart"><p>Ainda não há aulas ou notas de provas para comparar.</p></div>`;
+    return `<div class="comparison-chart">${itens.map((item) => `<div class="comparison-chart-row"><strong>${escapeHtml(item.disciplina)}</strong><div><span class="comparison-pedagogico" style="width:${item.rendimento === null ? 0 : item.rendimento}%"></span><span class="comparison-provas" style="width:${item.media === null ? 0 : item.media * 10}%"></span></div><small>Aulas ${item.rendimento === null ? "—" : `${item.rendimento}%`} · Provas ${item.media === null ? "—" : `${item.media.toFixed(1)}/10`}</small></div>`).join("")}<p class="chart-legend"><span class="legend-pedagogico">■ Rendimento pedagógico</span><span class="legend-provas">■ Média das provas</span></p></div>`;
+  };
   const render = () => {
     const destino = $("#analise-conteudo"), periodo = dados.historico.filter(dentroPeriodo);
     $("#analise-aluna-wrap").classList.toggle("hidden", aba !== "prontuario" && aba !== "boletim");
@@ -1250,6 +1293,7 @@ async function renderAnalitico(content, opcoes = {}) {
     const presentes = chamadas.filter((item) => !["Ausente", "Justificada"].includes(item.Status)).length, faltas = chamadas.filter((item) => item.Status === "Ausente").length, justificadas = chamadas.filter((item) => item.Status === "Justificada").length, aproveitamento = classificacao(aulas).nota || 0;
     const listaDificuldades = [...new Set(aulas.flatMap((registro) => dificuldades(registro.Dificuldades)).filter((item) => !/não apresentou dificuldade/i.test(item)))]; const pendentes = casas.filter((registro) => !/resolvido|realizada|sem pendência/i.test(String(registro.Status || "")));
     destino.innerHTML = `<section class="analytics-summary"><h3>👤 Prontuário — ${escapeHtml(aluna)}</h3><div class="grid"><div class="metric"><strong>${chamadas.length ? Math.round((presentes + justificadas * .5) / chamadas.length * 100) : 0}%</strong><span>Frequência ponderada</span></div><div class="metric"><strong>${faltas} / ${justificadas}</strong><span>Faltas / justificadas</span></div><div class="metric"><strong>${aproveitamento}%</strong><span>Aproveitamento nas aulas</span></div><div class="metric"><strong>${pendentes.length}</strong><span>Lições pendentes</span></div><div class="metric"><strong>${constanciaEstudo}%</strong><span>Constância de estudo</span></div></div><div class="analytics-columns"><section><h4>⚠ Dificuldades registradas</h4>${listaDificuldades.length ? `<ul>${listaDificuldades.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "<p>Sem dificuldades registradas no período.</p>"}</section><section><h4>📚 Lições de casa</h4>${casas.length ? casas.map((item) => `<p class="homework-line"><strong>${escapeHtml(item.Tipo.replace("Casa_", ""))}:</strong> ${escapeHtml(item.Licao_Casa || "—")} <small>${escapeHtml(item.Status || "Pendente")}</small></p>`).join("") : "<p>Nenhuma lição registrada no período.</p>"}</section><section><h4>✅ Estudo em casa</h4>${estudos.length ? `<p><strong>${diasEstudados}</strong> dia(s) com estudo registrado em ${estudos.length} lançamento(s).</p>${estudos.slice(0, 10).map((item) => `<p class="homework-line"><strong>${escapeHtml(item.data || item.Data || "—")}:</strong> ${escapeHtml((item.horarios || []).join(" · ") || "sem horário informado")}</p>`).join("")}` : "<p>Não há estudo informado no período.</p>"}</section></div><section class="feedback-panel"><h4>👩‍🏫 Feedback das professoras e Secretaria</h4>${aulas.length ? aulas.map((item) => `<article><strong>${escapeHtml(disciplinaAnalise(item.Tipo) || String(item.Tipo).replace("Analise_", ""))} — ${escapeHtml(item.Data || "")}</strong>${item.Instrutora ? ` · ${escapeHtml(item.Instrutora)}` : ""}<p>${escapeHtml(item.Licao_Atual || "Sem conteúdo informado")}</p>${item.Observacao ? `<p class="report-note">📝 ${escapeHtml(item.Observacao)}</p>` : ""}</article>`).join("") : "<p>Nenhuma aula registrada no período.</p>"}</section></section>`;
+    destino.querySelector(".analytics-summary > .grid")?.insertAdjacentHTML("afterend", `<section class="analytics-charts">${graficoAssiduidade(chamadas)}${graficoBarras("Status de frequência", [{ rotulo: "Presenças", valor: presentes, cor: "#3a9d6d" }, { rotulo: "Faltas", valor: faltas, cor: "#d65b70" }, { rotulo: "Justificadas", valor: justificadas, cor: "#d6a33a" }])}</section>`);
     const objetivoAtual = (dados.objetivos || []).find((item) => item.aluna === aluna) || {};
     const objetivoMarkup = opcoes.somenteLeitura
       ? `<section class="feedback-panel objective-panel"><h4>🎯 Próximos objetivos pedagógicos</h4><p>${objetivoAtual.texto ? escapeHtml(objetivoAtual.texto) : "Nenhum objetivo combinado ainda para esta aluna."}</p>${objetivoAtual.professora ? `<small>Última atualização por: ${escapeHtml(objetivoAtual.professora)}</small>` : ""}</section>`
@@ -1300,6 +1344,9 @@ async function renderAnalitico(content, opcoes = {}) {
     });
     const evolucao = [...dificuldadesPorMes.entries()].map(([chave, quantidade]) => { const [mes, dificuldade] = chave.split("|"); return { mes, dificuldade, quantidade }; }).sort((a, b) => a.mes.localeCompare(b.mes) || b.quantidade - a.quantidade);
     destino.querySelector(".analytics-summary")?.insertAdjacentHTML("beforeend", `<section class="analytics-columns analytics-expanded"><section><h4>🎼 Provas e rendimento pedagógico</h4>${comparacaoProvas.length ? `<div class="comparison-list">${comparacaoProvas.map((item) => `<article><strong>${escapeHtml(item.disciplina)}</strong><span>Aulas: ${item.rendimento === null ? "sem registro" : `${item.rendimento}% sem dificuldade`}</span><span>Provas: ${item.media === null ? "sem nota" : `${item.media.toFixed(1)} / 10`}</span></article>`).join("")}</div><p class="hint">O rendimento das aulas considera os registros pedagógicos; a nota de prova não é convertida nem altera esse indicador.</p>` : `<p>Não há aulas ou notas no período escolhido.</p>`}</section><section><h4>🏢 Observações da Secretaria</h4>${notasSecretaria.length ? notasSecretaria.map((item) => `<article class="secretary-note"><strong>${escapeHtml(casaCategoria(item.Tipo))} — ${escapeHtml(item.Data || "")}</strong><p>${escapeHtml(item.Licao_Casa || "Lição não informada")}</p><p>${escapeHtml(String(item.Observacao || "").replace(/^Sec:\s*/i, ""))}</p></article>`).join("") : `<p>Não há observações de correção da Secretaria no período.</p>`}</section></section><section class="feedback-panel evolution-panel"><h4>📉 Evolução das dificuldades</h4>${evolucao.length ? `<div class="evolution-list">${evolucao.map((item) => `<article><span>${escapeHtml(item.mes)}</span><strong>${escapeHtml(item.dificuldade)}</strong><b>${item.quantidade}×</b></article>`).join("")}</div><p class="hint">Cada linha é uma dificuldade registrada nas aulas daquele mês. Use como sinal pedagógico, não como diagnóstico.</p>` : `<p>Não há dificuldades registradas no período.</p>`}</section>`);
+    destino.querySelector(".analytics-expanded section")?.insertAdjacentHTML("beforeend", graficoProvas(comparacaoProvas));
+    const maisFrequentes = [...new Set(evolucao.map((item) => item.dificuldade))].map((dificuldade) => ({ rotulo: dificuldade, valor: evolucao.filter((item) => item.dificuldade === dificuldade).reduce((total, item) => total + item.quantidade, 0), cor: "#a76486" })).sort((a, b) => b.valor - a.valor).slice(0, 6);
+    destino.querySelector(".evolution-panel")?.insertAdjacentHTML("afterbegin", graficoBarras("Dificuldades mais recorrentes", maisFrequentes));
     const resumoIa = `Aluna: ${aluna}\nPeríodo: ${$("#analise-inicio").value} a ${$("#analise-fim").value}\nFrequência ponderada: ${chamadas.length ? Math.round((presentes + justificadas * .5) / chamadas.length * 100) : 0}% (${faltas} faltas e ${justificadas} justificadas)\nEstudo em casa: ${diasEstudados} dia(s) com estudo em ${diasDoPeriodo} dias do período (${constanciaEstudo}% de constância); ${estudos.length} lançamento(s) feitos pela aluna.\nLições pendentes: ${pendentes.length}\nMédia das provas: ${mediaProvas}\nNotas por disciplina: ${notasPeriodo.map((nota) => `${nota.disciplina} ${nota.nota}`).join(", ") || "sem notas no período"}\nDesempenho por disciplina:\n${resumoDisciplinas}`;
     destino.insertAdjacentHTML("beforeend", state.externo
       ? `<section class="feedback-panel"><h4>🤖 IA não configurada para este GEM</h4><p>Este GEM usa uma base independente. Para usar a análise pedagógica com IA, conecte uma integração própria da IA no ambiente deste GEM.</p></section>`
