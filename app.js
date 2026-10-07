@@ -18,7 +18,7 @@ const dificuldadesPorAula = {
   "Solfejo": ["Não assistiu os vídeos complementares", "Dificuldades em ler as notas na clave de sol", "Dificuldades em ler as notas na clave de fá", "Está com dificuldades no uso do metrônomo", "Estuda em metrônomo", "Não realizou as atividades", "Dificuldade em leitura rítmica", "Dificuldades em leitura métrica", "Dificuldade em solfejo (afinação)", "Dificuldades no movimento da mão", "Demonstra insegurança ao lidar com o conteúdo", "Dificuldade rítmica", "Dificuldades na ordem das notas, ascendente e descendente", "Não realizou as atividades da apostila", "Não estudou nada", "Estudou de forma insatisfatória", "Não apresentou dificuldades"]
 };
 
-const state = { role: "Secretaria", name: "Coordenação", page: "Visão geral", coordenadora: false, gem: "GEM Vila Verde", externo: false };
+const state = { role: "Secretaria", name: "Coordenação", page: "Visão geral", coordenadora: false, gem: "GEM Musical", externo: false };
 const $ = (selector) => document.querySelector(selector);
 let installPrompt;
 
@@ -1666,7 +1666,7 @@ document.addEventListener("click", (evento) => {
 });
 
 function aplicarNomeGem(nome) {
-  const gem = String(nome || "GEM Vila Verde").trim();
+  const gem = String(nome || "GEM Musical").trim();
   const palavras = gem.replace(/^GEM\s+/i, "").split(/\s+/).filter(Boolean);
   const exibicaoLateral = palavras.length > 1 ? `${palavras.slice(0, -1).join(" ")}<br>${palavras.at(-1)}` : palavras[0] || "GEM";
   $("#titulo-login").textContent = palavras.join(" ") || "GEM";
@@ -1829,7 +1829,7 @@ async function renderPage() {
 async function abrirConta(conta) {
   state.role = conta.role;
   state.name = conta.name;
-  state.gem = conta.gem || "GEM Vila Verde";
+  state.gem = conta.gem || "GEM Musical";
   state.externo = Boolean(conta.externo);
   state.coordenadora = false;
   if (state.role === "Professora") {
