@@ -44,7 +44,7 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener("push", (event) => {
   let mensagem = {};
   try { mensagem = event.data?.json() || {}; } catch (_) { mensagem = { body: event.data?.text() || "Você tem uma nova atualização no GEM." }; }
-  event.waitUntil(self.registration.showNotification(mensagem.title || "GEM Vila Verde", {
+  event.waitUntil(self.registration.showNotification(mensagem.title || "GEM Musical", {
     body: mensagem.body || "Você tem uma nova atualização.",
     icon: "./icon.svg",
     badge: "./icon.svg",
