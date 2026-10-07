@@ -1233,20 +1233,33 @@ async function renderRelatorios(content) {
         }
         return pdf;
       };
+      let arquivoPdfPronto = null;
+      const dispositivoCompartilhaArquivo = (arquivo) => Boolean(navigator.share && (!navigator.canShare || navigator.canShare({ files: [arquivo] })));
       $("#abrir-relatorio-whatsapp").addEventListener("click", async () => {
-        const botao = $("#abrir-relatorio-whatsapp"); botao.disabled = true; botao.textContent = "Gerando PDF...";
+        const botao = $("#abrir-relatorio-whatsapp");
+        // O share precisa ser chamado diretamente por um clique. Depois que
+        // o PDF foi gerado no primeiro clique, este segundo clique preserva
+        // o gesto exigido pelo navegador e abre o compartilhamento nativo.
+        if (arquivoPdfPronto && dispositivoCompartilhaArquivo(arquivoPdfPronto)) {
+          navigator.share({ title: "Relatório GEM", text: `Relatório ${dados.data}`, files: [arquivoPdfPronto] })
+            .catch((erro) => { if (erro?.name !== "AbortError") alert("Não foi possível compartilhar o PDF: " + erro.message); });
+          return;
+        }
+        botao.disabled = true; botao.textContent = "Gerando PDF...";
         try {
           const pdf = await gerarPdf(); if (!pdf) return;
           const arquivo = new File([pdf.output("blob")], nomePdf, { type: "application/pdf" });
-          if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [arquivo] }))) {
-            await navigator.share({ title: "Relatório GEM", text: `Relatório ${dados.data}`, files: [arquivo] });
+          if (dispositivoCompartilhaArquivo(arquivo)) {
+            arquivoPdfPronto = arquivo;
+            botao.textContent = "💬 Compartilhar PDF";
+            alert("PDF pronto. Clique novamente em “Compartilhar PDF” para escolher o WhatsApp.");
           } else {
             pdf.save(nomePdf);
             window.open("https://web.whatsapp.com/", "_blank", "noopener,noreferrer");
             alert("O PDF foi baixado. No WhatsApp, clique em Anexar e selecione esse arquivo para enviar.");
           }
         } catch (erro) { if (erro?.name !== "AbortError") alert("Não foi possível preparar o PDF: " + erro.message); }
-        finally { botao.disabled = false; botao.textContent = "💬 Enviar PDF pelo WhatsApp"; }
+        finally { botao.disabled = false; if (!arquivoPdfPronto) botao.textContent = "💬 Enviar PDF pelo WhatsApp"; }
       });
       $("#baixar-relatorio-pdf").addEventListener("click", async () => {
         const botao = $("#baixar-relatorio-pdf"); botao.disabled = true; botao.textContent = "Gerando PDF...";
