@@ -94,10 +94,13 @@
       const recorrencias = [...dificuldades.values()].filter((item) => item.datas.size >= 2).map((item) => ({ ...item, datas: [...item.datas].sort() }));
       const diasParticipacao = new Set(sinais.flatMap((item) => item.datas));
       const motivos = [];
-      if (faltas.length) motivos.push(`${faltas.length} dia(s) de aula perdido(s)`);
-      if (diasParticipacao.size) motivos.push(`${diasParticipacao.size} dia(s) com sinais de participação registrados pela professora`);
-      if (recorrencias.length) motivos.push(`${recorrencias.length} dificuldade(s) recorrente(s) para reforço`);
-      if (!area && diasNaoEstudou) motivos.push(`${diasNaoEstudou} dia(s) marcados como não estudou`);
+      // Cada critério precisa ocorrer em pelo menos três dias distintos no período.
+      // Não somar critérios nem disciplinas do mesmo dia para atingir esse limite.
+      const dificuldadesParaAcompanhar = recorrencias.filter((item) => item.datas.length > 2);
+      if (faltas.length > 2) motivos.push(`${faltas.length} dia(s) de aula perdido(s)`);
+      if (diasParticipacao.size > 2) motivos.push(`${diasParticipacao.size} dia(s) com sinais de participação registrados pela professora`);
+      if (dificuldadesParaAcompanhar.length) motivos.push(`${dificuldadesParaAcompanhar.length} dificuldade(s) repetida(s) em pelo menos 3 dias para reforço`);
+      if (!area && diasNaoEstudou > 2) motivos.push(`${diasNaoEstudou} dia(s) marcados como não estudou`);
       return { nome: aluna.nome, turma: aluna.turma || "Sem turma", faltas: faltas.sort((a, b) => b.data.localeCompare(a.data)), justificadas: faltas.filter((f) => f.justificada).length, ausentes: faltas.filter((f) => !f.justificada).length, presentes: presencas.length, sinais, recorrencias, diasEstudo, diasNaoEstudou, semEstudoRegistrado: !estudosPorDia.size, faltasSemDisciplina, diasSemChamada, aulasPrevistas, registros: registros.length, motivos, acompanhar: motivos.length > 0 };
     }).sort((a, b) => Number(b.acompanhar) - Number(a.acompanhar) || b.faltas.length - a.faltas.length || b.sinais.length - a.sinais.length || a.nome.localeCompare(b.nome, "pt-BR"));
     return { alunas, turmas, disciplinas: [...disciplinas].sort((a, b) => a.localeCompare(b, "pt-BR")) };
