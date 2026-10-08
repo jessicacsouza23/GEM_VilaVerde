@@ -415,7 +415,7 @@ async function renderConfigurarMetodos(content) {
       }
       seletor.innerHTML = areas.map((area) => `<option value="${escapeHtml(area)}">${escapeHtml(area)}</option>`).join("");
       seletor.disabled = false;
-      ajuda.textContent = `Áreas disponíveis no modelo “${modelo.nome}”.`;
+      //ajuda.textContent = `Áreas disponíveis no modelo “${modelo.nome}”.`;
     } catch (_) {
       seletor.innerHTML = `<option value="">Não foi possível carregar a Logística</option>`; seletor.disabled = true;
       ajuda.textContent = "Confira se há um modelo salvo na Logística.";
