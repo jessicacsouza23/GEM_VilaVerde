@@ -73,9 +73,17 @@
         if (falta) faltas.push({ data, justificada: status.includes("justificada"), disciplinas: tipos });
         if (status === "presente") presencas.push(data);
       });
+      const avaliacoes = new Map();
       registros.forEach((registro) => {
         const data = dataIso(registro.Data), tipo = disciplina(registro.Tipo);
+        if (!avaliacoes.has(tipo)) avaliacoes.set(tipo, new Map());
+        const porDia = avaliacoes.get(tipo);
+        if (!porDia.has(data)) porDia.set(data, { textos: new Set(), completa: true });
+        const avaliacao = porDia.get(data);
+        // Vários materiais no mesmo dia formam uma única avaliação da disciplina.
+        if (!Array.isArray(registro.Dificuldades)) avaliacao.completa = false;
         const diffs = Array.isArray(registro.Dificuldades) ? registro.Dificuldades : [];
+        diffs.forEach((texto) => avaliacao.textos.add(normalizar(texto)));
         diffs.filter((d) => d && !/nao apresentou dificuldade/.test(normalizar(d))).forEach((texto) => {
           const key = JSON.stringify([tipo, normalizar(texto)]);
           const mapa = /nao estudou|estudou de forma insatisfatoria|nao realizou|nao assistiu|nao participou/.test(normalizar(texto)) ? participacao : dificuldades;
@@ -90,15 +98,23 @@
       });
       const diasEstudo = [...estudosPorDia.values()].filter(Boolean).length;
       const diasNaoEstudou = estudosPorDia.size - diasEstudo;
-      const sinais = [...participacao.values()].map((item) => ({ ...item, datas: [...item.datas].sort() }));
-      const recorrencias = [...dificuldades.values()].filter((item) => item.datas.size >= 2).map((item) => ({ ...item, datas: [...item.datas].sort() }));
-      const sinaisParaAcompanhar = sinais.filter((item) => item.datas.length > 2);
+      const situacaoAtual = (item) => {
+        const datas = [...item.datas].sort();
+        const ultimaSemDificuldade = [...(avaliacoes.get(item.disciplina) || [])]
+          .filter(([, avaliacao]) => avaliacao.completa && !avaliacao.textos.has(normalizar(item.texto)))
+          .map(([data]) => data).sort().pop() || "";
+        const datasAtivas = datas.filter((data) => data > ultimaSemDificuldade);
+        return { ...item, datas, datasAtivas, superado: datasAtivas.length === 0, ultimaSemDificuldade };
+      };
+      const sinais = [...participacao.values()].map(situacaoAtual);
+      const recorrencias = [...dificuldades.values()].filter((item) => item.datas.size >= 2).map(situacaoAtual);
+      const sinaisParaAcompanhar = sinais.filter((item) => item.datasAtivas.length > 2);
       const motivos = [];
       // Cada critério precisa ocorrer em pelo menos três dias distintos no período.
       // Não somar critérios nem disciplinas do mesmo dia para atingir esse limite.
-      const dificuldadesParaAcompanhar = recorrencias.filter((item) => item.datas.length > 2);
+      const dificuldadesParaAcompanhar = recorrencias.filter((item) => item.datasAtivas.length > 2);
       if (faltas.length > 2) motivos.push(`${faltas.length} dia(s) de aula perdido(s)`);
-      sinaisParaAcompanhar.forEach((item) => motivos.push(`${item.disciplina} · ${item.texto} — ${item.datas.length} dias distintos`));
+      sinaisParaAcompanhar.forEach((item) => motivos.push(`${item.disciplina} · ${item.texto} — ${item.datasAtivas.length} dias distintos`));
       if (dificuldadesParaAcompanhar.length) motivos.push(`${dificuldadesParaAcompanhar.length} dificuldade(s) repetida(s) em pelo menos 3 dias para reforço`);
       if (!area && diasNaoEstudou > 2) motivos.push(`${diasNaoEstudou} dia(s) marcados como não estudou`);
       return { nome: aluna.nome, turma: aluna.turma || "Sem turma", faltas: faltas.sort((a, b) => b.data.localeCompare(a.data)), justificadas: faltas.filter((f) => f.justificada).length, ausentes: faltas.filter((f) => !f.justificada).length, presentes: presencas.length, sinais, recorrencias, diasEstudo, diasNaoEstudou, semEstudoRegistrado: !estudosPorDia.size, faltasSemDisciplina, diasSemChamada, aulasPrevistas, registros: registros.length, motivos, acompanhar: motivos.length > 0 };

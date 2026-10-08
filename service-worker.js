@@ -1,6 +1,6 @@
-const CACHE = "gem-vila-verde-v16";
+const CACHE = "gem-vila-verde-v17";
 const RUNTIME_IMAGES = "gem-vila-verde-images-v1";
-const FILES = ["./", "./index.html", "./styles.css", "./app.js?v=20261008-busca-ativa-4", "./manifest.webmanifest", "./icon.svg", "./js/gem-data.js?v=20261008-busca-ativa", "./js/rodizio-engine.js?v=20261007-horarios-2", "./js/pwa-identity.js", "./js/busca-ativa.js?v=20261008-3"];
+const FILES = ["./", "./index.html", "./styles.css", "./app.js?v=20261008-busca-ativa-5", "./manifest.webmanifest", "./icon.svg", "./js/gem-data.js?v=20261008-busca-ativa", "./js/rodizio-engine.js?v=20261007-horarios-2", "./js/pwa-identity.js", "./js/busca-ativa.js?v=20261008-4"];
 self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting())));
 self.addEventListener("activate", (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE && key !== RUNTIME_IMAGES).map((key) => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", (event) => {
