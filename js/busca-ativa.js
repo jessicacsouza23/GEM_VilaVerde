@@ -92,13 +92,13 @@
       const diasNaoEstudou = estudosPorDia.size - diasEstudo;
       const sinais = [...participacao.values()].map((item) => ({ ...item, datas: [...item.datas].sort() }));
       const recorrencias = [...dificuldades.values()].filter((item) => item.datas.size >= 2).map((item) => ({ ...item, datas: [...item.datas].sort() }));
-      const diasParticipacao = new Set(sinais.flatMap((item) => item.datas));
+      const sinaisParaAcompanhar = sinais.filter((item) => item.datas.length > 2);
       const motivos = [];
       // Cada critério precisa ocorrer em pelo menos três dias distintos no período.
       // Não somar critérios nem disciplinas do mesmo dia para atingir esse limite.
       const dificuldadesParaAcompanhar = recorrencias.filter((item) => item.datas.length > 2);
       if (faltas.length > 2) motivos.push(`${faltas.length} dia(s) de aula perdido(s)`);
-      if (diasParticipacao.size > 2) motivos.push(`${diasParticipacao.size} dia(s) com sinais de participação registrados pela professora`);
+      sinaisParaAcompanhar.forEach((item) => motivos.push(`${item.disciplina} · ${item.texto} — ${item.datas.length} dias distintos`));
       if (dificuldadesParaAcompanhar.length) motivos.push(`${dificuldadesParaAcompanhar.length} dificuldade(s) repetida(s) em pelo menos 3 dias para reforço`);
       if (!area && diasNaoEstudou > 2) motivos.push(`${diasNaoEstudou} dia(s) marcados como não estudou`);
       return { nome: aluna.nome, turma: aluna.turma || "Sem turma", faltas: faltas.sort((a, b) => b.data.localeCompare(a.data)), justificadas: faltas.filter((f) => f.justificada).length, ausentes: faltas.filter((f) => !f.justificada).length, presentes: presencas.length, sinais, recorrencias, diasEstudo, diasNaoEstudou, semEstudoRegistrado: !estudosPorDia.size, faltasSemDisciplina, diasSemChamada, aulasPrevistas, registros: registros.length, motivos, acompanhar: motivos.length > 0 };
