@@ -616,6 +616,34 @@
     if (error) throw new Error("Não foi possível enviar a mensagem.");
   }
 
+  async function dadosBuscaAtiva({ inicio, fim }) {
+    const dias = window.BuscaAtiva.diasPeriodo(inicio, fim);
+    const banco = await obterCliente();
+    const ler = async (criarConsulta) => {
+      const itens = [];
+      for (let pagina = 0; ; pagina += 500) {
+        const { data, error } = await criarConsulta().range(pagina, pagina + 499);
+        if (error) throw new Error("Não foi possível carregar a busca ativa. Verifique a conexão e tente novamente.");
+        itens.push(...(data || []));
+        if (!data || data.length < 500) return itens;
+      }
+    };
+    const alunas = await ler(() => banco.from("alunas").select("nome,turma,ativo").order("nome"));
+    const historico = [], estudos = [], calendarios = [];
+    // Datas antigas são texto em DD/MM/AAAA. Não aplicar comparação
+    // alfabética nelas nem truncar um período longo no limite do Supabase.
+    for (let inicioLote = 0; inicioLote < dias.length; inicioLote += 30) {
+      const datas = dias.slice(inicioLote, inicioLote + 30).flatMap((iso) => [iso, dataBr(iso)]);
+      const lote = await Promise.all([
+        ler(() => banco.from("historico_geral").select("id,Aluna,Data,Tipo,Status,Dificuldades").in("Data", datas).order("id")),
+        ler(() => banco.from("estudo_diario").select("aluna,data,horarios").in("data", datas).order("aluna").order("data")),
+        ler(() => banco.from("calendario").select("id,escala").in("id", datas).order("id"))
+      ]);
+      historico.push(...lote[0]); estudos.push(...lote[1]); calendarios.push(...lote[2]);
+    }
+    return { alunas, historico, estudos, calendarios };
+  }
+
   async function dadosResumoProfessora(dataIso) {
     const banco = await obterCliente();
     const referencia = new Date(`${dataIso}T12:00:00`);
@@ -696,7 +724,7 @@
     const banco = await obterCliente();
     const [historico, alunas] = await Promise.all([
       banco.from("historico_geral").select("*").order("id", { ascending: false }),
-      banco.from("alunas").select("id,nome,ativo").order("nome")
+      banco.from("alunas").select("nome,ativo").order("nome")
     ]);
     if (historico.error || alunas.error) throw new Error(`Não foi possível carregar os ajustes: ${(historico.error || alunas.error).message || "verifique as permissões."}`);
     return { historico: historico.data || [], alunas: alunas.data || [] };
@@ -1340,4 +1368,5 @@
 
   window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosExportacaoRelatorio, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, removerModeloLogistica, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, alterarStatusGem, removerGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
   window.GemData.dadosResumoProfessora = dadosResumoProfessora;
+  window.GemData.dadosBuscaAtiva = dadosBuscaAtiva;
 })();

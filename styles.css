@@ -23,6 +23,23 @@ button { border:0; border-radius:11px; cursor:pointer; }
 .sidebar { position:sticky; top:0; height:100vh; height:100dvh; overflow-y:auto; overscroll-behavior-y:contain; padding:25px 17px; padding-bottom:calc(25px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; background:var(--nav); border-right:1px solid var(--line); }
 .sidebar > * { flex-shrink:0; }
 .menu-backdrop { display:none; }
+.overview-tabs { margin-bottom:18px; }
+.outreach-filters { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)) auto; gap:12px; align-items:end; }
+.outreach-filters label { margin:0; min-width:0; }
+.outreach-filters button { min-height:46px; padding:10px 16px; }
+.outreach-priorities { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:18px; }
+.outreach-priorities section,.outreach-card { min-width:0; padding:18px; border:1px solid var(--line); border-radius:14px; background:#fff; overflow-wrap:anywhere; }
+.outreach-priorities section { background:#fff8fa; }
+.outreach-priorities h3,.outreach-card h3 { margin:0; font-size:1rem; }
+.outreach-card header { display:flex; align-items:start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.outreach-card p { line-height:1.5; margin:8px 0; }
+.outreach-facts { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0; }
+.outreach-facts span { padding:8px 10px; border-radius:8px; background:#f3f5fa; font-size:.87rem; }
+.outreach-attention { color:#94334b; background:#fff0f3; }
+.outreach-card summary { padding:12px 0; cursor:pointer; color:var(--rose-dark); font-weight:700; }
+.outreach-card li { margin:8px 0; line-height:1.5; }
+@media (max-width:900px) { .outreach-filters { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:600px) { .outreach-filters,.outreach-priorities { grid-template-columns:1fr; }.outreach-facts { flex-direction:column; } }
 @media (max-width:760px) {
   body.menu-open { overflow:hidden; }
   .menu-backdrop:not([hidden]) { display:block; position:fixed; inset:0; z-index:9; border-radius:0; background:rgba(24,32,48,.4); }

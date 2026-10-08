@@ -870,6 +870,75 @@ async function renderRodizio(content) {
   await carregar();
 }
 
+async function renderVisaoGeralComAbas(content, renderResumo) {
+  content.innerHTML = `<div class="person-tabs overview-tabs" aria-label="Seções da visão geral"><button type="button" class="tab-action active" data-visao-aba="resumo" aria-pressed="true" aria-controls="visao-aba-resumo">Resumo do GEM</button><button type="button" class="tab-action" data-visao-aba="busca" aria-pressed="false" aria-controls="visao-aba-busca">Busca ativa</button></div><div id="visao-aba-resumo"></div><div id="visao-aba-busca" class="hidden"></div>`;
+  const resumo = content.querySelector("#visao-aba-resumo"), busca = content.querySelector("#visao-aba-busca");
+  let iniciouBusca = false;
+  content.querySelectorAll("[data-visao-aba]").forEach((botao) => botao.addEventListener("click", () => {
+    const abrirBusca = botao.dataset.visaoAba === "busca";
+    resumo.classList.toggle("hidden", abrirBusca); busca.classList.toggle("hidden", !abrirBusca);
+    content.querySelectorAll("[data-visao-aba]").forEach((outro) => {
+      outro.classList.toggle("active", outro === botao); outro.setAttribute("aria-pressed", String(outro === botao));
+    });
+    if (abrirBusca && !iniciouBusca) { iniciouBusca = true; renderBuscaAtiva(busca); }
+  }));
+  await renderResumo(resumo);
+}
+
+async function renderBuscaAtiva(content) {
+  const isoLocal = (data) => `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+  const hoje = new Date(), inicioPadrao = new Date(hoje); inicioPadrao.setDate(inicioPadrao.getDate() - 29);
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO DAS ALUNAS</p><h2>Busca ativa</h2><p>Veja quem precisa de contato, incentivo ou retomada de conteúdo. A visão inicial reúne todas as turmas e disciplinas nos últimos 30 dias.</p></section><section class="panel"><div class="outreach-filters"><label>Data inicial<input data-busca-inicio type="date" value="${isoLocal(inicioPadrao)}"></label><label>Data final<input data-busca-fim type="date" value="${isoLocal(hoje)}"></label><label>Turma<select data-busca-turma><option value="">Todas as turmas</option></select></label><label>Disciplina<select data-busca-area><option value="">Todas as disciplinas</option></select></label><button data-busca-atualizar class="primary-action" type="button">Atualizar período</button></div><p class="hint">As datas inicial e final estão incluídas. Turma corresponde ao cadastro atual. Faltas justificadas também representam aulas perdidas, sem indicar falta de interesse.</p><div data-busca-resultado aria-live="polite"></div></section>`;
+  const inicio = content.querySelector("[data-busca-inicio]"), fim = content.querySelector("[data-busca-fim]");
+  const turma = content.querySelector("[data-busca-turma]"), area = content.querySelector("[data-busca-area]");
+  const resultado = content.querySelector("[data-busca-resultado]");
+  const dataBr = (iso) => iso.split("-").reverse().join("/");
+  let dados = null, periodoCarregado = "", pedido = 0;
+  const seletor = (campo, valores, todos) => {
+    const anterior = campo.value;
+    campo.innerHTML = `<option value="">${todos}</option>${valores.map((valor) => `<option value="${escapeHtml(valor)}">${escapeHtml(valor)}</option>`).join("")}`;
+    campo.value = valores.includes(anterior) ? anterior : "";
+  };
+  const mostrar = () => {
+    if (!dados || periodoCarregado !== `${inicio.value}|${fim.value}`) return;
+    const quadro = window.BuscaAtiva.calcular(dados, { inicio: inicio.value, fim: fim.value, turma: turma.value, area: area.value });
+    const alunas = quadro.alunas, acompanhar = alunas.filter((aluna) => aluna.acompanhar);
+    const totalFaltas = alunas.reduce((total, aluna) => total + aluna.faltas.length, 0);
+    const maximoFaltas = Math.max(0, ...alunas.map((aluna) => aluna.faltas.length));
+    const maisFaltas = alunas.filter((aluna) => maximoFaltas > 0 && aluna.faltas.length === maximoFaltas);
+    const maximoSinais = Math.max(0, ...alunas.map((aluna) => new Set(aluna.sinais.flatMap((sinal) => sinal.datas)).size));
+    const maisSinais = alunas.filter((aluna) => maximoSinais > 0 && new Set(aluna.sinais.flatMap((sinal) => sinal.datas)).size === maximoSinais);
+    const evidencias = (itens) => itens.map((item) => `<li><strong>${escapeHtml(item.disciplina)}</strong> · ${escapeHtml(item.texto)} — ${item.datas.length} dia(s): ${item.datas.map(dataBr).join(", ")}</li>`).join("");
+    const cards = alunas.map((aluna) => {
+      const totalChamadas = aluna.presentes + aluna.faltas.length;
+      const frequencia = totalChamadas ? `${Math.round(aluna.presentes / totalChamadas * 100)}%` : "Sem chamada";
+      return `<article class="outreach-card"><header><div><h3>${escapeHtml(aluna.nome)}</h3><p>${escapeHtml(aluna.turma)}</p></div><span class="badge ${aluna.acompanhar ? "outreach-attention" : ""}">${aluna.acompanhar ? "Acompanhar" : "Sem alerta identificado"}</span></header><p>${aluna.motivos.length ? escapeHtml(aluna.motivos.join(" · ")) : "Não há faltas nem sinais registrados que gerem alerta neste filtro."}</p><div class="outreach-facts"><span><strong>${aluna.faltas.length}</strong> faltas: ${aluna.justificadas} justificadas · ${aluna.ausentes} ausentes</span><span><strong>${frequencia}</strong> · frequência nas chamadas registradas</span><span><strong>${aluna.diasEstudo}</strong> dia(s) de estudo em casa${area.value ? " (geral, sem divisão por disciplina)" : ""}</span></div>${aluna.semEstudoRegistrado ? `<p class="hint">Sem registro de estudo no período; isso não comprova que a aluna não estudou.</p>` : aluna.diasNaoEstudou ? `<p class="hint">${aluna.diasNaoEstudou} dia(s) marcados como “não estudou” no controle geral.</p>` : ""}${!aluna.registros ? `<p class="hint">Sem registros pedagógicos neste filtro. A falta de lançamento não é atribuída à aluna.</p>` : ""}${aluna.diasSemChamada ? `<p class="hint">${aluna.diasSemChamada} dia(s) previstos sem chamada concluída; não contados como falta.</p>` : ""}<details><summary>Ver motivos, datas e aulas para retomar</summary><h4>Participação registrada pelas professoras</h4>${aluna.sinais.length ? `<ul>${evidencias(aluna.sinais)}</ul>` : `<p>Nenhum sinal de baixa participação registrado neste filtro.</p>`}<h4>Dificuldades recorrentes para reforço</h4>${aluna.recorrencias.length ? `<ul>${evidencias(aluna.recorrencias)}</ul>` : `<p>Sem dificuldade repetida em dois ou mais dias neste filtro.</p>`}<h4>Aulas perdidas para retomar</h4>${aluna.faltas.length ? `<ul>${aluna.faltas.map((falta) => `<li><strong>${dataBr(falta.data)}</strong> · ${falta.justificada ? "Falta justificada" : "Ausente"} · ${falta.disciplinas.length ? escapeHtml((area.value ? falta.disciplinas.filter((d) => d === area.value) : falta.disciplinas).join(" / ")) || escapeHtml(area.value) : "Disciplinas não identificadas na escala"}</li>`).join("")}</ul><p class="hint">Conferir com a professora os conteúdos dessas aulas e combinar a retomada.</p>` : `<p>Nenhuma falta identificada neste filtro.</p>`}${area.value && aluna.faltasSemDisciplina ? `<p class="hint">Há ${aluna.faltasSemDisciplina} falta(s) no período sem disciplina identificada na escala. Confira também a visão de todas as disciplinas.</p>` : ""}</details></article>`;
+    }).join("");
+    resultado.innerHTML = `<p><strong>${dataBr(inicio.value)} a ${dataBr(fim.value)}</strong> · ${escapeHtml(turma.value || "Todas as turmas")} · ${escapeHtml(area.value || "Todas as disciplinas")}</p><div class="grid"><div class="metric"><strong>${alunas.length}</strong><span>Alunas ativas neste filtro</span></div><div class="metric"><strong>${acompanhar.length}</strong><span>Alunas para acompanhar</span></div><div class="metric"><strong>${totalFaltas}</strong><span>Faltas (dias por aluna)</span></div></div><div class="outreach-priorities"><section><h3>Maior quantidade de faltas</h3><p>${maisFaltas.length ? `${escapeHtml(maisFaltas.map((a) => a.nome).join(" · "))} — ${maximoFaltas} falta(s) cada.` : "Nenhuma falta registrada neste filtro."}</p></section><section><h3>Mais sinais de baixa participação</h3><p>${maisSinais.length ? `${escapeHtml(maisSinais.map((a) => a.nome).join(" · "))} — sinais em ${maximoSinais} dia(s) cada.` : "Nenhum sinal registrado pelas professoras neste filtro."}</p></section></div><p class="hint">Sinais de participação: registros como “não estudou”, “não realizou”, “não assistiu”, “não participou” ou “estudou de forma insatisfatória”. Dificuldades recorrentes indicam necessidade de apoio, não falta de interesse. ${area.value ? "As faltas por disciplina dependem da escala ou do registro daquele dia." : "Cada falta é contada uma vez por dia e aluna, mesmo quando há várias disciplinas."}</p><div class="lesson-list">${cards || '<div class="empty">Nenhuma aluna ativa encontrada para esta turma.</div>'}</div>`;
+  };
+  const carregar = async () => {
+    const atual = ++pedido;
+    dados = null; periodoCarregado = "";
+    try {
+      window.BuscaAtiva.diasPeriodo(inicio.value, fim.value);
+      const periodo = { inicio: inicio.value, fim: fim.value };
+      resultado.innerHTML = `<div class="empty">Carregando o acompanhamento do período...</div>`;
+      const recebido = await window.GemData.dadosBuscaAtiva(periodo);
+      if (atual !== pedido || !resultado.isConnected) return;
+      dados = recebido; periodoCarregado = `${periodo.inicio}|${periodo.fim}`;
+      const opcoes = window.BuscaAtiva.calcular(dados, periodo);
+      seletor(turma, opcoes.turmas, "Todas as turmas"); seletor(area, opcoes.disciplinas, "Todas as disciplinas");
+      mostrar();
+    } catch (erro) {
+      if (atual === pedido && resultado.isConnected) resultado.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`;
+    }
+  };
+  inicio.addEventListener("change", carregar); fim.addEventListener("change", carregar);
+  turma.addEventListener("change", mostrar); area.addEventListener("change", mostrar);
+  content.querySelector("[data-busca-atualizar]").addEventListener("click", carregar);
+  await carregar();
+}
+
 async function renderVisaoGeralProfessora(content) {
   const agora = new Date();
   const hoje = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
@@ -1940,7 +2009,7 @@ async function renderPage() {
     return;
   }
   if (state.role === "Professora" && state.page === "Visão geral") {
-    await renderVisaoGeralProfessora(content);
+    await renderVisaoGeralComAbas(content, renderVisaoGeralProfessora);
     return;
   }
   if (state.role === "Professora" && state.page === "Minhas aulas") {
@@ -1992,7 +2061,7 @@ async function renderPage() {
     return;
   }
   if (state.role === "Secretaria" && state.page === "Visão geral") {
-    await renderVisaoGeral(content);
+    await renderVisaoGeralComAbas(content, renderVisaoGeral);
     return;
   }
   if (state.role === "Secretaria" && state.page === "Turmas e pessoas") {
