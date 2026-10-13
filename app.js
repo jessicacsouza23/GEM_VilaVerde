@@ -961,6 +961,15 @@ async function renderVisaoGeralProfessora(content) {
       const chamadas = dados.historico.filter((item) => nomes.has(item.Aluna) && item.Tipo === "Chamada" && ["Presente", "Ausente", "Justificada"].includes(item.Status));
       const frequencia = chamadas.length ? `${Math.round(chamadas.filter((item) => item.Status === "Presente").length / chamadas.length * 100)}%` : "—";
       destino.innerHTML = `<div class="grid"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas no GEM</span></div><div class="metric"><strong>${frequencia}</strong><span>Frequência nos últimos 30 dias</span></div></div>${destaquesGemMarkup(ativas, dados, referencia)}`;
+      if (state.coordenadora) {
+        try {
+          const conferencia = await window.GemData.dadosVisaoGeral(referencia);
+          if (atual !== pedido || !destino.isConnected || !state.coordenadora) return;
+          destino.innerHTML += conferenciaRegistrosMarkup(conferencia);
+        } catch (erro) {
+          if (atual === pedido && destino.isConnected && state.coordenadora) destino.innerHTML += `<div class="action-error">Não foi possível conferir os registros: ${escapeHtml(erro.message)}</div>`;
+        }
+      }
     } catch (erro) {
       if (atual === pedido && destino.isConnected) destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`;
     }
@@ -1006,6 +1015,54 @@ function destaquesGemMarkup(ativas, analitico, dataReferencia) {
   const menorEstudo = rankingEstudo.length ? rankingEstudo[rankingEstudo.length - 1] : null;
   const cardEstudo = (titulo, item, vazio) => `<article class="gem-highlight"><span>${titulo}</span><strong>${item ? escapeHtml(item[0]) : "Ainda sem dados"}</strong><small>${item ? `${item[1]} dia(s) de estudo nos últimos 30 dias` : vazio}</small></article>`;
   return `<section class="gem-highlights"><div><h3>🌟 Destaques de desempenho</h3><p>Calculados pelo quadro de desempenho: presença, estudo diário e registros pedagógicos.</p></div><div class="gem-highlight-grid">${cardDestaque("Destaque da semana", destaqueSemana)}${cardDestaque("Destaque do mês", destaqueMes)}</div></section><section class="gem-highlights"><div><h3>📚 Estudo em casa</h3><p>Ranking de dias estudados nos 30 dias anteriores à data de referência.</p></div><div class="gem-highlight-grid">${cardEstudo("Quem mais estudou", maiorEstudo, "Aparecerá quando houver estudo registrado.")}${cardEstudo("Quem menos estudou", menorEstudo, "Aparecerá quando houver alunas ativas.")}</div></section>`;
+}
+
+function conferenciaRegistrosMarkup(dados) {
+  const chamadas = Object.fromEntries(dados.registros.filter((item) => item.Tipo === "Chamada").map((item) => [item.Aluna, item]));
+      const normalizarDisciplina = (tipo) => String(tipo || "").replace(/^Analise_/, "").replace("Canto", "Solfejo Melódico");
+      const normalizarNome = (nome) => String(nome || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+      // A escala salva é a fonte de verdade de quem estava designada para a
+      // aula. Isso mantém a conferência do relatório diário do app.py e evita
+      // considerar como regular um registro lançado pela professora errada.
+      const professorasPrevistas = (linha) => {
+        const previstas = {};
+        Object.entries(linha?._detalhes || {}).forEach(([hora, detalhe]) => {
+          const componentes = (detalhe.componentes || [detalhe.tipo]).filter(Boolean);
+          const valor = String(linha?.[hora] || "");
+          const textoProfessoras = valor.includes("|") ? valor.split("|").slice(1).join("|").trim() : "";
+          componentes.forEach((componente) => {
+            const disciplina = normalizarDisciplina(componente);
+            let professora = detalhe.professoras_componentes?.[componente] || "";
+            if (!professora && componentes.length > 1) {
+              const encontrada = textoProfessoras.match(new RegExp(`${String(componente).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*([^·]+)`, "i"));
+              professora = encontrada?.[1]?.trim() || textoProfessoras;
+            }
+            if (!professora) professora = textoProfessoras;
+            if (professora) (previstas[disciplina] ||= new Set()).add(professora);
+          });
+        });
+        return previstas;
+      };
+      const pendenciasPorProfessora = new Map();
+      dados.alunas.forEach((aluna) => {
+        if (["Ausente", "Justificada"].includes(chamadas[aluna]?.Status)) return;
+        const linha = dados.escala.find((item) => item.Aluna === aluna) || {};
+        const previstas = professorasPrevistas(linha);
+        const registrosDaAluna = dados.registros.filter((item) => item.Aluna === aluna && String(item.Tipo || "").startsWith("Analise_"));
+        Object.entries(previstas).forEach(([disciplina, professoras]) => {
+          professoras.forEach((professora) => {
+            const temRegistro = registrosDaAluna.some((item) => normalizarDisciplina(item.Tipo) === disciplina && normalizarNome(item.Instrutora) === normalizarNome(professora));
+            if (temRegistro) return;
+            if (!pendenciasPorProfessora.has(professora)) pendenciasPorProfessora.set(professora, new Set());
+            pendenciasPorProfessora.get(professora).add(`${aluna} · ${disciplina}`);
+          });
+        });
+      });
+      const professorasPendentesRegistro = [...pendenciasPorProfessora.entries()].sort(([nomeA], [nomeB]) => nomeA.localeCompare(nomeB, "pt-BR"));
+      const conferenciaRegistros = !(dados.escala || []).length
+        ? `<section class="record-check"><div><h3>🔎 Conferência de Registros</h3><p>Não há rodízio salvo nesta data para conferir os registros pedagógicos.</p></div></section>`
+        : `<section class="record-check"><div><h3>🔎 Conferência de Registros</h3><p>Verifique rapidamente quem ainda não lançou o registro pedagógico deste dia.</p></div>${professorasPendentesRegistro.length ? `<div class="record-check-alert"><strong>${professorasPendentesRegistro.length} professora${professorasPendentesRegistro.length === 1 ? "" : "s"} com registro${professorasPendentesRegistro.length === 1 ? "" : "s"} pendente${professorasPendentesRegistro.length === 1 ? "" : "s"}</strong><div class="record-check-list">${professorasPendentesRegistro.map(([professora, pendencias]) => { const itens = [...pendencias]; const resumo = itens.slice(0, 4).join(" · "); const resto = itens.length - 4; return `<article><strong>${escapeHtml(professora)}</strong><small>${itens.length} registro${itens.length === 1 ? "" : "s"} pendente${itens.length === 1 ? "" : "s"}: ${escapeHtml(resumo)}${resto > 0 ? ` · +${resto}` : ""}</small></article>`; }).join("")}</div></div>` : `<div class="action-ok">✓ Todas as professoras previstas já lançaram seus registros pedagógicos.</div>`}</section>`;
+  return conferenciaRegistros;
 }
 
 async function renderVisaoGeral(content) {
@@ -1067,25 +1124,7 @@ async function renderVisaoGeral(content) {
       // A conferência é por professora, disciplina e aluna. Não basta existir
       // qualquer análise: ela precisa ter sido lançada pela professora prevista
       // naquela aula. Ausências não geram pendência pedagógica.
-      const pendenciasPorProfessora = new Map();
-      dados.alunas.forEach((aluna) => {
-        if (["Ausente", "Justificada"].includes(chamadas[aluna]?.Status)) return;
-        const linha = dados.escala.find((item) => item.Aluna === aluna) || {};
-        const previstas = professorasPrevistas(linha);
-        const registrosDaAluna = dados.registros.filter((item) => item.Aluna === aluna && String(item.Tipo || "").startsWith("Analise_"));
-        Object.entries(previstas).forEach(([disciplina, professoras]) => {
-          professoras.forEach((professora) => {
-            const temRegistro = registrosDaAluna.some((item) => normalizarDisciplina(item.Tipo) === disciplina && normalizarNome(item.Instrutora) === normalizarNome(professora));
-            if (temRegistro) return;
-            if (!pendenciasPorProfessora.has(professora)) pendenciasPorProfessora.set(professora, new Set());
-            pendenciasPorProfessora.get(professora).add(`${aluna} · ${disciplina}`);
-          });
-        });
-      });
-      const professorasPendentesRegistro = [...pendenciasPorProfessora.entries()].sort(([nomeA], [nomeB]) => nomeA.localeCompare(nomeB, "pt-BR"));
-      const conferenciaRegistros = !(dados.escala || []).length
-        ? `<section class="record-check"><div><h3>🔎 Conferência de Registros</h3><p>Não há rodízio salvo nesta data para conferir os registros pedagógicos.</p></div></section>`
-        : `<section class="record-check"><div><h3>🔎 Conferência de Registros</h3><p>Verifique rapidamente quem ainda não lançou o registro pedagógico deste dia.</p></div>${professorasPendentesRegistro.length ? `<div class="record-check-alert"><strong>${professorasPendentesRegistro.length} professora${professorasPendentesRegistro.length === 1 ? "" : "s"} com registro${professorasPendentesRegistro.length === 1 ? "" : "s"} pendente${professorasPendentesRegistro.length === 1 ? "" : "s"}</strong><div class="record-check-list">${professorasPendentesRegistro.map(([professora, pendencias]) => { const itens = [...pendencias]; const resumo = itens.slice(0, 4).join(" · "); const resto = itens.length - 4; return `<article><strong>${escapeHtml(professora)}</strong><small>${itens.length} registro${itens.length === 1 ? "" : "s"} pendente${itens.length === 1 ? "" : "s"}: ${escapeHtml(resumo)}${resto > 0 ? ` · +${resto}` : ""}</small></article>`; }).join("")}</div></div>` : `<div class="action-ok">✓ Todas as professoras previstas já lançaram seus registros pedagógicos.</div>`}</section>`;
+      const conferenciaRegistros = conferenciaRegistrosMarkup(dados);
       const ativas = (pessoas.alunas || []).filter((aluna) => aluna.ativo !== false);
       const professorasAtivas = (pessoas.professoras || []).filter((professora) => professora.ativo !== false);
       const modelo = window.GemData.modeloParaData(baseRodizio.modelos || [], dataReferencia);
