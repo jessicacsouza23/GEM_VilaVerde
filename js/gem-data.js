@@ -342,6 +342,14 @@
     return { ...data, fotoUrl: await urlAssinadaEmCache(banco, "fotos_professoras", data.foto_path) };
   }
 
+  async function perfilAluna(nome) {
+    const banco = await obterCliente();
+    const { data, error } = await banco.from("alunas").select("nome,foto_path").eq("nome", nome).maybeSingle();
+    if (error) throw new Error("Não foi possível carregar a foto da aluna.");
+    if (!data?.foto_path) return data || {};
+    return { ...data, fotoUrl: await urlAssinadaEmCache(banco, "fotos_alunas", data.foto_path) };
+  }
+
   async function dadosMetodos() {
     const banco = await obterCliente();
     const { data, error } = await banco.from("config_metodos").select("*").order("categoria").order("nome");
@@ -527,14 +535,7 @@
   }
 
   async function atualizarMinhaFotoProfessora(nome, arquivo) {
-    if (!String(nome || "").trim()) throw new Error("Não foi possível identificar a professora.");
-    if (!arquivo) throw new Error("Escolha uma foto para enviar.");
-    // O perfil da professora usa exclusivamente o R2: não voltamos a gerar
-    // arquivos nem saída no Storage do Supabase.
-    const foto_path = await enviarFotoParaR2("professora", arquivo);
-    if (!foto_path) throw new Error("O R2 não está configurado para receber fotos.");
-    await salvarPessoa("professora", { foto_path }, null, nome);
-    return perfilProfessora(nome);
+    throw new Error("Somente a Secretaria pode alterar fotos de perfil.");
   }
 
   async function dadosDocumentos() {
@@ -1369,4 +1370,5 @@
   window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosExportacaoRelatorio, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, removerModeloLogistica, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, alterarStatusGem, removerGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
   window.GemData.dadosResumoProfessora = dadosResumoProfessora;
   window.GemData.dadosBuscaAtiva = dadosBuscaAtiva;
+  window.GemData.perfilAluna = perfilAluna;
 })();

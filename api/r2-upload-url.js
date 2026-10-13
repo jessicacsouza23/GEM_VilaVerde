@@ -11,8 +11,8 @@ module.exports = async function r2UploadUrl(request, response) {
   if (request.method !== "POST") return response.status(405).json({ error: "Método não permitido." });
   if (!configurado()) return response.status(503).json({ error: "R2 ainda não está configurado." });
   const acesso = sessaoComR2(request);
-  const podeEnviar = acesso?.perfil === "Secretaria" || (acesso?.perfil === "Professora" && request.body?.tipo === "professora");
-  if (!podeEnviar) return response.status(401).json({ error: "Entre como Secretaria para enviar fotos ou como Professora para alterar sua própria foto." });
+  const podeEnviar = acesso?.perfil === "Secretaria";
+  if (!podeEnviar) return response.status(acesso ? 403 : 401).json({ error: "Somente a Secretaria pode alterar fotos de perfil." });
   try {
     const { tipo, nome, contentType, tamanho } = request.body || {};
     if (!TIPOS[tipo] || !MIMES.has(contentType) || Number(tamanho) <= 0 || Number(tamanho) > 5 * 1024 * 1024) return response.status(400).json({ error: "Arquivo de foto inválido." });

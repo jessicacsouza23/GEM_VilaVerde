@@ -415,7 +415,7 @@ async function renderConfigurarMetodos(content) {
       }
       seletor.innerHTML = areas.map((area) => `<option value="${escapeHtml(area)}">${escapeHtml(area)}</option>`).join("");
       seletor.disabled = false;
-      //ajuda.textContent = `Áreas disponíveis no modelo “${modelo.nome}”.`;
+      ajuda.textContent = `Áreas disponíveis no modelo “${modelo.nome}”.`;
     } catch (_) {
       seletor.innerHTML = `<option value="">Não foi possível carregar a Logística</option>`; seletor.disabled = true;
       ajuda.textContent = "Confira se há um modelo salvo na Logística.";
@@ -1912,29 +1912,6 @@ function abrirZoomFoto(url, titulo = "Foto") {
   document.body.appendChild(modal);
 }
 
-function abrirTrocaFotoProfessora() {
-  if (state.role !== "Professora") return;
-  document.querySelector(".profile-photo-modal")?.remove();
-  const modal = document.createElement("div");
-  modal.className = "photo-modal profile-photo-modal";
-  modal.innerHTML = `<section class="profile-photo-card" role="dialog" aria-modal="true" aria-label="Alterar foto de perfil"><button class="modal-close" type="button" aria-label="Fechar">×</button><h3>Alterar minha foto</h3><p>A imagem será salva no R2 e aparecerá no seu perfil.</p><label>Nova foto<input data-minha-foto type="file" accept="image/jpeg,image/png,image/webp"></label><button data-salvar-minha-foto class="primary-action" type="button">Salvar foto</button><div data-retorno-foto></div></section>`;
-  const fechar = () => modal.remove();
-  modal.addEventListener("click", (evento) => { if (evento.target === modal) fechar(); });
-  modal.querySelector(".modal-close").addEventListener("click", fechar);
-  modal.querySelector("[data-salvar-minha-foto]").addEventListener("click", async (evento) => {
-    if (state.role !== "Professora") { fechar(); return; }
-    const botao = evento.currentTarget, retorno = modal.querySelector("[data-retorno-foto]"), arquivo = modal.querySelector("[data-minha-foto]").files[0];
-    botao.disabled = true;
-    try {
-      const perfil = await window.GemData.atualizarMinhaFotoProfessora(state.name, arquivo);
-      aplicarAvatar(perfil.fotoUrl, state.name);
-      retorno.innerHTML = `<div class="action-ok">Foto atualizada.</div>`;
-      setTimeout(fechar, 700);
-    } catch (erro) { retorno.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; }
-  });
-  document.body.appendChild(modal);
-}
-
 document.addEventListener("click", (evento) => {
   const foto = evento.target.closest("[data-foto-zoom]");
   if (!foto) return;
@@ -2140,13 +2117,12 @@ async function abrirConta(conta) {
       const perfil = await window.GemData.perfilProfessora(state.name);
       aplicarAvatar(perfil.fotoUrl, state.name);
     } catch (error) { console.warn("Foto de perfil da professora indisponível", error); }
-    document.querySelector(".profile-photo-action")?.remove();
-    const trocarFoto = document.createElement("button");
-    trocarFoto.className = "profile-photo-action";
-    trocarFoto.type = "button";
-    trocarFoto.textContent = "Alterar minha foto";
-    trocarFoto.addEventListener("click", abrirTrocaFotoProfessora);
-    document.querySelector(".profile").appendChild(trocarFoto);
+  }
+  if (state.role === "Aluna") {
+    try {
+      const perfil = await window.GemData.perfilAluna(state.name);
+      aplicarAvatar(perfil.fotoUrl, state.name);
+    } catch (error) { console.warn("Foto de perfil da aluna indisponível", error); }
   }
   if (["Aluna", "Professora"].includes(state.role) && "Notification" in window && "serviceWorker" in navigator) { $("#ativar-notificacoes").classList.remove("hidden"); atualizarBotaoNotificacoes(); }
   renderNavigation(); await renderPage();
