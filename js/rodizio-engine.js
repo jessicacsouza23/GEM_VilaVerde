@@ -151,6 +151,18 @@
     // Sala 1 por uma professora que estava em Teoria no bloco anterior sem
     // que haja uma saída/indisponibilidade real.
     let professorasPrioritariasNoIndividual = new Set();
+    const professorasUsadasNoIndividual = new Set();
+    const salaColetivaPorProfessora = new Map();
+    Object.entries(coletivas).forEach(([atividade, escolhas]) => {
+      const sala = salasColetivas[atividade];
+      if (!sala) return;
+      Object.values(escolhas || {}).filter(Boolean).forEach((professora) => {
+        const anterior = salaColetivaPorProfessora.get(professora);
+        if (anterior && anterior !== sala) erros.push(`${professora} está escolhida para duas salas coletivas diferentes no mesmo sábado. Ajuste as escolhas para manter uma única sala.`);
+        salaColetivaPorProfessora.set(professora, sala);
+      });
+    });
+    if (erros.length) return { escala: null, erros: [...new Set(erros)] };
     // No modo automático, a ordem visual das turmas é uma preferência, não
     // pode derrubar uma professora fixa. O app.py procura uma combinação de
     // Teoria / Solfejo / Individual que deixe a fixa livre no bloco certo.
@@ -211,6 +223,8 @@
           const ocupadas = new Set(todasAlunas.map((aluna) => String(escala[aluna][hora] || "")).filter((item) => item.includes("|")).map((item) => item.split("|").slice(1).join("|").trim()));
           const habilitadasDaArea = habilitadas[posicao] || (posicao === "Solfejo Melódico" ? habilitadas.Canto : null) || disponiveis;
           let candidatas = habilitadasDaArea.filter((professora) => disponiveis.includes(professora) && !indisponiveis.includes(professora) && !ocupadas.has(professora) && !professorasReservadas.has(professora));
+          candidatas = candidatas.filter((professora) => !professorasUsadasNoIndividual.has(professora)
+            && (!salaColetivaPorProfessora.has(professora) || salaColetivaPorProfessora.get(professora) === salasColetivas[posicao]));
           const escolhida = coletivas?.[posicao]?.[turma];
           if (escolhida) {
             // A professora escolhida pela Secretaria para Teoria/Solfejo
@@ -229,13 +243,14 @@
           }
           if (!candidatas.length) { erros.push(`Não há professora disponível/habilitada para ${posicao} no ${hora}.`); return; }
           const professora = candidatas[indiceBloco % candidatas.length];
+          salaColetivaPorProfessora.set(professora, salasColetivas[posicao]);
           alunas.forEach((aluna) => { escala[aluna][hora] = `${salasColetivas[posicao]} | ${professora}`; escala[aluna]._detalhes[hora] = { tipo: posicao, individual: false, turma }; });
           return;
         }
         const ocupadas = new Set(todasAlunas.map((aluna) => String(escala[aluna][hora] || "")).filter((item) => item.includes("|")).map((item) => item.split("|").slice(1).join("|").trim()));
         let habilitadasIndividuais = [...professoras];
         if (mesmaProf) componentes.forEach((componente) => { const lista = habilitadas[componente] || professoras; habilitadasIndividuais = habilitadasIndividuais.filter((professora) => lista.includes(professora)); });
-        const profsLivres = disponiveis.filter((professora) => habilitadasIndividuais.includes(professora) && !ocupadas.has(professora) && !indisponiveis.includes(professora));
+        const profsLivres = disponiveis.filter((professora) => habilitadasIndividuais.includes(professora) && !ocupadas.has(professora) && !indisponiveis.includes(professora) && !salaColetivaPorProfessora.has(professora));
         // Havendo professora fixa, continuamos até a verificação por aluna:
         // assim a Secretaria recebe a causa verdadeira (folga, habilitação,
         // coletiva ou duplicidade), em vez de uma mensagem genérica sobre
@@ -297,6 +312,7 @@
           escala[aluna][hora] = `${sala} | ${professora}`;
           escala[aluna]._detalhes[hora] = { tipo: componentes.length > 1 ? "Prática + Solfejo" : componentes[0], componentes: [...componentes], horarios_componentes: horariosComponentes(hora, componentes, config.atividades), individual: true, turma, mesma_professora_componentes: mesmaProf };
           alocadas.push({ aluna, sala, professora }); profsLivres.splice(profsLivres.indexOf(professora), 1); salasLivres.splice(salasLivres.indexOf(sala), 1);
+          professorasUsadasNoIndividual.add(professora);
           mem.professoras.push(professora); mem.salas.push(sala); mem.ultima = professora;
           registrarNoCiclo(memoriaHistorica.alunasPorProfessora, professora, aluna, alunasDaRoda);
         });
@@ -310,8 +326,30 @@
       });
     });
     if (erros.length) return { escala: null, erros: [...new Set(erros)] };
-    estabilizarSalas(escala, horarios, individuais, data, escalasAnteriores);
+    if (!estabilizarSalas(escala, horarios, individuais, data, escalasAnteriores)) {
+      return { escala: null, erros: ["Não foi possível manter cada professora na mesma sala individual durante todo o sábado. Revise as professoras das coletivas, as fixas e as saídas antecipadas. Nenhuma escala com troca de sala entre aulas foi gerada."] };
+    }
+    const conflitosSalas = validarSalasDoSabado(escala);
+    if (conflitosSalas.length) return { escala: null, erros: conflitosSalas };
     return { escala: Object.values(escala), erros: [] };
+  }
+
+  function validarSalasDoSabado(mapa) {
+    const salasPorProfessora = new Map();
+    Object.values(mapa).forEach((linha) => Object.entries(linha._detalhes || {}).forEach(([hora, detalhe]) => {
+      const valor = String(linha[hora] || "");
+      if (!valor.includes("|")) return;
+      const sala = valor.split("|")[0].trim();
+      const nomes = Object.values(detalhe.professoras_componentes || {});
+      if (!nomes.length) nomes.push(valor.split("|").slice(1).join("|").trim());
+      nomes.filter(Boolean).forEach((nome) => {
+        const chave = limpar(nome);
+        if (!salasPorProfessora.has(chave)) salasPorProfessora.set(chave, { nome, salas: new Set() });
+        salasPorProfessora.get(chave).salas.add(sala);
+      });
+    }));
+    return [...salasPorProfessora.values()].filter((item) => item.salas.size > 1)
+      .map((item) => `${item.nome} foi designada para salas diferentes neste sábado (${[...item.salas].join(", ")}). Ajuste as escolhas de aulas coletivas, professoras fixas ou a troca de professora entre componentes para manter uma única sala no dia.`);
   }
 
   function estabilizarSalas(mapa, horarios, salas, data, escalasAnteriores = []) {
@@ -363,8 +401,15 @@
       }
       return false;
     };
-    if (!tentar(0)) return;
+    if (!tentar(0)) {
+      // A primeira distribuição é uma preferência, não uma obrigação que
+      // justifique devolver uma escala instável. Recalcular o sábado inteiro
+      // permite acomodar substituições sem mover professoras entre blocos.
+      Object.keys(porSala).forEach((prof) => delete porSala[prof]);
+      if (!tentar(0)) return false;
+    }
     Object.values(mapa).forEach((linha) => Object.entries(linha._detalhes || {}).forEach(([hora, detalhe]) => { if (!detalhe.individual) return; const valor = String(linha[hora] || ""); const componentes = detalhe.professoras_componentes || {}; const professora = String(componentes.Prática || valor.split("|").slice(1).join("|").trim()); const sala = porSala[professora]; if (!sala) return; detalhe.sala_fixa_professora = sala; linha[hora] = `${sala} | ${valor.split("|").slice(1).join("|").trim()}`; }));
+    return true;
   }
 
   window.RodizioEngine = { gerar, prepararModelo, horario, nomeArea, horariosComponentes };
