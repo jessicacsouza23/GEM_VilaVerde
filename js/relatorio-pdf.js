@@ -25,7 +25,7 @@
   function gerar({ gem, data, resumo, alunas }, JsPDF) {
     const pdf = new JsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
     const margem = 16, largura = 178, limite = 278, passo = 5;
-    let y = 16, alunaAtual = '';
+    let y = 16;
     const estilo = (negrito = false, tamanho = 10) => {
       pdf.setFont('helvetica', negrito ? 'bold' : 'normal');
       pdf.setFontSize(tamanho);
@@ -60,18 +60,26 @@
       pdf.addPage();
       y = 16;
       cabecalho();
-      if (alunaAtual) escrever(`👧 ${alunaAtual} (continuação)`, true, 11);
     };
     const reservar = (altura) => { if (y + altura > limite) novaPagina(); };
     cabecalho();
     escrever(resumo);
     if (!alunas.length) escrever('Não há escala salva para esta data.');
     for (const aluna of alunas) {
-      alunaAtual = '';
-      estilo(true, 12);
-      reservar(linhas(`👧 ${aluna.nome}`).length * passo + 28);
-      escrever(`👧 ${aluna.nome}`, true, 12);
-      alunaAtual = texto(aluna.nome);
+      estilo(true, 15);
+      const nome = pdf.splitTextToSize(texto(aluna.nome), largura - 14);
+      const alturaFaixa = nome.length * 7 + 6;
+      reservar(alturaFaixa + 28);
+      pdf.setFillColor(255, 240, 245);
+      pdf.rect(margem, y - 4, largura, alturaFaixa, 'F');
+      pdf.setFillColor(222, 65, 105);
+      pdf.rect(margem, y - 4, 1.5, alturaFaixa, 'F');
+      const icone = imagemEmoji('👧');
+      if (icone) pdf.addImage(icone, 'PNG', margem + 3, y - 1.8, 5.5, 5.5, 'emoji-👧');
+      estilo(true, 15);
+      y += 2;
+      for (const linha of nome) { pdf.text(linha, margem + 10, y); y += 7; }
+      y += 5;
       escrever(`📍 Presença: ${aluna.presenca || 'Ainda não registrada'}`);
       if (aluna.observacaoPresenca) escrever(`Observação da presença: ${aluna.observacaoPresenca}`);
       if (!aluna.registros.length) escrever('Nenhum registro pedagógico lançado ainda para esta aluna.');
@@ -82,7 +90,11 @@
         for (const campo of registro.campos) escrever(campo);
         y += 3;
       }
-      y += 5;
+      if (y + 2 <= limite) {
+        pdf.setDrawColor(230, 213, 220);
+        pdf.line(margem, y, margem + largura, y);
+      }
+      y += 12;
     }
     const total = pdf.getNumberOfPages();
     for (let pagina = 1; pagina <= total; pagina++) {

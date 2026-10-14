@@ -13,6 +13,8 @@ class PDF {
   setFontSize(size) { this.size = size; }
   setTextColor() {}
   setDrawColor() {}
+  setFillColor() {}
+  rect() {}
   line() {}
   splitTextToSize(value) { return value.match(/.{1,70}/g) || ['']; }
   text(value, x, y) { this.paginas[this.pagina].push({ value, x, y, size: this.size }); }
@@ -40,8 +42,10 @@ test('relatório longo mantém conteúdo, presença e margens sem imagens ou red
     assert.ok(pagina.some(l => l.value === `Página ${i+1} de ${pdf.paginas.length}`));
     assert.ok(pagina.every(l => l.y >= 16 && l.y <= 289));
     assert.ok(pagina.every(l => l.size >= 9));
-    if (i) assert.ok(pagina.some(l => l.value.includes('Júlia (continuação)')));
+    if (i) assert.ok(pagina.every(l => !l.value.includes('Júlia')));
   });
+  assert.equal(pdf.paginas.flat().filter(l => l.value === 'Júlia').length, 1);
+  assert.equal(pdf.paginas.flat().find(l => l.value === 'Júlia').size, 15);
 });
 test('relatório vazio continua sendo um PDF válido de uma página', () => {
   const pdf = ctx.window.RelatorioPDF.gerar({ data: '03/10/2026', resumo: '0 alunas', alunas: [] }, PDF);
@@ -55,7 +59,7 @@ test('emojis do relatório são imagens com espaço reservado ao lado do texto',
     { nome: 'Júlia', presenca: 'Presente', registros: emojis.map(emoji => ({ titulo: `${emoji} Registro`, campos: [`${emoji} Informação completa`] })) }
   ] }, PDF);
   for (const emoji of ['👧', '📍', ...emojis]) assert.ok(pdf.imagens.some(i => i.alias === `emoji-${emoji}`));
-  assert.ok(pdf.imagens.every(i => i.x === 16 && i.y >= 12 && i.y + i.h <= 278));
+  assert.ok(pdf.imagens.every(i => i.x >= 16 && i.y >= 12 && i.y + i.h <= 278));
   const registros = pdf.paginas.flat().filter(l => l.value === 'Registro');
   assert.equal(registros.length, emojis.length);
   assert.ok(registros.every(l => l.x === 22));
