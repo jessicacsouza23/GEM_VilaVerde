@@ -404,7 +404,7 @@
     return perfilSecretaria();
   }
 
-  async function dadosVisaoGeral(dataIso, { incluirHistoricoAusentes = false } = {}) {
+  async function dadosVisaoGeral(dataIso, { incluirHistoricoAusentes = false, excluirDesativadas = false } = {}) {
     const banco = await obterCliente(); const data = dataBr(dataIso);
     const [calendario, historico, estudos] = await Promise.all([
       banco.from("calendario").select("escala").eq("id", data).maybeSingle(),
@@ -412,10 +412,22 @@
       banco.from("estudo_diario").select("aluna,data,horarios").eq("data", data)
     ]);
     if (calendario.error || historico.error) throw new Error("Não foi possível carregar a visão geral desta data.");
-    const alunas = [...new Set((calendario.data?.escala || []).map((linha) => linha.Aluna).filter(Boolean))];
-    const chamadas = historico.data?.filter((item) => item.Tipo === "Chamada") || [];
+    const desativadas = new Set();
+    if (excluirDesativadas) {
+      for (let inicio = 0; ; inicio += 500) {
+        const resultado = await banco.from('alunas').select('nome').eq('ativo', false).order('nome').range(inicio, inicio + 499);
+        if (resultado.error) throw new Error('Não foi possível conferir as alunas desativadas para gerar o relatório. Tente novamente.');
+        (resultado.data || []).forEach(item => desativadas.add(normalizar(item.nome)));
+        if ((resultado.data || []).length < 500) break;
+      }
+    }
+    const incluir = nome => !desativadas.has(normalizar(nome));
+    const escala = (calendario.data?.escala || []).filter(item => incluir(item.Aluna));
+    const registros = (historico.data || []).filter(item => incluir(item.Aluna));
+    const alunas = [...new Set(escala.map((linha) => linha.Aluna).filter(Boolean))];
+    const chamadas = registros.filter((item) => item.Tipo === "Chamada");
     const ausentes = chamadas.filter((item) => ["Ausente", "Justificada"].includes(item.Status));
-    const analises = historico.data?.filter((item) => String(item.Tipo || "").startsWith("Analise_")) || [];
+    const analises = registros.filter((item) => String(item.Tipo || "").startsWith("Analise_"));
     const historicoComplementar = [];
     if (incluirHistoricoAusentes) {
       const ultimaChamada = new Map(chamadas.map(item => [item.Aluna, item]));
@@ -432,7 +444,7 @@
         }
       }
     }
-    return { data, escala: calendario.data?.escala || [], alunas, ausentes, analises, registros: historico.data || [], historicoComplementar, estudos: estudos.error ? [] : estudos.data || [] };
+    return { data, escala, alunas, ausentes, analises, registros, historicoComplementar, estudos: estudos.error ? [] : (estudos.data || []).filter(item => incluir(item.aluna)) };
   }
 
   async function dadosPessoas() {

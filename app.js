@@ -1321,7 +1321,7 @@ async function renderRelatorios(content) {
   const carregar = async () => {
     const destino = $("#relatorio-conteudo"); destino.innerHTML = `<div class="empty">Gerando relatório...</div>`;
     try {
-      const dados = await window.GemData.dadosVisaoGeral($("#relatorio-data").value, { incluirHistoricoAusentes: true });
+      const dados = await window.GemData.dadosVisaoGeral($("#relatorio-data").value, { incluirHistoricoAusentes: true, excluirDesativadas: true });
       const porAluna = new Map(dados.alunas.map((aluna) => [aluna, []]));
       dados.registros.forEach((registro) => { if (registro.Aluna) (porAluna.get(registro.Aluna) || porAluna.set(registro.Aluna, []).get(registro.Aluna)).push(registro); });
       const rotulo = (tipo) => ({ Chamada: "📍 Presença", Casa_MSA: "📚 Lição de casa — MSA", Casa_Apostila: "📚 Lição de casa — Apostila", Casa_Apostila_Prof: "📚 Lição de casa — Apostila de Prática", Casa_Teoria: "📚 Lição de casa — Folha Avulsa de Teoria", Casa_Teoria_Prof: "📚 Lição de casa — Folha Avulsa de Teoria", Casa_Apostila_Teoria_Prof: "📚 Lição de casa — Apostila de Teoria", Casa_Canto: "🎤 Lição de casa — Solfejo Melódico" }[tipo] || String(tipo || "Registro").replace(/^Analise_/, "📖 "));
