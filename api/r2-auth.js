@@ -35,13 +35,18 @@ function lerCookies(request) {
 function sessao(request) {
   if (!sessaoConfigurada()) return null;
   const valor = lerCookies(request)[COOKIE];
-  if (!valor || !valor.includes(".")) return null;
+  if (!valor || valor.length > 4096 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/.test(valor)) return null;
   const [payload, assinatura] = valor.split(".");
   const esperada = assinar(payload);
   if (assinatura.length !== esperada.length || !crypto.timingSafeEqual(Buffer.from(assinatura), Buffer.from(esperada))) return null;
   try {
     const dados = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    return Number(dados.exp) > Math.floor(Date.now() / 1000) ? dados : null;
+    const agora = Math.floor(Date.now() / 1000);
+    if (!Number.isInteger(dados.exp) || dados.exp <= agora || dados.exp > agora + MAX_AGE) return null;
+    if (typeof dados.nome !== "string" || !dados.nome.trim() || dados.nome.length > 300) return null;
+    if (!["Aluna", "Professora", "Secretaria", "Master"].includes(dados.perfil)) return null;
+    if (dados.gem !== undefined && (typeof dados.gem !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(dados.gem))) return null;
+    return dados;
   } catch (_) { return null; }
 }
 
@@ -68,4 +73,14 @@ function limparCookie(response) {
   response.setHeader("Set-Cookie", `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
 }
 
-module.exports = { configurado, sessaoConfigurada, criarSessao, sessao, sessaoDoVilaVerde, sessaoComR2, definirCookie, limparCookie };
+function origemPermitida(request) {
+  if (request.headers["sec-fetch-site"] === "cross-site") return false;
+  const origem = request.headers.origin;
+  if (!origem) return true; // Clientes não navegador continuam precisando de autenticação.
+  try {
+    const url = new URL(origem);
+    return url.protocol === "https:" && url.host === request.headers.host;
+  } catch (_) { return false; }
+}
+
+module.exports = { configurado, sessaoConfigurada, criarSessao, sessao, sessaoDoVilaVerde, sessaoComR2, definirCookie, limparCookie, origemPermitida };

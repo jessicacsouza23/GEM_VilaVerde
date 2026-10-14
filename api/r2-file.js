@@ -1,6 +1,7 @@
 const { GetObjectCommand } = require("@aws-sdk/client-s3");
 const { configurado, sessaoComR2 } = require("./r2-auth");
 const { clienteR2, bucket } = require("./r2-client");
+const { podeLerFoto } = require("../lib/photo-access");
 
 async function bytesDoObjetoR2(corpo) {
   if (!corpo) throw new Error("O R2 devolveu o arquivo sem conteúdo.");
@@ -22,6 +23,8 @@ async function bytesDoObjetoR2(corpo) {
 // navegador, esta rota as fornece no mesmo domínio do aplicativo. Assim a
 // exibição não depende de CORS nem de uma URL assinada exposta no HTML.
 module.exports = async function r2File(request, response) {
+  response.setHeader("Cache-Control", "private, no-store");
+  response.setHeader("X-Content-Type-Options", "nosniff");
   if (request.method !== "GET") return response.status(405).json({ error: "Método não permitido." });
   if (!configurado()) return response.status(503).json({ error: "R2 ainda não está configurado." });
   const acesso = sessaoComR2(request);
@@ -36,10 +39,11 @@ module.exports = async function r2File(request, response) {
     return response.status(400).json({ error: "Arquivo inválido." });
   }
   try {
+    if (!await podeLerFoto(acesso, chave)) return response.status(403).json({ error: "Você não tem permissão para visualizar esta foto." });
     const objeto = await clienteR2().send(new GetObjectCommand({ Bucket: bucket(), Key: chave }));
     const bytes = await bytesDoObjetoR2(objeto.Body);
     response.setHeader("Content-Type", objeto.ContentType || "application/octet-stream");
-    response.setHeader("Cache-Control", "private, max-age=300");
+    response.setHeader("Cache-Control", "private, no-store");
     return response.status(200).send(Buffer.from(bytes));
   } catch (erro) {
     // Não retornamos detalhes sensíveis ao navegador, mas registramos o

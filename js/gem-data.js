@@ -195,10 +195,20 @@
   }
 
   async function encerrarSessao() {
-    const banco = await obterCliente();
-    const { error } = await banco.auth.signOut();
-    if (error) console.warn("Não foi possível encerrar a sessão do Supabase.", error);
-    try { await fetch("/api/r2-session", { method: "DELETE", credentials: "same-origin" }); } catch (_) { /* sessão de fotos expira em no máximo oito horas */ }
+    try {
+      const banco = await obterCliente();
+      const { error } = await banco.auth.signOut();
+      if (error) console.warn("Não foi possível encerrar a sessão do Supabase.");
+    } finally {
+      try { await fetch("/api/r2-session", { method: "DELETE", credentials: "same-origin", cache: "no-store" }); }
+      finally {
+        try {
+          Object.keys(localStorage).filter((chave) => chave.startsWith("gem-url-assinada-")).forEach((chave) => localStorage.removeItem(chave));
+          if ("caches" in window) await Promise.all((await caches.keys()).filter((chave) => chave.startsWith("gem-vila-verde-images-")).map((chave) => caches.delete(chave)));
+        } catch (_) { /* Limpeza local não impede o encerramento da sessão. */ }
+        r2Habilitado = null;
+      }
+    }
   }
 
   async function iniciarSessaoR2(login, senha) {

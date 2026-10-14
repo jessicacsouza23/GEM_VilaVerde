@@ -1,4 +1,4 @@
-const { configurado, sessaoConfigurada, criarSessao, sessao, definirCookie, limparCookie } = require("./r2-auth");
+const { configurado, sessaoConfigurada, criarSessao, sessao, definirCookie, limparCookie, origemPermitida } = require("./r2-auth");
 
 async function supabaseRpc(nome, parametros) {
   const url = process.env.SUPABASE_URL, chave = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -85,6 +85,8 @@ async function validarSecretariaDaPlataforma(slug, login, senha) {
 }
 
 module.exports = async function r2Session(request, response) {
+  response.setHeader("Cache-Control", "private, no-store");
+  if (!origemPermitida(request)) return response.status(403).json({ error: "Origem não permitida." });
   if (request.method === "DELETE") { limparCookie(response); return response.status(204).end(); }
   // O cookie é HttpOnly: o navegador o envia, mas nenhum script consegue lê-lo.
   // Esta rota só devolve a identidade mínima necessária para reconstruir a tela
@@ -100,6 +102,7 @@ module.exports = async function r2Session(request, response) {
   if (!sessaoConfigurada() || !process.env.SUPABASE_SERVICE_ROLE_KEY) return response.status(200).json({ enabled: false, session: false });
   try {
     const login = String(request.body?.login || "").trim().toLowerCase(), senha = String(request.body?.senha || "");
+    if (login.length > 320 || senha.length > 1024) return response.status(400).json({ error: "Dados de acesso inválidos." });
     if (!login || !senha) return response.status(400).json({ error: "Dados de acesso ausentes." });
     const slug = slugValido(request.body?.gem) || "vila-verde";
     if (slug !== "vila-verde") {

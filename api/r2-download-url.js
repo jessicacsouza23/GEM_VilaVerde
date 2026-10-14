@@ -2,8 +2,10 @@ const { GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { configurado, sessaoComR2 } = require("./r2-auth");
 const { clienteR2, bucket } = require("./r2-client");
+const { podeLerFoto } = require("../lib/photo-access");
 
 module.exports = async function r2DownloadUrl(request, response) {
+  response.setHeader("Cache-Control", "private, no-store");
   if (request.method !== "GET") return response.status(405).json({ error: "Método não permitido." });
   if (!configurado()) return response.status(503).json({ error: "R2 ainda não está configurado." });
   const acesso = sessaoComR2(request);
@@ -14,7 +16,8 @@ module.exports = async function r2DownloadUrl(request, response) {
   const fotoLegadaVilaVerde = gem === "vila-verde" && /^(fotos_alunas|fotos_professoras|fotos_secretaria_gem|logo_gem)\/[A-Za-z0-9._-]+$/.test(chave);
   if (!chaveDaUnidade.test(chave) && !fotoLegadaVilaVerde) return response.status(400).json({ error: "Arquivo inválido." });
   try {
-    const url = await getSignedUrl(clienteR2(), new GetObjectCommand({ Bucket: bucket(), Key: chave }), { expiresIn: 3600 });
+    if (!await podeLerFoto(acesso, chave)) return response.status(403).json({ error: "Você não tem permissão para visualizar esta foto." });
+    const url = await getSignedUrl(clienteR2(), new GetObjectCommand({ Bucket: bucket(), Key: chave }), { expiresIn: 60 });
     return response.status(200).json({ url });
   } catch (_) { return response.status(500).json({ error: "Não foi possível abrir a foto." }); }
 };
