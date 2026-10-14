@@ -2,11 +2,13 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const ctx = { window: {} };
+const ctx = { window: {}, document: { createElement() { return {
+  getContext() { return { fillText() {} }; }, toDataURL() { return 'data:image/png;base64,teste'; }
+}; } } };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(require.resolve('../js/relatorio-pdf.js'), 'utf8'), ctx);
 class PDF {
-  constructor() { this.paginas = [[]]; this.pagina = 0; }
+  constructor() { this.paginas = [[]]; this.pagina = 0; this.imagens = []; }
   setFont() {}
   setFontSize(size) { this.size = size; }
   setTextColor() {}
@@ -14,6 +16,7 @@ class PDF {
   line() {}
   splitTextToSize(value) { return value.match(/.{1,70}/g) || ['']; }
   text(value, x, y) { this.paginas[this.pagina].push({ value, x, y, size: this.size }); }
+  addImage(data, tipo, x, y, w, h, alias) { this.imagens.push({ x, y, w, h, alias, pagina: this.pagina }); }
   addPage() { this.paginas.push([]); this.pagina++; }
   getNumberOfPages() { return this.paginas.length; }
   setPage(n) { this.pagina = n - 1; }
@@ -44,4 +47,16 @@ test('relatório vazio continua sendo um PDF válido de uma página', () => {
   const pdf = ctx.window.RelatorioPDF.gerar({ data: '03/10/2026', resumo: '0 alunas', alunas: [] }, PDF);
   assert.equal(pdf.paginas.length, 1);
   assert.ok(pdf.paginas[0].some(l => l.value.includes('Não há escala salva')));
+});
+
+test('emojis do relatório são imagens com espaço reservado ao lado do texto', () => {
+  const emojis = ['📚', '📖', '🎤', '🎹', '⚠', '⚠️', '✓', '📝', '✅'];
+  const pdf = ctx.window.RelatorioPDF.gerar({ data: '03/10/2026', resumo: 'Resumo', alunas: [
+    { nome: 'Júlia', presenca: 'Presente', registros: emojis.map(emoji => ({ titulo: `${emoji} Registro`, campos: [`${emoji} Informação completa`] })) }
+  ] }, PDF);
+  for (const emoji of ['👧', '📍', ...emojis]) assert.ok(pdf.imagens.some(i => i.alias === `emoji-${emoji}`));
+  assert.ok(pdf.imagens.every(i => i.x === 16 && i.y >= 12 && i.y + i.h <= 278));
+  const registros = pdf.paginas.flat().filter(l => l.value === 'Registro');
+  assert.equal(registros.length, emojis.length);
+  assert.ok(registros.every(l => l.x === 22));
 });
