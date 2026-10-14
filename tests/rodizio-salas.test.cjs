@@ -38,7 +38,7 @@ test('histórico permite rodar salas entre sábados, sem alterar escala anterior
   const salaAna = escala => escala.flatMap(linha => Object.keys(linha._detalhes).map(h => linha[h])).find(v => v.endsWith('| Ana')).split('|')[0];
   assert.notEqual(salaAna(primeiro.escala), salaAna(segundo.escala));
 });
-test('alocação impossível não retorna silenciosamente salas variáveis', () => {
+test('estabilização impossível preserva a distribuição original', () => {
   const mapa = {};
   [['A','B'], ['B','C'], ['A','C']].forEach((profs, i) => profs.forEach((prof, j) => {
     mapa[`${i}-${j}`] = { [`h${i}`]: `SALA ${j+1} | ${prof}`, _detalhes: { [`h${i}`]: { individual: true } } };
@@ -47,7 +47,21 @@ test('alocação impossível não retorna silenciosamente salas variáveis', () 
   assert.equal(engine.estabilizarSalas(mapa, ['h0','h1','h2'], ['SALA 1','SALA 2'], '17/10/2026'), false);
   assert.equal(JSON.stringify(mapa), antes);
 });
-test('folgas e escolha incompatível entre coletiva e fixa não são ignoradas', () => {
+test('professoras alternam entre coletiva e individual em horários diferentes', () => {
+  const dados = entrada();
+  dados.modelo.configuracao.professoras_habilitadas = { Teoria: ['Ana', 'Bia', 'Clara'], 'Prática': ['Ana', 'Bia', 'Clara'] };
+  const resultado = engine.gerar({ ...dados, coletivas: { Teoria: { 'Turma 1': 'Ana', 'Turma 2': 'Clara' } } });
+  assert.equal(resultado.erros.length, 0, resultado.erros.join('\n'));
+  for (const nome of ['Ana', 'Clara']) {
+    const tipos = new Set();
+    for (const linha of resultado.escala) for (const [hora, detalhe] of Object.entries(linha._detalhes)) {
+      if (linha[hora].endsWith(`| ${nome}`)) tipos.add(detalhe.individual);
+    }
+    assert.ok(tipos.has(true) && tipos.has(false), `${nome} deve participar da coletiva e do individual`);
+  }
+});
+
+test('folgas e escolha incompatível entre coletiva e fixa no mesmo horário não são ignoradas', () => {
   const folga = engine.gerar({ ...entrada(), folgas: ['Ana'] });
   assert.equal(folga.escala, null); assert.ok(folga.erros.length);
   const conflito = entrada();
