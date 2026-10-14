@@ -80,8 +80,8 @@
     // Além da roda de cada aluna, guardamos as salas já usadas por cada
     // professora. Isto é usado na primeira alocação do sábado seguinte para
     // que ela não volte automaticamente à mesma sala antes de completar a
-    // roda das salas. A sala escolhida nesse primeiro bloco continua fixa
-    // até o fim daquele sábado (ver estabilizarSalas).
+    // roda das salas. Entre blocos, quem continua na Prática mantém sua sala;
+    // nas trocas com coletivas, a substituta herda a sala liberada.
     const salasPorProfessora = {};
     const limite = dataBrParaData(dataSelecionada);
     [...(escalaAnteriores || [])].sort((a, b) => (dataBrParaData(a.id)?.getTime() || 0) - (dataBrParaData(b.id)?.getTime() || 0)).forEach((anterior) => {
@@ -310,88 +310,83 @@
       });
     });
     if (erros.length) return { escala: null, erros: [...new Set(erros)] };
-    // Manter salas é uma preferência, não uma reserva da professora pelo dia.
-    // Coletivas e componentes podem exigir deslocamento em horários distintos.
-    // Se não houver distribuição fixa possível, preservamos a escala válida.
-    estabilizarSalas(escala, horarios, individuais, data, escalasAnteriores);
+    // Só redistribuímos as salas liberadas. Quem continua na Prática não muda;
+    // quem volta da coletiva ocupa a sala de quem foi substituí-la.
+    if (!estabilizarSalas(escala, horarios, individuais)) {
+      return { escala: null, erros: ["Não foi possível distribuir as salas individuais sem conflito no mesmo horário. Confira as salas ativas e as professoras da escala."] };
+    }
     return { escala: Object.values(escala), erros: [] };
   }
 
-  function validarSalasDoSabado(mapa) {
-    const salasPorProfessora = new Map();
-    Object.values(mapa).forEach((linha) => Object.entries(linha._detalhes || {}).forEach(([hora, detalhe]) => {
-      const valor = String(linha[hora] || "");
-      if (!valor.includes("|")) return;
-      const sala = valor.split("|")[0].trim();
-      const nomes = Object.values(detalhe.professoras_componentes || {});
-      if (!nomes.length) nomes.push(valor.split("|").slice(1).join("|").trim());
-      nomes.filter(Boolean).forEach((nome) => {
-        const chave = limpar(nome);
-        if (!salasPorProfessora.has(chave)) salasPorProfessora.set(chave, { nome, salas: new Set() });
-        salasPorProfessora.get(chave).salas.add(sala);
-      });
-    }));
-    return [...salasPorProfessora.values()].filter((item) => item.salas.size > 1)
-      .map((item) => `${item.nome} foi designada para salas diferentes neste sábado (${[...item.salas].join(", ")}). Ajuste as escolhas de aulas coletivas, professoras fixas ou a troca de professora entre componentes para manter uma única sala no dia.`);
-  }
-
-  function estabilizarSalas(mapa, horarios, salas, data, escalasAnteriores = []) {
-    const porProf = {};
-    const primeiraSalaPorProfessora = {};
-    Object.values(mapa).forEach((linha) => Object.entries(linha._detalhes || {}).forEach(([hora, detalhe]) => {
-      if (!detalhe.individual) return;
-      const valor = String(linha[hora] || ""); const componentes = detalhe.professoras_componentes || {};
-      const professora = String(componentes.Prática || valor.split("|").slice(1).join("|").trim());
-      if (professora) (porProf[professora] ||= new Set()).add(hora);
-      // A sala sorteada/selecionada no primeiro bloco é a referência do
-      // sábado. Ela não pode ser recalculada nos blocos seguintes.
-      if (hora === horarios[0] && professora) {
-        const salaInicial = valor.split("|", 1)[0].trim();
-        if (salas.includes(salaInicial)) primeiraSalaPorProfessora[professora] = salaInicial;
+  function estabilizarSalas(mapa, horarios, salas) {
+    let praticaAnterior = new Map(), coletivaAnterior = new Map();
+    const ultimaSala = new Map(), alteracoes = [];
+    for (const hora of horarios) {
+      const individuais = [], coletivaAtual = new Map(), professoraPorColetiva = new Map();
+      for (const linha of Object.values(mapa)) {
+        const detalhe = linha._detalhes?.[hora];
+        if (!detalhe) continue;
+        const valor = String(linha[hora] || "");
+        const sala = valor.split("|", 1)[0].trim();
+        const professora = limpar(professoraDaPratica(valor, detalhe));
+        if (detalhe.individual) individuais.push({ linha, detalhe, valor, sala, professora });
+        else {
+          coletivaAtual.set(professora, sala);
+          professoraPorColetiva.set(sala, professora);
+        }
       }
-    }));
-    const profs = Object.keys(porProf); const vizinhas = Object.fromEntries(profs.map((prof) => [prof, new Set()]));
-    horarios.forEach((hora) => { const noBloco = profs.filter((prof) => porProf[prof].has(hora)); noBloco.forEach((prof) => noBloco.forEach((outra) => { if (prof !== outra) vizinhas[prof].add(outra); })); });
-    // A professora mantém a mesma sala entre todos os blocos do sábado. No
-    // próximo rodízio, a ordem começa em outra sala para a roda continuar.
-    // A troca de sala acompanha a quantidade de rodízios efetivamente
-    // realizados, e não os dias do calendário. Usar a data quebrava a roda
-    // quando havia sete salas: um sábado para o outro são sete dias e a
-    // conta voltava à mesma sala. Escalas canceladas/sem geração também não
-    // avançam a sequência.
-    const dataAtual = dataBrParaData(data)?.getTime() || Number.POSITIVE_INFINITY;
-    const rodiziosAnteriores = (escalasAnteriores || []).filter((escala) => {
-      const dataEscala = dataBrParaData(escala?.id)?.getTime();
-      return Array.isArray(escala?.escala) && escala.escala.length && dataEscala && dataEscala < dataAtual;
-    }).length;
-    const deslocamento = salas.length ? rodiziosAnteriores % salas.length : 0;
-    const ordem = [...salas.slice(deslocamento), ...salas.slice(0, deslocamento)];
-    // Professoras que começaram no individual têm suas salas travadas. As
-    // demais — por exemplo, quem veio de Teoria/Solfejo para cobrir uma
-    // saída — receberão uma das salas ainda livres e compatíveis.
-    const porSala = { ...primeiraSalaPorProfessora };
-    const ordenar = [...profs].sort((a, b) => vizinhas[b].size - vizinhas[a].size || a.localeCompare(b));
-    const tentar = (indice) => {
-      if (indice >= ordenar.length) return true;
-      const prof = ordenar[indice];
-      const usadas = new Set([...vizinhas[prof]].map((vizinha) => porSala[vizinha]).filter(Boolean));
-      if (porSala[prof]) return !usadas.has(porSala[prof]) && tentar(indice + 1);
-      for (const sala of ordem) {
-        if (usadas.has(sala)) continue;
-        porSala[prof] = sala;
-        if (tentar(indice + 1)) return true;
-        delete porSala[prof];
+      if (new Set(individuais.map((item) => item.professora)).size !== individuais.length) return false;
+      const livres = new Set(salas), praticaAtual = new Map();
+      const reservar = (item, sala) => {
+        if (!livres.has(sala)) return false;
+        praticaAtual.set(item.professora, sala);
+        livres.delete(sala);
+        return true;
+      };
+      // Primeiro protegemos TODAS as professoras que continuam na Prática.
+      // A ordem das alunas no bloco não pode deslocar essas professoras.
+      for (const item of individuais) {
+        if (praticaAnterior.has(item.professora)
+          && !reservar(item, praticaAnterior.get(item.professora))) return false;
       }
-      return false;
-    };
-    if (!tentar(0)) {
-      // A primeira distribuição é uma preferência, não uma obrigação que
-      // justifique devolver uma escala instável. Recalcular o sábado inteiro
-      // permite acomodar substituições sem mover professoras entre blocos.
-      Object.keys(porSala).forEach((prof) => delete porSala[prof]);
-      if (!tentar(0)) return false;
+      // Troca direta: quem saiu da Teoria ocupa a sala de quem foi à Teoria.
+      // Também seguimos cadeias (Teoria -> Solfejo -> Prática), sem mover
+      // nenhuma sala coletiva e sem mudar as professoras/alunas escolhidas.
+      for (const item of individuais) {
+        if (praticaAtual.has(item.professora)) continue;
+        let substituta = item.professora;
+        const visitadas = new Set();
+        while (coletivaAnterior.has(substituta) && !visitadas.has(substituta)) {
+          visitadas.add(substituta);
+          substituta = professoraPorColetiva.get(coletivaAnterior.get(substituta));
+          if (praticaAnterior.has(substituta)) {
+            reservar(item, praticaAnterior.get(substituta));
+            break;
+          }
+        }
+      }
+      // Entradas, saídas antecipadas e salas vagas: somente as salas ainda
+      // livres podem ser usadas. O primeiro bloco mantém a escolha histórica
+      // feita por gerar(), permitindo rodar as salas no sábado seguinte.
+      for (const item of individuais) {
+        if (praticaAtual.has(item.professora)) continue;
+        const preferencias = [ultimaSala.get(item.professora), item.sala, ...livres];
+        if (!preferencias.some((sala) => reservar(item, sala))) return false;
+      }
+      for (const item of individuais) {
+        const sala = praticaAtual.get(item.professora);
+        ultimaSala.set(item.professora, sala);
+        alteracoes.push({ ...item, hora, sala });
+      }
+      praticaAnterior = praticaAtual;
+      coletivaAnterior = coletivaAtual;
     }
-    Object.values(mapa).forEach((linha) => Object.entries(linha._detalhes || {}).forEach(([hora, detalhe]) => { if (!detalhe.individual) return; const valor = String(linha[hora] || ""); const componentes = detalhe.professoras_componentes || {}; const professora = String(componentes.Prática || valor.split("|").slice(1).join("|").trim()); const sala = porSala[professora]; if (!sala) return; detalhe.sala_fixa_professora = sala; linha[hora] = `${sala} | ${valor.split("|").slice(1).join("|").trim()}`; }));
+    // Só aplica depois de validar todos os blocos: falhas não deixam a escala
+    // parcialmente alterada. Os componentes e horários originais são mantidos.
+    for (const { linha, detalhe, hora, sala, valor } of alteracoes) {
+      detalhe.sala_fixa_professora = sala;
+      linha[hora] = `${sala} | ${valor.split("|").slice(1).join("|").trim()}`;
+    }
     return true;
   }
 
