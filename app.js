@@ -815,7 +815,7 @@ function muralRodizio(escala, data) {
     }).join("");
     return `<section class="mural-column"><h3>${escapeHtml(horario)}</h3>${cards}</section>`;
   }).join("");
-  return `<div class="mural-scroll"><section class="mural-print" id="mural-rodizio"><header><h2>Rodízio Geral das aulas - ${escapeHtml(state.gem || "GEM Vila Verde")}</h2><p>Data: ${escapeHtml(data)}</p></header><div class="mural-columns">${colunas}</div></section></div>`;
+  return `<div class="mural-scroll"><section class="mural-print" id="mural-rodizio"><header><h2>Rodízio Geral das aulas - ${escapeHtml(state.gem || "GEM Vila Verde")}</h2><p>Data: ${escapeHtml(data)}</p><div class="mural-horarios-gerais"><span>Horário do café: 08:00h até 08:30h</span><span>Oração: 08:35h até 08:45h</span></div></header><div class="mural-columns">${colunas}</div></section></div>`;
 }
 
 function resumoModelo(modelo, turmas) {
@@ -1340,44 +1340,23 @@ async function renderRelatorios(content) {
       destino.innerHTML = `<div class="report-actions"><button id="baixar-relatorio-pdf" class="primary-action" type="button">Baixar relatório em PDF</button></div><div id="report-print"><section class="compact-panel report-header"><h3>Relatório completo — ${escapeHtml(dados.data)}</h3><p><strong>${dados.alunas.length}</strong> aluna(s) na escala · <strong>${dados.ausentes.length}</strong> ausência(s) · <strong>${dados.analises.length}</strong> registro(s) pedagógico(s).</p></section>${corpo}</div>`;
       const nomePdf = `Relatorio_GEM_${dados.data.replaceAll("/", "-")}.pdf`;
       const gerarPdf = async () => {
-        if (!window.html2canvas || !window.jspdf?.jsPDF) { alert("A ferramenta de PDF ainda está carregando. Tente novamente em alguns segundos."); return; }
+        if (!window.RelatorioPDF || !window.jspdf?.jsPDF) { alert("A ferramenta de PDF ainda está carregando. Tente novamente em alguns segundos."); return; }
         const alvo = $("#report-print");
-        // Cada cartão é exportado separadamente. Assim, o fim de um registro
-        // nunca é cortado no meio ao passar para a página seguinte do PDF.
-        const temporarios = [];
-        const blocos = [alvo.querySelector(".report-header")];
-        alvo.querySelectorAll(".student-report").forEach((secao) => {
-          const titulo = secao.querySelector(".student-report-heading, h3");
-          const registros = [...secao.querySelectorAll(".report-record, .report-empty")];
-          registros.forEach((registro, indice) => {
-            const bloco = document.createElement("section");
-            bloco.className = "student-report pdf-export-block";
-            if (indice === 0 && titulo) bloco.append(titulo.cloneNode(true));
-            bloco.append(registro.cloneNode(true));
-            document.body.append(bloco);
-            temporarios.push(bloco);
-            blocos.push(bloco);
-          });
+        const alunas = [...alvo.querySelectorAll('.student-report')].map((secao, indice) => {
+          const nome = [...porAluna.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR'))[indice];
+          const chamada = porAluna.get(nome)?.filter(item => item.Tipo === 'Chamada').at(-1);
+          return {
+            nome,
+            presenca: chamada?.Status || 'Ainda não registrada',
+            observacaoPresenca: chamada?.Observacao || '',
+            registros: [...secao.querySelectorAll('.report-record')].map(registro => ({
+              titulo: registro.querySelector('h4').textContent,
+              campos: [...registro.querySelectorAll('p')].map(p => p.textContent)
+            }))
+          };
         });
-        const pdf = new window.jspdf.jsPDF({ orientation: "p", unit: "mm", format: "a4", compress: true }), larguraPagina = 190, alturaPagina = 277;
-        let paginaIniciada = false, posicaoY = 10;
-        try {
-          for (const bloco of blocos.filter(Boolean)) {
-            const canvas = await window.html2canvas(bloco, { scale: 1.35, backgroundColor: "#ffffff", useCORS: true, windowWidth: bloco.scrollWidth });
-            const pixelsPorMm = canvas.width / larguraPagina;
-            const alturaNoPdf = canvas.height / pixelsPorMm;
-            // Registros normais sempre cabem em uma página. Para uma
-            // observação excepcionalmente extensa, reduzimos apenas aquele
-            // cartão, preservando o conteúdo completo em vez de recortá-lo.
-            const escala = alturaNoPdf > alturaPagina ? alturaPagina / alturaNoPdf : 1;
-            const larguraFinal = larguraPagina * escala, alturaFinal = alturaNoPdf * escala;
-            if (paginaIniciada && posicaoY + alturaFinal > 287) { pdf.addPage(); posicaoY = 10; }
-            paginaIniciada = true;
-            pdf.addImage(canvas.toDataURL("image/jpeg", .86), "JPEG", 10, posicaoY, larguraFinal, alturaFinal);
-            posicaoY += alturaFinal + 4;
-          }
-        } finally { temporarios.forEach((bloco) => bloco.remove()); }
-        return pdf;
+        return window.RelatorioPDF.gerar({ gem: state.gem, data: dados.data,
+          resumo: alvo.querySelector('.report-header p').textContent, alunas }, window.jspdf.jsPDF);
       };
       $("#baixar-relatorio-pdf").addEventListener("click", async () => {
         const botao = $("#baixar-relatorio-pdf"); botao.disabled = true; botao.textContent = "Gerando PDF...";
