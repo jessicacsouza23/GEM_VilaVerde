@@ -404,7 +404,7 @@
     return perfilSecretaria();
   }
 
-  async function dadosVisaoGeral(dataIso) {
+  async function dadosVisaoGeral(dataIso, { incluirHistoricoAusentes = false } = {}) {
     const banco = await obterCliente(); const data = dataBr(dataIso);
     const [calendario, historico, estudos] = await Promise.all([
       banco.from("calendario").select("escala").eq("id", data).maybeSingle(),
@@ -416,7 +416,23 @@
     const chamadas = historico.data?.filter((item) => item.Tipo === "Chamada") || [];
     const ausentes = chamadas.filter((item) => ["Ausente", "Justificada"].includes(item.Status));
     const analises = historico.data?.filter((item) => String(item.Tipo || "").startsWith("Analise_")) || [];
-    return { data, escala: calendario.data?.escala || [], alunas, ausentes, analises, registros: historico.data || [], estudos: estudos.error ? [] : estudos.data || [] };
+    const historicoComplementar = [];
+    if (incluirHistoricoAusentes) {
+      const ultimaChamada = new Map(chamadas.map(item => [item.Aluna, item]));
+      const nomes = [...ultimaChamada.values()].filter(item => ['Ausente', 'Justificada'].includes(item.Status)).map(item => item.Aluna).filter(Boolean);
+      // Não carregar todo o GEM nem truncar históricos no limite do Supabase.
+      for (let grupo = 0; grupo < nomes.length; grupo += 20) {
+        for (let inicio = 0; ; inicio += 500) {
+          const resultado = await banco.from('historico_geral')
+            .select('id,Data,Aluna,Tipo,Status,Observacao,Licao_Atual,Licao_Casa,Dificuldades,Instrutora')
+            .in('Aluna', nomes.slice(grupo, grupo + 20)).order('id', { ascending: true }).range(inicio, inicio + 499);
+          if (resultado.error) throw new Error('Não foi possível carregar as aulas anteriores e lições pendentes das alunas ausentes. Tente novamente.');
+          historicoComplementar.push(...(resultado.data || []));
+          if ((resultado.data || []).length < 500) break;
+        }
+      }
+    }
+    return { data, escala: calendario.data?.escala || [], alunas, ausentes, analises, registros: historico.data || [], historicoComplementar, estudos: estudos.error ? [] : estudos.data || [] };
   }
 
   async function dadosPessoas() {
