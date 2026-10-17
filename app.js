@@ -56,6 +56,20 @@ function casaCategoria(tipo) {
   return "Atividade";
 }
 
+function resumoFaltasVisaoGeral(historico) {
+  const chamadas = new Map();
+  for (const item of historico || []) {
+    if (item.Tipo !== 'Chamada' || !item.Aluna || !item.Data) continue;
+    const chave = JSON.stringify([item.Aluna, item.Data]);
+    const anterior = chamadas.get(chave);
+    if (!anterior || Number(item.id || 0) > Number(anterior.id || 0)) chamadas.set(chave, item);
+  }
+  const lista = [...chamadas.values()];
+  const ausentes = lista.filter(item => item.Status === 'Ausente').length;
+  const justificadas = lista.filter(item => item.Status === 'Justificada').length;
+  return { total: ausentes + justificadas, ausentes, justificadas };
+}
+
 function eResolvida(status) { return ["Resolvido", "Realizada", "Realizadas - sem pendência", "Realizada - sem pendência"].includes(status); }
 
 async function renderMinhasAulas(content) {
@@ -1138,6 +1152,8 @@ async function renderVisaoGeral(content) {
       const chamadasGerais = historicoGeral.filter((item) => item.Tipo === "Chamada" && ["Presente", "Ausente", "Justificada"].includes(item.Status));
       const frequencia = chamadasGerais.length ? Math.round((chamadasGerais.filter((item) => item.Status === "Presente").length / chamadasGerais.length) * 100) : null;
       destino.innerHTML = `<div class="grid gem-summary"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas</span></div><div class="metric"><strong>${frequencia === null ? "—" : `${frequencia}%`}</strong><span>Frequência geral</span></div><div class="metric"><strong>${quantidadeSalas || "—"}</strong><span>Salas ativas</span></div><div class="metric"><strong>${professorasAtivas.length}</strong><span>Professoras ativas</span></div><div class="metric"><strong>${disciplinas.length}</strong><span>Disciplinas oferecidas</span></div></div><section class="gem-summary-details"><div><h3>🎼 Disciplinas do GEM</h3><p>${disciplinas.length ? escapeHtml(disciplinas.join(" · ")) : "Defina as disciplinas no modelo de rodízio."}</p></div><div><h3>📅 Referência</h3><p>${dados.alunas.length ? `${dados.alunas.length} aluna(s) no rodízio de hoje · ${presentes} presente(s)` : "Sem rodízio salvo nesta data."}</p></div></section>${conferenciaRegistros}${destaquesGemMarkup(ativas, analitico, dataReferencia)}`;
+      const faltasGerais = resumoFaltasVisaoGeral(historicoGeral);
+      destino.querySelector('.gem-summary').insertAdjacentHTML('beforeend', `<div class="metric"><strong>${faltasGerais.total}</strong><span>Faltas no histórico geral</span><small>${faltasGerais.ausentes} sem justificativa · ${faltasGerais.justificadas} justificadas</small></div>`);
     } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
   $("#carregar-visao").addEventListener("click", carregar); await carregar();
@@ -1816,12 +1832,15 @@ async function renderMasterVisao(content) {
 async function renderAjustes(content) {
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">ADMINISTRAÇÃO DO HISTÓRICO</p><h2>Ajustes</h2><p>Use esta área somente para corrigir registros antigos. O rodízio e o histórico das outras alunas não são alterados automaticamente.</p></section><section class="panel"><h3>🧹 Registros órfãos do rodízio</h3><p class="hint">São linhas antigas sem Tipo, criadas por uma versão anterior do rodízio. Primeiro confira a quantidade; a exclusão pede confirmação.</p><button id="contar-orfaos" class="secondary-action" type="button">Verificar registros órfãos</button><div id="orfaos-retorno"></div></section><section class="panel"><h3>📝 Ajustar registro por aluna</h3><p class="hint">Escolha uma aluna, confira os dados e exclua somente o registro selecionado.</p><label>Aluna<select id="ajuste-aluna"></select></label><div id="ajuste-registros" class="lesson-list"><div class="empty">Carregando registros...</div></div></section><section class="panel"><h3>🔎 Auditar rodízios salvos</h3><p class="hint">Confere as escalas reais já salvas: professora ou sala duplicada no mesmo horário, professora fixa e repetição imediata de professora para a aluna.</p><button id="auditar-rodizio" class="secondary-action" type="button">Rodar auditoria</button><div id="auditoria-rodizio"></div></section>`;
   const seletor = $("#ajuste-aluna"), lista = $("#ajuste-registros"), retornoOrfaos = $("#orfaos-retorno");
-  const dataParaOrdenar = (valor) => { const texto = String(valor || ""); if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return texto.slice(0, 10); const [dia, mes, ano] = texto.split("/"); return ano ? `${ano}-${mes}-${dia}` : ""; };
+  lista.insertAdjacentHTML('beforebegin', `<div class="analytics-filters"><label for="ajuste-data">Data da aula <small>(opcional)</small><input id="ajuste-data" type="date"></label><button id="ajuste-todas-datas" class="secondary-action" type="button">Todos os dias</button></div><p id="ajuste-resumo" class="hint" aria-live="polite"></p>`);
+  const filtroData = $('#ajuste-data');
+  const dataParaOrdenar = (valor) => { const texto = String(valor || ""); if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return texto.slice(0, 10); const [dia, mes, ano] = texto.split("/"); return ano ? `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}` : ""; };
   const iconeTipo = (tipo) => { const texto = String(tipo || "").toUpperCase(); return texto.includes("PRATICA") ? "🎹" : texto.includes("TEORIA") ? "📚" : texto.includes("SOLFEJO") || texto.includes("CANTO") ? "🔊" : texto.includes("CASA") ? "🏠" : texto === "CHAMADA" ? "✅" : "📌"; };
   let dados;
   const mostrarRegistros = () => {
     const aluna = seletor.value;
-    const registros = dados.historico.filter((registro) => registro.Aluna === aluna).sort((a, b) => dataParaOrdenar(b.Data).localeCompare(dataParaOrdenar(a.Data)) || Number(b.id) - Number(a.id));
+    const registros = dados.historico.filter((registro) => registro.Aluna === aluna && (!filtroData.value || dataParaOrdenar(registro.Data) === filtroData.value)).sort((a, b) => dataParaOrdenar(b.Data).localeCompare(dataParaOrdenar(a.Data)) || Number(b.id) - Number(a.id));
+    $('#ajuste-resumo').textContent = `${registros.length} registro(s) encontrado(s)${filtroData.value ? ` em ${filtroData.value.split('-').reverse().join('/')}` : ' em todos os dias'}.`;
     lista.innerHTML = registros.length ? registros.map((registro, indice) => `<article class="student-report"><div class="report-header"><h3>${iconeTipo(registro.Tipo)} ${escapeHtml(registro.Tipo || "Sem tipo")}</h3><span>${escapeHtml(registro.Data || "Sem data")}</span></div><div class="report-record"><p><strong>Instrutora:</strong> ${escapeHtml(registro.Instrutora || registro.Secretaria || "—")}</p><p><strong>Status:</strong> ${escapeHtml(registro.Status || "—")}</p><p><strong>Conteúdo:</strong> ${escapeHtml(registro.Licao_Casa || registro.Licao_Atual || registro.Observacao || "—")}</p></div><button class="secondary-action danger-action" type="button" data-remover-registro="${indice}">Excluir este registro</button></article>`).join("") : `<div class="empty">Nenhum registro encontrado para esta aluna.</div>`;
     lista.querySelectorAll("[data-remover-registro]").forEach((botao) => botao.addEventListener("click", async () => {
       const registro = registros[Number(botao.dataset.removerRegistro)];
@@ -1835,6 +1854,8 @@ async function renderAjustes(content) {
     dados = await window.GemData.dadosAjustes();
     seletor.innerHTML = dados.alunas.map((aluna) => `<option value="${escapeHtml(aluna.nome)}">${escapeHtml(aluna.nome)}${aluna.ativo === false ? " · inativa" : ""}</option>`).join("");
     seletor.addEventListener("change", mostrarRegistros);
+    filtroData.addEventListener('change', mostrarRegistros);
+    $('#ajuste-todas-datas').addEventListener('click', () => { filtroData.value = ''; mostrarRegistros(); });
     mostrarRegistros();
   } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
   $("#contar-orfaos").addEventListener("click", async () => {
