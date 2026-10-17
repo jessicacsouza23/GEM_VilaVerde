@@ -56,10 +56,10 @@ function casaCategoria(tipo) {
   return "Atividade";
 }
 
-function resumoFaltasVisaoGeral(historico) {
+function resumoFaltasVisaoGeral(historico, data) {
   const chamadas = new Map();
   for (const item of historico || []) {
-    if (item.Tipo !== 'Chamada' || !item.Aluna || !item.Data) continue;
+    if (item.Tipo !== 'Chamada' || !item.Aluna || !item.Data || item.Data !== data) continue;
     const chave = JSON.stringify([item.Aluna, item.Data]);
     const anterior = chamadas.get(chave);
     if (!anterior || Number(item.id || 0) > Number(anterior.id || 0)) chamadas.set(chave, item);
@@ -1152,8 +1152,8 @@ async function renderVisaoGeral(content) {
       const chamadasGerais = historicoGeral.filter((item) => item.Tipo === "Chamada" && ["Presente", "Ausente", "Justificada"].includes(item.Status));
       const frequencia = chamadasGerais.length ? Math.round((chamadasGerais.filter((item) => item.Status === "Presente").length / chamadasGerais.length) * 100) : null;
       destino.innerHTML = `<div class="grid gem-summary"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas</span></div><div class="metric"><strong>${frequencia === null ? "—" : `${frequencia}%`}</strong><span>Frequência geral</span></div><div class="metric"><strong>${quantidadeSalas || "—"}</strong><span>Salas ativas</span></div><div class="metric"><strong>${professorasAtivas.length}</strong><span>Professoras ativas</span></div><div class="metric"><strong>${disciplinas.length}</strong><span>Disciplinas oferecidas</span></div></div><section class="gem-summary-details"><div><h3>🎼 Disciplinas do GEM</h3><p>${disciplinas.length ? escapeHtml(disciplinas.join(" · ")) : "Defina as disciplinas no modelo de rodízio."}</p></div><div><h3>📅 Referência</h3><p>${dados.alunas.length ? `${dados.alunas.length} aluna(s) no rodízio de hoje · ${presentes} presente(s)` : "Sem rodízio salvo nesta data."}</p></div></section>${conferenciaRegistros}${destaquesGemMarkup(ativas, analitico, dataReferencia)}`;
-      const faltasGerais = resumoFaltasVisaoGeral(historicoGeral);
-      destino.querySelector('.gem-summary').insertAdjacentHTML('beforeend', `<div class="metric"><strong>${faltasGerais.total}</strong><span>Faltas no histórico geral</span><small>${faltasGerais.ausentes} sem justificativa · ${faltasGerais.justificadas} justificadas</small></div>`);
+      const faltasDoDia = resumoFaltasVisaoGeral(dados.registros, dados.data);
+      destino.querySelector('.gem-summary').insertAdjacentHTML('beforeend', `<div class="metric"><strong>${faltasDoDia.total}</strong><span>Faltas do dia · ${escapeHtml(dados.data)}</span><small>${faltasDoDia.ausentes} sem justificativa · ${faltasDoDia.justificadas} justificadas</small></div>`);
     } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
   };
   $("#carregar-visao").addEventListener("click", carregar); await carregar();
