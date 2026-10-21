@@ -723,6 +723,7 @@ async function conferirRegistrosPendentesCoordenacao(dataIso, destino) {
       for (const [horario, valor] of Object.entries(linha)) {
         if (["Aluna", "_detalhes"].includes(horario) || !String(valor || "").includes("|")) continue;
         const detalhe = detalhes[horario] || {};
+        if (detalhe.atividade_secretaria && detalhe.responsavel_papel !== 'Professora') continue;
         const professoras = detalhe.professoras_componentes || {};
         const professoraPadrao = String(valor).split("|").slice(1).join("|").trim();
         for (const disciplina of disciplinasDaCelula(valor, detalhe)) {
@@ -816,7 +817,7 @@ function muralRodizio(escala, data) {
   const cores = ["#dbeafe", "#dcfce7", "#fef9c3", "#fee2e2", "#f3e8ff", "#ccfbf1", "#e0f2fe", "#ffedd5", "#e0e7ff"];
   const colunas = horarios.map((horario) => {
     const grupos = new Map();
-    escala.forEach((linha) => { const valor = String(linha[horario] || ""); if (valor) (grupos.get(valor) || grupos.set(valor, []).get(valor)).push(linha); });
+    escala.forEach((linha) => { if (linha._detalhes?.[horario]?.atividade_secretaria) return; const valor = String(linha[horario] || ""); if (valor) (grupos.get(valor) || grupos.set(valor, []).get(valor)).push(linha); });
     const cards = [...grupos.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([valor, linhas], indice) => {
       const detalhe = linhas[0]._detalhes?.[horario] || {};
       const sala = valor.split("|")[0].trim();
@@ -829,7 +830,8 @@ function muralRodizio(escala, data) {
     }).join("");
     return `<section class="mural-column"><h3>${escapeHtml(horario)}</h3>${cards}</section>`;
   }).join("");
-  return `<div class="mural-scroll"><section class="mural-print" id="mural-rodizio"><header><h2>Rodízio Geral das aulas - ${escapeHtml(state.gem || "GEM Vila Verde")}</h2><p>Data: ${escapeHtml(data)}</p><div class="mural-horarios-gerais"><span>Horário do café: 08:00h até 08:30h</span><span>Oração: 08:35h até 08:45h</span></div></header><div class="mural-columns">${colunas}</div></section></div>`;
+  const extras = escala.flatMap(linha => Object.entries(linha._detalhes || {}).filter(([, d]) => d.atividade_secretaria).map(([hora, d]) => `<article class="mural-card"><strong>${escapeHtml(linha.Aluna)}</strong><span>${escapeHtml(hora)}</span><span>${escapeHtml(d.tipo)}</span><span>${escapeHtml(d.sala || 'Local a definir')} · ${escapeHtml(d.responsavel || 'Secretarias — responsável a definir')}</span></article>`)).join('');
+  return `<div class="mural-scroll"><section class="mural-print" id="mural-rodizio"><header><h2>Rodízio Geral das aulas - ${escapeHtml(state.gem || "GEM Vila Verde")}</h2><p>Data: ${escapeHtml(data)}</p><div class="mural-horarios-gerais"><span>Horário do café: 08:00h até 08:30h</span><span>Oração: 08:35h até 08:45h</span></div></header><div class="mural-columns">${colunas}</div>${extras ? `<section><h3>Atividades complementares — fora das turmas</h3><div class="mural-columns">${extras}</div></section>` : ''}</section></div>`;
 }
 
 function resumoModelo(modelo, turmas) {
@@ -1041,6 +1043,7 @@ function conferenciaRegistrosMarkup(dados) {
       const professorasPrevistas = (linha) => {
         const previstas = {};
         Object.entries(linha?._detalhes || {}).forEach(([hora, detalhe]) => {
+          if (detalhe.atividade_secretaria && detalhe.responsavel_papel !== 'Professora') return;
           const componentes = (detalhe.componentes || [detalhe.tipo]).filter(Boolean);
           const valor = String(linha?.[hora] || "");
           const textoProfessoras = valor.includes("|") ? valor.split("|").slice(1).join("|").trim() : "";
@@ -1096,8 +1099,8 @@ async function renderVisaoGeral(content) {
       const estudos = Object.fromEntries((dados.estudos || []).map((item) => [item.aluna, item.horarios || []]));
       const disciplinasDaEscala = (linha) => {
         const detalhes = Object.values(linha?._detalhes || {}), disciplinas = new Set();
-        detalhes.forEach((detalhe) => (detalhe.componentes || [detalhe.tipo]).filter(Boolean).forEach((tipo) => disciplinas.add(tipo === "Canto" ? "Solfejo Melódico" : tipo)));
-        if (disciplinas.size) return [...disciplinas];
+        detalhes.filter(d => !d.atividade_secretaria || d.responsavel_papel === 'Professora').forEach((detalhe) => (detalhe.componentes || [detalhe.tipo]).filter(Boolean).forEach((tipo) => disciplinas.add(tipo === "Canto" ? "Solfejo Melódico" : tipo)));
+        if (detalhes.length) return [...disciplinas];
         Object.values(linha || {}).forEach((valor) => { const texto = String(valor || "").toUpperCase(); if (texto.includes("SALA 8")) disciplinas.add("Teoria"); else if (texto.includes("SALA 9")) disciplinas.add("Solfejo Melódico"); else if (texto.includes("SALA")) { disciplinas.add("Prática"); disciplinas.add("Solfejo"); } });
         return [...disciplinas];
       };
@@ -1714,6 +1717,7 @@ function ligarGerador(base, modelo, preparacao, fixasSalvas = []) {
     }
     const resultado = window.RodizioEngine.gerar({ modelo, data: base.data, turmasReais: base.turmas, professoras: base.professoras, folgas: base.folga?.professoras || [], saidas: saidasMap, fixas, coletivas, turmaInicioTeoria: turmaTeoria, usarFixas: Boolean($("#usar-fixas")?.checked), escalasAnteriores: base.escalasAnteriores });
     if (resultado.erros.length) { feedback.innerHTML = `<div class="action-error"><strong>O rodízio não foi salvo.</strong><br>${resultado.erros.map(escapeHtml).join("<br>")}</div>`; return; }
+    window.RodizioEngine.preservarAtividadesComplementares(resultado.escala, base.escala);
     feedback.innerHTML = `${muralRodizio(resultado.escala, base.data)}<button id="confirmar-geracao" class="primary-action wide-action" type="button">Confirmar e salvar rodízio</button>`;
     $("#confirmar-geracao").addEventListener("click", async () => { try { await window.GemData.salvarEscala($("#rodizio-data").value, resultado.escala, modelo.id); await renderRodizio($("#page-content")); } catch (error) { feedback.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); } });
   });
@@ -1722,7 +1726,42 @@ function ligarGerador(base, modelo, preparacao, fixasSalvas = []) {
 function ligarAcoesEscala(base, modelo) {
   $("#baixar-rodizio")?.addEventListener("click", async () => { try { await baixarImagemRodizio($("#mural-rodizio"), base.data); } catch (erro) { alert(erro.message || "Não foi possível gerar a imagem do rodízio."); } });
   $("#ampliar-rodizio")?.addEventListener("click", () => { document.body.insertAdjacentHTML("beforeend", `<div class="mural-modal" id="mural-modal"><button aria-label="Fechar" class="modal-close">×</button>${muralRodizio(base.escala, base.data)}</div>`); $("#mural-modal").addEventListener("click", (event) => { if (event.target.id === "mural-modal" || event.target.classList.contains("modal-close")) $("#mural-modal").remove(); }); });
-  $("#editar-rodizio")?.addEventListener("click", () => { const horarios = [...new Set(base.escala.flatMap((linha) => Object.keys(linha).filter((chave) => !["Aluna", "_detalhes"].includes(chave))))]; $("#edicao-rodizio").innerHTML = `<section class="panel edit-scale"><h3>Corrigir rodízio</h3><p>Edite somente a sala/professora incorreta. Os detalhes pedagógicos e a turma são preservados; informe o motivo da correção antes de salvar.</p><div class="table-wrap"><table class="scale-table"><thead><tr><th>Aluna</th>${horarios.map((hora) => `<th>${escapeHtml(hora)}</th>`).join("")}</tr></thead><tbody>${base.escala.map((linha, i) => `<tr><th>${escapeHtml(linha.Aluna)}</th>${horarios.map((hora) => `<td><input data-escala="${i}" data-hora="${escapeHtml(hora)}" value="${escapeHtml(linha[hora] || "")}"></td>`).join("")}</tr>`).join("")}</tbody></table></div><label>Motivo da correção<input id="motivo-edicao" placeholder="Ex.: troca de professora confirmada pela Secretaria"></label><button id="salvar-edicao" class="primary-action" type="button">Salvar correção</button></section>`; $("#salvar-edicao").addEventListener("click", async () => { const corrigida = structuredClone(base.escala); document.querySelectorAll("[data-escala]").forEach((item) => { corrigida[Number(item.dataset.escala)][item.dataset.hora] = item.value.trim(); }); try { await window.GemData.salvarEscala($("#rodizio-data").value, corrigida, modelo.id, $("#motivo-edicao").value); await renderRodizio($("#page-content")); } catch (error) { $("#edicao-rodizio").insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); } }); });
+  $("#editar-rodizio")?.addEventListener("click", () => abrirEdicaoRodizio(base, modelo));
+}
+
+async function abrirEdicaoRodizio(base, modelo) {
+  const destino = $('#edicao-rodizio');
+  destino.innerHTML = '<div class="empty">Carregando edição...</div>';
+  try {
+    const pessoas = await window.GemData.dadosPessoas();
+    const responsaveis = [{ nome: '', papel: 'Secretaria', rotulo: 'Secretarias — a definir' },
+      ...(pessoas.secretarias || []).filter(p => p.ativo !== false).map(p => ({ nome: p.nome, papel: 'Secretaria', rotulo: `Secretaria: ${p.nome}` })),
+      ...(pessoas.professoras || []).filter(p => p.ativo !== false).map(p => ({ nome: p.nome, papel: 'Professora', rotulo: `Professora: ${p.nome}` }))];
+    const extras = base.escala.flatMap((linha, indice) => Object.entries(linha._detalhes || {}).filter(([, d]) => d.atividade_secretaria).map(([hora, detalhe]) => ({ indice, hora, detalhe, aluna: linha.Aluna })));
+    // Preserva responsáveis antigas mesmo se hoje estiverem desativadas.
+    extras.forEach(({ detalhe: d }) => {
+      if (d.responsavel && !responsaveis.some(r => r.nome === d.responsavel && r.papel === d.responsavel_papel)) responsaveis.push({ nome: d.responsavel, papel: d.responsavel_papel, rotulo: `${d.responsavel} (responsável salva)` });
+    });
+    const horarios = [...new Set(base.escala.flatMap(linha => Object.keys(linha).filter(chave => !['Aluna', '_detalhes'].includes(chave))))];
+    destino.innerHTML = `<section class="panel edit-scale"><h3>Corrigir rodízio</h3><p>Os detalhes pedagógicos e as turmas são preservados.</p><div class="table-wrap"><table class="scale-table"><thead><tr><th>Aluna</th>${horarios.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${base.escala.map((linha, i) => `<tr><th>${escapeHtml(linha.Aluna)}</th>${horarios.map(h => `<td>${linha._detalhes?.[h]?.atividade_secretaria ? 'Editar no quadro de atividades abaixo' : `<input data-escala="${i}" data-hora="${escapeHtml(h)}" value="${escapeHtml(linha[h] || '')}">`}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+      ${extras.length ? `<h3>Atividades complementares — fora das turmas</h3><p>Você pode encaminhar para uma Secretaria ou professora, inclusive para atendimento compartilhado com outra aluna. Confira sala, horário e disponibilidade antes de salvar. A turma de origem não será alterada.</p>${extras.map((extra, i) => `<article class="compact-panel" data-extra="${i}"><h4>${escapeHtml(extra.aluna)} · ${escapeHtml(extra.hora)}</h4><div class="form-grid"><label>Nome da atividade<input data-extra-atividade value="${escapeHtml(extra.detalhe.tipo)}"></label><label>Sala<input data-extra-sala value="${escapeHtml(extra.detalhe.sala || 'Local a definir')}"></label><label>Responsável<select data-extra-responsavel>${responsaveis.map((r, j) => `<option value="${j}" ${r.nome === (extra.detalhe.responsavel || '') && r.papel === extra.detalhe.responsavel_papel ? 'selected' : ''}>${escapeHtml(r.rotulo)}</option>`).join('')}</select></label></div></article>`).join('')}` : ''}
+      <label>Motivo da correção<input id="motivo-edicao" placeholder="Ex.: atividade encaminhada para atendimento compartilhado"></label><button id="salvar-edicao" class="primary-action" type="button">Salvar correção</button><div id="edicao-retorno" role="status"></div></section>`;
+    $('#salvar-edicao').onclick = async () => {
+      const botao = $('#salvar-edicao'); botao.disabled = true;
+      try {
+        const corrigida = structuredClone(base.escala);
+        destino.querySelectorAll('[data-escala]').forEach(item => { corrigida[Number(item.dataset.escala)][item.dataset.hora] = item.value.trim(); });
+        destino.querySelectorAll('[data-extra]').forEach(editor => {
+          const extra = extras[Number(editor.dataset.extra)], r = responsaveis[Number(editor.querySelector('[data-extra-responsavel]').value)];
+          window.RodizioEngine.editarAtividadeComplementar(corrigida, extra.indice, extra.hora, { atividade: editor.querySelector('[data-extra-atividade]').value,
+            sala: editor.querySelector('[data-extra-sala]').value, papel: r.papel, responsavel: r.nome });
+        });
+        await window.GemData.salvarEscala($('#rodizio-data').value, corrigida, modelo?.id || base.modeloEscala, $('#motivo-edicao').value);
+        await renderRodizio($('#page-content'));
+      } catch (error) { $('#edicao-retorno').innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+      finally { botao.disabled = false; }
+    };
+  } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
 }
 
 async function renderMasterGems(content) {
@@ -1885,6 +1924,7 @@ async function renderAjustes(content) {
       const problemas = [], ultimaProfessora = new Map();
       const extrair = (linha, horario) => {
         const valor = String(linha[horario] || ""), detalhe = linha._detalhes?.[horario] || {};
+        if (detalhe.atividade_secretaria) return null;
         if (!valor.includes("|")) return null;
         const sala = valor.split("|")[0].trim(), salaMaiuscula = sala.toUpperCase();
         if (!detalhe.individual && (salaMaiuscula.includes("SALA 8") || salaMaiuscula.includes("SALA 9") || !salaMaiuscula.startsWith("SALA"))) return null;

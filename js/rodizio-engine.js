@@ -74,6 +74,53 @@
     atendidas.add(aluna);
   }
 
+  // Atribuição de custo mínimo (algoritmo húngaro): compara o grupo inteiro,
+  // em vez de deixar a última aluna com o que sobrou das escolhas anteriores.
+  function atribuirCustos(custos) {
+    const n = custos.length, m = custos[0]?.length || 0;
+    if (!n) return [];
+    if (n > m) return null;
+    const u = Array(n + 1).fill(0), v = Array(m + 1).fill(0);
+    const p = Array(m + 1).fill(0), caminho = Array(m + 1).fill(0);
+    for (let i = 1; i <= n; i++) {
+      p[0] = i;
+      let j0 = 0;
+      const min = Array(m + 1).fill(Infinity), usadas = Array(m + 1).fill(false);
+      do {
+        usadas[j0] = true;
+        const i0 = p[j0];
+        let delta = Infinity, j1 = 0;
+        for (let j = 1; j <= m; j++) {
+          if (usadas[j]) continue;
+          const custo = custos[i0 - 1][j - 1] - u[i0] - v[j];
+          if (custo < min[j]) { min[j] = custo; caminho[j] = j0; }
+          if (min[j] < delta) { delta = min[j]; j1 = j; }
+        }
+        if (!Number.isFinite(delta)) return null;
+        for (let j = 0; j <= m; j++) {
+          if (usadas[j]) { u[p[j]] += delta; v[j] -= delta; }
+          else min[j] -= delta;
+        }
+        j0 = j1;
+      } while (p[j0]);
+      do { const j1 = caminho[j0]; p[j0] = p[j1]; j0 = j1; } while (j0);
+    }
+    const resultado = Array(n);
+    for (let j = 1; j <= m; j++) if (p[j]) resultado[p[j] - 1] = j - 1;
+    return resultado;
+  }
+
+  function cicloSalas(historico, salas) {
+    const ciclo = new Set();
+    for (const sala of historico) {
+      if (!salas.includes(sala)) continue;
+      if (salas.every(item => ciclo.has(item))) ciclo.clear();
+      ciclo.add(sala);
+    }
+    if (salas.every(item => ciclo.has(item))) ciclo.clear();
+    return ciclo;
+  }
+
   function memoriaDasEscalas(escalaAnteriores, dataSelecionada, alunas, alunasDaRoda, salasIndividuais) {
     const memoria = Object.fromEntries(alunas.map((aluna) => [aluna, { professoras: [], salas: [], ultima: null }]));
     const alunasPorProfessora = {};
@@ -94,6 +141,7 @@
         Object.entries(linha).forEach(([hora, valor]) => {
           if (hora === "Aluna" || hora === "_detalhes" || !String(valor).includes("|")) return;
           const detalhe = detalhes[hora] || {};
+          if (detalhe.atividade_secretaria) return;
           const sala = String(valor).split("|", 1)[0].trim();
           if (!detalhe.individual && !salasIndividuais.includes(sala)) return;
           if (!salasIndividuais.includes(sala)) return;
@@ -135,6 +183,11 @@
     const memoriaHistorica = memoriaDasEscalas(escalasAnteriores, data, todasAlunas, alunasDaRoda, individuais);
     const memoria = memoriaHistorica.porAluna;
     const escala = Object.fromEntries(todasAlunas.map((aluna) => [aluna, { Aluna: aluna, _detalhes: {} }]));
+    const encaminharSecretaria = (aluna, hora, turma) => {
+      escala[aluna][hora] = 'Local a definir | Secretarias';
+      escala[aluna]._detalhes[hora] = { tipo: 'Atividade com as secretarias', individual: false, turma,
+        atividade_secretaria: true, responsavel_papel: 'Secretaria', responsavel: '', sala: 'Local a definir' };
+    };
     const mesmaProf = config.mesma_professora_nos_componentes !== false;
     const regras = config.regras_rodizio || {};
     const posicoes = [...atividadesColetivas, "__individual__"];
@@ -165,14 +218,14 @@
         const posicaoDaTurma = (turma) => (ordemTurmas.indexOf(turma) + direcao * indiceBloco + posicoes.length * 10) % posicoes.length;
         const turmaIndividual = turmas.find((turma) => posicoes[posicaoDaTurma(turma)] === "__individual__");
         const reservadas = new Set((turmasReais[turmaIndividual] || []).map((aluna) => fixas[String(aluna).trim().toLowerCase()]).filter(Boolean));
-        if ([...reservadas].some((professora) => indisponivelNoBloco(professora, indiceBloco))) return false;
         const coletivasNoBloco = [];
         for (const turma of turmas) {
           const posicao = posicoes[posicaoDaTurma(turma)];
           if (posicao === "__individual__") continue;
           const professora = coletivas?.[posicao]?.[turma];
           if (professora) {
-            if (reservadas.has(professora) || indisponivelNoBloco(professora, indiceBloco)) return false;
+            if (indisponivelNoBloco(professora, indiceBloco)) continue;
+            if (reservadas.has(professora)) return false;
             coletivasNoBloco.push(professora);
           }
         }
@@ -212,6 +265,7 @@
           const habilitadasDaArea = habilitadas[posicao] || (posicao === "Solfejo Melódico" ? habilitadas.Canto : null) || disponiveis;
           let candidatas = habilitadasDaArea.filter((professora) => disponiveis.includes(professora) && !indisponiveis.includes(professora) && !ocupadas.has(professora) && !professorasReservadas.has(professora));
           const escolhida = coletivas?.[posicao]?.[turma];
+          if (!candidatas.length) { alunas.forEach(aluna => encaminharSecretaria(aluna, hora, turma)); return; }
           if (escolhida) {
             // A professora escolhida pela Secretaria para Teoria/Solfejo
             // nunca é trocada automaticamente. A prioridade do individual
@@ -227,7 +281,7 @@
               : candidatas;
             if (alternativasSemPrioritarias.length) candidatas = alternativasSemPrioritarias;
           }
-          if (!candidatas.length) { erros.push(`Não há professora disponível/habilitada para ${posicao} no ${hora}.`); return; }
+          if (!candidatas.length) { alunas.forEach(aluna => encaminharSecretaria(aluna, hora, turma)); return; }
           const professora = candidatas[indiceBloco % candidatas.length];
           alunas.forEach((aluna) => { escala[aluna][hora] = `${salasColetivas[posicao]} | ${professora}`; escala[aluna]._detalhes[hora] = { tipo: posicao, individual: false, turma }; });
           return;
@@ -240,8 +294,6 @@
         // assim a Secretaria recebe a causa verdadeira (folga, habilitação,
         // coletiva ou duplicidade), em vez de uma mensagem genérica sobre
         // quantidade de professoras.
-        const haFixaNestaTurma = usarFixas && alunas.some((aluna) => fixas[String(aluna).trim().toLowerCase()]);
-        if (profsLivres.length < alunas.length && !haFixaNestaTurma) { erros.push(`Faltam professoras livres para o atendimento individual de ${turma} no ${hora}.`); return; }
         const salasLivres = [...individuais];
         const alocadas = [];
         // A regra do app.py é obrigatória: primeiro reservamos as professoras
@@ -256,10 +308,34 @@
           const bFixa = Boolean(usarFixas && fixas[String(b).trim().toLowerCase()]);
           return Number(bFixa) - Number(aFixa);
         });
+        const peso = alunas.length + 1;
+        const custosProfessoras = alunasParaAlocar.map(aluna => profsLivres.map(professora => {
+          const fixa = usarFixas ? fixas[String(aluna).trim().toLowerCase()] : null;
+          if (fixa && professora !== fixa) return Infinity;
+          const atendidas = memoriaHistorica.alunasPorProfessora[professora] || new Set();
+          const imediata = !fixa && regras.nao_repetir_imediata !== false && memoria[aluna].ultima === professora;
+          const ciclo = !fixa && regras.nao_repetir_aluna !== false && !cicloConcluido(atendidas, alunasDaRoda) && atendidas.has(aluna);
+          const foraDaEquipe = indiceBloco > 0 && !fixa && !professorasPrioritariasNoIndividual.has(professora);
+          return Number(imediata) * peso * peso + Number(ciclo) * peso + Number(foraDaEquipe);
+        }));
+        // Vagas virtuais custam mais que qualquer professora disponível.
+        // Assim só o excedente fica com a Secretaria, nunca o grupo inteiro.
+        const custoSecretaria = (peso ** 4) + 1;
+        const atribuicao = atribuirCustos(custosProfessoras.map((custos, i) => [
+          ...custos, ...alunasParaAlocar.map(() => {
+            const fixa = usarFixas && fixas[String(alunasParaAlocar[i]).trim().toLowerCase()];
+            return fixa && profsLivres.includes(fixa) ? Infinity : custoSecretaria;
+          })
+        ]));
+        const planoProfessoras = atribuicao && new Map(alunasParaAlocar.map((aluna, i) => [aluna, profsLivres[atribuicao[i]] || null]));
         alunasParaAlocar.forEach((aluna) => {
+          if (planoProfessoras?.has(aluna) && planoProfessoras.get(aluna) === null) {
+            encaminharSecretaria(aluna, hora, turma);
+            return;
+          }
           const fixa = usarFixas ? fixas[String(aluna).trim().toLowerCase()] : null;
           const candidatas = (fixa ? [fixa] : profsLivres.filter((professora) => !professorasFixasDaTurma.has(professora)))
-            .filter((professora) => profsLivres.includes(professora));
+            .filter((professora) => profsLivres.includes(professora) && (!planoProfessoras || planoProfessoras.get(aluna) === professora));
           if (!candidatas.length || !salasLivres.length) {
             if (fixa) {
               let motivo = "não está disponível para este atendimento.";
@@ -315,7 +391,63 @@
     if (!estabilizarSalas(escala, horarios, individuais)) {
       return { escala: null, erros: ["Não foi possível distribuir as salas individuais sem conflito no mesmo horário. Confira as salas ativas e as professoras da escala."] };
     }
+    if (regras.nao_repetir_sala !== false) otimizarSalasDoSabado(escala, individuais, escalasAnteriores, data);
     return { escala: Object.values(escala), erros: [] };
+  }
+
+  function otimizarSalasDoSabado(escala, salas, anteriores, data) {
+    const porAluna = new Map(), porProfessora = new Map();
+    const limite = dataBrParaData(data)?.getTime();
+    const historico = [...anteriores].filter(item => {
+      const dia = dataBrParaData(item.id)?.getTime();
+      return dia && dia < limite;
+    }).sort((a, b) => dataBrParaData(a.id) - dataBrParaData(b.id));
+    for (const dia of historico) {
+      const salasDoDia = new Map();
+      for (const linha of dia.escala || []) for (const [hora, valor] of Object.entries(linha)) {
+        if (hora === 'Aluna' || hora === '_detalhes' || typeof valor !== 'string' || !valor.includes('|')) continue;
+        const sala = valor.split('|')[0].trim();
+        if (!salas.includes(sala)) continue;
+        const detalhe = linha._detalhes?.[hora] || {};
+        if (detalhe.individual === false) continue;
+        if (!porAluna.has(linha.Aluna)) porAluna.set(linha.Aluna, []);
+        porAluna.get(linha.Aluna).push(sala);
+        const professora = limpar(professoraDaPratica(valor, detalhe));
+        if (!salasDoDia.has(professora)) salasDoDia.set(professora, new Set());
+        salasDoDia.get(professora).add(sala);
+      }
+      for (const [professora, usadas] of salasDoDia) {
+        if (!porProfessora.has(professora)) porProfessora.set(professora, []);
+        porProfessora.get(professora).push(...usadas);
+      }
+    }
+    // A permutação vale para o sábado INTEIRO. Não troca professoras/alunas,
+    // nem salas coletivas; mantém também as substituições entre as aulas.
+    const usos = salas.map(sala => Object.values(escala).flatMap(linha => Object.entries(linha._detalhes || {})
+      .filter(([hora, detalhe]) => detalhe.individual && String(linha[hora]).split('|')[0].trim() === sala)
+      .map(([hora, detalhe]) => ({ aluna: linha.Aluna, professora: limpar(professoraDaPratica(linha[hora], detalhe)) }))));
+    const peso = usos.reduce((n, lista) => n + lista.length * 2, 0) + 1;
+    const custos = usos.map(lista => salas.map(sala => {
+      let custo = 0;
+      for (const uso of lista) {
+        const anterioresAluna = porAluna.get(uso.aluna) || [];
+        const anterioresProf = porProfessora.get(uso.professora) || [];
+        custo += Number(anterioresAluna.at(-1) === sala) * peso * peso;
+        custo += Number(cicloSalas(anterioresAluna, salas).has(sala)) * peso;
+        custo += Number(cicloSalas(anterioresProf, salas).has(sala));
+      }
+      return custo;
+    }));
+    const atribuicao = atribuirCustos(custos);
+    if (!atribuicao) return;
+    const novas = new Map(salas.map((sala, i) => [sala, salas[atribuicao[i]]]));
+    for (const linha of Object.values(escala)) for (const [hora, detalhe] of Object.entries(linha._detalhes || {})) {
+      if (!detalhe.individual) continue;
+      const valor = String(linha[hora]), sala = novas.get(valor.split('|')[0].trim());
+      if (!sala) continue;
+      linha[hora] = `${sala} | ${valor.split('|').slice(1).join('|').trim()}`;
+      detalhe.sala_fixa_professora = sala;
+    }
   }
 
   function estabilizarSalas(mapa, horarios, salas) {
@@ -330,7 +462,7 @@
         const sala = valor.split("|", 1)[0].trim();
         const professora = limpar(professoraDaPratica(valor, detalhe));
         if (detalhe.individual) individuais.push({ linha, detalhe, valor, sala, professora });
-        else {
+        else if (!detalhe.atividade_secretaria) {
           coletivaAtual.set(professora, sala);
           professoraPorColetiva.set(sala, professora);
         }
@@ -390,5 +522,27 @@
     return true;
   }
 
-  window.RodizioEngine = { gerar, prepararModelo, horario, nomeArea, horariosComponentes };
+  function editarAtividadeComplementar(escala, indice, hora, { atividade, sala, papel, responsavel }) {
+    const linha = escala[indice], anterior = linha?._detalhes?.[hora];
+    if (!anterior?.atividade_secretaria) throw new Error('Este atendimento não é uma atividade complementar.');
+    if (!String(atividade || '').trim() || !String(sala || '').trim()) throw new Error('Informe o nome da atividade e a sala.');
+    if (!['Professora', 'Secretaria'].includes(papel) || (papel === 'Professora' && !String(responsavel || '').trim())) throw new Error('Escolha uma responsável válida.');
+    linha._detalhes[hora] = { ...anterior, tipo: atividade.trim(), sala: sala.trim(), responsavel_papel: papel,
+      responsavel: String(responsavel || '').trim(), editada_manualmente: true };
+    linha[hora] = `${sala.trim()} | ${String(responsavel || '').trim() || 'Secretarias'}`;
+  }
+
+  function preservarAtividadesComplementares(nova, anterior) {
+    for (const linha of nova) {
+      const salva = (anterior || []).find(item => item.Aluna === linha.Aluna);
+      for (const [hora, detalhe] of Object.entries(salva?._detalhes || {})) {
+        if (!detalhe.atividade_secretaria || !detalhe.editada_manualmente || !linha._detalhes?.[hora]) continue;
+        linha[hora] = salva[hora];
+        linha._detalhes[hora] = JSON.parse(JSON.stringify(detalhe));
+      }
+    }
+    return nova;
+  }
+
+  window.RodizioEngine = { gerar, prepararModelo, horario, nomeArea, horariosComponentes, editarAtividadeComplementar, preservarAtividadesComplementares };
 })();

@@ -896,6 +896,14 @@
       for (const horario of Object.keys(linha)) {
         if (["Aluna", "_detalhes"].includes(horario)) continue;
         const conteudo = String(linha[horario] || "");
+        const extra = detalhes[horario];
+        if (extra?.atividade_secretaria) {
+          if (extra.responsavel_papel === 'Professora' && extra.responsavel && normalizar(extra.responsavel) === nomeNormalizado) {
+            aulas.push({ horario, tipo: extra.tipo, local: extra.sala || conteudo.split('|')[0].trim(), individual: true,
+              alunas: [linha.Aluna], fotos: { [linha.Aluna]: fotoPorAluna[linha.Aluna] || null }, turma: 'Atendimento complementar', atividade_secretaria: true });
+          }
+          continue;
+        }
         if (!conteudo || !normalizar(conteudo).includes(nomeNormalizado)) continue;
         const detalhe = detalhes[horario] || {};
         const tipoDaEscala = tipoDaAula(conteudo, detalhe);
@@ -919,7 +927,7 @@
           const chave = individual ? `${horario}|${tipo}|${linha.Aluna}` : `${horario}|${tipo}|${conteudo}`;
           if (vistas.has(chave)) continue;
           vistas.add(chave);
-          const alunasDaAula = individual ? [linha.Aluna] : escala.filter((outra) => String(outra[horario] || "") === conteudo).map((outra) => outra.Aluna).filter(Boolean);
+          const alunasDaAula = individual ? [linha.Aluna] : escala.filter((outra) => !outra._detalhes?.[horario]?.atividade_secretaria && String(outra[horario] || "") === conteudo).map((outra) => outra.Aluna).filter(Boolean);
           aulas.push({ horario: horariosPorTipo[tipo] || horario, tipo, local: conteudo.split("|")[0].trim(), individual, alunas: alunasDaAula, fotos: Object.fromEntries(alunasDaAula.map((aluna) => [aluna, fotoPorAluna[aluna] || null])), turma: turmaPorAluna[linha.Aluna] || "" });
         }
       }
@@ -1295,16 +1303,25 @@
   async function dadosRodizio(dataIso) {
     const banco = await obterCliente();
     const data = dataBr(dataIso);
+    const lerEscalasAnteriores = async () => {
+      const registros = [];
+      for (let inicio = 0; ; inicio += 500) {
+        const pagina = await banco.from('calendario').select('id,escala').order('id', { ascending: true }).range(inicio, inicio + 499);
+        if (pagina.error) return { data: null, error: { message: 'Não foi possível carregar o histórico de rodízios. Tente novamente antes de gerar uma escala.' } };
+        registros.push(...(pagina.data || []));
+        if ((pagina.data || []).length < 500) return { data: registros, error: null };
+      }
+    };
     const [modelos, alunas, professoras, calendario, folgas, anteriores, fixas] = await Promise.all([
       banco.from("modelos_logistica").select("*").order("vigencia_inicio", { ascending: false }),
       banco.from("alunas").select("nome,turma,ativo").order("nome"),
       banco.from("professoras").select("nome,ativo").order("nome"),
       banco.from("calendario").select("id,escala,modelo_logistica_id").eq("id", data).maybeSingle(),
       banco.from("folgas_professoras").select("*").eq("data", dataIso).maybeSingle(),
-      banco.from("calendario").select("id,escala").order("id", { ascending: true }),
+      lerEscalasAnteriores(),
       banco.from("professoras_fixas").select("aluna,professora")
     ]);
-    const falha = [modelos, alunas, professoras, calendario].find((resultado) => resultado.error)?.error;
+    const falha = [modelos, alunas, professoras, calendario, anteriores].find((resultado) => resultado.error)?.error;
     if (falha) throw new Error(`Não foi possível carregar a base do rodízio: ${falha.message || "verifique as migrations e permissões."}`);
     const turmas = {};
     (alunas.data || []).filter((aluna) => aluna.ativo !== false).forEach((aluna) => {

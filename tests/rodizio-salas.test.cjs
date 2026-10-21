@@ -38,8 +38,10 @@ test('histórico permite rodar salas entre sábados, sem alterar escala anterior
   const segundo = engine.gerar({ ...entrada(), data: '24/10/2026', escalasAnteriores: [{ id: '17/10/2026', escala: primeiro.escala }] });
   assert.equal(segundo.erros.length, 0); conferir(segundo.escala);
   assert.equal(JSON.stringify(primeiro.escala), anterior);
-  const salaAna = escala => escala.flatMap(linha => Object.keys(linha._detalhes).map(h => linha[h])).find(v => v.endsWith('| Ana')).split('|')[0];
-  assert.notEqual(salaAna(primeiro.escala), salaAna(segundo.escala));
+  // Com duas salas/professoras, mudar as duas para cada aluna tem prioridade
+  // sobre mudar a sala da professora ENTRE sábados. DENTRO do dia é fixa.
+  const salaIndividual = linha => Object.entries(linha._detalhes).filter(([, d]) => d.individual).map(([h]) => linha[h].split('|')[0])[0];
+  for (const linha of primeiro.escala) assert.notEqual(salaIndividual(linha), salaIndividual(segundo.escala.find(l => l.Aluna === linha.Aluna)));
 });
 test('trocas sucessivas preservam quem continua na Prática, sem exigir sala vitalícia', () => {
   const mapa = {};
@@ -148,9 +150,32 @@ test('saída antecipada libera sala sem deslocar quem permanece', () => {
 
 test('folgas e escolha incompatível entre coletiva e fixa no mesmo horário não são ignoradas', () => {
   const folga = engine.gerar({ ...entrada(), folgas: ['Ana'] });
-  assert.equal(folga.escala, null); assert.ok(folga.erros.length);
+  assert.equal(folga.erros.length, 0);
+  assert.equal(folga.escala.flatMap(l => Object.values(l._detalhes)).filter(d => d.atividade_secretaria).length, 2);
   const conflito = entrada();
   conflito.modelo.configuracao.professoras_habilitadas['Prática'].push('Clara');
   const r = engine.gerar({ ...conflito, usarFixas: true, fixas: { a1: 'Clara' }, coletivas: { Teoria: { 'Turma 2': 'Clara' } } });
   assert.equal(r.escala, null); assert.ok(r.erros.length);
+});
+
+test('otimização de vários sábados mantém salas coletivas e salas individuais durante cada dia', () => {
+  const historico = [];
+  for (const data of ['03/10/2026', '10/10/2026', '17/10/2026', '24/10/2026']) {
+    const dados = entrada();
+    dados.modelo.configuracao.professoras_habilitadas = { Teoria: ['Ana', 'Bia', 'Clara'], 'Prática': ['Ana', 'Bia', 'Clara'] };
+    const r = engine.gerar({ ...dados, data, escalasAnteriores: historico, coletivas: { Teoria: { 'Turma 1': 'Ana', 'Turma 2': 'Clara' } } });
+    assert.equal(r.erros.length, 0);
+    const porHora = new Map();
+    for (const linha of r.escala) for (const [hora, detalhe] of Object.entries(linha._detalhes)) {
+      const [sala, prof] = linha[hora].split('|').map(v => v.trim());
+      if (!porHora.has(hora)) porHora.set(hora, new Map());
+      porHora.get(hora).set(prof, sala);
+      if (!detalhe.individual) assert.equal(sala, 'SALA 8');
+      else assert.equal(detalhe.sala_fixa_professora, sala);
+    }
+    const [a, b] = [...porHora.keys()].sort().map(h => porHora.get(h));
+    assert.equal(a.get('Bia'), b.get('Bia'));
+    assert.equal(a.get('Clara'), b.get('Ana'));
+    historico.push({ id: data, escala: r.escala });
+  }
 });
