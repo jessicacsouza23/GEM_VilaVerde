@@ -1700,6 +1700,26 @@ async function renderAnalitico(content, opcoes = {}) {
       finally { botao.disabled = false; botao.textContent = "Gerar análise pedagógica"; }
     });
   };
+  const renderComPdf = () => {
+    render();
+    const destino = $('#analise-conteudo');
+    const abaAplicada = aba, inicioAplicado = $('#analise-inicio').value, fimAplicado = $('#analise-fim').value;
+    const alunaAplicada = $('#analise-aluna').value;
+    const nomes = abaAplicada === 'quadro' ? dados.alunas.filter(a=>a.ativo !== false).map(a=>a.nome) : [alunaAplicada];
+    const registrosPdf = dados.historico.filter(r=>nomes.includes(r.Aluna) && dataRegistro(r.Data)>=inicioAplicado && dataRegistro(r.Data)<=fimAplicado);
+    const filtrosPdf = `${{prontuario:'Prontuário individual',quadro:'Quadro de desempenho',boletim:'Boletim'}[abaAplicada]} | ${abaAplicada==='quadro'?'Todas as alunas ativas':alunaAplicada}\nPeríodo aplicado: ${inicioAplicado} a ${fimAplicado}${abaAplicada==='boletim'?'\nO boletim atual exibe todas as notas da aluna, sem recorte por data.':''}`;
+    destino.insertAdjacentHTML('beforeend', '<section class="feedback-panel" data-exportacao><p>Baixe as informações e os gráficos desta aba com os filtros aplicados. Ao final será incluída uma síntese pedagógica automática para revisão da equipe.</p><button id="baixar-analitico-pdf" class="primary-action" type="button">Baixar relatório analítico em PDF</button><div id="analitico-pdf-retorno" role="status"></div></section>');
+    $('#baixar-analitico-pdf').onclick = () => {
+      const botao = $('#baixar-analitico-pdf');botao.disabled=true;
+      try {
+        if(!window.jspdf?.jsPDF || !window.AnaliticoPDF) throw new Error('A ferramenta de PDF ainda não carregou. Tente novamente.');
+        const pdf = window.AnaliticoPDF.gerar({gem:state.gem,filtros:filtrosPdf,blocos:window.AnaliticoPDF.capturar(destino),conclusao:window.AnaliticoPDF.conclusao(registrosPdf,abaAplicada)},window.jspdf.jsPDF);
+        pdf.save(`Analitico_${abaAplicada}_${inicioAplicado}_${fimAplicado}.pdf`);
+        $('#analitico-pdf-retorno').textContent='PDF gerado com os filtros aplicados na tela.';
+      } catch(erro) {$('#analitico-pdf-retorno').textContent=erro.message;}
+      finally {botao.disabled=false;}
+    };
+  };
   const aplicarPeriodo = () => {
     const escolha = $("#analise-periodo").value;
     if (escolha === "personalizado") return;
@@ -1707,9 +1727,9 @@ async function renderAnalitico(content, opcoes = {}) {
     if (escolha === "tudo") comeco.setFullYear(2024, 0, 1); else comeco.setDate(fim.getDate() - Number(escolha));
     $("#analise-inicio").value = comeco.toISOString().slice(0, 10);
     $("#analise-fim").value = fim.toISOString().slice(0, 10);
-    render();
+    renderComPdf();
   };
-  document.querySelectorAll("[data-analise]").forEach((botao) => botao.addEventListener("click", () => { aba = botao.dataset.analise; document.querySelectorAll("[data-analise]").forEach((item) => item.classList.toggle("active", item === botao)); render(); })); $("#analise-periodo").addEventListener("change", aplicarPeriodo); $("#atualizar-analise").addEventListener("click", render); render();
+  document.querySelectorAll("[data-analise]").forEach((botao) => botao.addEventListener("click", () => { aba = botao.dataset.analise; document.querySelectorAll("[data-analise]").forEach((item) => item.classList.toggle("active", item === botao)); renderComPdf(); })); $("#analise-periodo").addEventListener("change", aplicarPeriodo); $("#atualizar-analise").addEventListener("click", renderComPdf); renderComPdf();
 }
 
 function rodizioSalvoMarkup(base) {
