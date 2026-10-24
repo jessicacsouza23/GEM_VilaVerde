@@ -14,6 +14,15 @@ function sugerirConteudoPendente(historico, disciplina, material, alunas) {
       ? ['Casa_Teoria', 'Casa_Teoria_Prof'] : tipos;
     const ultima = historico.find(r => r.Aluna === aluna && tiposDaAluna.some(t => normal(t) === normal(r.Tipo)));
     if (!ultima || ['Resolvido', 'Realizada', 'Realizada - sem pendência', 'Realizadas - sem pendência'].includes(ultima.Status)) return '';
+    // "Não deixar lição" não cria Casa_* nessa data. Uma aula posterior
+    // impede que uma tarefa antiga reapareça como se fosse a tarefa atual.
+    const dataOrdem = valor => {
+      const texto = String(valor || '').trim();
+      if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return texto.slice(0, 10);
+      const partes = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return partes ? `${partes[3]}-${partes[2]}-${partes[1]}` : '';
+    };
+    if (anterior && dataOrdem(anterior.Data) && dataOrdem(ultima.Data) < dataOrdem(anterior.Data)) return '';
     return String(ultima.Licao_Casa || '').trim();
   });
   return valores[0] && valores.every(v => v === valores[0]) ? valores[0] : '';
