@@ -1169,11 +1169,11 @@
     return (registros || []).filter((registro) => String(registro.Tipo || "").startsWith("Analise_") || String(registro.Tipo || "").startsWith("Casa_"));
   }
 
-  async function contextoPratica({ aluna, dataIso }) {
+  async function contextoPratica({ aluna, alunas, dataIso }) {
     const banco = await obterCliente();
     const dataAtual = dataBr(dataIso);
-    const { data, error } = await banco.from("historico_geral").select("id,Data,Tipo,Licao_Atual,Licao_Casa,Dificuldades,Observacao,Status")
-      .eq("Aluna", aluna).order("id", { ascending: false });
+    const { data, error } = await banco.from("historico_geral").select("id,Aluna,Data,Tipo,Licao_Atual,Licao_Casa,Dificuldades,Observacao,Status")
+      .in("Aluna", alunas || [aluna]).order("id", { ascending: false });
     if (error) throw new Error("Não foi possível carregar o histórico de Prática da aluna.");
     const paraTempo = (valor) => {
       const texto = String(valor || "").trim();
@@ -1181,7 +1181,7 @@
       const [dia, mes, ano] = texto.split("/");
       return ano ? new Date(`${ano}-${mes}-${dia}T12:00:00`).getTime() : 0;
     };
-    return (data || []).filter((registro) => registro.Data !== dataAtual).sort((a, b) => paraTempo(b.Data) - paraTempo(a.Data));
+    return (data || []).filter((registro) => paraTempo(registro.Data) < paraTempo(dataAtual)).sort((a, b) => paraTempo(b.Data) - paraTempo(a.Data) || Number(b.id) - Number(a.id));
   }
 
   async function licoesPendentesProfessora({ alunas, tipoAula }) {

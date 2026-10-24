@@ -1,3 +1,38 @@
+// Preenche somente uma referência comum; nunca mistura lições de alunas distintas.
+function sugerirConteudoPendente(historico, disciplina, material, alunas) {
+  const normal = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const nome = normal(material);
+  if (!nome || !alunas.length) return '';
+  const tipos = disciplina === 'Prática' ? (nome === 'apostila' ? ['Casa_Apostila', 'Casa_Apostila_Prof'] : [`Casa_Metodo_${material}`])
+    : disciplina === 'Teoria' ? (nome.includes('apostila') ? ['Casa_Apostila_Teoria', 'Casa_Apostila_Teoria_Prof'] : nome.includes('folha') ? ['Casa_Teoria', 'Casa_Teoria_Prof'] : [])
+    : disciplina === 'Solfejo' ? ['Casa_MSA'] : disciplina === 'Solfejo Melódico' ? ['Casa_Canto'] : [];
+  const valores = alunas.map(aluna => {
+    const anterior = historico.find(r => r.Aluna === aluna && r.Tipo === `Analise_${disciplina}`);
+    const materialAnterior = String(anterior?.Licao_Atual || '').split(':')[0];
+    if (disciplina.includes('Solfejo') && nome !== normal(materialAnterior) && !(disciplina === 'Solfejo' && nome === 'msa') && !(disciplina === 'Solfejo Melódico' && ['solfejo melodico','canto'].includes(nome))) return '';
+    const tiposDaAluna = !tipos.length && disciplina === 'Teoria' && nome === normal(materialAnterior)
+      ? ['Casa_Teoria', 'Casa_Teoria_Prof'] : tipos;
+    const ultima = historico.find(r => r.Aluna === aluna && tiposDaAluna.some(t => normal(t) === normal(r.Tipo)));
+    if (!ultima || ['Resolvido', 'Realizada', 'Realizada - sem pendência', 'Realizadas - sem pendência'].includes(ultima.Status)) return '';
+    return String(ultima.Licao_Casa || '').trim();
+  });
+  return valores[0] && valores.every(v => v === valores[0]) ? valores[0] : '';
+}
+
+function conectarSugestaoConteudo(material, conteudo, obterSugestao) {
+  let automatico = '', manual = Boolean(conteudo.value);
+  conteudo.addEventListener('input', () => { manual = true; });
+  const atualizar = () => {
+    if (manual) return;
+    const sugestao = obterSugestao(material.value);
+    if (!conteudo.value || conteudo.value === automatico) { conteudo.value = sugestao; automatico = sugestao; }
+  };
+  material.addEventListener('input', atualizar);
+  material.addEventListener('change', atualizar);
+  atualizar();
+  return atualizar;
+}
+
 const navByRole = {
   Master: ["GEMs", "Secretarias dos GEMs", "Usuários mestres", "Visão da plataforma"],
   Secretaria: ["Visão geral", "Planejamento e rodízio", "Folgas", "Turmas e pessoas", "Chamada", "Correção de lições", "Relatórios", "Analítico", "Documentos", "Provas", "Mensagens", "Logística", "Ajustes"],
@@ -103,8 +138,8 @@ async function renderMinhasAulas(content) {
     // fila visual de correções (nem MSA, nem método) nessa tela.
     try { licoesPendentes = ehAulaDeSolfejo ? [] : await window.GemData.licoesPendentesProfessora({ alunas: aula.alunas, tipoAula: aula.tipo }); }
     catch (erro) { console.warn("Lições pendentes não puderam ser carregadas", erro); }
-    if (aula.tipo === "Prática") {
-      try { historicoPratica = await window.GemData.contextoPratica({ aluna: aula.alunas[0], dataIso: $("#agenda-data").value }); }
+    if (["Prática", "Teoria", "Solfejo", "Solfejo Melódico"].includes(aula.tipo)) {
+      try { historicoPratica = await window.GemData.contextoPratica({ alunas: aula.alunas, dataIso: $("#agenda-data").value }); }
       catch (erro) { console.warn("Histórico anterior de Prática não pôde ser carregado", erro); }
     }
     const tipoAnalise = `Analise_${aula.tipo}`;
@@ -173,6 +208,21 @@ async function renderMinhasAulas(content) {
     areaRegistro.innerHTML = `<section class="lesson-register"><div class="register-heading"><div><p class="eyebrow">LANÇAR REGISTRO</p><h3>📝 Registro: ${escapeHtml(aula.tipo)}</h3><p>${escapeHtml(aula.individual ? "Aula individual" : `Aula por turma${aula.turma ? ` · ${aula.turma}` : ""}`)}</p></div><button id="fechar-registro" class="secondary-action" type="button">Fechar</button></div>${fotosDasAlunas(aula, { selecionavel: aulaPorTurma, statusChamada })}${corpoRegistro}</section>`;
     $("#fechar-registro").addEventListener("click", () => { areaRegistro.innerHTML = ""; });
     if (registroBloqueadoPorFalta) { areaRegistro.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    if (aula.tipo !== 'Prática') {
+      const materiaisSugeridos = [...new Set([
+        ...(aula.tipo === 'Teoria' ? ['Apostila', 'Folha avulsa'] : aula.tipo === 'Solfejo' ? ['MSA'] : ['Canto']),
+        ...bibliotecaMetodos.filter(m => m.categoria === aula.tipo).map(m => m.nome),
+        ...historicoPratica.filter(r => r.Tipo === `Analise_${aula.tipo}` && String(r.Licao_Atual || '').includes(':')).map(r => r.Licao_Atual.split(':')[0].trim())
+      ].filter(Boolean))];
+      $('#registro-material').setAttribute('list', 'materiais-sugeridos-aula');
+      $('#registro-material').insertAdjacentHTML('afterend', `<datalist id="materiais-sugeridos-aula">${materiaisSugeridos.map(m => `<option value="${escapeHtml(m)}"></option>`).join('')}</datalist>`);
+      const atualizarSugestao = conectarSugestaoConteudo($('#registro-material'), $('#registro-conteudo'), material => {
+        const selecionadas = aulaPorTurma ? [...areaRegistro.querySelectorAll('[data-aluna-turma]:checked')].map(c => aula.alunas[Number(c.dataset.alunaTurma)]) : aula.alunas;
+        return sugerirConteudoPendente(historicoPratica, aula.tipo, material, selecionadas);
+      });
+      areaRegistro.querySelectorAll('[data-aluna-turma]').forEach(c => c.addEventListener('change', atualizarSugestao));
+      $('#registro-conteudo').insertAdjacentHTML('afterend', '<small class="field-help">A lição pendente do material é sugerida quando for igual para as alunas selecionadas. Você pode editar; a lição para casa digitada abaixo não será alterada.</small>');
+    }
     areaRegistro.querySelectorAll("[data-corrigir-licao]").forEach((botao) => botao.addEventListener("click", async () => {
       const indicePendente = Number(botao.dataset.corrigirLicao), licao = licoesPendentes[indicePendente];
       const status = areaRegistro.querySelector(`[data-status-pendente="${indicePendente}"]:checked`)?.value;
@@ -287,6 +337,7 @@ async function renderMinhasAulas(content) {
         };
         cartao.innerHTML = `<div class="practice-material-title"><label>Método/Apostila da lição registrada<select data-pratica-material><option value="" ${!material ? "selected" : ""}>Selecione o método ou Apostila</option>${opcoesPratica.map((opcao) => `<option value="${escapeHtml(opcao)}" ${opcao === material ? "selected" : ""}>${escapeHtml(opcao)}</option>`).join("")}</select></label><button class="icon-action remover-material" type="button" title="Remover esta lição">×</button></div><div data-pratica-resumo-area>${resumoUltimaAula(material)}</div><div data-pratica-correcao-area>${correcaoDaLicao(material)}</div><div data-pratica-resultado-area>${resultadoDaCorrecao(material)}</div><label>Conteúdo trabalhado hoje — página/lição<input data-pratica-conteudo value="${escapeHtml(registro.conteudo || "")}" placeholder="Ex.: página 18, exercício 4"></label><div data-pratica-dificuldades-area>${dificuldadesDoMaterial(material, registro.dificuldades || [])}</div>`;
         areaMateriais.appendChild(cartao);
+        conectarSugestaoConteudo(cartao.querySelector('[data-pratica-material]'), cartao.querySelector('[data-pratica-conteudo]'), material => sugerirConteudoPendente(historicoPratica, aula.tipo, material, aula.alunas));
         conectarCorrecaoPratica(cartao);
         cartao.querySelector(".remover-material").addEventListener("click", () => { if (areaMateriais.children.length > 1) cartao.remove(); });
         const atualizarMaterialPratica = () => {
