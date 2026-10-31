@@ -754,12 +754,16 @@ async function renderChamada(content) {
   const lista = $("#chamada-lista");
   const carregar = async () => {
     try {
-      const { alunas, chamadas, fotos } = await window.GemData.dadosChamada($("#chamada-data").value);
+      const dataCarregada = $("#chamada-data").value;
+      lista.innerHTML = '<div class="empty">Carregando chamada...</div>';
+      const { alunas, chamadas, fotos } = await window.GemData.dadosChamada(dataCarregada);
+      if ($("#chamada-data").value !== dataCarregada) { lista.innerHTML = '<div class="empty">A data mudou. Clique em Carregar.</div>'; return; }
       if (!alunas.length) { lista.innerHTML = `<div class="empty">Não há rodízio salvo nesta data.</div>`; return; }
       const porAluna = Object.fromEntries(chamadas.map((item) => [item.Aluna, item]));
       lista.innerHTML = `<div class="attendance-list">${alunas.map((aluna) => { const chamada = porAluna[aluna] || { Status: "Presente", Observacao: "" }; const foto = fotos[aluna] ? `<button class="photo-zoom attendance-photo" type="button" data-foto-zoom="${escapeHtml(fotos[aluna])}" data-foto-titulo="${escapeHtml(aluna)}" title="Ampliar foto de ${escapeHtml(aluna)}"><img src="${escapeHtml(fotos[aluna])}" alt="Foto de ${escapeHtml(aluna)}"></button>` : `<span>${escapeHtml(aluna.slice(0, 1))}</span>`; return `<article class="attendance-row"><div class="attendance-student">${foto}<strong>${escapeHtml(aluna)}</strong></div><div class="attendance-checks"><label><input type="checkbox" data-presente="${escapeHtml(aluna)}" ${chamada.Status === "Presente" ? "checked" : ""}> Presente</label><label><input type="checkbox" data-ausente="${escapeHtml(aluna)}" ${chamada.Status === "Ausente" ? "checked" : ""}> Ausente</label><label><input type="checkbox" data-justificada="${escapeHtml(aluna)}" ${chamada.Status === "Justificada" ? "checked" : ""}> Falta justificada</label></div><input class="${chamada.Status === "Justificada" ? "" : "hidden"}" data-motivo="${escapeHtml(aluna)}" value="${escapeHtml(chamada.Observacao || "")}" placeholder="Motivo da falta justificada"></article>`; }).join("")}</div><button id="salvar-chamada" class="primary-action full-action" type="button">Salvar chamada</button><div id="chamada-retorno"></div>`;
       lista.querySelectorAll("input[data-presente],input[data-ausente],input[data-justificada]").forEach((campo) => campo.addEventListener("change", (evento) => {
         const linha = evento.target.closest(".attendance-row");
+        $("#chamada-retorno").textContent = 'Alterações ainda não salvas. Clique em Salvar chamada.';
         const opcoes = [...linha.querySelectorAll("input[data-presente],input[data-ausente],input[data-justificada]")];
         // São checkboxes para a tela ficar mais direta, mas os três estados
         // continuam mutuamente exclusivos para preservar a regra da chamada.
@@ -768,7 +772,7 @@ async function renderChamada(content) {
         const aluna = evento.target.dataset.presente || evento.target.dataset.ausente || evento.target.dataset.justificada;
         linha.querySelector(`[data-motivo="${CSS.escape(aluna)}"]`).classList.toggle("hidden", !linha.querySelector("[data-justificada]").checked);
       }));
-      $("#salvar-chamada").addEventListener("click", async () => { const botao = $("#salvar-chamada"); botao.disabled = true; try { await window.GemData.salvarChamada($("#chamada-data").value, alunas.map((aluna) => ({ aluna, status: lista.querySelector(`[data-justificada="${CSS.escape(aluna)}"]`).checked ? "Justificada" : lista.querySelector(`[data-ausente="${CSS.escape(aluna)}"]`).checked ? "Ausente" : "Presente", observacao: lista.querySelector(`[data-justificada="${CSS.escape(aluna)}"]`).checked ? lista.querySelector(`[data-motivo="${CSS.escape(aluna)}"]`).value : "" }))); $("#chamada-retorno").innerHTML = `<div class="action-ok">Chamada salva.</div>`; } catch (erro) { $("#chamada-retorno").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; } });
+      $("#salvar-chamada").addEventListener("click", async () => { const botao = $("#salvar-chamada"); botao.disabled = true; try { if ($("#chamada-data").value !== dataCarregada) throw new Error("A data mudou. Clique em Carregar antes de salvar."); const resumo = await window.GemData.salvarChamada(dataCarregada, alunas.map((aluna) => ({ aluna, status: lista.querySelector(`[data-justificada="${CSS.escape(aluna)}"]`).checked ? "Justificada" : lista.querySelector(`[data-ausente="${CSS.escape(aluna)}"]`).checked ? "Ausente" : "Presente", observacao: lista.querySelector(`[data-justificada="${CSS.escape(aluna)}"]`).checked ? lista.querySelector(`[data-motivo="${CSS.escape(aluna)}"]`).value : "" }))); $("#chamada-retorno").innerHTML = `<div class="action-ok">Chamada de ${escapeHtml(resumo.data)} salva e confirmada: ${resumo.total} alunas, ${resumo.ausentes} ausentes e ${resumo.justificadas} faltas justificadas.</div>`; } catch (erro) { $("#chamada-retorno").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; } finally { botao.disabled = false; } });
     } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
   };
   $("#carregar-chamada").addEventListener("click", carregar);

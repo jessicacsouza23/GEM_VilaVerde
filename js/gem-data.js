@@ -1415,7 +1415,7 @@
     const data = dataBr(dataIso);
     const [calendario, historico] = await Promise.all([
       banco.from("calendario").select("escala").eq("id", data).maybeSingle(),
-      banco.from("historico_geral").select("Aluna,Status,Observacao").eq("Data", data).eq("Tipo", "Chamada")
+      banco.from("historico_geral").select("id,Aluna,Status,Observacao").eq("Data", data).eq("Tipo", "Chamada").order("id", { ascending: true })
     ]);
     if (calendario.error || historico.error) throw new Error("Não foi possível carregar a chamada desta data.");
     const alunas = [...new Set((calendario.data?.escala || []).map((linha) => linha.Aluna).filter(Boolean))].sort();
@@ -1431,13 +1431,26 @@
   }
 
   async function salvarChamada(dataIso, registros) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dataIso || '')) || !registros?.length) throw new Error('Carregue a data e as alunas antes de salvar a chamada.');
+    if (registros.some(r => !String(r.aluna || '').trim() || !['Presente', 'Ausente', 'Justificada'].includes(r.status))) throw new Error('Confira a aluna e a situação de cada chamada.');
+    if (new Set(registros.map(r=>r.aluna)).size !== registros.length) throw new Error('Há alunas repetidas nesta chamada. Recarregue a lista.');
     const banco = await obterCliente();
     const data = dataBr(dataIso);
-    const apagar = await banco.from("historico_geral").delete().eq("Data", data).eq("Tipo", "Chamada");
-    if (apagar.error) throw new Error("Não foi possível atualizar a chamada.");
-    if (!registros.length) return;
-    const inserir = await banco.from("historico_geral").insert(registros.map((registro) => ({ Data: data, Aluna: registro.aluna, Tipo: "Chamada", Status: registro.status, Observacao: registro.observacao || "", Licao_Atual: "Presença em Aula" })));
-    if (inserir.error) throw new Error("Não foi possível salvar a chamada.");
+    const anteriores = await banco.from('historico_geral').select('Aluna').eq('Data', data).eq('Tipo', 'Chamada');
+    if (anteriores.error) throw new Error('Não foi possível conferir a chamada anterior. Nenhum registro foi alterado.');
+    const existentes = new Set((anteriores.data || []).map(r=>r.Aluna));
+    let salvos = 0;
+    for (const registro of registros) {
+      const campos = { Status: registro.status, Observacao: registro.observacao || '', Licao_Atual: 'Presença em Aula' };
+      const resultado = existentes.has(registro.aluna)
+        ? await banco.from('historico_geral').update(campos).eq('Data', data).eq('Tipo', 'Chamada').eq('Aluna', registro.aluna).select('Aluna,Status,Observacao')
+        : await banco.from('historico_geral').insert({ ...campos, Data: data, Tipo: 'Chamada', Aluna: registro.aluna }).select('Aluna,Status,Observacao');
+      if (resultado.error || !resultado.data?.length || resultado.data.some(r=>r.Status !== registro.status || (r.Observacao || '') !== campos.Observacao)) {
+        throw new Error(`Não foi possível confirmar a chamada de ${registro.aluna}. ${salvos} de ${registros.length} registros confirmados. Recarregue e confira antes de tentar novamente.`);
+      }
+      salvos++;
+    }
+    return { data, total: salvos, justificadas: registros.filter(r=>r.status === 'Justificada').length, ausentes: registros.filter(r=>r.status === 'Ausente').length };
   }
 
   window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosExportacaoRelatorio, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, removerModeloLogistica, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, alterarStatusGem, removerGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, excluirEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
