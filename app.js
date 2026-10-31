@@ -719,11 +719,28 @@ async function renderMinhasLicoes(content) {
     const dataAtual = $("#estudo-dia")?.value || hoje, dataAtualBr = `${dataAtual.slice(8, 10)}/${dataAtual.slice(5, 7)}/${dataAtual.slice(0, 4)}`;
     const historico = estudos.slice().sort((a, b) => dataIso(b.data).localeCompare(dataIso(a.data))).slice(0, 30);
     destino.innerHTML = `<section class="study-panel"><h2>✅ Registrar meu estudo do dia</h2><p>Informe os horários que você estudou. Você pode salvar mais de um horário no mesmo dia.</p><label>Dia<input id="estudo-dia" type="date" value="${dataAtual}"></label><div class="study-add"><label>Início<input id="estudo-inicio" placeholder="Ex.: 14:00"></label><label>Término<input id="estudo-fim" placeholder="Ex.: 15:30"></label><button id="adicionar-horario-estudo" class="secondary-action" type="button">＋ Adicionar</button></div><div id="horarios-estudo" class="study-times"></div><button id="salvar-estudo" class="primary-action" type="button">Salvar estudo do dia</button><div id="estudo-feedback"></div></section><section class="study-history"><h3>📅 Meu histórico de estudo — últimos 30 registros</h3>${historico.length ? historico.map((item) => `<article><strong>${escapeHtml(item.data || "—")}</strong><span>${(item.horarios || []).length ? `😊 ${escapeHtml((item.horarios || []).join(" · "))}` : "😢 Não registrou horário"}</span></article>`).join("") : `<p class="hint">Nenhum estudo registrado ainda.</p>`}</section>`;
+    destino.querySelectorAll('.study-history article').forEach((artigo, indice) => {
+      const registro = historico[indice];
+      const botao = document.createElement('button');
+      botao.type = 'button'; botao.className = 'secondary-action danger-action'; botao.textContent = 'Excluir registro';
+      botao.setAttribute('aria-label', `Excluir estudo de ${registro.data}`);
+      artigo.appendChild(botao);
+      botao.onclick = async () => {
+        if (!confirm(`Excluir o registro de estudo de ${registro.data}? Todos os horários salvos nesse dia serão removidos. Essa ação não pode ser desfeita.`)) return;
+        botao.disabled = true;
+        try {
+          await window.GemData.excluirEstudoDiario({ aluna: state.name, data: registro.data });
+          estudos = estudos.filter(item => item.data !== registro.data);
+          mostrarEstudo();
+          $('#estudo-feedback').innerHTML = '<div class="action-ok">Registro de estudo excluído.</div>';
+        } catch (erro) { $('#estudo-feedback').innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; }
+      };
+    });
     const desenharHorarios = () => { $("#horarios-estudo").innerHTML = horariosEditando.length ? horariosEditando.map((horario, indice) => `<span>🕐 ${escapeHtml(horario)} <button type="button" data-remover-horario="${indice}" aria-label="Remover horário">×</button></span>`).join("") : `<p class="hint">Nenhum horário adicionado neste dia.</p>`; destino.querySelectorAll("[data-remover-horario]").forEach((botao) => botao.onclick = () => { horariosEditando.splice(Number(botao.dataset.removerHorario), 1); desenharHorarios(); }); };
     const carregarDia = () => { const dia = $("#estudo-dia").value, chave = `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}`; horariosEditando = [...(estudos.find((item) => item.data === chave)?.horarios || [])]; desenharHorarios(); };
     $("#estudo-dia").onchange = carregarDia;
     $("#adicionar-horario-estudo").onclick = () => { const inicio = $("#estudo-inicio").value.trim(), fim = $("#estudo-fim").value.trim(); if (!inicio || !fim) { $("#estudo-feedback").innerHTML = `<div class="action-error">Informe início e término.</div>`; return; } horariosEditando.push(`${inicio} às ${fim}`); $("#estudo-inicio").value = ""; $("#estudo-fim").value = ""; $("#estudo-feedback").innerHTML = ""; desenharHorarios(); };
-    $("#salvar-estudo").onclick = async () => { const botao = $("#salvar-estudo"); botao.disabled = true; try { await window.GemData.salvarEstudoDiario({ aluna: state.name, dataIso: $("#estudo-dia").value, horarios: horariosEditando }); estudos = await window.GemData.dadosEstudoAluna(state.name); $("#estudo-feedback").innerHTML = `<div class="action-ok">Estudo registrado.</div>`; } catch (erro) { $("#estudo-feedback").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; } };
+    $("#salvar-estudo").onclick = async () => { const botao = $("#salvar-estudo"); botao.disabled = true; try { await window.GemData.salvarEstudoDiario({ aluna: state.name, dataIso: $("#estudo-dia").value, horarios: horariosEditando }); estudos = await window.GemData.dadosEstudoAluna(state.name); mostrarEstudo(); $("#estudo-feedback").innerHTML = `<div class="action-ok">Estudo registrado.</div>`; } catch (erro) { $("#estudo-feedback").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; } };
     const existente = estudos.find((item) => item.data === dataAtualBr); horariosEditando = [...(existente?.horarios || [])]; desenharHorarios();
   };
   try { dadosAluna = await window.GemData.dadosAluna(state.name); try { estudos = await window.GemData.dadosEstudoAluna(state.name); } catch (erro) { erroEstudo = erro.message; } desenharIndicadores(); mostrarLicoes(); }
