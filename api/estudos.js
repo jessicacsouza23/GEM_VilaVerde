@@ -1,4 +1,4 @@
-const { sessao, origemPermitida } = require('./r2-auth');
+const { sessao, origemPermitida } = require('../server/r2-auth');
 
 function dataValida(valor) {
   const m = String(valor || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);

@@ -1,4 +1,4 @@
-const { sessao } = require("./r2-auth");
+const { sessao } = require("../server/r2-auth");
 
 async function escolherModelo(chave) {
   if (process.env.GEMINI_MODEL) return process.env.GEMINI_MODEL;

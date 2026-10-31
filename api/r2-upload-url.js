@@ -1,8 +1,8 @@
 const crypto = require("crypto");
 const { PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-const { configurado, sessaoComR2, origemPermitida } = require("./r2-auth");
-const { clienteR2, bucket } = require("./r2-client");
+const { configurado, sessaoComR2, origemPermitida } = require("../server/r2-auth");
+const { clienteR2, bucket } = require("../server/r2-client");
 
 const TIPOS = { aluna: "fotos_alunas", professora: "fotos_professoras", secretaria: "fotos_secretaria_gem", logo: "logo_gem" };
 const MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);

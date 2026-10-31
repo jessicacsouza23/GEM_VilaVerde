@@ -1,4 +1,4 @@
-const { configurado, sessaoConfigurada, criarSessao, sessao, definirCookie, limparCookie, origemPermitida } = require("./r2-auth");
+const { configurado, sessaoConfigurada, criarSessao, sessao, definirCookie, limparCookie, origemPermitida } = require("../server/r2-auth");
 
 async function supabaseRpc(nome, parametros) {
   const url = process.env.SUPABASE_URL, chave = process.env.SUPABASE_SERVICE_ROLE_KEY;

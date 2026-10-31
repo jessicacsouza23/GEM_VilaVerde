@@ -1,4 +1,4 @@
-const { sessao } = require("./r2-auth");
+const { sessao } = require("../server/r2-auth");
 
 async function supabaseRequest(path, options = {}) {
   const url = process.env.SUPABASE_URL;

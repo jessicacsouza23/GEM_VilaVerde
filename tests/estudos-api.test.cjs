@@ -1,7 +1,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 process.env.SESSION_SECRET='segredo-ficticio-para-testes';
 process.env.SUPABASE_URL='https://principal.example';process.env.SUPABASE_SERVICE_ROLE_KEY='chave-servidor-teste';
-const {criarSessao}=require('../api/r2-auth');const handler=require('../api/estudos');
+const {criarSessao}=require('../server/r2-auth');const handler=require('../api/estudos');
 async function executar(body,{perfil='Aluna',gem='vila-verde',externo=false,cookie=true,cross=false,falha=false}={}){
  const calls=[];const original=global.fetch;
  global.fetch=async(url,opts)=>{

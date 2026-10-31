@@ -9,7 +9,7 @@ function carregar(arquivo, extras = {}) {
   return ctx;
 }
 test('sessões adulteradas, unicode, formato inválido e expiradas são recusadas', () => {
-  const ctx = carregar('../api/r2-auth.js'), auth = ctx.module.exports;
+  const ctx = carregar('../server/r2-auth.js'), auth = ctx.module.exports;
   const token = auth.criarSessao({ nome: 'Ana', perfil: 'Aluna' });
   const request = cookie => ({ headers: { cookie: `gem_r2_session=${cookie}` } });
   assert.equal(auth.sessao(request(token)).nome, 'Ana');
@@ -53,9 +53,9 @@ test('proxy e download verificam permissão antes de consultar R2', async () => 
     const ctx = carregar(`../api/${file}.js`, { require: nome => ({
       '@aws-sdk/client-s3': { GetObjectCommand: class {} },
       '@aws-sdk/s3-request-presigner': { getSignedUrl: async () => { aws++; } },
-      './r2-auth': { configurado: () => true, sessaoComR2: () => ({ nome: 'Ana', perfil: 'Aluna', gem: 'vila-verde' }) },
+      '../server/r2-auth': { configurado: () => true, sessaoComR2: () => ({ nome: 'Ana', perfil: 'Aluna', gem: 'vila-verde' }) },
       '../lib/photo-access': { podeLerFoto: async () => false },
-      './r2-client': { clienteR2: () => ({ send: async () => { aws++; } }), bucket: () => 'test' }
+      '../server/r2-client': { clienteR2: () => ({ send: async () => { aws++; } }), bucket: () => 'test' }
     })[nome] });
     const resposta = { headers: {}, setHeader(k,v) { this.headers[k]=v; }, status(s) { this.code=s; return this; }, json() {} };
     await ctx.module.exports({ method: 'GET', query: { key: 'r2:gems/vila-verde/fotos_alunas/a.jpg' } }, resposta);

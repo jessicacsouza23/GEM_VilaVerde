@@ -1,7 +1,7 @@
 const { GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-const { configurado, sessaoComR2 } = require("./r2-auth");
-const { clienteR2, bucket } = require("./r2-client");
+const { configurado, sessaoComR2 } = require("../server/r2-auth");
+const { clienteR2, bucket } = require("../server/r2-client");
 const { podeLerFoto } = require("../lib/photo-access");
 
 module.exports = async function r2DownloadUrl(request, response) {
