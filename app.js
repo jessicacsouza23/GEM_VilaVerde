@@ -638,7 +638,7 @@ async function renderAnaliticoProfessora(content) {
   return renderAnalitico(content, {
     somenteLeitura: true,
     titulo: "Analítico pedagógico",
-    descricao: "Acompanhe o prontuário completo de cada aluna: aulas de todas as professoras, frequência, lições, estudo em casa, provas e observações da Secretaria."
+    descricao: "Consulte todas as alunas deste GEM, inclusive aquelas para quem você ainda não deu aula. O prontuário reúne os registros de todas as professoras, frequência, lições, estudo em casa, provas e observações da Secretaria, conforme o período selecionado."
   });
 }
 

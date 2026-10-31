@@ -714,9 +714,20 @@
 
   async function dadosAnalitico() {
     const banco = await obterCliente();
+    // Consulta a base do GEM atual, sem restringir à professora logada.
+    // Paginação evita que registros antigos e alunas desapareçam pelo limite da API.
+    const lerTodos = async (consulta) => {
+      const registros = [];
+      for (let inicio = 0; ; inicio += 500) {
+        const pagina = await consulta().range(inicio, inicio + 499);
+        if (pagina.error) return { data: null, error: pagina.error };
+        registros.push(...(pagina.data || []));
+        if ((pagina.data || []).length < 500) return { data: registros, error: null };
+      }
+    };
     const [historico, alunas, avaliacoes, notas, estudos, objetivos] = await Promise.all([
-      banco.from("historico_geral").select("*").order("id", { ascending: false }),
-      banco.from("alunas").select("*").order("nome"),
+      lerTodos(() => banco.from("historico_geral").select("*").order("id", { ascending: false })),
+      lerTodos(() => banco.from("alunas").select("*").order("nome")),
       banco.from("avaliacoes").select("*").order("data_avaliacao", { ascending: false }),
       banco.from("avaliacao_notas").select("*"),
       banco.from("estudo_diario").select("*"),
