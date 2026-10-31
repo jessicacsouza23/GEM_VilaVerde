@@ -730,7 +730,7 @@
       lerTodos(() => banco.from("alunas").select("*").order("nome")),
       banco.from("avaliacoes").select("*").order("data_avaliacao", { ascending: false }),
       banco.from("avaliacao_notas").select("*"),
-      banco.from("estudo_diario").select("*"),
+      lerTodos(() => banco.from("estudo_diario").select("*").order("aluna").order("data")),
       banco.from("objetivos_pedagogicos").select("*")
     ]);
     if (historico.error || alunas.error) throw new Error(`Não foi possível carregar o analítico: ${(historico.error || alunas.error).message || "verifique as permissões."}`);
@@ -1274,12 +1274,20 @@
   async function salvarEstudoDiario({ aluna, dataIso, horarios }) {
     if (!aluna || !dataIso) throw new Error("Informe o dia do estudo.");
     const banco = await obterCliente();
-    const { error } = await banco.from("estudo_diario").upsert({
+    const { data: salvo, error } = await banco.from("estudo_diario").upsert({
       aluna,
       data: dataBr(dataIso),
       horarios: Array.from(new Set((horarios || []).map((horario) => String(horario).trim()).filter(Boolean)))
-    }, { onConflict: "aluna,data" });
-    if (error) throw new Error("Não foi possível salvar seu estudo do dia.");
+    }, { onConflict: "aluna,data" }).select('aluna,data,horarios').single();
+    if (error) {
+      const motivo = error.code === '42501' ? 'O banco não permitiu salvar. Peça à Secretaria para verificar as permissões.'
+        : error.code === '42P10' ? 'A tabela de estudos precisa da configuração de registro único por aluna e data. Avise a Secretaria.'
+        : ['42P01', 'PGRST205'].includes(error.code) ? 'A tabela de estudos não foi encontrada. Avise a Secretaria.'
+        : 'Verifique sua conexão e tente novamente.';
+      throw new Error(`Não foi possível confirmar o estudo. ${motivo}${error.code ? ` Código: ${error.code}.` : ''}`);
+    }
+    if (!salvo || salvo.aluna !== aluna || salvo.data !== dataBr(dataIso)) throw new Error('O banco não confirmou o registro de estudo. Recarregue para conferir antes de tentar novamente.');
+    return salvo;
   }
 
   async function excluirEstudoDiario({ aluna, data }) {

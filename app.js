@@ -740,7 +740,27 @@ async function renderMinhasLicoes(content) {
     const carregarDia = () => { const dia = $("#estudo-dia").value, chave = `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}`; horariosEditando = [...(estudos.find((item) => item.data === chave)?.horarios || [])]; desenharHorarios(); };
     $("#estudo-dia").onchange = carregarDia;
     $("#adicionar-horario-estudo").onclick = () => { const inicio = $("#estudo-inicio").value.trim(), fim = $("#estudo-fim").value.trim(); if (!inicio || !fim) { $("#estudo-feedback").innerHTML = `<div class="action-error">Informe início e término.</div>`; return; } horariosEditando.push(`${inicio} às ${fim}`); $("#estudo-inicio").value = ""; $("#estudo-fim").value = ""; $("#estudo-feedback").innerHTML = ""; desenharHorarios(); };
-    $("#salvar-estudo").onclick = async () => { const botao = $("#salvar-estudo"); botao.disabled = true; try { await window.GemData.salvarEstudoDiario({ aluna: state.name, dataIso: $("#estudo-dia").value, horarios: horariosEditando }); estudos = await window.GemData.dadosEstudoAluna(state.name); mostrarEstudo(); $("#estudo-feedback").innerHTML = `<div class="action-ok">Estudo registrado.</div>`; } catch (erro) { $("#estudo-feedback").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; } };
+    $("#salvar-estudo").onclick = async () => {
+      const botao = $("#salvar-estudo"), feedback = $("#estudo-feedback");
+      const dia = $("#estudo-dia").value, inicio = $("#estudo-inicio").value.trim(), fim = $("#estudo-fim").value.trim();
+      if (!dia) { feedback.textContent = 'Informe o dia do estudo.'; return; }
+      const horariosParaSalvar = [...horariosEditando];
+      if (inicio || fim) {
+        if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(inicio) || !/^([01]?\d|2[0-3]):[0-5]\d$/.test(fim)) { feedback.textContent = 'Informe início e término no formato HH:MM, por exemplo 14:00 e 14:30.'; return; }
+        horariosParaSalvar.push(inicio.padStart(5, '0') + ' às ' + fim.padStart(5, '0'));
+      }
+      const controles = [...destino.querySelectorAll('.study-panel input, .study-panel button, .study-history button')];
+      controles.forEach(c => c.disabled = true); feedback.textContent = 'Salvando estudo...';
+      try {
+        const salvo = await window.GemData.salvarEstudoDiario({ aluna: state.name, dataIso: dia, horarios: horariosParaSalvar });
+        estudos = [...estudos.filter(item => item.data !== salvo.data), salvo];
+        if (destino.contains(botao)) {
+          mostrarEstudo();
+          $("#estudo-feedback").innerHTML = '<div class="action-ok" role="status">Estudo de ' + escapeHtml(salvo.data) + ' salvo e confirmado. ' + salvo.horarios.length + ' horário(s) registrado(s).</div>';
+        }
+      } catch (erro) { feedback.innerHTML = '<div class="action-error" role="alert">' + escapeHtml(erro.message) + '</div>'; }
+      finally { controles.forEach(c => c.disabled = false); }
+    };
     const existente = estudos.find((item) => item.data === dataAtualBr); horariosEditando = [...(existente?.horarios || [])]; desenharHorarios();
   };
   try { dadosAluna = await window.GemData.dadosAluna(state.name); try { estudos = await window.GemData.dadosEstudoAluna(state.name); } catch (erro) { erroEstudo = erro.message; } desenharIndicadores(); mostrarLicoes(); }
