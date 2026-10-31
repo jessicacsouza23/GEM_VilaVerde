@@ -409,7 +409,7 @@
     const [calendario, historico, estudos] = await Promise.all([
       banco.from("calendario").select("escala").eq("id", data).maybeSingle(),
       banco.from("historico_geral").select("id,Data,Aluna,Tipo,Status,Observacao,Licao_Atual,Licao_Casa,Dificuldades,Instrutora,Secretaria").eq("Data", data).order("id", { ascending: true }),
-      banco.from("estudo_diario").select("aluna,data,horarios").eq("data", data)
+      consultarEstudos({datas:[data]}).then(data=>({data}))
     ]);
     if (calendario.error || historico.error) throw new Error("Não foi possível carregar a visão geral desta data.");
     const desativadas = new Set();
@@ -675,7 +675,7 @@
       const datas = dias.slice(inicioLote, inicioLote + 30).flatMap((iso) => [iso, dataBr(iso)]);
       const lote = await Promise.all([
         ler(() => banco.from("historico_geral").select("id,Aluna,Data,Tipo,Status,Dificuldades").in("Data", datas).order("id")),
-        ler(() => banco.from("estudo_diario").select("aluna,data,horarios").in("data", datas).order("aluna").order("data")),
+        consultarEstudos({datas:datas.filter(d=>d.includes('/'))}),
         ler(() => banco.from("calendario").select("id,escala").in("id", datas).order("id"))
       ]);
       historico.push(...lote[0]); estudos.push(...lote[1]); calendarios.push(...lote[2]);
@@ -707,7 +707,7 @@
     const [alunas, historico, estudos] = await Promise.all([
       lerPaginas(() => banco.from("alunas").select("nome,ativo").order("nome")),
       lerPaginas(() => banco.from("historico_geral").select("Data,Aluna,Tipo,Status,Dificuldades").in("Data", datas).order("id")),
-      lerPaginas(() => banco.from("estudo_diario").select("aluna,data,horarios").in("data", datas).order("aluna").order("data"))
+      consultarEstudos({datas:datas.filter(d=>d.includes('/'))})
     ]);
     return { alunas, historico, estudos };
   }
@@ -730,7 +730,7 @@
       lerTodos(() => banco.from("alunas").select("*").order("nome")),
       banco.from("avaliacoes").select("*").order("data_avaliacao", { ascending: false }),
       banco.from("avaliacao_notas").select("*"),
-      lerTodos(() => banco.from("estudo_diario").select("*").order("aluna").order("data")),
+      consultarEstudos().then(data=>({data})),
       banco.from("objetivos_pedagogicos").select("*")
     ]);
     if (historico.error || alunas.error) throw new Error(`Não foi possível carregar o analítico: ${(historico.error || alunas.error).message || "verifique as permissões."}`);
@@ -1264,37 +1264,33 @@
     return { historico: historico || [], feitas: feitas || [] };
   }
 
+  async function estudosServidor(parametros) {
+    const resposta = await fetch('/api/estudos', { method:'POST', credentials:'same-origin', cache:'no-store',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({...parametros, gem:contextoGem.slug}) });
+    const corpo = await resposta.json().catch(()=>({}));
+    if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível acessar os estudos. Tente novamente.');
+    return corpo;
+  }
+
+  async function consultarEstudos(filtro = {}) {
+    const corpo = await estudosServidor({acao:'listar', ...filtro});
+    if (!Array.isArray(corpo.registros)) throw new Error('Resposta de estudos inválida.');
+    return corpo.registros;
+  }
+
   async function dadosEstudoAluna(aluna) {
-    const banco = await obterCliente();
-    const { data, error } = await banco.from("estudo_diario").select("*").eq("aluna", aluna).order("data", { ascending: false });
-    if (error) throw new Error(error.code === "42P01" || error.code === "PGRST205" ? "O Controle de Estudo Diário ainda não foi criado no Supabase." : "Não foi possível carregar seu histórico de estudo.");
-    return data || [];
+    return consultarEstudos({aluna});
   }
 
-  async function salvarEstudoDiario({ aluna, dataIso, horarios }) {
-    if (!aluna || !dataIso) throw new Error("Informe o dia do estudo.");
-    const banco = await obterCliente();
-    const { data: salvo, error } = await banco.from("estudo_diario").upsert({
-      aluna,
-      data: dataBr(dataIso),
-      horarios: Array.from(new Set((horarios || []).map((horario) => String(horario).trim()).filter(Boolean)))
-    }, { onConflict: "aluna,data" }).select('aluna,data,horarios').single();
-    if (error) {
-      const motivo = error.code === '42501' ? 'O banco não permitiu salvar. Peça à Secretaria para verificar as permissões.'
-        : error.code === '42P10' ? 'A tabela de estudos precisa da configuração de registro único por aluna e data. Avise a Secretaria.'
-        : ['42P01', 'PGRST205'].includes(error.code) ? 'A tabela de estudos não foi encontrada. Avise a Secretaria.'
-        : 'Verifique sua conexão e tente novamente.';
-      throw new Error(`Não foi possível confirmar o estudo. ${motivo}${error.code ? ` Código: ${error.code}.` : ''}`);
-    }
-    if (!salvo || salvo.aluna !== aluna || salvo.data !== dataBr(dataIso)) throw new Error('O banco não confirmou o registro de estudo. Recarregue para conferir antes de tentar novamente.');
-    return salvo;
+  async function salvarEstudoDiario({aluna, dataIso, horarios}) {
+    if (!aluna || !/^\d{4}-\d{2}-\d{2}$/.test(String(dataIso || ''))) throw new Error('Informe o dia do estudo.');
+    const corpo = await estudosServidor({acao:'salvar', aluna, data:dataBr(dataIso), horarios});
+    if (!corpo.registro || corpo.registro.aluna !== aluna || corpo.registro.data !== dataBr(dataIso)) throw new Error('O banco não confirmou o registro de estudo.');
+    return corpo.registro;
   }
 
-  async function excluirEstudoDiario({ aluna, data }) {
-    if (!String(aluna || '').trim() || !/^\d{2}\/\d{2}\/\d{4}$/.test(String(data || ''))) throw new Error('Informe a aluna e a data do registro de estudo.');
-    const banco = await obterCliente();
-    const { error } = await banco.from('estudo_diario').delete().eq('aluna', aluna).eq('data', data);
-    if (error) throw new Error('Não foi possível excluir o registro de estudo. Tente novamente.');
+  async function excluirEstudoDiario({aluna, data}) {
+    await estudosServidor({acao:'excluir', aluna, data});
   }
 
   async function marcarLicaoFeita(aluna, historicoId, feito) {

@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const src=fs.readFileSync(require.resolve('../js/gem-data.js'),'utf8');
 function preparar(error){
  let gravado;
- const ctx={obterCliente:async()=>({from(t){assert.equal(t,'estudo_diario');return {upsert(row,opts){assert.equal(opts.onConflict,'aluna,data');gravado=row;return {select(){return {single:async()=>({data:error?null:row,error})};}};}};}}),dataBr:()=> '31/10/2026'};
+ const ctx={estudosServidor:async row=>{if(error)throw new Error(error.code);gravado={...row,horarios:[...new Set(row.horarios)]};return {registro:gravado};},dataBr:()=> '31/10/2026'};
  vm.createContext(ctx);vm.runInContext(src.slice(src.indexOf('  async function salvarEstudoDiario('),src.indexOf('  async function excluirEstudoDiario(')),ctx);return {ctx,get:()=>gravado};
 }
 test('salva estudo na fonte dos analíticos com aluna, data e horários únicos',async()=>{

@@ -6,7 +6,7 @@ const fonte = fs.readFileSync(require.resolve('../js/gem-data.js'), 'utf8');
 const funcao = fonte.slice(fonte.indexOf('  async function dadosVisaoGeral('), fonte.indexOf('  async function dadosPessoas('));
 function ambiente(falhar = false) {
   const consultasHistorico = [];
-  const ctx = { dataBr: () => '10/10/2026', normalizar: v => String(v || '').trim().toUpperCase(), obterCliente: async () => ({
+  const ctx = { consultarEstudos: async () => [{aluna:'Ana'},{aluna:'Bia'}], dataBr: () => '10/10/2026', normalizar: v => String(v || '').trim().toUpperCase(), obterCliente: async () => ({
     from(tabela) {
       let nomes, inicio;
       const query = {

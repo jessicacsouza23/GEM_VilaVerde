@@ -8,7 +8,7 @@ function preparar(falhar=false){
  const registros=Array.from({length:1203},(_,i)=>({id:i,Aluna:`Aluna ${i%3}`,Instrutora:i%2?'Outra professora':'Professora atual',Observacao:'Observação preservada'}));
  const chamadas=[];
  const banco={from(tabela){const q={select(){return q;},order(){return q;},range:async(a,b)=>{chamadas.push([tabela,a,b]);return falhar&&tabela==='historico_geral'&&a===500?{error:{message:'Falha de leitura'}}:{data:(tabela==='historico_geral'?registros:[{nome:'Aluna nunca atendida'}]).slice(a,b+1)};},then(ok){return Promise.resolve({data:[]}).then(ok);}};return q;}};
- const ctx={obterCliente:async()=>banco};vm.createContext(ctx);vm.runInContext(trecho,ctx);return {ctx,chamadas};
+ const ctx={consultarEstudos:async()=>[],obterCliente:async()=>banco};vm.createContext(ctx);vm.runInContext(trecho,ctx);return {ctx,chamadas};
 }
 test('analítico inclui todas as professoras e alunas da base atual em todas as páginas',async()=>{
  const {ctx,chamadas}=preparar();const r=await ctx.dadosAnalitico();

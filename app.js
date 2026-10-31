@@ -1194,7 +1194,7 @@ async function renderVisaoGeral(content) {
         window.GemData.dadosVisaoGeral(dataReferencia),
         window.GemData.dadosPessoas(),
         window.GemData.dadosRodizio(dataReferencia).catch(() => ({ modelos: [] })),
-        window.GemData.dadosAnalitico().catch(() => ({ historico: [], estudos: [] }))
+        window.GemData.dadosAnalitico()
       ]);
       const chamadas = Object.fromEntries(dados.registros.filter((item) => item.Tipo === "Chamada").map((item) => [item.Aluna, item]));
       const estudos = Object.fromEntries((dados.estudos || []).map((item) => [item.aluna, item.horarios || []]));
