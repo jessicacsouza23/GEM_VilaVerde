@@ -346,6 +346,17 @@ async function renderMinhasAulas(content) {
         };
         cartao.innerHTML = `<div class="practice-material-title"><label>Método/Apostila da lição registrada<select data-pratica-material><option value="" ${!material ? "selected" : ""}>Selecione o método ou Apostila</option>${opcoesPratica.map((opcao) => `<option value="${escapeHtml(opcao)}" ${opcao === material ? "selected" : ""}>${escapeHtml(opcao)}</option>`).join("")}</select></label><button class="icon-action remover-material" type="button" title="Remover esta lição">×</button></div><div data-pratica-resumo-area>${resumoUltimaAula(material)}</div><div data-pratica-correcao-area>${correcaoDaLicao(material)}</div><div data-pratica-resultado-area>${resultadoDaCorrecao(material)}</div><label>Conteúdo trabalhado hoje — página/lição<input data-pratica-conteudo value="${escapeHtml(registro.conteudo || "")}" placeholder="Ex.: página 18, exercício 4"></label><div data-pratica-dificuldades-area>${dificuldadesDoMaterial(material, registro.dificuldades || [])}</div>`;
         areaMateriais.appendChild(cartao);
+        const orientarConteudoPratica = () => {
+          const apostila = cartao.querySelector('[data-pratica-material]').value === 'Apostila';
+          const campo = cartao.querySelector('[data-pratica-conteudo]');
+          campo.required = apostila;
+          campo.parentElement.firstChild.textContent = apostila
+            ? 'Página e lições trabalhadas hoje (obrigatórias)'
+            : 'Conteúdo trabalhado hoje — página/lição';
+          campo.placeholder = apostila ? 'Ex.: página 18, lições 1 e 2' : 'Ex.: página 18, exercício 4';
+        };
+        orientarConteudoPratica();
+        cartao.querySelector('[data-pratica-material]').addEventListener('change', orientarConteudoPratica);
         conectarSugestaoConteudo(cartao.querySelector('[data-pratica-material]'), cartao.querySelector('[data-pratica-conteudo]'), material => sugerirConteudoPendente(historicoPratica, aula.tipo, material, aula.alunas));
         conectarCorrecaoPratica(cartao);
         cartao.querySelector(".remover-material").addEventListener("click", () => { if (areaMateriais.children.length > 1) cartao.remove(); });

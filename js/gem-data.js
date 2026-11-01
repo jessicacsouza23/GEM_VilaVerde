@@ -1012,6 +1012,17 @@
   // Analise_Prática, exatamente como ocorre no app.py, para não misturar
   // páginas, dificuldades e exercícios de livros diferentes.
   async function salvarRegistrosPratica({ dataIso, instrutora, aluna, materiais, licoesCasa = [], observacao = "" }) {
+    // Valide todos os cartões antes de consultar ou alterar registros existentes.
+    for (const item of (materiais || [])) {
+      if (String(item?.material || "").trim().toLowerCase() !== "apostila") continue;
+      const conteudo = String(item.conteudo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      if (!/\b(?:paginas?|pags?|p)\.?\s*[:\-]?\s*[1-9]\d*\b/.test(conteudo)) {
+        throw new Error("Informe a página da Apostila de Prática. Ex.: página 18, lições 1 e 2.");
+      }
+      const temLicoes = /\b(?:licao|licoes|exercicio|exercicios|atividades?)\s*[:\-]?\s*\S+/.test(conteudo)
+        || (item.exercicios || []).some((exercicio) => String(exercicio?.exercicio || "").trim());
+      if (!temLicoes) throw new Error("Informe também as lições ou exercícios da Apostila de Prática. Ex.: página 18, lições 1 e 2.");
+    }
     const banco = await obterCliente();
     const data = dataBr(dataIso);
     const lista = (materiais || []).filter((item) => String(item?.material || "").trim() && String(item?.conteudo || "").trim());
