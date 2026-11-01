@@ -1,3 +1,29 @@
+// Mantém a validação específica e traduz falhas técnicas sem expor dados do banco.
+function mensagemErro(erro) {
+  const mensagem = String(erro?.message || '').trim();
+  const causa = erro?.cause || erro;
+  const codigo = String(causa?.code || '');
+  const tecnico = String(causa?.message || mensagem);
+  const contexto = erro?.cause ? mensagem + ' ' : '';
+  if (/42501|permission denied|row.level security/i.test(codigo + ' ' + tecnico))
+    return contexto + 'O banco recusou a operação por falta de permissão. Peça à Secretaria para verificar as permissões deste GEM.';
+  if (/23505|duplicate key/i.test(codigo + ' ' + tecnico))
+    return contexto + 'Já existe um cadastro ou registro com esses dados. Confira o que já foi salvo e edite o existente ou use dados diferentes.';
+  if (/23502|23503|23514|22P02/.test(codigo))
+    return contexto + 'O banco recusou um campo obrigatório, inválido ou um vínculo do registro. Confira os campos e a aluna, turma e material selecionados. Se estiverem corretos, peça à Secretaria para verificar o cadastro. Código: ' + codigo + '.';
+  if (/42P01|42703|PGRST20[0245]/.test(codigo))
+    return contexto + 'A estrutura do banco deste GEM precisa ser atualizada. Peça à administração para conferir as migrations antes de tentar novamente.';
+  if (/Failed to fetch|NetworkError|network request failed|timeout|timed out/i.test(tecnico))
+    return contexto + 'Não foi possível confirmar a operação por uma falha de conexão ou indisponibilidade do serviço. Confira a internet e os registros salvos antes de tentar novamente. Se persistir, avise a Secretaria.';
+  if (/JWT expired|invalid JWT|PGRST301/i.test(codigo + ' ' + tecnico))
+    return contexto + 'A sessão expirou ou não é válida. Entre novamente para continuar.';
+  if (!mensagem || /^(undefined|null|\[object Object\])$/.test(mensagem))
+    return 'Não foi possível concluir a operação, e o serviço não informou o motivo. Confira se houve salvamento antes de tentar novamente. Se persistir, informe à Secretaria a tela e a ação realizada.';
+  if (/Não foi possível|não confirmou|não permitiu/i.test(mensagem) && !/Informe|Confira|Peça|Tente|Recarregue|verifi|entre novamente/i.test(mensagem))
+    return mensagem + ' O serviço não detalhou a causa. Confira se houve salvamento antes de tentar novamente. Se persistir, informe esta mensagem à Secretaria.';
+  return mensagem;
+}
+
 // Preenche somente uma referência comum; nunca mistura lições de alunas distintas.
 function sugerirConteudoPendente(historico, disciplina, material, alunas) {
   const normal = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
@@ -243,7 +269,7 @@ async function renderMinhasAulas(content) {
         await window.GemData.corrigirLicaoProfessora(licao.id, { status, observacao: areaRegistro.querySelector(`[data-obs-pendente="${indicePendente}"]`).value, repetirLicao: reforco?.value, dataIso: $("#agenda-data").value, instrutora: state.name, licao });
         botao.textContent = "Correção salva ✓";
         botao.closest("article").classList.add("is-corrected");
-      } catch (erro) { alert(erro.message); botao.disabled = false; }
+      } catch (erro) { alert(mensagemErro(erro)); botao.disabled = false; }
     }));
     if (aulaPorTurma) {
       const atualizarSelecionadas = () => {
@@ -458,7 +484,7 @@ async function renderMinhasAulas(content) {
           await window.GemData.salvarRegistroAula({ dataIso: $("#agenda-data").value, instrutora: state.name, tipo: aula.tipo, alunas: alunasParaSalvar, material, conteudo, registrosPorAluna, casaTipo, licaoCasa, observacaoCasa: $("#registro-obs-casa")?.value.trim() || "", limparCasas });
         }
         $("#registro-retorno").innerHTML = `<div class="action-ok">Registro salvo para ${alunasParaSalvar.length === 1 ? "a aluna" : "as alunas"} desta aula.</div>`;
-      } catch (erro) { $("#registro-retorno").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; }
+      } catch (erro) { $("#registro-retorno").innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; botao.disabled = false; }
     });
     areaRegistro.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -477,7 +503,7 @@ async function renderMinhasAulas(content) {
       if (!aulasAtuais.length) { lista.innerHTML = diaDeDescanso($("#agenda-data").value); return; }
       lista.innerHTML = aulasAtuais.map((aula, indice) => `<article class="agenda-card"><h3>${escapeHtml(String(aula.horario || "").replace(/\s*\(Bloco[^)]*\)/gi, "").trim())} · ${escapeHtml(aula.tipo)}</h3><p><strong>${escapeHtml(aula.local)}</strong></p>${fotosDasAlunas(aula)}<span class="agenda-tag">${aula.individual ? "Aula individual" : `Turma ${escapeHtml(aula.turma || "")}`}</span><button class="secondary-action register-open" type="button" data-registro="${indice}">📝 Registrar aula</button></article>`).join("");
       lista.querySelectorAll("[data-registro]").forEach((botao) => botao.addEventListener("click", () => abrirRegistro(Number(botao.dataset.registro))));
-    } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+    } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
   };
   $("#agenda-data").addEventListener("change", carregar);
   await carregar();
@@ -513,16 +539,16 @@ async function renderConfigurarMetodos(content) {
       lista.querySelectorAll("[data-remover-metodo]").forEach((botao) => botao.addEventListener("click", async () => {
         if (!confirm(`Remover ${metodos[Number(botao.dataset.removerMetodo)].nome} da biblioteca?`)) return;
         try { await window.GemData.removerMetodo(metodos[Number(botao.dataset.removerMetodo)]); await carregar(); }
-        catch (erro) { $("#metodo-feedback").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+        catch (erro) { $("#metodo-feedback").innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
       }));
-    } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+    } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
   };
   $("#adicionar-metodo").addEventListener("click", async () => {
     const feedback = $("#metodo-feedback"), nome = $("#metodo-nome").value.trim();
     if (!nome) { feedback.innerHTML = `<div class="action-error">Informe o nome do método.</div>`; return; }
     if ($("#metodo-categoria").disabled || !$("#metodo-categoria").value) { feedback.innerHTML = `<div class="action-error">Cadastre as disciplinas na Logística antes de adicionar um método.</div>`; return; }
     try { await window.GemData.criarMetodo(nome, $("#metodo-categoria").value); $("#metodo-nome").value = ""; feedback.innerHTML = `<div class="action-ok">Método salvo na biblioteca.</div>`; await carregar(); }
-    catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+    catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
   });
   await Promise.all([carregarAreas(), carregar()]);
 }
@@ -552,16 +578,16 @@ async function renderEnvioDocumentosProfessora(content) {
       const documentos = await window.GemData.dadosDocumentos();
       const meus = documentos.filter((documento) => documento.professora === state.name);
       lista.innerHTML = meus.length ? meus.map((documento) => `<article class="method-row"><div><strong>${escapeHtml(documento.titulo)}</strong><span>${escapeHtml(documento.disciplina || "—")} · ${documento.aluna ? `Aluna: ${escapeHtml(documento.aluna)}` : documento.turma ? `Turma: ${escapeHtml(documento.turma)}` : "Sem destino específico"}</span></div><div class="person-actions"><button class="secondary-action" type="button" data-doc-prof="${escapeHtml(documento.arquivo_path)}">Abrir</button><button class="secondary-action danger-action" type="button" data-excluir-doc-prof="${escapeHtml(documento.id)}">Excluir</button></div></article>`).join("") : `<div class="empty">Você ainda não enviou documentos.</div>`;
-      lista.querySelectorAll("[data-doc-prof]").forEach((botao) => botao.addEventListener("click", async () => { try { window.open(await window.GemData.urlDocumento(botao.dataset.docProf), "_blank", "noopener"); } catch (erro) { alert(erro.message); } }));
-      lista.querySelectorAll("[data-excluir-doc-prof]").forEach((botao) => botao.addEventListener("click", async () => { const documento = meus.find((item) => String(item.id) === String(botao.dataset.excluirDocProf)); if (!documento || !confirm(`Excluir o documento “${documento.titulo}”?`)) return; botao.disabled = true; try { await window.GemData.removerDocumento(documento); await carregar(); } catch (erro) { alert(erro.message); botao.disabled = false; } }));
-    } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+      lista.querySelectorAll("[data-doc-prof]").forEach((botao) => botao.addEventListener("click", async () => { try { window.open(await window.GemData.urlDocumento(botao.dataset.docProf), "_blank", "noopener"); } catch (erro) { alert(mensagemErro(erro)); } }));
+      lista.querySelectorAll("[data-excluir-doc-prof]").forEach((botao) => botao.addEventListener("click", async () => { const documento = meus.find((item) => String(item.id) === String(botao.dataset.excluirDocProf)); if (!documento || !confirm(`Excluir o documento “${documento.titulo}”?`)) return; botao.disabled = true; try { await window.GemData.removerDocumento(documento); await carregar(); } catch (erro) { alert(mensagemErro(erro)); botao.disabled = false; } }));
+    } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
   };
   $("#doc-prof-enviar").addEventListener("click", async () => {
     const feedback = $("#doc-prof-feedback");
     const dados = form.dados();
     if (dados.visivel && !dados.turma && !dados.aluna) { feedback.innerHTML = `<div class="action-error">Escolha a turma ou a aluna que receberá o documento.</div>`; return; }
     try { await window.GemData.enviarDocumento({ ...dados, professora: state.name }); feedback.innerHTML = `<div class="action-ok">Documento enviado.</div>`; await carregar(); }
-    catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+    catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
   });
   await carregar();
 }
@@ -574,8 +600,8 @@ async function renderDocumentosAluna(content) {
     const turma = pessoas.alunas.find((aluna) => aluna.nome === state.name)?.turma;
     const disponiveis = documentos.filter((documento) => documento.visivel_alunas && (!documento.aluna || documento.aluna === state.name) && (!documento.turma || documento.turma === turma));
     lista.innerHTML = disponiveis.length ? disponiveis.map((documento) => `<article class="method-row"><div><strong>${escapeHtml(documento.titulo)}</strong><span>${escapeHtml(documento.disciplina || "Material")} · Enviado por ${escapeHtml(documento.professora || "Secretaria")}</span>${documento.observacao ? `<span>${escapeHtml(documento.observacao)}</span>` : ""}</div><button class="secondary-action" type="button" data-doc-aluna="${escapeHtml(documento.arquivo_path)}">Abrir</button></article>`).join("") : `<div class="empty">Nenhum documento disponível para você ainda.</div>`;
-    lista.querySelectorAll("[data-doc-aluna]").forEach((botao) => botao.addEventListener("click", async () => { try { window.open(await window.GemData.urlDocumento(botao.dataset.docAluna), "_blank", "noopener"); } catch (erro) { alert(erro.message); } }));
-  } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+    lista.querySelectorAll("[data-doc-aluna]").forEach((botao) => botao.addEventListener("click", async () => { try { window.open(await window.GemData.urlDocumento(botao.dataset.docAluna), "_blank", "noopener"); } catch (erro) { alert(mensagemErro(erro)); } }));
+  } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
 }
 
 async function renderProvasProfessora(content) {
@@ -594,10 +620,10 @@ async function renderProvasProfessora(content) {
       const responsavel = minhas[Number(botao.dataset.salvarNota)], campo = lista.querySelector(`[data-nota-avaliacao="${botao.dataset.salvarNota}"]`);
       botao.disabled = true;
       try { await window.GemData.salvarNotaAvaliacao({ avaliacaoId: responsavel.avaliacao_id, aluna: responsavel.aluna, disciplina: responsavel.disciplina, nota: campo.value, professora: state.name }); botao.textContent = "Nota salva ✓"; }
-      catch (erro) { alert(erro.message); botao.disabled = false; }
+      catch (erro) { alert(mensagemErro(erro)); botao.disabled = false; }
     }));
   };
-  try { await carregar(); } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  try { await carregar(); } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
 }
 
 // Mantido temporariamente como referência do painel antigo, que restringia a
@@ -635,14 +661,14 @@ async function renderAnaliticoProfessoraLegado(content) {
           const corpo = await retorno.json().catch(() => ({}));
           if (!retorno.ok) throw new Error(corpo.error || "Não foi possível gerar a sugestão.");
           resposta.innerHTML = `<article class="ai-answer">${escapeHtml(corpo.texto || "").replace(/\n/g, "<br>")}</article>`;
-        } catch (erro) { resposta.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+        } catch (erro) { resposta.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
         finally { botao.disabled = false; botao.textContent = "Gerar sugestão"; }
       });
     };
     seletor.addEventListener("change", renderizar);
     $("#atualizar-analitico-prof").addEventListener("click", renderizar);
     renderizar();
-  } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
 }
 
 async function renderAnaliticoProfessora(content) {
@@ -661,11 +687,11 @@ async function renderMensagens(content) {
   const destino = $("#mensagens-conteudo");
   const dataMensagem = (item) => item.created_at ? new Date(item.created_at).toLocaleString("pt-BR") : "";
   const atualizar = async () => { mensagens = await window.GemData.dadosMensagens(); };
-  const publicar = async (para, campo, retorno) => { try { await window.GemData.enviarMensagem(meuId, para, $(campo).value); $(campo).value = ""; await atualizar(); retorno(); } catch (erro) { destino.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(erro.message)}</div>`); } };
+  const publicar = async (para, campo, retorno) => { try { await window.GemData.enviarMensagem(meuId, para, $(campo).value); $(campo).value = ""; await atualizar(); retorno(); } catch (erro) { destino.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`); } };
   const mostrarMural = () => { const itens = mensagens.filter((item) => eAluna ? item.para === "TODOS_ALUNAS" : ["TODOS", "TODOS_ALUNAS"].includes(item.para)); const formulario = eAluna ? `<p class="hint">Avisos gerais enviados pela Secretaria e pelas professoras.</p>` : `<p class="hint">Avisos entre Secretaria e professoras. Marque se as alunas também devem visualizar.</p><label>Novo aviso<textarea id="mensagem-mural" placeholder="Escreva o aviso"></textarea></label><label class="checkbox-line"><input id="mural-alunas" type="checkbox"> Enviar também para as alunas</label><button id="publicar-mural" class="primary-action" type="button">Publicar no mural</button>`; destino.innerHTML = `${formulario}<div class="message-list">${itens.length ? itens.slice().reverse().map((item) => `<article><strong>${escapeHtml(item.de)}</strong><small>${escapeHtml(dataMensagem(item))}${item.para === "TODOS_ALUNAS" && !eAluna ? " · 📚 também para alunas" : ""}</small><p>${escapeHtml(item.texto)}</p></article>`).join("") : `<div class="empty">Nenhum aviso publicado ainda.</div>`}</div>`; $("#publicar-mural")?.addEventListener("click", () => publicar($("#mural-alunas").checked ? "TODOS_ALUNAS" : "TODOS", "#mensagem-mural", mostrarMural)); };
   const mostrarProfessoras = () => { const itens = mensagens.filter((item) => item.para === "PROFESSORAS"); destino.innerHTML = `<p class="hint">Este mural é visível somente para professoras.</p><label>Novo recado<textarea id="mensagem-professoras" placeholder="Escreva o recado"></textarea></label><button id="publicar-professoras" class="primary-action" type="button">Publicar para professoras</button><div class="message-list">${itens.length ? itens.slice().reverse().map((item) => `<article><strong>${escapeHtml(item.de)}</strong><small>${escapeHtml(dataMensagem(item))}</small><p>${escapeHtml(item.texto)}</p></article>`).join("") : `<div class="empty">Nenhum recado publicado ainda.</div>`}</div>`; $("#publicar-professoras").onclick = () => publicar("PROFESSORAS", "#mensagem-professoras", mostrarProfessoras); };
   const mostrarDireta = () => { const opcoes = eAluna ? [{ grupo: "Secretaria", nomes: ["Secretaria"] }, { grupo: "Professoras", nomes: pessoas.professoras.filter((item) => item.ativo !== false).map((item) => item.nome) }] : eProfessora ? [{ grupo: "Secretaria", nomes: ["Secretaria"] }, { grupo: "Professoras", nomes: pessoas.professoras.filter((item) => item.ativo !== false && item.nome !== state.name).map((item) => item.nome) }, { grupo: "Alunas", nomes: pessoas.alunas.filter((item) => item.ativo !== false).map((item) => item.nome) }] : [{ grupo: "Professoras", nomes: pessoas.professoras.filter((item) => item.ativo !== false).map((item) => item.nome) }, { grupo: "Alunas", nomes: pessoas.alunas.filter((item) => item.ativo !== false).map((item) => item.nome) }]; destino.innerHTML = `<label>Contato<select id="mensagem-contato">${opcoes.map((grupo) => `<optgroup label="${escapeHtml(grupo.grupo)}">${grupo.nomes.map((nome) => `<option>${escapeHtml(nome)}</option>`).join("")}</optgroup>`).join("")}</select></label><div id="conversa-direta"></div><label>Mensagem<textarea id="mensagem-direta" placeholder="Escreva sua mensagem"></textarea></label><button id="enviar-direta" class="primary-action" type="button">Enviar mensagem</button>`; const desenhar = () => { const contato = $("#mensagem-contato").value, itens = mensagens.filter((item) => (item.de === meuId && item.para === contato) || (item.de === contato && item.para === meuId)); $("#conversa-direta").innerHTML = `<div class="message-list">${itens.length ? itens.map((item) => `<article class="${item.de === meuId ? "my-message" : ""}"><strong>${item.de === meuId ? "Você" : escapeHtml(item.de)}</strong><small>${escapeHtml(dataMensagem(item))}</small><p>${escapeHtml(item.texto)}</p></article>`).join("") : `<div class="empty">Nenhuma mensagem nesta conversa.</div>`}</div>`; }; $("#mensagem-contato").onchange = desenhar; $("#enviar-direta").onclick = () => publicar($("#mensagem-contato").value, "#mensagem-direta", desenhar); desenhar(); };
-  try { await atualizar(); mostrarMural(); } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  try { await atualizar(); mostrarMural(); } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
   document.querySelectorAll("[data-msg-tab]").forEach((botao) => botao.onclick = () => { document.querySelectorAll("[data-msg-tab]").forEach((item) => item.classList.toggle("active", item === botao)); if (botao.dataset.msgTab === "mural") mostrarMural(); else if (botao.dataset.msgTab === "professoras") mostrarProfessoras(); else mostrarDireta(); });
 }
 
@@ -718,7 +744,7 @@ async function renderMinhasLicoes(content) {
       return true;
     });
     destino.innerHTML = `<div class="section-title"><div><h2>Lições de casa</h2><p>Em Método, MSA e Solfejo Melódico aparece sempre a orientação mais recente. A Apostila permanece até ser resolvida.</p></div></div>${licoes.length ? `<div class="lesson-list">${licoes.map((licao) => { const feito = idsFeitos.has(String(licao.id)); return `<article class="lesson-card"><h3>${escapeHtml(casaCategoria(licao.Tipo))}</h3><p><strong>Material:</strong> ${escapeHtml(materialDaLicao(licao.Tipo))}</p><p><strong>Lição:</strong> ${escapeHtml(licao.Licao_Casa || "—")}</p><span class="lesson-meta">Lançada em ${escapeHtml(licao.Data || "—")}</span><br><button class="lesson-action ${feito ? "done" : ""}" data-licao="${escapeHtml(licao.id)}" data-feito="${feito}">${feito ? "✓ Feito — desfazer" : "✓ Marcar como feito"}</button></article>`; }).join("")}</div>` : `<div class="empty">✅ Nenhuma lição pendente agora. As lições resolvidas continuam no seu histórico.</div>`}`;
-    destino.querySelectorAll("button[data-licao]").forEach((botao) => botao.addEventListener("click", async () => { botao.disabled = true; try { await window.GemData.marcarLicaoFeita(state.name, botao.dataset.licao, botao.dataset.feito !== "true"); dadosAluna = await window.GemData.dadosAluna(state.name); mostrarLicoes(); } catch (erro) { botao.disabled = false; alert(erro.message); } }));
+    destino.querySelectorAll("button[data-licao]").forEach((botao) => botao.addEventListener("click", async () => { botao.disabled = true; try { await window.GemData.marcarLicaoFeita(state.name, botao.dataset.licao, botao.dataset.feito !== "true"); dadosAluna = await window.GemData.dadosAluna(state.name); mostrarLicoes(); } catch (erro) { botao.disabled = false; alert(mensagemErro(erro)); } }));
   };
   const mostrarHistorico = () => {
     const licoes = dadosAluna.historico.filter((item) => String(item.Tipo || "").startsWith("Casa_"))
@@ -744,7 +770,7 @@ async function renderMinhasLicoes(content) {
           estudos = estudos.filter(item => item.data !== registro.data);
           mostrarEstudo();
           $('#estudo-feedback').innerHTML = '<div class="action-ok">Registro de estudo excluído.</div>';
-        } catch (erro) { $('#estudo-feedback').innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; }
+        } catch (erro) { $('#estudo-feedback').innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; botao.disabled = false; }
       };
     });
     const desenharHorarios = () => { $("#horarios-estudo").innerHTML = horariosEditando.length ? horariosEditando.map((horario, indice) => `<span>🕐 ${escapeHtml(horario)} <button type="button" data-remover-horario="${indice}" aria-label="Remover horário">×</button></span>`).join("") : `<p class="hint">Nenhum horário adicionado neste dia.</p>`; destino.querySelectorAll("[data-remover-horario]").forEach((botao) => botao.onclick = () => { horariosEditando.splice(Number(botao.dataset.removerHorario), 1); desenharHorarios(); }); };
@@ -769,13 +795,13 @@ async function renderMinhasLicoes(content) {
           mostrarEstudo();
           $("#estudo-feedback").innerHTML = '<div class="action-ok" role="status">Estudo de ' + escapeHtml(salvo.data) + ' salvo e confirmado. ' + salvo.horarios.length + ' horário(s) registrado(s).</div>';
         }
-      } catch (erro) { feedback.innerHTML = '<div class="action-error" role="alert">' + escapeHtml(erro.message) + '</div>'; }
+      } catch (erro) { feedback.innerHTML = '<div class="action-error" role="alert">' + escapeHtml(mensagemErro(erro)) + '</div>'; }
       finally { controles.forEach(c => c.disabled = false); }
     };
     const existente = estudos.find((item) => item.data === dataAtualBr); horariosEditando = [...(existente?.horarios || [])]; desenharHorarios();
   };
   try { dadosAluna = await window.GemData.dadosAluna(state.name); try { estudos = await window.GemData.dadosEstudoAluna(state.name); } catch (erro) { erroEstudo = erro.message; } desenharIndicadores(); mostrarLicoes(); }
-  catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
   document.querySelectorAll("[data-aluna-aba]").forEach((botao) => botao.addEventListener("click", () => { aba = botao.dataset.alunaAba; document.querySelectorAll("[data-aluna-aba]").forEach((item) => item.classList.toggle("active", item === botao)); if (aba === "estudo") mostrarEstudo(); else if (aba === "historico") mostrarHistorico(); else mostrarLicoes(); }));
 }
 
@@ -803,8 +829,8 @@ async function renderChamada(content) {
         const aluna = evento.target.dataset.presente || evento.target.dataset.ausente || evento.target.dataset.justificada;
         linha.querySelector(`[data-motivo="${CSS.escape(aluna)}"]`).classList.toggle("hidden", !linha.querySelector("[data-justificada]").checked);
       }));
-      $("#salvar-chamada").addEventListener("click", async () => { const botao = $("#salvar-chamada"); botao.disabled = true; try { if ($("#chamada-data").value !== dataCarregada) throw new Error("A data mudou. Clique em Carregar antes de salvar."); const resumo = await window.GemData.salvarChamada(dataCarregada, alunas.map((aluna) => ({ aluna, status: lista.querySelector(`[data-justificada="${CSS.escape(aluna)}"]`).checked ? "Justificada" : lista.querySelector(`[data-ausente="${CSS.escape(aluna)}"]`).checked ? "Ausente" : "Presente", observacao: lista.querySelector(`[data-justificada="${CSS.escape(aluna)}"]`).checked ? lista.querySelector(`[data-motivo="${CSS.escape(aluna)}"]`).value : "" }))); $("#chamada-retorno").innerHTML = `<div class="action-ok">Chamada de ${escapeHtml(resumo.data)} salva e confirmada: ${resumo.total} alunas, ${resumo.ausentes} ausentes e ${resumo.justificadas} faltas justificadas.</div>`; } catch (erro) { $("#chamada-retorno").innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; } finally { botao.disabled = false; } });
-    } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+      $("#salvar-chamada").addEventListener("click", async () => { const botao = $("#salvar-chamada"); botao.disabled = true; try { if ($("#chamada-data").value !== dataCarregada) throw new Error("A data mudou. Clique em Carregar antes de salvar."); const resumo = await window.GemData.salvarChamada(dataCarregada, alunas.map((aluna) => ({ aluna, status: lista.querySelector(`[data-justificada="${CSS.escape(aluna)}"]`).checked ? "Justificada" : lista.querySelector(`[data-ausente="${CSS.escape(aluna)}"]`).checked ? "Ausente" : "Presente", observacao: lista.querySelector(`[data-justificada="${CSS.escape(aluna)}"]`).checked ? lista.querySelector(`[data-motivo="${CSS.escape(aluna)}"]`).value : "" }))); $("#chamada-retorno").innerHTML = `<div class="action-ok">Chamada de ${escapeHtml(resumo.data)} salva e confirmada: ${resumo.total} alunas, ${resumo.ausentes} ausentes e ${resumo.justificadas} faltas justificadas.</div>`; } catch (erro) { $("#chamada-retorno").innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; } finally { botao.disabled = false; } });
+    } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
   };
   $("#carregar-chamada").addEventListener("click", carregar);
   await carregar();
@@ -851,7 +877,7 @@ async function conferirRegistrosPendentesCoordenacao(dataIso, destino) {
     const porProfessora = new Map();
     faltantes.sort((a, b) => a.professora.localeCompare(b.professora, "pt-BR") || a.aluna.localeCompare(b.aluna, "pt-BR")).forEach((item) => (porProfessora.get(item.professora) || porProfessora.set(item.professora, []).get(item.professora)).push(item));
     destino.innerHTML = `<div class="grid"><div class="metric"><strong>${faltantes.length}</strong><span>Registros pendentes</span></div><div class="metric"><strong>${porProfessora.size}</strong><span>Professoras com pendência</span></div></div><div class="lesson-list">${[...porProfessora.entries()].map(([professora, itens]) => `<article class="student-report"><h3>👩‍🏫 ${escapeHtml(professora)}</h3>${itens.map((item) => `<div class="report-record"><strong>${escapeHtml(item.aluna)}</strong><p>🎼 ${escapeHtml(item.disciplina)}</p></div>`).join("")}</article>`).join("")}</div>`;
-  } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
 }
 
 async function renderFolgas(content) {
@@ -874,11 +900,11 @@ async function renderFolgas(content) {
       const salvo = folgas.find((item) => item.data === $("#folga-data").value) || {};
       const selecionadas = new Set(salvo.professoras || []);
       formulario.innerHTML = `<div class="folga-checks">${professoras.map((professora) => `<label class="checkbox-line"><input type="checkbox" data-professora-folga value="${escapeHtml(professora)}" ${selecionadas.has(professora) ? "checked" : ""}> ${escapeHtml(professora)}</label>`).join("")}</div><label>Observação opcional<textarea id="folga-observacao" placeholder="Ex.: Missão Fraternal, troca combinada">${escapeHtml(salvo.observacao || "")}</textarea></label><button id="salvar-folga" class="primary-action" type="button">Salvar folgas deste sábado</button><div id="folga-feedback"></div>`;
-      $("#salvar-folga").addEventListener("click", async () => { const feedback = $("#folga-feedback"); try { const selecionadasAgora = [...formulario.querySelectorAll("[data-professora-folga]:checked")].map((campo) => campo.value); await window.GemData.salvarFolgas({ data: $("#folga-data").value, coordenadora: state.name, professoras: selecionadasAgora, observacao: $("#folga-observacao").value }); feedback.innerHTML = `<div class="action-ok">Folgas salvas. O gerador do rodízio considerará esta lista.</div>`; await carregarLista(); } catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; } });
-    } catch (erro) { formulario.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+      $("#salvar-folga").addEventListener("click", async () => { const feedback = $("#folga-feedback"); try { const selecionadasAgora = [...formulario.querySelectorAll("[data-professora-folga]:checked")].map((campo) => campo.value); await window.GemData.salvarFolgas({ data: $("#folga-data").value, coordenadora: state.name, professoras: selecionadasAgora, observacao: $("#folga-observacao").value }); feedback.innerHTML = `<div class="action-ok">Folgas salvas. O gerador do rodízio considerará esta lista.</div>`; await carregarLista(); } catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; } });
+    } catch (erro) { formulario.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
   };
   $("#carregar-folga").addEventListener("click", abrir);
-  try { await Promise.all([abrir(), carregarLista()]); } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  try { await Promise.all([abrir(), carregarLista()]); } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
   if (eCoordenadora) {
     const pendencias = $("#pendencias-coordenacao");
     const verificar = () => conferirRegistrosPendentesCoordenacao($("#pendencias-data").value, pendencias);
@@ -914,7 +940,7 @@ async function renderBoletim(content) {
       const disciplinas = [["🎹", "Prática"], ["📚", "Teoria"], ["🔊", "Solfejo"]];
       return `<article class="boletim-card"><h3>🎶 ${escapeHtml(avaliacao.titulo || "Avaliação")}</h3><p>📅 ${escapeHtml(avaliacao.data_avaliacao || "Data ainda não informada")}</p><div class="boletim-grades">${disciplinas.map(([icone, disciplina]) => { const valor = notasDaProva.find((item) => item.disciplina === disciplina)?.nota; return `<div><span>${icone} ${disciplina}</span><strong>${valor === undefined || valor === null || valor === "" ? "Aguardando" : escapeHtml(Number(valor).toFixed(1).replace(".", ","))}</strong></div>`; }).join("")}</div></article>`;
     }).join("");
-  } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+  } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
 }
 
 function tabelaDaEscala(escala) {
@@ -992,7 +1018,7 @@ async function renderRodizio(content) {
       $("#rodizios-anteriores")?.addEventListener("change", (event) => { if (!event.target.value) return; const [dia, mes, ano] = event.target.value.split("/"); $("#rodizio-data").value = `${ano}-${mes}-${dia}`; carregar(); });
       if (escalaSalva) ligarAcoesEscala(base, modeloExibido);
       else ligarGerador(base, modelo, preparacao, fixasSalvas);
-    } catch (error) { area.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+    } catch (error) { area.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
   };
   $("#carregar-rodizio").addEventListener("click", carregar);
   await carregar();
@@ -1060,7 +1086,7 @@ async function renderBuscaAtiva(content) {
       seletor(turma, opcoes.turmas, "Todas as turmas"); seletor(area, opcoes.disciplinas, "Todas as disciplinas");
       mostrar();
     } catch (erro) {
-      if (atual === pedido && resultado.isConnected) resultado.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`;
+      if (atual === pedido && resultado.isConnected) resultado.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`;
     }
   };
   inicio.addEventListener("change", carregar); fim.addEventListener("change", carregar);
@@ -1095,11 +1121,11 @@ async function renderVisaoGeralProfessora(content) {
           if (atual !== pedido || !destino.isConnected || !state.coordenadora) return;
           destino.innerHTML += conferenciaRegistrosMarkup(conferencia);
         } catch (erro) {
-          if (atual === pedido && destino.isConnected && state.coordenadora) destino.innerHTML += `<div class="action-error">Não foi possível conferir os registros: ${escapeHtml(erro.message)}</div>`;
+          if (atual === pedido && destino.isConnected && state.coordenadora) destino.innerHTML += `<div class="action-error">Não foi possível conferir os registros: ${escapeHtml(mensagemErro(erro))}</div>`;
         }
       }
     } catch (erro) {
-      if (atual === pedido && destino.isConnected) destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`;
+      if (atual === pedido && destino.isConnected) destino.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`;
     }
   };
   content.querySelector("#resumo-minhas-aulas").addEventListener("click", async () => {
@@ -1269,11 +1295,11 @@ async function renderVisaoGeral(content) {
       destino.innerHTML = `<div class="grid gem-summary"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas</span></div><div class="metric"><strong>${frequencia === null ? "—" : `${frequencia}%`}</strong><span>Frequência geral</span></div><div class="metric"><strong>${quantidadeSalas || "—"}</strong><span>Salas ativas</span></div><div class="metric"><strong>${professorasAtivas.length}</strong><span>Professoras ativas</span></div><div class="metric"><strong>${disciplinas.length}</strong><span>Disciplinas oferecidas</span></div></div><section class="gem-summary-details"><div><h3>🎼 Disciplinas do GEM</h3><p>${disciplinas.length ? escapeHtml(disciplinas.join(" · ")) : "Defina as disciplinas no modelo de rodízio."}</p></div><div><h3>📅 Referência</h3><p>${dados.alunas.length ? `${dados.alunas.length} aluna(s) no rodízio de hoje · ${presentes} presente(s)` : "Sem rodízio salvo nesta data."}</p></div></section>${conferenciaRegistros}${destaquesGemMarkup(ativas, analitico, dataReferencia)}`;
       const faltasDoDia = resumoFaltasVisaoGeral(dados.registros, dados.data);
       destino.querySelector('.gem-summary').insertAdjacentHTML('beforeend', `<div class="metric"><strong>${faltasDoDia.total}</strong><span>Faltas do dia · ${escapeHtml(dados.data)}</span><div><small>${faltasDoDia.ausentes} falta(s) sem justificativa</small></div><div><small>${faltasDoDia.justificadas} falta(s) justificada(s)</small></div></div>`);
-    } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+    } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
   };
   $("#carregar-visao").addEventListener("click", carregar); await carregar();
-  $("#salvar-logo").addEventListener("click", async () => { const feedback = $("#marca-feedback"); try { const identidade = await window.GemData.enviarLogoGem($("#logo-gem").files[0]); aplicarLogo(identidade.logoUrl); feedback.innerHTML = `<p class="action-ok">Logo atualizada. Ela aparecerá também no próximo acesso.</p>`; } catch (error) { feedback.innerHTML = `<p class="action-error">${escapeHtml(error.message)}</p>`; } });
-  $("#salvar-perfil").addEventListener("click", async () => { const feedback = $("#marca-feedback"); try { const perfil = await window.GemData.salvarPerfilSecretaria({ nome: $("#nome-coordenacao").value, arquivo: $("#foto-coordenacao").files[0] }); state.name = perfil.nome_exibicao || state.name; $("#profile-name").textContent = state.name; aplicarAvatar(perfil.fotoUrl, state.name); feedback.innerHTML = `<p class="action-ok">Perfil da Coordenação atualizado.</p>`; } catch (error) { feedback.innerHTML = `<p class="action-error">${escapeHtml(error.message)}</p>`; } });
+  $("#salvar-logo").addEventListener("click", async () => { const feedback = $("#marca-feedback"); try { const identidade = await window.GemData.enviarLogoGem($("#logo-gem").files[0]); aplicarLogo(identidade.logoUrl); feedback.innerHTML = `<p class="action-ok">Logo atualizada. Ela aparecerá também no próximo acesso.</p>`; } catch (error) { feedback.innerHTML = `<p class="action-error">${escapeHtml(mensagemErro(error))}</p>`; } });
+  $("#salvar-perfil").addEventListener("click", async () => { const feedback = $("#marca-feedback"); try { const perfil = await window.GemData.salvarPerfilSecretaria({ nome: $("#nome-coordenacao").value, arquivo: $("#foto-coordenacao").files[0] }); state.name = perfil.nome_exibicao || state.name; $("#profile-name").textContent = state.name; aplicarAvatar(perfil.fotoUrl, state.name); feedback.innerHTML = `<p class="action-ok">Perfil da Coordenação atualizado.</p>`; } catch (error) { feedback.innerHTML = `<p class="action-error">${escapeHtml(mensagemErro(error))}</p>`; } });
 }
 
 async function renderPessoas(content) {
@@ -1294,12 +1320,12 @@ async function renderPessoas(content) {
       const coordenacaoAtual = coordenacoes.filter((item) => item.inicio <= hoje && item.fim >= hoje);
       const historico = coordenacoes.length ? coordenacoes.map((item) => `<article><strong>${escapeHtml(item.professora)}</strong><span>${escapeHtml(item.periodo || "Coordenação")} · ${escapeHtml(dataCoordenacao(item.inicio))} a ${escapeHtml(dataCoordenacao(item.fim))}</span></article>`).join("") : `<p class="hint">Nenhuma professora coordenadora definida ainda.</p>`;
       destino.querySelector(".person-add").insertAdjacentHTML("afterend", `<section class="coordinator-panel"><div><h3>👑 Professora coordenadora</h3><p>Somente a professora definida para o período verá a página <strong>Folgas</strong> no login dela. Ao substituir a responsável, o período anterior é encerrado, sem apagar o histórico.</p></div>${erroCoordenacoes ? `<div class="action-error">${escapeHtml(erroCoordenacoes)}</div>` : `<div class="coordinator-form"><label>Professora<select id="coordenadora-professora"><option value="">Escolha a professora</option>${professorasAtivas.map((pessoa) => `<option value="${escapeHtml(pessoa.nome)}" ${coordenacaoAtual[0]?.professora === pessoa.nome ? "selected" : ""}>${escapeHtml(pessoa.nome)}</option>`).join("")}</select></label><label>Tipo do período<select id="coordenadora-periodo"><option>Bimestre</option><option>Semestre</option><option>Plantão / da vez</option></select></label><label>Começa em<input id="coordenadora-inicio" type="date" value="${hoje}"></label><label>Termina em<input id="coordenadora-fim" type="date" value="${terminoPadrao.toISOString().slice(0, 10)}"></label><button id="salvar-coordenadora" class="primary-action" type="button">Definir coordenadora</button></div><div id="coordenadora-feedback"></div><div class="coordinator-history">${historico}</div>`}</section>`);
-      $("#salvar-coordenadora")?.addEventListener("click", async () => { const botao = $("#salvar-coordenadora"), feedback = $("#coordenadora-feedback"); botao.disabled = true; try { await window.GemData.definirCoordenadoraProfessora({ professora: $("#coordenadora-professora").value, inicio: $("#coordenadora-inicio").value, fim: $("#coordenadora-fim").value, periodo: $("#coordenadora-periodo").value }); feedback.innerHTML = `<div class="action-ok">Professora coordenadora definida. No próximo login dela, a página Folgas será exibida.</div>`; coordenacoes = await window.GemData.dadosCoordenacoesProfessoras(); } catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; botao.disabled = false; } });
+      $("#salvar-coordenadora")?.addEventListener("click", async () => { const botao = $("#salvar-coordenadora"), feedback = $("#coordenadora-feedback"); botao.disabled = true; try { await window.GemData.definirCoordenadoraProfessora({ professora: $("#coordenadora-professora").value, inicio: $("#coordenadora-inicio").value, fim: $("#coordenadora-fim").value, periodo: $("#coordenadora-periodo").value }); feedback.innerHTML = `<div class="action-ok">Professora coordenadora definida. No próximo login dela, a página Folgas será exibida.</div>`; coordenacoes = await window.GemData.dadosCoordenacoesProfessoras(); } catch (erro) { feedback.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; botao.disabled = false; } });
     }
     $("#adicionar-pessoa").addEventListener("click", async () => { const nome = $("#pessoa-nome").value.trim(), loginInicial = tipo === "secretaria" ? "" : $("#pessoa-login").value.trim().toLowerCase(), senhaInicial = tipo === "secretaria" ? "" : $("#pessoa-senha").value, feedback = $("#pessoa-feedback"); if (!nome) { feedback.innerHTML = `<div class="action-error">Informe o nome completo.</div>`; return; } if (tipo !== "secretaria" && (!loginInicial || String(senhaInicial).length < 6)) { feedback.innerHTML = `<div class="action-error">Informe login e uma senha inicial com pelo menos 6 caracteres.</div>`; return; } const novo = tipo === "aluna" ? { nome, turma: $("#pessoa-turma").value.trim() || "Sem turma", ativo: true, login: loginInicial, senha: senhaInicial } : tipo === "professora" ? { nome, login: loginInicial, senha: senhaInicial, ativo: true } : { nome, ativo: true }; const botao = $("#adicionar-pessoa"); botao.disabled = true; feedback.innerHTML = ""; try { if (tipo !== "secretaria") { const foto = await window.GemData.enviarFotoPessoa(tipo, $("#pessoa-foto").files[0]); if (foto) novo.foto_path = foto; } await window.GemData.salvarPessoa(tipo, novo); await renderPessoas(content); } catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(error.message || "Não foi possível cadastrar.")}</div>`; botao.disabled = false; } });
     destino.querySelectorAll("[data-editar]").forEach((botao) => botao.addEventListener("click", () => destino.querySelector(`[data-editor="${botao.dataset.editar}"]`).classList.toggle("hidden")));
-    destino.querySelectorAll("[data-toggle]").forEach((botao) => botao.addEventListener("click", async () => { const pessoa = lista[Number(botao.dataset.toggle)]; try { await window.GemData.salvarPessoa(tipo, { ativo: pessoa.ativo === false }, pessoa.id, pessoa.nome); pessoa.ativo = pessoa.ativo === false; mostrar(tipo); } catch (error) { alert(error.message); } }));
-    destino.querySelectorAll("[data-salvar]").forEach((botao) => botao.addEventListener("click", async () => { const pessoa = lista[Number(botao.dataset.salvar)], editor = destino.querySelector(`[data-editor="${botao.dataset.salvar}"]`); const atualizado = { nome: editor.querySelector('[data-campo="nome"]').value.trim() }; if (tipo === "aluna") atualizado.turma = editor.querySelector('[data-campo="turma"]').value.trim() || "Sem turma"; if (tipo !== "secretaria") { atualizado.login = editor.querySelector('[data-campo="login"]').value.trim().toLowerCase(); const senha = editor.querySelector('[data-campo="senha"]').value; if (senha) atualizado.senha = senha; } if (!atualizado.nome) { alert("Informe o nome."); return; } botao.disabled = true; try { if (tipo !== "secretaria") { const foto = await window.GemData.enviarFotoPessoa(tipo, editor.querySelector('[data-campo="foto"]').files[0]); if (foto) atualizado.foto_path = foto; } await window.GemData.salvarPessoa(tipo, atualizado, pessoa.id, pessoa.nome); await renderPessoas(content); } catch (error) { editor.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); botao.disabled = false; } }));
+    destino.querySelectorAll("[data-toggle]").forEach((botao) => botao.addEventListener("click", async () => { const pessoa = lista[Number(botao.dataset.toggle)]; try { await window.GemData.salvarPessoa(tipo, { ativo: pessoa.ativo === false }, pessoa.id, pessoa.nome); pessoa.ativo = pessoa.ativo === false; mostrar(tipo); } catch (error) { alert(mensagemErro(error)); } }));
+    destino.querySelectorAll("[data-salvar]").forEach((botao) => botao.addEventListener("click", async () => { const pessoa = lista[Number(botao.dataset.salvar)], editor = destino.querySelector(`[data-editor="${botao.dataset.salvar}"]`); const atualizado = { nome: editor.querySelector('[data-campo="nome"]').value.trim() }; if (tipo === "aluna") atualizado.turma = editor.querySelector('[data-campo="turma"]').value.trim() || "Sem turma"; if (tipo !== "secretaria") { atualizado.login = editor.querySelector('[data-campo="login"]').value.trim().toLowerCase(); const senha = editor.querySelector('[data-campo="senha"]').value; if (senha) atualizado.senha = senha; } if (!atualizado.nome) { alert("Informe o nome."); return; } botao.disabled = true; try { if (tipo !== "secretaria") { const foto = await window.GemData.enviarFotoPessoa(tipo, editor.querySelector('[data-campo="foto"]').files[0]); if (foto) atualizado.foto_path = foto; } await window.GemData.salvarPessoa(tipo, atualizado, pessoa.id, pessoa.nome); await renderPessoas(content); } catch (error) { editor.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`); botao.disabled = false; } }));
   };
   document.querySelectorAll("[data-pessoas]").forEach((botao) => botao.addEventListener("click", () => { document.querySelectorAll("[data-pessoas]").forEach((item) => item.classList.toggle("active", item === botao)); mostrar(botao.dataset.pessoas); }));
   mostrar("aluna");
@@ -1310,8 +1336,8 @@ async function renderDocumentos(content) {
   const form = formularioDocumento("doc", pessoas);
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">ARQUIVOS</p><h2>Documentos</h2><p>Envie materiais para uso interno, uma turma ou uma aluna. A visibilidade é definida pelo destino, como no sistema Streamlit.</p></section><section class="panel">${form.markup}<div id="doc-feedback"></div></section><section class="panel"><h2>Documentos enviados</h2><div id="lista-docs"><div class="empty">Carregando documentos...</div></div></section>`;
   form.vincular();
-  const carregar = async () => { const lista = $("#lista-docs"); try { const docs = await window.GemData.dadosDocumentos(); lista.innerHTML = docs.length ? docs.map((doc) => `<article class="person-row"><div><strong>${escapeHtml(doc.titulo)}</strong><span>${escapeHtml(doc.disciplina || "—")} · ${doc.aluna ? `Aluna: ${escapeHtml(doc.aluna)}` : doc.turma ? `Turma: ${escapeHtml(doc.turma)}` : "Uso interno"}</span></div><span class="badge">${doc.visivel_alunas ? "Disponível" : "Interno"}</span><div class="person-actions"><button data-documento="${escapeHtml(doc.arquivo_path)}" class="secondary-action" type="button">Abrir</button><button data-excluir-documento="${escapeHtml(doc.id)}" class="secondary-action danger-action" type="button">Excluir</button></div></article>`).join("") : `<div class="empty">Nenhum documento enviado ainda.</div>`; lista.querySelectorAll("[data-documento]").forEach((botao) => botao.addEventListener("click", async () => { try { window.open(await window.GemData.urlDocumento(botao.dataset.documento), "_blank", "noopener"); } catch (error) { alert(error.message); } })); lista.querySelectorAll("[data-excluir-documento]").forEach((botao) => botao.addEventListener("click", async () => { const documento = docs.find((item) => String(item.id) === String(botao.dataset.excluirDocumento)); if (!documento || !confirm(`Excluir o documento “${documento.titulo}”?`)) return; botao.disabled = true; try { await window.GemData.removerDocumento(documento); await carregar(); } catch (erro) { alert(erro.message); botao.disabled = false; } })); } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; } };
-  $("#doc-enviar").addEventListener("click", async () => { const feedback = $("#doc-feedback"), dados = form.dados(); if (dados.visivel && !dados.turma && !dados.aluna) { feedback.innerHTML = `<div class="action-error">Escolha a turma ou a aluna que receberá o documento.</div>`; return; } try { await window.GemData.enviarDocumento(dados); feedback.innerHTML = `<div class="action-ok">Documento enviado.</div>`; await carregar(); } catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; } }); await carregar();
+  const carregar = async () => { const lista = $("#lista-docs"); try { const docs = await window.GemData.dadosDocumentos(); lista.innerHTML = docs.length ? docs.map((doc) => `<article class="person-row"><div><strong>${escapeHtml(doc.titulo)}</strong><span>${escapeHtml(doc.disciplina || "—")} · ${doc.aluna ? `Aluna: ${escapeHtml(doc.aluna)}` : doc.turma ? `Turma: ${escapeHtml(doc.turma)}` : "Uso interno"}</span></div><span class="badge">${doc.visivel_alunas ? "Disponível" : "Interno"}</span><div class="person-actions"><button data-documento="${escapeHtml(doc.arquivo_path)}" class="secondary-action" type="button">Abrir</button><button data-excluir-documento="${escapeHtml(doc.id)}" class="secondary-action danger-action" type="button">Excluir</button></div></article>`).join("") : `<div class="empty">Nenhum documento enviado ainda.</div>`; lista.querySelectorAll("[data-documento]").forEach((botao) => botao.addEventListener("click", async () => { try { window.open(await window.GemData.urlDocumento(botao.dataset.documento), "_blank", "noopener"); } catch (error) { alert(mensagemErro(error)); } })); lista.querySelectorAll("[data-excluir-documento]").forEach((botao) => botao.addEventListener("click", async () => { const documento = docs.find((item) => String(item.id) === String(botao.dataset.excluirDocumento)); if (!documento || !confirm(`Excluir o documento “${documento.titulo}”?`)) return; botao.disabled = true; try { await window.GemData.removerDocumento(documento); await carregar(); } catch (erro) { alert(mensagemErro(erro)); botao.disabled = false; } })); } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; } };
+  $("#doc-enviar").addEventListener("click", async () => { const feedback = $("#doc-feedback"), dados = form.dados(); if (dados.visivel && !dados.turma && !dados.aluna) { feedback.innerHTML = `<div class="action-error">Escolha a turma ou a aluna que receberá o documento.</div>`; return; } try { await window.GemData.enviarDocumento(dados); feedback.innerHTML = `<div class="action-ok">Documento enviado.</div>`; await carregar(); } catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; } }); await carregar();
 }
 
 async function renderProvas(content) {
@@ -1325,17 +1351,17 @@ async function renderProvas(content) {
     const responsavelAtual = (aluna, disciplina) => base.responsaveis.find((item) => String(item.avaliacao_id) === String(avaliacaoId) && item.aluna === aluna && item.disciplina === disciplina)?.professora || professoras[0];
     areaResponsaveis.innerHTML = `<section class="panel"><div class="section-title"><div><h2>👩‍🏫 Professoras responsáveis</h2><p>${escapeHtml(avaliacao?.titulo || "Avaliação")} · defina uma responsável por disciplina e aluna.</p></div><button id="fechar-responsaveis" class="secondary-action" type="button">Fechar</button></div><div class="responsibility-list">${alunas.map((aluna, indice) => `<article><h3>${escapeHtml(aluna.nome)}</h3><div class="responsibility-grid">${disciplinas.map((disciplina) => `<label>${disciplina}<select data-responsavel-aluna="${indice}" data-responsavel-disciplina="${escapeHtml(disciplina)}">${professoras.map((professora) => `<option ${responsavelAtual(aluna.nome, disciplina) === professora ? "selected" : ""}>${escapeHtml(professora)}</option>`).join("")}</select></label>`).join("")}</div></article>`).join("")}</div><button id="salvar-responsaveis" class="primary-action" type="button">Salvar professoras responsáveis</button><div id="responsaveis-feedback"></div></section>`;
     $("#fechar-responsaveis").onclick = () => { areaResponsaveis.innerHTML = ""; };
-    $("#salvar-responsaveis").onclick = async () => { const botao = $("#salvar-responsaveis"), linhas = [...areaResponsaveis.querySelectorAll("[data-responsavel-aluna]")].map((campo) => ({ aluna: alunas[Number(campo.dataset.responsavelAluna)].nome, disciplina: campo.dataset.responsavelDisciplina, professora: campo.value })); botao.disabled = true; try { await window.GemData.salvarResponsaveisAvaliacao(avaliacaoId, linhas); $("#responsaveis-feedback").innerHTML = `<div class="action-ok">Professoras responsáveis salvas.</div>`; await carregar(); } catch (error) { $("#responsaveis-feedback").innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; botao.disabled = false; } };
+    $("#salvar-responsaveis").onclick = async () => { const botao = $("#salvar-responsaveis"), linhas = [...areaResponsaveis.querySelectorAll("[data-responsavel-aluna]")].map((campo) => ({ aluna: alunas[Number(campo.dataset.responsavelAluna)].nome, disciplina: campo.dataset.responsavelDisciplina, professora: campo.value })); botao.disabled = true; try { await window.GemData.salvarResponsaveisAvaliacao(avaliacaoId, linhas); $("#responsaveis-feedback").innerHTML = `<div class="action-ok">Professoras responsáveis salvas.</div>`; await carregar(); } catch (error) { $("#responsaveis-feedback").innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; botao.disabled = false; } };
   };
   const carregar = async () => {
     try {
       const [provas, pessoas] = await Promise.all([window.GemData.dadosProvas(), window.GemData.dadosPessoas()]); base = { ...provas, pessoas };
       lista.innerHTML = base.avaliacoes.length ? base.avaliacoes.map((avaliacao) => `<article class="person-row"><div><strong>${escapeHtml(avaliacao.titulo)}</strong><span>${escapeHtml(avaliacao.data_avaliacao || "Sem data")} · ${base.notas.filter((nota) => String(nota.avaliacao_id) === String(avaliacao.id)).length} nota(s) lançada(s) · ${base.responsaveis.filter((item) => String(item.avaliacao_id) === String(avaliacao.id)).length} atribuição(ões)</span></div><div class="person-actions"><button data-configurar-prova="${escapeHtml(avaliacao.id)}" class="secondary-action" type="button">Responsáveis</button><button data-excluir-prova="${escapeHtml(avaliacao.id)}" class="secondary-action danger-action" type="button">Excluir</button></div></article>`).join("") : `<div class="empty">Nenhuma avaliação cadastrada ainda.</div>`;
       lista.querySelectorAll("[data-configurar-prova]").forEach((botao) => botao.onclick = () => abrirResponsaveis(botao.dataset.configurarProva));
-      lista.querySelectorAll("[data-excluir-prova]").forEach((botao) => botao.onclick = async () => { if (!confirm("Excluir esta avaliação e as notas vinculadas?")) return; try { await window.GemData.removerProva(botao.dataset.excluirProva); areaResponsaveis.innerHTML = ""; await carregar(); } catch (error) { alert(error.message); } });
-    } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+      lista.querySelectorAll("[data-excluir-prova]").forEach((botao) => botao.onclick = async () => { if (!confirm("Excluir esta avaliação e as notas vinculadas?")) return; try { await window.GemData.removerProva(botao.dataset.excluirProva); areaResponsaveis.innerHTML = ""; await carregar(); } catch (error) { alert(mensagemErro(error)); } });
+    } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
   };
-  $("#criar-prova").addEventListener("click", async () => { const feedback = $("#prova-feedback"), titulo = $("#prova-titulo").value.trim(); if (!titulo) { feedback.innerHTML = `<div class="action-error">Informe o nome da avaliação.</div>`; return; } try { const criada = await window.GemData.criarProva(titulo, $("#prova-data").value); feedback.innerHTML = `<div class="action-ok">Avaliação criada. Agora defina as professoras responsáveis.</div>`; $("#prova-titulo").value = ""; await carregar(); abrirResponsaveis(criada.id); } catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; } }); await carregar();
+  $("#criar-prova").addEventListener("click", async () => { const feedback = $("#prova-feedback"), titulo = $("#prova-titulo").value.trim(); if (!titulo) { feedback.innerHTML = `<div class="action-error">Informe o nome da avaliação.</div>`; return; } try { const criada = await window.GemData.criarProva(titulo, $("#prova-data").value); feedback.innerHTML = `<div class="action-ok">Avaliação criada. Agora defina as professoras responsáveis.</div>`; $("#prova-titulo").value = ""; await carregar(); abrirResponsaveis(criada.id); } catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; } }); await carregar();
 }
 
 async function renderLogistica(content) {
@@ -1415,7 +1441,7 @@ async function renderLogistica(content) {
       }
       const configuracao = { modo: "configuravel", blocos: novosBlocos, turmas, salas: novasSalas, atividades: novasAtividades, professoras_habilitadas: habilitadas, usar_professoras_fixas: $("#modelo-fixas").checked, mesma_professora_nos_componentes: $("#modelo-mesma-prof").checked, regras_rodizio: { nao_repetir_aluna: $("#regra-prof").checked, nao_repetir_sala: $("#regra-sala").checked, nao_repetir_imediata: $("#regra-imediata").checked } };
       try { const salvo = await window.GemData.salvarModeloLogistica({ id: modelo?.id, nome, vigenciaInicio: inicio, configuracao, status: modelo?.status || "rascunho" }); if (salvo) { const indiceExistente = modelos.findIndex((item) => item.id === salvo.id); if (indiceExistente >= 0) modelos[indiceExistente] = salvo; else modelos.unshift(salvo); } feedback.innerHTML = `<div class="action-ok">${modelo ? "Modelo atualizado." : "Modelo salvo como rascunho. Programe-o quando quiser usá-lo para novas escalas."}</div>`; renderLista(); }
-      catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+      catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
     };
   };
   const ligarLista = () => {
@@ -1424,15 +1450,15 @@ async function renderLogistica(content) {
       const indice = Number(botao.dataset.excluirModelo), modelo = modelos[indice];
       if (!modelo || !confirm(`Excluir o modelo “${modelo.nome}”? Rodízios já salvos serão preservados, mas este modelo não poderá mais ser usado.`)) return;
       try { await window.GemData.removerModeloLogistica(modelo.id); modelos.splice(indice, 1); editor.innerHTML = ""; renderLista(); }
-      catch (error) { alert(error.message); }
+      catch (error) { alert(mensagemErro(error)); }
     });
     lista.querySelectorAll("[data-programar-modelo]").forEach((botao) => botao.onclick = async () => {
       try { await window.GemData.alterarStatusModelo(modelos[Number(botao.dataset.programarModelo)].id, "programado"); modelos[Number(botao.dataset.programarModelo)].status = "programado"; renderLista(); }
-      catch (error) { alert(error.message); }
+      catch (error) { alert(mensagemErro(error)); }
     });
     lista.querySelectorAll("[data-rascunho-modelo]").forEach((botao) => botao.onclick = async () => {
       try { await window.GemData.alterarStatusModelo(modelos[Number(botao.dataset.rascunhoModelo)].id, "rascunho"); modelos[Number(botao.dataset.rascunhoModelo)].status = "rascunho"; renderLista(); }
-      catch (error) { alert(error.message); }
+      catch (error) { alert(mensagemErro(error)); }
     });
     lista.querySelectorAll("[data-encerrar-modelo]").forEach((botao) => botao.onclick = async () => {
       const indice = Number(botao.dataset.encerrarModelo), modelo = modelos[indice];
@@ -1440,7 +1466,7 @@ async function renderLogistica(content) {
       try {
         const alteracao = await window.GemData.alterarStatusModelo(modelo.id, "encerrado");
         modelo.status = "encerrado"; modelo.vigencia_fim = alteracao.vigencia_fim; renderLista();
-      } catch (error) { alert(error.message); }
+      } catch (error) { alert(mensagemErro(error)); }
     });
   };
   $("#novo-modelo").onclick = () => abrirEditor(); renderLista();
@@ -1497,7 +1523,7 @@ async function renderRelatorios(content) {
         catch (error) { alert("Não foi possível gerar o PDF: " + error.message); }
         finally { botao.disabled = false; botao.textContent = "Baixar relatório em PDF"; }
       });
-    } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+    } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
   };
   const prepararExportacaoExcel = async () => {
     const resumo = $("#excel-resumo"), seletorAluna = $("#excel-aluna");
@@ -1603,11 +1629,11 @@ async function renderCorrecoesLicoes(content) {
         const posicao = base.historico.findIndex((registro) => String(registro.id) === String(item.id));
         if (posicao >= 0) base.historico[posicao] = { ...base.historico[posicao], Status: status, Observacao: `Sec: ${destino.querySelector(`[data-obs-correcao="${indice}"]`).value.trim()}`, Data: dataBr($("#correcao-data").value) };
         atualizar();
-      } catch (error) { botao.disabled = false; botao.closest(".pending-action").insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); }
+      } catch (error) { botao.disabled = false; botao.closest(".pending-action").insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`); }
     }));
   };
   $("#atualizar-correcoes").addEventListener("click", atualizar); atualizar();
-  $("#criar-licao-secretaria").addEventListener("click", async () => { const feedback = $("#correcao-feedback"), licao = $("#nova-licao-conteudo").value.trim(); if (!licao) { feedback.innerHTML = `<div class="action-error">Informe a lição ou página.</div>`; return; } try { await window.GemData.criarCorrecaoLicao({ aluna: $("#correcao-aluna").value, tipo: $("#nova-licao-tipo").value, licao, status: $("#nova-licao-status").value, observacao: $("#nova-licao-obs").value.trim(), secretaria: $("#correcao-secretaria").value, data: dataBr($("#correcao-data").value) }); feedback.innerHTML = `<div class="action-ok">Atividade registrada para correção.</div>`; } catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; } });
+  $("#criar-licao-secretaria").addEventListener("click", async () => { const feedback = $("#correcao-feedback"), licao = $("#nova-licao-conteudo").value.trim(); if (!licao) { feedback.innerHTML = `<div class="action-error">Informe a lição ou página.</div>`; return; } try { await window.GemData.criarCorrecaoLicao({ aluna: $("#correcao-aluna").value, tipo: $("#nova-licao-tipo").value, licao, status: $("#nova-licao-status").value, observacao: $("#nova-licao-obs").value.trim(), secretaria: $("#correcao-secretaria").value, data: dataBr($("#correcao-data").value) }); feedback.innerHTML = `<div class="action-ok">Atividade registrada para correção.</div>`; } catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; } });
 }
 
 async function renderAnalitico(content, opcoes = {}) {
@@ -1697,7 +1723,7 @@ async function renderAnalitico(content, opcoes = {}) {
         if (salvo) { salvo.texto = $("#objetivo-pedagogico").value.trim(); salvo.professora = state.name; }
         else (dados.objetivos ||= []).push({ aluna, texto: $("#objetivo-pedagogico").value.trim(), professora: state.name });
         retorno.innerHTML = `<span class="action-ok">Objetivo salvo.</span>`;
-      } catch (erro) { retorno.innerHTML = `<span class="action-error">${escapeHtml(erro.message)}</span>`; }
+      } catch (erro) { retorno.innerHTML = `<span class="action-error">${escapeHtml(mensagemErro(erro))}</span>`; }
       finally { botao.disabled = false; }
     });
     const avaliacoesDoPeriodo = new Set(dados.avaliacoes.filter((avaliacao) => {
@@ -1748,7 +1774,7 @@ async function renderAnalitico(content, opcoes = {}) {
         const corpo = await retorno.json().catch(() => ({}));
         if (!retorno.ok) throw new Error(corpo.error || "Não foi possível gerar a análise.");
         resposta.innerHTML = `<article class="ai-answer">${escapeHtml(corpo.texto || "").replace(/\n/g, "<br>")}</article>`;
-      } catch (erro) { resposta.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+      } catch (erro) { resposta.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
       finally { botao.disabled = false; botao.textContent = "Gerar análise pedagógica"; }
     });
   };
@@ -1836,7 +1862,7 @@ function ligarGerador(base, modelo, preparacao, fixasSalvas = []) {
   const ativarLinhasFixas = () => listaFixas?.querySelectorAll(".remove-fixa").forEach((botao) => botao.onclick = () => { botao.closest(".fixed-row").remove(); });
   if (listaFixas) { listaFixas.innerHTML = (fixasSalvas.length ? fixasSalvas : [{}]).map(parFixo).join(""); ativarLinhasFixas(); $("#adicionar-fixa").addEventListener("click", () => { listaFixas.insertAdjacentHTML("beforeend", parFixo()); ativarLinhasFixas(); }); }
   const mapaDasFixas = () => Object.fromEntries([...document.querySelectorAll(".fixed-row")].map((linha) => [linha.querySelector("[data-fixa-aluna]")?.value.trim().toLowerCase(), linha.querySelector("[data-fixa-prof]")?.value]).filter(([aluna, professora]) => aluna && professora));
-  $("#salvar-fixas")?.addEventListener("click", async () => { try { await window.GemData.salvarProfessorasFixas(mapaDasFixas()); alert("Professoras fixas salvas."); } catch (error) { alert(error.message); } });
+  $("#salvar-fixas")?.addEventListener("click", async () => { try { await window.GemData.salvarProfessorasFixas(mapaDasFixas()); alert("Professoras fixas salvas."); } catch (error) { alert(mensagemErro(error)); } });
   $("#gerar-rodizio").addEventListener("click", async () => {
     const feedback = $("#gerar-feedback"); const coletivas = {}; document.querySelectorAll("[data-coletiva]").forEach((item) => { (coletivas[item.dataset.coletiva] ||= {})[item.dataset.turma] = item.value; });
     const fixas = mapaDasFixas(); const saidasMap = Object.fromEntries([...document.querySelectorAll("[data-saida]")].map((item) => [item.dataset.saida, item.value]));
@@ -1851,7 +1877,7 @@ function ligarGerador(base, modelo, preparacao, fixasSalvas = []) {
     if (resultado.erros.length) { feedback.innerHTML = `<div class="action-error"><strong>O rodízio não foi salvo.</strong><br>${resultado.erros.map(escapeHtml).join("<br>")}</div>`; return; }
     window.RodizioEngine.preservarAtividadesComplementares(resultado.escala, base.escala);
     feedback.innerHTML = `${muralRodizio(resultado.escala, base.data)}<button id="confirmar-geracao" class="primary-action wide-action" type="button">Confirmar e salvar rodízio</button>`;
-    $("#confirmar-geracao").addEventListener("click", async () => { try { await window.GemData.salvarEscala($("#rodizio-data").value, resultado.escala, modelo.id); await renderRodizio($("#page-content")); } catch (error) { feedback.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(error.message)}</div>`); } });
+    $("#confirmar-geracao").addEventListener("click", async () => { try { await window.GemData.salvarEscala($("#rodizio-data").value, resultado.escala, modelo.id); await renderRodizio($("#page-content")); } catch (error) { feedback.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`); } });
   });
 }
 
@@ -1890,10 +1916,10 @@ async function abrirEdicaoRodizio(base, modelo) {
         });
         await window.GemData.salvarEscala($('#rodizio-data').value, corrigida, modelo?.id || base.modeloEscala, $('#motivo-edicao').value);
         await renderRodizio($('#page-content'));
-      } catch (error) { $('#edicao-retorno').innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+      } catch (error) { $('#edicao-retorno').innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
       finally { botao.disabled = false; }
     };
-  } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+  } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
 }
 
 async function renderMasterGems(content) {
@@ -1909,7 +1935,7 @@ async function renderMasterGems(content) {
         if (!gem || !confirm(`${gem.ativo ? "Desativar" : "Reativar"} o GEM “${gem.nome}”? ${gem.ativo ? "Os dados serão preservados e novos logins ficarão bloqueados." : "Os logins voltarão a ser permitidos."}`)) return;
         botao.disabled = true;
         try { await window.GemData.alterarStatusGem(gem.id, !gem.ativo); await carregar(); }
-        catch (erro) { alert(erro.message); botao.disabled = false; }
+        catch (erro) { alert(mensagemErro(erro)); botao.disabled = false; }
       }));
       lista.querySelectorAll("[data-excluir-gem]").forEach((botao) => botao.addEventListener("click", async () => {
         const gem = gems.find((item) => String(item.id) === String(botao.dataset.excluirGem));
@@ -1918,9 +1944,9 @@ async function renderMasterGems(content) {
         if (confirmacao !== `EXCLUIR ${gem.slug}`) return;
         botao.disabled = true;
         try { await window.GemData.removerGem(gem.id, gem.slug); await carregar(); }
-        catch (erro) { alert(erro.message); botao.disabled = false; }
+        catch (erro) { alert(mensagemErro(erro)); botao.disabled = false; }
       }));
-    } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+    } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
   };
   $("#criar-gem").addEventListener("click", async () => {
     const feedback = $("#gem-feedback");
@@ -1942,7 +1968,7 @@ async function renderMasterUsuarios(content) {
   try {
     const { usuarios } = await window.GemData.dadosPlataformaMaster();
     lista.innerHTML = usuarios.length ? usuarios.map((usuario) => `<article class="method-row"><div><strong>${escapeHtml(usuario.nome)}</strong><span>${escapeHtml(usuario.email)} · ${escapeHtml(usuario.papel)}</span><span>${usuario.ativo ? "Ativa" : "Bloqueada"} · ${usuario.status_convite === "ativo" ? "Login configurado" : "Aguardando criação da senha"}</span></div><span class="badge ${usuario.ativo ? "" : "inactive"}">${usuario.status_convite === "ativo" ? "Ativo" : "Pendente"}</span></article>`).join("") : `<div class="empty">Nenhuma conta Master cadastrada.</div>`;
-  } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
 }
 
 async function renderMasterSecretarias(content) {
@@ -1969,7 +1995,7 @@ async function renderMasterSecretarias(content) {
       const dados = { id: item?.id, gemId: editor.querySelector('[data-secretaria-campo="gem_id"]').value, nome: editor.querySelector('[data-secretaria-campo="nome"]').value.trim(), login: editor.querySelector('[data-secretaria-campo="login"]').value.trim(), senha: editor.querySelector('[data-secretaria-campo="senha"]').value, ativo: editor.querySelector('[data-secretaria-campo="ativo"]').checked };
       botao.disabled = true;
       try { await window.GemData.salvarSecretariaGem(dados); base = await window.GemData.dadosSecretariasGems(); mostrar(); }
-      catch (erro) { editor.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(erro.message)}</div>`); botao.disabled = false; }
+      catch (erro) { editor.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`); botao.disabled = false; }
     }));
   };
   try {
@@ -1987,7 +2013,7 @@ async function renderMasterSecretarias(content) {
       } catch (erro) { feedback.textContent = erro.message; feedback.className = "action-error"; }
       botao.disabled = false;
     });
-  } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
 }
 
 async function renderMasterVisao(content) {
@@ -1997,7 +2023,7 @@ async function renderMasterVisao(content) {
     const { gems, usuarios, acessos } = await window.GemData.dadosPlataformaMaster();
     const porGem = Object.fromEntries(gems.map((gem) => [gem.id, acessos.filter((acesso) => acesso.gem_id === gem.id && acesso.ativo !== false)]));
     destino.innerHTML = `<div class="grid"><div class="metric"><strong>${gems.length}</strong><span>GEM(s) cadastrado(s)</span></div><div class="metric"><strong>${gems.filter((gem) => gem.ativo).length}</strong><span>GEM(s) ativo(s)</span></div><div class="metric"><strong>${usuarios.filter((usuario) => usuario.status_convite === "ativo" && usuario.ativo).length}</strong><span>Master(s) ativo(s)</span></div></div><section class="panel compact-panel"><h3>Unidades</h3><div class="lesson-list">${gems.length ? gems.map((gem) => `<article class="method-row"><div><strong>${escapeHtml(gem.nome)}</strong><span>${escapeHtml(gem.slug)} · ${porGem[gem.id]?.length || 0} acesso(s) vinculado(s)</span></div><span class="badge ${gem.ativo ? "" : "inactive"}">${gem.ativo ? "Ativo" : "Inativo"}</span></article>`).join("") : `<div class="empty">Nenhum GEM cadastrado.</div>`}</div></section>`;
-  } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
 }
 
 async function renderAjustes(content) {
@@ -2018,7 +2044,7 @@ async function renderAjustes(content) {
       if (!registro || !confirm(`Excluir este registro de ${registro.Data || "data não informada"}? Esta ação não pode ser desfeita.`)) return;
       botao.disabled = true;
       try { await window.GemData.removerRegistroHistorico(registro.id); dados = await window.GemData.dadosAjustes(); mostrarRegistros(); }
-      catch (erro) { alert(erro.message); botao.disabled = false; }
+      catch (erro) { alert(mensagemErro(erro)); botao.disabled = false; }
     }));
   };
   try {
@@ -2028,7 +2054,7 @@ async function renderAjustes(content) {
     filtroData.addEventListener('change', mostrarRegistros);
     $('#ajuste-todas-datas').addEventListener('click', () => { filtroData.value = ''; mostrarRegistros(); });
     mostrarRegistros();
-  } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+  } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
   $("#contar-orfaos").addEventListener("click", async () => {
     const botao = $("#contar-orfaos"); botao.disabled = true; retornoOrfaos.innerHTML = "";
     try {
@@ -2039,9 +2065,9 @@ async function renderAjustes(content) {
         if (!confirm(`Apagar ${quantidade} registro(s) sem Tipo? Esta ação não pode ser desfeita.`)) return;
         const apagar = $("#apagar-orfaos"); apagar.disabled = true;
         try { await window.GemData.limparRegistrosOrfaos(); retornoOrfaos.innerHTML = `<div class="action-ok">✅ Registros órfãos apagados.</div>`; }
-        catch (erro) { retornoOrfaos.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(erro.message)}</div>`); apagar.disabled = false; }
+        catch (erro) { retornoOrfaos.insertAdjacentHTML("beforeend", `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`); apagar.disabled = false; }
       });
-    } catch (erro) { retornoOrfaos.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+    } catch (erro) { retornoOrfaos.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
     finally { botao.disabled = false; }
   });
   $("#auditar-rodizio").addEventListener("click", async () => {
@@ -2086,7 +2112,7 @@ async function renderAjustes(content) {
       }
       const ultimaData = ordenadas.at(-1).id, doUltimo = problemas.filter((item) => item.data === ultimaData);
       destino.innerHTML = doUltimo.length ? `<div class="action-error">⚠️ ${doUltimo.length} possível(is) inconsistência(s) no último rodízio (${escapeHtml(ultimaData)}).</div><div class="lesson-list">${doUltimo.map((item) => `<article class="report-record"><strong>${escapeHtml(item.regra)} · ${escapeHtml(item.aluna)}</strong><p>${escapeHtml(item.detalhe)}</p></article>`).join("")}</div>` : `<div class="action-ok">✅ Rodízio consistente: nenhuma duplicidade, quebra de professora fixa ou repetição imediata foi encontrada em ${escapeHtml(ultimaData)}.</div>`;
-    } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(erro.message)}</div>`; }
+    } catch (erro) { destino.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
     finally { botao.disabled = false; }
   });
 }
@@ -2230,7 +2256,7 @@ async function renderPage() {
     return;
   }
   if ((state.role === "Professora" || state.role === "Secretaria" || state.role === "Aluna") && state.page === "Mensagens") {
-    try { await renderMensagens(content); } catch (error) { content.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+    try { await renderMensagens(content); } catch (error) { content.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
     return;
   }
   if (state.role === "Aluna" && state.page === "Minhas lições") {
@@ -2258,7 +2284,7 @@ async function renderPage() {
     return;
   }
   if (state.role === "Secretaria" && state.page === "Turmas e pessoas") {
-    try { await renderPessoas(content); } catch (error) { content.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+    try { await renderPessoas(content); } catch (error) { content.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
     return;
   }
   if (state.role === "Secretaria" && state.page === "Relatórios") {
@@ -2266,7 +2292,7 @@ async function renderPage() {
     return;
   }
   if (state.role === "Secretaria" && state.page === "Analítico") {
-    try { await renderAnalitico(content); } catch (error) { content.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+    try { await renderAnalitico(content); } catch (error) { content.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
     return;
   }
   if (state.role === "Secretaria" && state.page === "Documentos") {
@@ -2290,7 +2316,7 @@ async function renderPage() {
     return;
   }
   if (state.role === "Secretaria" && state.page === "Correção de lições") {
-    try { await renderCorrecoesLicoes(content); } catch (error) { content.innerHTML = `<div class="action-error">${escapeHtml(error.message)}</div>`; }
+    try { await renderCorrecoesLicoes(content); } catch (error) { content.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
     return;
   }
   if (state.page === "Visão geral" || state.page === "Minhas aulas" || state.page === "Minhas lições") {

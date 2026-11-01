@@ -243,7 +243,7 @@
     const { data, error } = await banco.from("gems")
       .select("id, nome, slug, ativo, perfil_schema, supabase_url, supabase_anon_key, created_at")
       .order("nome", { ascending: true });
-    if (error) throw new Error("Não foi possível carregar os GEMs.");
+    if (error) throw new Error("Não foi possível carregar os GEMs.", { cause: error });
     return data || [];
   }
 
@@ -264,14 +264,14 @@
     if (!id) throw new Error("GEM inválido.");
     const banco = await obterCliente();
     const { error } = await banco.from("gems").update({ ativo: Boolean(ativo), updated_at: new Date().toISOString() }).eq("id", id);
-    if (error) throw new Error("Não foi possível alterar o status do GEM.");
+    if (error) throw new Error("Não foi possível alterar o status do GEM.", { cause: error });
   }
 
   async function removerGem(id, slug) {
     if (!id || String(slug) === "vila-verde") throw new Error("A unidade principal não pode ser excluída por esta tela.");
     const banco = await obterCliente();
     const { error } = await banco.from("gems").delete().eq("id", id);
-    if (error) throw new Error("Não foi possível excluir o cadastro do GEM.");
+    if (error) throw new Error("Não foi possível excluir o cadastro do GEM.", { cause: error });
   }
 
   async function gemAtivo() {
@@ -287,7 +287,7 @@
       banco.from("gem_acessos").select("gem_id,papel,ativo")
     ]);
     const falha = [gems, usuarios, acessos].find((resultado) => resultado.error)?.error;
-    if (falha) throw new Error("Não foi possível carregar a administração da plataforma.");
+    if (falha) throw new Error("Não foi possível carregar a administração da plataforma.", { cause: falha });
     return { gems: gems.data || [], usuarios: usuarios.data || [], acessos: acessos.data || [] };
   }
 
@@ -298,7 +298,7 @@
       banco.from("gem_secretarias").select("id,gem_id,nome,login,ativo,created_at").order("nome")
     ]);
     const falha = [gems, secretarias].find((resultado) => resultado.error)?.error;
-    if (falha) throw new Error("Não foi possível carregar as Secretarias dos GEMs. Execute a migration 011 na base principal.");
+    if (falha) throw new Error("Não foi possível carregar as Secretarias dos GEMs. Execute a migration 011 na base principal.", { cause: falha });
     return { gems: gems.data || [], secretarias: secretarias.data || [] };
   }
 
@@ -328,11 +328,11 @@
     if (!caminho) {
       caminho = `logo_atual.${extensao}`;
       const envio = await banco.storage.from("logo_gem").upload(caminho, arquivo, { upsert: true, contentType: arquivo.type || "image/png" });
-      if (envio.error) throw new Error("Não foi possível enviar a logo.");
+      if (envio.error) throw new Error("Não foi possível enviar a logo.", { cause: envio.error });
     }
     try { localStorage.removeItem(`${CACHE_URL_ASSINADA}logo_gem:${caminho}`); } catch (_) { /* sem cache local */ }
     const salvar = await banco.from("config_visual_gem").upsert({ id: 1, logo_path: caminho, updated_at: new Date().toISOString() });
-    if (salvar.error) throw new Error("A logo foi enviada, mas não foi possível registrar a configuração.");
+    if (salvar.error) throw new Error("A logo foi enviada, mas não foi possível registrar a configuração.", { cause: salvar.error });
     return carregarIdentidade();
   }
 
@@ -347,7 +347,7 @@
   async function perfilProfessora(nome) {
     const banco = await obterCliente();
     const { data, error } = await banco.from("professoras").select("*").eq("nome", nome).maybeSingle();
-    if (error) throw new Error("Não foi possível carregar o perfil da professora.");
+    if (error) throw new Error("Não foi possível carregar o perfil da professora.", { cause: error });
     if (!data?.foto_path) return data || {};
     return { ...data, fotoUrl: await urlAssinadaEmCache(banco, "fotos_professoras", data.foto_path) };
   }
@@ -355,7 +355,7 @@
   async function perfilAluna(nome) {
     const banco = await obterCliente();
     const { data, error } = await banco.from("alunas").select("nome,foto_path").eq("nome", nome).maybeSingle();
-    if (error) throw new Error("Não foi possível carregar a foto da aluna.");
+    if (error) throw new Error("Não foi possível carregar a foto da aluna.", { cause: error });
     if (!data?.foto_path) return data || {};
     return { ...data, fotoUrl: await urlAssinadaEmCache(banco, "fotos_alunas", data.foto_path) };
   }
@@ -372,7 +372,7 @@
     const registro = { nome: String(nome || "").trim(), categoria: String(categoria || "").trim() };
     if (!registro.nome || !registro.categoria) throw new Error("Informe o nome e a área do método.");
     const { error } = await banco.from("config_metodos").insert(registro);
-    if (error) throw new Error("Não foi possível salvar o método.");
+    if (error) throw new Error("Não foi possível salvar o método.", { cause: error });
   }
 
   async function removerMetodo(metodo) {
@@ -380,7 +380,7 @@
     let consulta = banco.from("config_metodos").delete();
     consulta = metodo.id != null ? consulta.eq("id", metodo.id) : consulta.eq("nome", metodo.nome).eq("categoria", metodo.categoria);
     const { error } = await consulta;
-    if (error) throw new Error("Não foi possível remover o método.");
+    if (error) throw new Error("Não foi possível remover o método.", { cause: error });
   }
 
   async function salvarPerfilSecretaria({ nome, arquivo }) {
@@ -393,14 +393,14 @@
       if (!foto_path) {
         foto_path = `coordenacao.${extensao}`;
         const envio = await banco.storage.from("fotos_secretaria_gem").upload(foto_path, arquivo, { upsert: true, contentType: arquivo.type || "image/png" });
-        if (envio.error) throw new Error("Não foi possível enviar a foto da Coordenação.");
+        if (envio.error) throw new Error("Não foi possível enviar a foto da Coordenação.", { cause: envio.error });
       }
       try { localStorage.removeItem(`${CACHE_URL_ASSINADA}fotos_secretaria_gem:${foto_path}`); } catch (_) { /* sem cache local */ }
     }
     const dados = { id: 1, nome_exibicao: String(nome || "Coordenação").trim(), updated_at: new Date().toISOString() };
     if (foto_path) dados.foto_path = foto_path;
     const { error } = await banco.from("secretaria_perfil").upsert(dados);
-    if (error) throw new Error("Execute a migration 004_perfil_secretaria_e_marca.sql no Supabase antes de salvar este perfil.");
+    if (error) throw new Error("Execute a migration 004_perfil_secretaria_e_marca.sql no Supabase antes de salvar este perfil.", { cause: error });
     return perfilSecretaria();
   }
 
@@ -526,10 +526,10 @@
     const sobrepostas = existentes.filter((item) => item.inicio <= fim && item.fim >= inicio);
     for (const item of sobrepostas) {
       const { error } = await banco.from("coordenacoes_professoras").update({ fim: fimAnterior }).eq("id", item.id);
-      if (error) throw new Error("Não foi possível encerrar a coordenação anterior.");
+      if (error) throw new Error("Não foi possível encerrar a coordenação anterior.", { cause: error });
     }
     const { error } = await banco.from("coordenacoes_professoras").insert({ professora: String(professora).trim(), inicio, fim, periodo: String(periodo || "Coordenação").trim() || "Coordenação" });
-    if (error) throw new Error("Não foi possível definir a professora coordenadora.");
+    if (error) throw new Error("Não foi possível definir a professora coordenadora.", { cause: error });
   }
 
   async function professoraEhCoordenadora(nome, dataIso = new Date().toISOString().slice(0, 10)) {
@@ -579,7 +579,7 @@
   async function dadosDocumentos() {
     const banco = await obterCliente();
     const { data, error } = await banco.from("gabaritos").select("*").order("id", { ascending: false });
-    if (error) throw new Error(`Não foi possível carregar documentos: ${error.message || "verifique as permissões."}`);
+    if (error) throw new Error(`Não foi possível carregar documentos: ${error.message || "verifique as permissões."}`, { cause: error });
     return data || [];
   }
 
@@ -587,16 +587,16 @@
     if (!arquivo || !titulo) throw new Error("Informe o título e selecione o arquivo.");
     const banco = await obterCliente(); const caminho = `${crypto.randomUUID()}_${arquivo.name.replace(/[^a-zA-Z0-9._-]+/g, "_")}`;
     const envio = await banco.storage.from("gabaritos").upload(caminho, arquivo, { contentType: arquivo.type || "application/octet-stream" });
-    if (envio.error) throw new Error("Não foi possível enviar o arquivo.");
+    if (envio.error) throw new Error("Não foi possível enviar o arquivo.", { cause: envio.error });
     const { error } = await banco.from("gabaritos").insert({ titulo, disciplina, turma: turma || null, aluna: aluna || null, observacao: observacao || "", professora, arquivo_path: caminho, arquivo_nome: arquivo.name, data_correcao: data || new Date().toISOString().slice(0, 10), visivel_alunas: Boolean(visivel) });
-    if (error) throw new Error("O arquivo foi enviado, mas o documento não foi registrado.");
+    if (error) throw new Error("O arquivo foi enviado, mas o documento não foi registrado.", { cause: error });
   }
 
   async function removerDocumento(documento) {
     if (!documento?.id || !documento?.arquivo_path) throw new Error("Documento inválido para exclusão.");
     const banco = await obterCliente();
     const { error: apagarCadastro } = await banco.from("gabaritos").delete().eq("id", documento.id);
-    if (apagarCadastro) throw new Error("Não foi possível excluir o cadastro do documento.");
+    if (apagarCadastro) throw new Error("Não foi possível excluir o cadastro do documento.", { cause: apagarCadastro });
     // O cadastro é apagado primeiro para que o arquivo não siga aparecendo no
     // aplicativo mesmo se o Storage estiver temporariamente indisponível.
     const { error: apagarArquivo } = await banco.storage.from("gabaritos").remove([documento.arquivo_path]);
@@ -605,7 +605,7 @@
 
   async function urlDocumento(caminho) {
     const banco = await obterCliente(); const { data, error } = await banco.storage.from("gabaritos").createSignedUrl(caminho, 3600);
-    if (error) throw new Error("Não foi possível abrir este documento."); return data?.signedUrl;
+    if (error) throw new Error("Não foi possível abrir este documento.", { cause: error }); return data?.signedUrl;
   }
 
   async function dadosProvas() {
@@ -615,19 +615,19 @@
   }
 
   async function criarProva(titulo, data) {
-    const banco = await obterCliente(); const { data: criada, error } = await banco.from("avaliacoes").insert({ titulo, data_avaliacao: data }).select().single(); if (error) throw new Error("Não foi possível criar a avaliação."); return criada;
+    const banco = await obterCliente(); const { data: criada, error } = await banco.from("avaliacoes").insert({ titulo, data_avaliacao: data }).select().single(); if (error) throw new Error("Não foi possível criar a avaliação.", { cause: error }); return criada;
   }
 
   async function salvarResponsaveisAvaliacao(avaliacaoId, responsaveis) {
     const linhas = (responsaveis || []).filter((item) => item.aluna && item.disciplina && item.professora).map((item) => ({ avaliacao_id: avaliacaoId, aluna: item.aluna, disciplina: item.disciplina, professora: item.professora }));
     if (!linhas.length) throw new Error("Escolha ao menos uma professora responsável.");
     const banco = await obterCliente(); const { error } = await banco.from("avaliacao_responsaveis").upsert(linhas, { onConflict: "avaliacao_id,aluna,disciplina" });
-    if (error) throw new Error("Não foi possível salvar as professoras responsáveis.");
+    if (error) throw new Error("Não foi possível salvar as professoras responsáveis.", { cause: error });
   }
 
   async function removerProva(avaliacaoId) {
     const banco = await obterCliente(); const { error } = await banco.from("avaliacoes").delete().eq("id", avaliacaoId);
-    if (error) throw new Error("Não foi possível excluir a avaliação.");
+    if (error) throw new Error("Não foi possível excluir a avaliação.", { cause: error });
   }
 
   async function salvarNotaAvaliacao({ avaliacaoId, aluna, disciplina, nota, professora = null }) {
@@ -637,7 +637,7 @@
     if (!registro.aluna || !registro.disciplina || !Number.isFinite(registro.nota)) throw new Error("Informe aluna, disciplina e nota.");
     const existente = await banco.from("avaliacao_notas").select("id").eq("avaliacao_id", avaliacaoId).eq("aluna", aluna).eq("disciplina", disciplina).maybeSingle();
     const { error } = existente.data?.id ? await banco.from("avaliacao_notas").update(registro).eq("id", existente.data.id) : await banco.from("avaliacao_notas").insert(registro);
-    if (error) throw new Error("Não foi possível salvar a nota.");
+    if (error) throw new Error("Não foi possível salvar a nota.", { cause: error });
   }
 
   async function dadosMensagens() {
@@ -652,7 +652,7 @@
     const mensagem = String(texto || "").trim();
     if (!mensagem) throw new Error("Escreva uma mensagem antes de enviar.");
     const { error } = await banco.from("mensagens").insert({ de, para, texto: mensagem });
-    if (error) throw new Error("Não foi possível enviar a mensagem.");
+    if (error) throw new Error("Não foi possível enviar a mensagem.", { cause: error });
   }
 
   async function dadosBuscaAtiva({ inicio, fim }) {
@@ -662,7 +662,7 @@
       const itens = [];
       for (let pagina = 0; ; pagina += 500) {
         const { data, error } = await criarConsulta().range(pagina, pagina + 499);
-        if (error) throw new Error("Não foi possível carregar a busca ativa. Verifique a conexão e tente novamente.");
+        if (error) throw new Error("Não foi possível carregar a busca ativa. Verifique a conexão e tente novamente.", { cause: error });
         itens.push(...(data || []));
         if (!data || data.length < 500) return itens;
       }
@@ -699,7 +699,7 @@
       const itens = [];
       for (let inicio = 0; ; inicio += 1000) {
         const { data, error } = await consulta().range(inicio, inicio + 999);
-        if (error) throw new Error("Não foi possível carregar os destaques do GEM. Tente atualizar novamente.");
+        if (error) throw new Error("Não foi possível carregar os destaques do GEM. Tente atualizar novamente.", { cause: error });
         itens.push(...(data || []));
         if (!data || data.length < 1000) return itens;
       }
@@ -783,21 +783,21 @@
   async function contarRegistrosOrfaos() {
     const banco = await obterCliente();
     const { data, error } = await banco.from("historico_geral").select("id").is("Tipo", null);
-    if (error) throw new Error("Não foi possível consultar os registros órfãos.");
+    if (error) throw new Error("Não foi possível consultar os registros órfãos.", { cause: error });
     return (data || []).length;
   }
 
   async function limparRegistrosOrfaos() {
     const banco = await obterCliente();
     const { error } = await banco.from("historico_geral").delete().is("Tipo", null);
-    if (error) throw new Error("Não foi possível apagar os registros órfãos.");
+    if (error) throw new Error("Não foi possível apagar os registros órfãos.", { cause: error });
   }
 
   async function removerRegistroHistorico(id) {
     if (!id) throw new Error("Registro inválido.");
     const banco = await obterCliente();
     const { error } = await banco.from("historico_geral").delete().eq("id", id);
-    if (error) throw new Error("Não foi possível apagar este registro.");
+    if (error) throw new Error("Não foi possível apagar este registro.", { cause: error });
   }
 
   async function dadosAuditoriaRodizio() {
@@ -806,31 +806,31 @@
       banco.from("calendario").select("id,escala").order("id", { ascending: true }),
       banco.from("professoras_fixas").select("aluna,professora")
     ]);
-    if (calendario.error) throw new Error("Não foi possível carregar as escalas salvas para a auditoria.");
+    if (calendario.error) throw new Error("Não foi possível carregar as escalas salvas para a auditoria.", { cause: calendario.error });
     if (fixas.error && !["42P01", "PGRST205"].includes(fixas.error.code)) throw new Error("Não foi possível carregar as professoras fixas para a auditoria.");
     return { escalas: calendario.data || [], fixas: fixas.data || [] };
   }
 
   async function atualizarCorrecaoLicao(id, { status, observacao, secretaria, data }) {
     const banco = await obterCliente(); const { error } = await banco.from("historico_geral").update({ Status: status, Observacao: observacao ? `Sec: ${observacao}` : "", Secretaria: secretaria, Data: data }).eq("id", id);
-    if (error) throw new Error("Não foi possível atualizar a correção.");
+    if (error) throw new Error("Não foi possível atualizar a correção.", { cause: error });
   }
 
   async function criarCorrecaoLicao({ aluna, tipo, licao, status, observacao, secretaria, data }) {
     const banco = await obterCliente(); const { error } = await banco.from("historico_geral").insert({ Aluna: aluna, Tipo: tipo, Data: data, Secretaria: secretaria, Licao_Casa: licao, Status: status, Observacao: observacao || "" });
-    if (error) throw new Error("Não foi possível registrar a atividade.");
+    if (error) throw new Error("Não foi possível registrar a atividade.", { cause: error });
   }
 
   async function dadosLogistica() {
     const banco = await obterCliente(); const { data, error } = await banco.from("modelos_logistica").select("*").order("vigencia_inicio", { ascending: false });
-    if (error) throw new Error(`Não foi possível carregar modelos: ${error.message || "execute a migration de logística."}`); return data || [];
+    if (error) throw new Error(`Não foi possível carregar modelos: ${error.message || "execute a migration de logística."}`, { cause: error }); return data || [];
   }
 
   async function salvarModeloLogistica({ id, nome, vigenciaInicio, configuracao, status = "rascunho" }) {
     const banco = await obterCliente(); const dados = { nome, vigencia_inicio: vigenciaInicio, configuracao, status, updated_at: new Date().toISOString() };
     if (id) dados.id = id;
     const { data, error } = await banco.from("modelos_logistica").upsert(dados, { onConflict: "id" }).select().maybeSingle();
-    if (error) throw new Error(`Não foi possível salvar o modelo: ${error.message || "execute a migration de logística."}`);
+    if (error) throw new Error(`Não foi possível salvar o modelo: ${error.message || "execute a migration de logística."}`, { cause: error });
     return data;
   }
 
@@ -840,7 +840,7 @@
     const banco = await obterCliente();
     const dados = { status, updated_at: agora.toISOString(), vigencia_fim: status === "encerrado" ? hoje : null };
     const { error } = await banco.from("modelos_logistica").update(dados).eq("id", id);
-    if (error) throw new Error("Não foi possível alterar o status do modelo.");
+    if (error) throw new Error("Não foi possível alterar o status do modelo.", { cause: error });
     return dados;
   }
 
@@ -848,7 +848,7 @@
     if (!id) throw new Error("Modelo inválido.");
     const banco = await obterCliente();
     const { error } = await banco.from("modelos_logistica").delete().eq("id", id);
-    if (error) throw new Error("Não foi possível excluir o modelo.");
+    if (error) throw new Error("Não foi possível excluir o modelo.", { cause: error });
   }
 
   function dataBr(iso) {
@@ -869,7 +869,7 @@
     const banco = await obterCliente();
     const data = dataBr(dataIso);
     const { data: calendario, error } = await banco.from("calendario").select("id, escala, modelo_logistica_id").eq("id", data).maybeSingle();
-    if (error) throw new Error("Não foi possível carregar a agenda desta data.");
+    if (error) throw new Error("Não foi possível carregar a agenda desta data.", { cause: error });
     const escala = calendario?.escala || [];
     if (!escala.length) return [];
     const { data: alunas } = await banco.from("alunas").select("nome, turma, foto_path");
@@ -968,7 +968,7 @@
       // Só atualizamos o cartão que corresponde ao mesmo material, como no app.py.
       const existenteMesmoMaterial = (existente.data || []).find((item) => !material || String(item.Licao_Atual || "").trim().startsWith(`${material}:`));
       const salvar = existenteMesmoMaterial ? await banco.from("historico_geral").update(registro).eq("id", existenteMesmoMaterial.id) : await banco.from("historico_geral").insert(registro);
-      if (salvar.error) throw new Error(`Não foi possível salvar o registro de ${aluna}.`);
+      if (salvar.error) throw new Error(`Não foi possível salvar o registro de ${aluna}.`, { cause: salvar.error });
 
       // Solfejo e Solfejo Melódico são conferidos no próprio registro da aula.
       // Não existe uma tela de “passou/não passou”: a aula seguinte encerra o
@@ -977,7 +977,7 @@
         const tipoEstudo = disciplina === "Solfejo" ? "Casa_MSA" : "Casa_Canto";
         const { data: licoesMsa, error: erroMsa } = await banco.from("historico_geral")
           .select("id,Status").eq("Aluna", aluna).eq("Tipo", tipoEstudo);
-        if (erroMsa) throw new Error(`A aula foi salva, mas não foi possível atualizar o estudo de ${aluna}.`);
+        if (erroMsa) throw new Error(`A aula foi salva, mas não foi possível atualizar o estudo de ${aluna}.`, { cause: erroMsa });
         const statusFinal = ["Resolvido", "Realizada", "Realizada - sem pendência", "Realizadas - sem pendência"];
         const naoRealizou = dificuldadesDaAluna.some((dificuldade) => normalizar(dificuldade).includes("NAO REALIZOU"));
         const pendentesMsa = (licoesMsa || []).filter((licao) => !statusFinal.includes(String(licao.Status || "")));
@@ -985,7 +985,7 @@
           const atualizacao = await banco.from("historico_geral")
             .update({ Status: naoRealizou ? "Não resolvido" : "Resolvido", Observacao: registro.Observacao })
             .eq("id", licao.id);
-          if (atualizacao.error) throw new Error(`A aula foi salva, mas não foi possível atualizar o estudo de ${aluna}.`);
+          if (atualizacao.error) throw new Error(`A aula foi salva, mas não foi possível atualizar o estudo de ${aluna}.`, { cause: atualizacao.error });
         }
       }
       const tipoCasa = casaTipo ? `Casa_${casaTipo}` : "";
@@ -993,7 +993,7 @@
         const pendente = await banco.from("historico_geral").select("id").eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoCasa).order("id", { ascending: false }).limit(1);
         const casa = { Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoCasa, Licao_Atual: "Definido", Licao_Casa: licaoCasa.trim(), Dificuldades: [], Observacao: String(observacaoCasa || "").trim(), Status: "Pendente" };
         const salvarCasa = pendente.data?.[0] ? await banco.from("historico_geral").update(casa).eq("id", pendente.data[0].id) : await banco.from("historico_geral").insert(casa);
-        if (salvarCasa.error) throw new Error(`A aula foi salva, mas não foi possível registrar a lição de ${aluna}.`);
+        if (salvarCasa.error) throw new Error(`A aula foi salva, mas não foi possível registrar a lição de ${aluna}.`, { cause: salvarCasa.error });
       }
       // Reabrir uma aula e remover/trocar a lição precisa refletir no mesmo
       // histórico. No Streamlit, uma lição apagada não fica pendente para
@@ -1002,7 +1002,7 @@
         .filter((tipo) => tipo && tipo !== (String(licaoCasa || "").trim() ? tipoCasa : ""));
       for (const tipoRemover of tiposRemover) {
         const apagarCasa = await banco.from("historico_geral").delete().eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoRemover);
-        if (apagarCasa.error) throw new Error(`A aula foi salva, mas não foi possível atualizar a lição de ${aluna}.`);
+        if (apagarCasa.error) throw new Error(`A aula foi salva, mas não foi possível atualizar a lição de ${aluna}.`, { cause: apagarCasa.error });
       }
     }
   }
@@ -1013,7 +1013,9 @@
   // páginas, dificuldades e exercícios de livros diferentes.
   async function salvarRegistrosPratica({ dataIso, instrutora, aluna, materiais, licoesCasa = [], observacao = "" }) {
     // Valide todos os cartões antes de consultar ou alterar registros existentes.
-    for (const item of (materiais || [])) {
+    for (const [indice, item] of (materiais || []).entries()) {
+      if (!String(item?.material || '').trim()) throw new Error(`Selecione o método ou a Apostila no material ${indice + 1}. Se não for usá-lo, remova esse cartão.`);
+      if (!String(item?.conteudo || '').trim() && String(item.material).trim().toLowerCase() !== 'apostila') throw new Error(`Informe a lição ou o conteúdo trabalhado em ${item.material}. Se não for usá-lo, remova esse cartão.`);
       if (String(item?.material || "").trim().toLowerCase() !== "apostila") continue;
       const conteudo = String(item.conteudo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
       if (!/\b(?:paginas?|pags?|p)\.?\s*[:\-]?\s*[1-9]\d*\b/.test(conteudo)) {
@@ -1033,18 +1035,18 @@
     // existir no histórico daquela aula, inclusive sua lição pendente.
     const { data: registrosDoDia, error: erroRegistrosDoDia } = await banco.from("historico_geral").select("id,Licao_Atual")
       .eq("Aluna", aluna).eq("Data", data).eq("Tipo", "Analise_Prática").eq("Instrutora", instrutora);
-    if (erroRegistrosDoDia) throw new Error("Não foi possível preparar a atualização dos materiais de Prática.");
+    if (erroRegistrosDoDia) throw new Error("Não foi possível preparar a atualização dos materiais de Prática.", { cause: erroRegistrosDoDia });
     const materiaisAtuais = new Set(lista.map((item) => String(item.material).trim()));
     const licoesAtuais = new Set(lista.map((item) => `${String(item.material).trim()}: ${String(item.conteudo).trim()}`));
     for (const registro of (registrosDoDia || [])) {
       const materialAnterior = String(registro.Licao_Atual || "").split(":", 1)[0].trim();
       if (!materialAnterior || licoesAtuais.has(String(registro.Licao_Atual || "").trim())) continue;
       const apagarAnalise = await banco.from("historico_geral").delete().eq("id", registro.id);
-      if (apagarAnalise.error) throw new Error(`Não foi possível remover o material ${materialAnterior}.`);
+      if (apagarAnalise.error) throw new Error(`Não foi possível remover o material ${materialAnterior}.`, { cause: apagarAnalise.error });
       if (materiaisAtuais.has(materialAnterior)) continue;
       const tipoCasaAnterior = materialAnterior === "Apostila" ? "Casa_Apostila" : `Casa_Metodo_${materialAnterior}`;
       const apagarCasa = await banco.from("historico_geral").delete().eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoCasaAnterior);
-      if (apagarCasa.error) throw new Error(`O material foi removido, mas não foi possível remover sua lição de casa.`);
+      if (apagarCasa.error) throw new Error(`O material foi removido, mas não foi possível remover sua lição de casa.`, { cause: apagarCasa.error });
       const apagarExercicios = await banco.from("exercicios_registro").delete().eq("aluna", aluna).eq("data", data).eq("disciplina", "Prática").eq("material", materialAnterior);
       if (apagarExercicios.error && apagarExercicios.error.code !== "42P01") throw new Error(`O material foi removido, mas não foi possível remover seus exercícios.`);
     }
@@ -1066,7 +1068,7 @@
         .some((dificuldade) => dificuldade !== "Não apresentou dificuldades");
       const { data: anteriores, error: erroAnteriores } = await banco.from("historico_geral").select("id,Licao_Atual")
         .eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoAnalise).eq("Instrutora", instrutora).order("id", { ascending: false });
-      if (erroAnteriores) throw new Error("Não foi possível conferir o registro de Prática já salvo.");
+      if (erroAnteriores) throw new Error("Não foi possível conferir o registro de Prática já salvo.", { cause: erroAnteriores });
       const existente = (anteriores || []).find((registro) => String(registro.Licao_Atual || "").trim() === `${material}: ${conteudo}`);
       const registro = {
         Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoAnalise,
@@ -1078,7 +1080,7 @@
       const salvar = existente
         ? await banco.from("historico_geral").update(registro).eq("id", existente.id)
         : await banco.from("historico_geral").insert(registro);
-      if (salvar.error) throw new Error(`Não foi possível salvar o registro de ${material}.`);
+      if (salvar.error) throw new Error(`Não foi possível salvar o registro de ${material}.`, { cause: salvar.error });
 
       // A correção do método é feita dentro do registro de Prática (como no
       // app.py). O conteúdo e as dificuldades ficam na análise de hoje; o
@@ -1098,7 +1100,7 @@
             Status: statusCorrecao,
             Observacao: String(item.observacaoCorrecao || "").trim()
           }).eq("id", item.licaoPendenteId);
-          if (atualizarCorrecao.error) throw new Error(`O registro de ${material} foi salvo, mas não foi possível atualizar a lição anterior.`);
+          if (atualizarCorrecao.error) throw new Error(`O registro de ${material} foi salvo, mas não foi possível atualizar a lição anterior.`, { cause: atualizarCorrecao.error });
         }
       }
       // Registros antigos podem ter conteúdo de Apostila sem a lição de casa
@@ -1116,7 +1118,7 @@
           // correção automática não se perde ao salvar o registro.
           const { data: existenteAutomatico, error: erroBuscaAutomatica } = await banco.from("historico_geral").select("id")
             .eq("Aluna", aluna).eq("Data", data).eq("Tipo", "Casa_Apostila_Prof").eq("Licao_Casa", String(item.licaoPendenteTexto).trim()).limit(1);
-          if (erroBuscaAutomatica) throw new Error("Não foi possível preparar a correção da Apostila.");
+          if (erroBuscaAutomatica) throw new Error("Não foi possível preparar a correção da Apostila.", { cause: erroBuscaAutomatica });
           const correcaoAutomatica = {
             Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: "Casa_Apostila_Prof",
             Licao_Atual: "Definido", Licao_Casa: String(item.licaoPendenteTexto).trim(), Dificuldades: [],
@@ -1125,7 +1127,7 @@
           const salvarAutomatica = existenteAutomatico?.[0]
             ? await banco.from("historico_geral").update(correcaoAutomatica).eq("id", existenteAutomatico[0].id)
             : await banco.from("historico_geral").insert(correcaoAutomatica);
-          if (salvarAutomatica.error) throw new Error("O registro foi salvo, mas não foi possível registrar a correção da Apostila.");
+          if (salvarAutomatica.error) throw new Error("O registro foi salvo, mas não foi possível registrar a correção da Apostila.", { cause: salvarAutomatica.error });
         }
       }
 
@@ -1154,11 +1156,11 @@
     // sem que a última entrada apague as anteriores.
     const { data: casasAnteriores, error: erroCasasAnteriores } = await banco.from("historico_geral").select("id,Tipo")
       .eq("Aluna", aluna).eq("Data", data).eq("Instrutora", instrutora);
-    if (erroCasasAnteriores) throw new Error("O registro foi salvo, mas não foi possível preparar as lições de casa.");
+    if (erroCasasAnteriores) throw new Error("O registro foi salvo, mas não foi possível preparar as lições de casa.", { cause: erroCasasAnteriores });
     const casasDaPratica = (casasAnteriores || []).filter((item) => item.Tipo === "Casa_Apostila" || String(item.Tipo || "").startsWith("Casa_Metodo_"));
     for (const casaAnterior of casasDaPratica) {
       const apagarCasa = await banco.from("historico_geral").delete().eq("id", casaAnterior.id);
-      if (apagarCasa.error) throw new Error("O registro foi salvo, mas não foi possível atualizar as lições de casa.");
+      if (apagarCasa.error) throw new Error("O registro foi salvo, mas não foi possível atualizar as lições de casa.", { cause: apagarCasa.error });
     }
     const novasCasas = (licoesCasa || []).map((item) => ({ material: String(item?.material || "").trim(), licaoCasa: String(item?.licaoCasa || "").trim(), observacao: String(item?.observacao || "").trim() }))
       .filter((item) => item.material && item.licaoCasa);
@@ -1168,7 +1170,7 @@
         Tipo: item.material === "Apostila" ? "Casa_Apostila" : `Casa_Metodo_${item.material}`,
         Licao_Atual: "Definido", Licao_Casa: item.licaoCasa, Dificuldades: [], Observacao: item.observacao, Status: "Pendente"
       })));
-      if (salvarCasas.error) throw new Error("O registro foi salvo, mas não foi possível registrar as lições de casa.");
+      if (salvarCasas.error) throw new Error("O registro foi salvo, mas não foi possível registrar as lições de casa.", { cause: salvarCasas.error });
     }
   }
 
@@ -1187,7 +1189,7 @@
     const data = dataBr(dataIso);
     const { data: registros, error } = await banco.from("historico_geral").select("*")
       .eq("Data", data).eq("Instrutora", instrutora).in("Aluna", alunas || []).order("id", { ascending: true });
-    if (error) throw new Error("Não foi possível carregar os registros já salvos desta aula.");
+    if (error) throw new Error("Não foi possível carregar os registros já salvos desta aula.", { cause: error });
     return (registros || []).filter((registro) => String(registro.Tipo || "").startsWith("Analise_") || String(registro.Tipo || "").startsWith("Casa_"));
   }
 
@@ -1196,7 +1198,7 @@
     const dataAtual = dataBr(dataIso);
     const { data, error } = await banco.from("historico_geral").select("id,Aluna,Data,Tipo,Licao_Atual,Licao_Casa,Dificuldades,Observacao,Status")
       .in("Aluna", alunas || [aluna]).order("id", { ascending: false });
-    if (error) throw new Error("Não foi possível carregar o histórico de Prática da aluna.");
+    if (error) throw new Error("Não foi possível carregar o histórico de Prática da aluna.", { cause: error });
     const paraTempo = (valor) => {
       const texto = String(valor || "").trim();
       if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return new Date(`${texto.slice(0, 10)}T12:00:00`).getTime();
@@ -1212,7 +1214,7 @@
     if (normalizar(tipoAula).includes("SOLFEJO")) return [];
     const banco = await obterCliente();
     const { data, error } = await banco.from("historico_geral").select("*").in("Aluna", alunas || []).order("id", { ascending: false });
-    if (error) throw new Error("Não foi possível carregar as lições pendentes.");
+    if (error) throw new Error("Não foi possível carregar as lições pendentes.", { cause: error });
     const tiposPermitidos = tipoAula === "Teoria" ? ["Casa_Teoria_Prof", "Casa_Apostila_Teoria_Prof", "Casa_Apostila_Teoria"]
       : tipoAula === "Prática" ? []
         : null;
@@ -1238,7 +1240,7 @@
     // criada para a próxima aula.
     const statusHistorico = ({ "Passou": "Resolvido", "Não passou": "Não resolvido", "Estudar mais": "Resolvido com pendências" })[status] || status;
     const { error } = await banco.from("historico_geral").update({ Status: statusHistorico, Observacao: String(observacao || "").trim() }).eq("id", id);
-    if (error) throw new Error("Não foi possível salvar a correção da lição.");
+    if (error) throw new Error("Não foi possível salvar a correção da lição.", { cause: error });
 
     const tipo = String(licao?.Tipo || "");
     const deveRepetir = tipo.startsWith("Casa_Metodo_") && ["Não passou", "Estudar mais"].includes(status) && String(repetirLicao || "").trim();
@@ -1257,12 +1259,12 @@
     };
     const { data: existentes, error: erroBusca } = await banco.from("historico_geral").select("id")
       .eq("Aluna", proxima.Aluna).eq("Data", data).eq("Tipo", tipo).order("id", { ascending: false }).limit(1);
-    if (erroBusca) throw new Error("A correção foi salva, mas não foi possível preparar a lição de reforço.");
+    if (erroBusca) throw new Error("A correção foi salva, mas não foi possível preparar a lição de reforço.", { cause: erroBusca });
     const operacao = existentes?.[0]?.id
       ? banco.from("historico_geral").update(proxima).eq("id", existentes[0].id)
       : banco.from("historico_geral").insert(proxima);
     const { error: erroRepeticao } = await operacao;
-    if (erroRepeticao) throw new Error("A correção foi salva, mas não foi possível preparar a lição de reforço.");
+    if (erroRepeticao) throw new Error("A correção foi salva, mas não foi possível preparar a lição de reforço.", { cause: erroRepeticao });
   }
 
   async function dadosAluna(aluna) {
@@ -1271,7 +1273,7 @@
       banco.from("historico_geral").select("*").eq("Aluna", aluna).order("id", { ascending: false }),
       banco.from("licoes_feitas_alunas").select("*").eq("aluna", aluna)
     ]);
-    if (erroHist) throw new Error("Não foi possível carregar o histórico da aluna.");
+    if (erroHist) throw new Error("Não foi possível carregar o histórico da aluna.", { cause: erroHist });
     return { historico: historico || [], feitas: feitas || [] };
   }
 
@@ -1308,10 +1310,10 @@
     const banco = await obterCliente();
     if (feito) {
       const { error } = await banco.from("licoes_feitas_alunas").upsert({ aluna, historico_id: String(historicoId) }, { onConflict: "aluna,historico_id" });
-      if (error) throw new Error("Não foi possível marcar a lição como feita.");
+      if (error) throw new Error("Não foi possível marcar a lição como feita.", { cause: error });
     } else {
       const { error } = await banco.from("licoes_feitas_alunas").delete().eq("aluna", aluna).eq("historico_id", String(historicoId));
-      if (error) throw new Error("Não foi possível desfazer a marcação.");
+      if (error) throw new Error("Não foi possível desfazer a marcação.", { cause: error });
     }
   }
 
@@ -1355,7 +1357,7 @@
       banco.from("professoras_fixas").select("aluna,professora")
     ]);
     const falha = [modelos, alunas, professoras, calendario, anteriores].find((resultado) => resultado.error)?.error;
-    if (falha) throw new Error(`Não foi possível carregar a base do rodízio: ${falha.message || "verifique as migrations e permissões."}`);
+    if (falha) throw new Error(`Não foi possível carregar a base do rodízio: ${falha.message || "verifique as migrations e permissões."}`, { cause: falha });
     const turmas = {};
     (alunas.data || []).filter((aluna) => aluna.ativo !== false).forEach((aluna) => {
       const turma = aluna.turma || "Sem turma";
@@ -1386,35 +1388,35 @@
   async function salvarFolgas({ data, coordenadora, professoras, observacao }) {
     const banco = await obterCliente();
     const { error } = await banco.from("folgas_professoras").upsert({ data, coordenadora, professoras: professoras || [], observacao: String(observacao || "").trim() }, { onConflict: "data" });
-    if (error) throw new Error("Não foi possível salvar as folgas deste sábado.");
+    if (error) throw new Error("Não foi possível salvar as folgas deste sábado.", { cause: error });
   }
 
   async function salvarProfessorasFixas(mapa) {
     const banco = await obterCliente();
     const apagar = await banco.from("professoras_fixas").delete().neq("aluna", "");
-    if (apagar.error) throw new Error("Não foi possível atualizar as professoras fixas.");
+    if (apagar.error) throw new Error("Não foi possível atualizar as professoras fixas.", { cause: apagar.error });
     const linhas = Object.entries(mapa || {}).filter(([, professora]) => professora).map(([aluna, professora]) => ({ aluna, professora }));
     if (!linhas.length) return;
     const inserir = await banco.from("professoras_fixas").insert(linhas);
-    if (inserir.error) throw new Error("Não foi possível salvar as professoras fixas.");
+    if (inserir.error) throw new Error("Não foi possível salvar as professoras fixas.", { cause: inserir.error });
   }
 
   async function salvarEscala(dataIso, escala, modeloId, motivoEdicao = "") {
     const banco = await obterCliente();
     const data = dataBr(dataIso);
     const existente = await banco.from("calendario").select("id,escala,modelo_logistica_id").eq("id", data).maybeSingle();
-    if (existente.error) throw new Error("Não foi possível conferir a escala já salva.");
+    if (existente.error) throw new Error("Não foi possível conferir a escala já salva.", { cause: existente.error });
     if (existente.data) {
       // Auditoria é adicional: se a migration ainda não tiver sido executada,
       // a edição permanece possível e o aplicativo explica isso ao usuário.
       const auditoria = await banco.from("calendario_edicoes").insert({ data_escala: data, escala_anterior: existente.data.escala || [], escala_nova: escala || [], motivo: motivoEdicao || "Correção pela Secretaria" });
       if (auditoria.error && auditoria.error.code !== "42P01") console.warn("Não foi possível registrar a auditoria da escala", auditoria.error);
       const atualizar = await banco.from("calendario").update({ escala, modelo_logistica_id: modeloId || existente.data.modelo_logistica_id }).eq("id", data);
-      if (atualizar.error) throw new Error("Não foi possível salvar a correção da escala.");
+      if (atualizar.error) throw new Error("Não foi possível salvar a correção da escala.", { cause: atualizar.error });
       return "editada";
     }
     const inserir = await banco.from("calendario").insert({ id: data, escala, modelo_logistica_id: modeloId || null });
-    if (inserir.error) throw new Error("Não foi possível salvar o rodízio.");
+    if (inserir.error) throw new Error("Não foi possível salvar o rodízio.", { cause: inserir.error });
     return "criada";
   }
 
