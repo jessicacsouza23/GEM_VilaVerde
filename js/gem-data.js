@@ -1051,6 +1051,7 @@
       if (apagarExercicios.error && apagarExercicios.error.code !== "42P01") throw new Error(`O material foi removido, mas não foi possível remover seus exercícios.`);
     }
 
+    const exerciciosLimpos = new Set();
     for (const item of lista) {
       const material = String(item.material).trim();
       const conteudo = String(item.conteudo).trim();
@@ -1066,15 +1067,19 @@
       ].map((dificuldade) => String(dificuldade || "").trim()).filter(Boolean)));
       const temDificuldade = dificuldadesDoMaterial
         .some((dificuldade) => dificuldade !== "Não apresentou dificuldades");
-      const { data: anteriores, error: erroAnteriores } = await banco.from("historico_geral").select("id,Licao_Atual")
+      const { data: anteriores, error: erroAnteriores } = await banco.from("historico_geral").select("id,Licao_Atual,Observacao")
         .eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoAnalise).eq("Instrutora", instrutora).order("id", { ascending: false });
       if (erroAnteriores) throw new Error("Não foi possível conferir o registro de Prática já salvo.", { cause: erroAnteriores });
       const existente = (anteriores || []).find((registro) => String(registro.Licao_Atual || "").trim() === `${material}: ${conteudo}`);
+      const correcaoAnterior = String(existente?.Observacao || '').split('\nCorreção da lição:')[1];
+      const correcaoAtual = item.resultadoLicao
+        ? `${item.resultadoLicao} — ${String(item.licaoPendenteTexto || conteudo).trim()}${item.observacaoCorrecao ? ' — ' + String(item.observacaoCorrecao).trim() : ''}`
+        : correcaoAnterior;
       const registro = {
         Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoAnalise,
         Licao_Atual: `${material}: ${conteudo}`,
         Dificuldades: dificuldadesDoMaterial,
-        Observacao: String(observacao || "").trim(),
+        Observacao: String(observacao || "").trim() + (correcaoAtual ? '\nCorreção da lição: ' + correcaoAtual.trim() : ''),
         Status: temDificuldade ? "Realizada - com dificuldades" : "Realizada - sem pendência"
       };
       const salvar = existente
@@ -1134,9 +1139,12 @@
       // Mantém os exercícios separados para consulta futura, mas as suas
       // dificuldades também estão agregadas acima — o Analítico lê o registro
       // principal, como no Streamlit.
-      const apagar = await banco.from("exercicios_registro").delete()
-        .eq("aluna", aluna).eq("data", data).eq("disciplina", "Prática").eq("material", material);
-      if (apagar.error && apagar.error.code !== "42P01") throw new Error(`Não foi possível atualizar os exercícios de ${material}.`);
+      if (!exerciciosLimpos.has(material)) {
+        const apagar = await banco.from("exercicios_registro").delete()
+          .eq("aluna", aluna).eq("data", data).eq("disciplina", "Prática").eq("material", material);
+        if (apagar.error && apagar.error.code !== "42P01") throw new Error(`Não foi possível atualizar os exercícios de ${material}.`);
+        exerciciosLimpos.add(material);
+      }
       const exercicios = (item.exercicios || []).filter((exercicio) => String(exercicio?.exercicio || "").trim())
         .map((exercicio, ordem) => ({
           aluna, data, instrutora, disciplina: "Prática", material,

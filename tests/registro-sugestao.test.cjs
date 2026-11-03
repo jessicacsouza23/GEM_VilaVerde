@@ -11,6 +11,11 @@ test('sugere lição correspondente nas quatro disciplinas sem misturar métodos
     assert.equal(ctx.sugerirConteudoPendente([casa(tipo)],disciplina,'Outro método',['A']), '');
   }
 });
+test('reúne todas as tarefas pendentes do mesmo material no último lançamento', () => {
+  const h = [{...casa('Casa_Metodo_Volume 1','A','lição 4'),Data:'31/10/2026'}, {...casa('Casa_Metodo_Volume 1','A','lição 5'),Data:'31/10/2026'}, {...casa('Casa_Metodo_Volume 2','A','lição 9'),Data:'31/10/2026'}];
+  assert.equal(ctx.sugerirConteudoPendente(h,'Prática','Volume 1',['A']), 'lição 4; lição 5');
+});
+
 test('lição resolvida mais recente não ressuscita pendência antiga', () => {
   assert.equal(ctx.sugerirConteudoPendente([{...casa('Casa_MSA'),Status:'Resolvido'},casa('Casa_MSA')],'Solfejo','MSA',['A']), '');
 });
@@ -45,6 +50,7 @@ test('atualiza sugestão ao trocar método e preserva conteúdo digitado ou salv
   const m = campo('A'), c = campo();
   ctx.conectarSugestaoConteudo(m,c,v => `Lição ${v}`);
   assert.equal(c.value,'Lição A'); m.value='B'; m.handlers.change(); assert.equal(c.value,'Lição B');
-  c.value='Minha adaptação'; c.handlers.input(); m.value='C'; m.handlers.change(); assert.equal(c.value,'Minha adaptação');
+  c.value='Minha adaptação'; c.handlers.input(); m.value='C'; m.handlers.change(); assert.equal(c.value,'Lição C');
+  m.value='B'; m.handlers.change(); assert.equal(c.value,'Minha adaptação');
   const salvo = campo('Registro salvo'); ctx.conectarSugestaoConteudo(m,salvo,()=> 'Outra'); assert.equal(salvo.value,'Registro salvo');
 });

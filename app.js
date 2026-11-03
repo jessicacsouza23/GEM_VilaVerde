@@ -33,7 +33,7 @@ function sugerirConteudoPendente(historico, disciplina, material, alunas) {
     : disciplina === 'Teoria' ? (nome.includes('apostila') ? ['Casa_Apostila_Teoria', 'Casa_Apostila_Teoria_Prof'] : nome.includes('folha') ? ['Casa_Teoria', 'Casa_Teoria_Prof'] : [])
     : disciplina === 'Solfejo' ? ['Casa_MSA'] : disciplina === 'Solfejo Melódico' ? ['Casa_Canto'] : [];
   const valores = alunas.map(aluna => {
-    const anterior = historico.find(r => r.Aluna === aluna && r.Tipo === `Analise_${disciplina}`);
+    const anterior = historico.find(r => r.Aluna === aluna && r.Tipo === `Analise_${disciplina}` && (disciplina !== 'Prática' || normal(String(r.Licao_Atual || '').split(':')[0]) === nome));
     const materialAnterior = String(anterior?.Licao_Atual || '').split(':')[0];
     if (disciplina.includes('Solfejo') && nome !== normal(materialAnterior) && !(disciplina === 'Solfejo' && nome === 'msa') && !(disciplina === 'Solfejo Melódico' && ['solfejo melodico','canto'].includes(nome))) return '';
     const tiposDaAluna = !tipos.length && disciplina === 'Teoria' && nome === normal(materialAnterior)
@@ -49,15 +49,26 @@ function sugerirConteudoPendente(historico, disciplina, material, alunas) {
       return partes ? `${partes[3]}-${partes[2]}-${partes[1]}` : '';
     };
     if (anterior && dataOrdem(anterior.Data) && dataOrdem(ultima.Data) < dataOrdem(anterior.Data)) return '';
-    return String(ultima.Licao_Casa || '').trim();
+    const pendentes = historico.filter(r => r.Aluna === aluna && tiposDaAluna.some(t => normal(t) === normal(r.Tipo)) && dataOrdem(r.Data) === dataOrdem(ultima.Data) && !['Resolvido', 'Realizada', 'Realizada - sem pendência', 'Realizadas - sem pendência'].includes(r.Status));
+    return [...new Set(pendentes.map(r => String(r.Licao_Casa || '').trim()).filter(Boolean))].join('; ');
   });
   return valores[0] && valores.every(v => v === valores[0]) ? valores[0] : '';
 }
 
 function conectarSugestaoConteudo(material, conteudo, obterSugestao) {
   let automatico = '', manual = Boolean(conteudo.value);
+  let materialAtual = material.value;
+  const rascunhos = new Map();
   conteudo.addEventListener('input', () => { manual = true; });
   const atualizar = () => {
+    if (material.value !== materialAtual) {
+      rascunhos.set(materialAtual, { valor: conteudo.value, manual, automatico });
+      materialAtual = material.value;
+      const anterior = rascunhos.get(materialAtual);
+      conteudo.value = anterior?.valor || '';
+      manual = anterior?.manual || false;
+      automatico = anterior?.automatico || '';
+    }
     if (manual) return;
     const sugestao = obterSugestao(material.value);
     if (!conteudo.value || conteudo.value === automatico) { conteudo.value = sugestao; automatico = sugestao; }
@@ -167,7 +178,7 @@ async function renderMinhasAulas(content) {
     let licoesPendentes = [];
     let historicoPratica = [];
     try { registrosSalvos = await window.GemData.registrosDaAula({ dataIso: $("#agenda-data").value, instrutora: state.name, alunas: aula.alunas }); }
-    catch (erro) { console.warn("Registros anteriores não puderam ser carregados", erro); }
+    catch (erro) { areaRegistro.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))} Feche e abra a aula novamente antes de editar.</div>`; return; }
     const ehAulaDeSolfejo = String(aula.tipo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().includes("SOLFEJO");
     // Solfejo é conferido no próprio registro da aula seguinte. Nunca abre a
     // fila visual de correções (nem MSA, nem método) nessa tela.
@@ -215,9 +226,24 @@ async function renderMinhasAulas(content) {
       ? `<div id="registro-compartilhado" class="student-records shared-record"><p class="field-caption">${tituloDificuldadesTurma}</p>${dificuldades}<label>${tituloObservacaoTurma}<textarea id="registro-observacao-compartilhada" placeholder="Observação sobre a aula da turma">${escapeHtml(primeiroRegistro.Observacao || "")}</textarea></label></div><div id="registro-por-aluna" class="student-records hidden"></div>`
       : `<div class="student-records"><section class="student-record"><h4>${escapeHtml(aula.alunas[0])}</h4><p class="field-caption">Dificuldades observadas:</p>${dificuldades}<label>Observações pedagógicas:<textarea data-observacao-aluna="${escapeHtml(aula.alunas[0])}" placeholder="Observações sobre a aula">${escapeHtml(primeiroRegistro.Observacao || "")}</textarea></label></section></div>`;
     const opcoesLicaoGenerica = `<option value="">Não deixar lição</option>`;
-    const opcoesPratica = ["Apostila", ...bibliotecaMetodos.filter((metodo) => metodo.categoria === "Prática").map((metodo) => metodo.nome)];
+    const opcoesPratica = [...new Set(["Apostila", ...bibliotecaMetodos.filter((metodo) => metodo.categoria === "Prática").map((metodo) => metodo.nome), ...analisesSalvas.map(r => String(r.Licao_Atual || '').split(':')[0].trim()).filter(Boolean), ...registrosSalvos.filter(r => String(r.Tipo || '').startsWith('Casa_Metodo_')).map(r => r.Tipo.replace('Casa_Metodo_', ''))])];
     const campoMaterial = aula.tipo === "Prática" ? `<select id="registro-material"><option value="">Selecione o método/apostila</option>${opcoesPratica.map((material) => `<option ${material === materialSalvo ? "selected" : ""}>${escapeHtml(material)}</option>`).join("")}</select><small class="field-help">Cadastre novos métodos em Configurar Métodos.</small>` : `<input id="registro-material" value="${escapeHtml(materialSalvo)}" placeholder="Ex.: MSA, Apostila, Folha Extra">`;
-    const registrosVisiveis = analisesSalvas.length ? `<section class="saved-records"><h4>Registro já salvo nesta aula</h4>${analisesSalvas.map((registro) => { const diffs = Array.isArray(registro.Dificuldades) ? registro.Dificuldades : []; return `<article><strong>${escapeHtml(registro.Aluna)}</strong><span>${escapeHtml(registro.Licao_Atual || "—")}</span>${diffs.length ? `<small>⚠ ${escapeHtml(diffs.join(" · "))}</small>` : ""}${registro.Observacao ? `<small>📝 ${escapeHtml(registro.Observacao)}</small>` : ""}</article>`; }).join("")}</section>` : "";
+    const resumoSalvo = (registros) => {
+      const casasDaDisciplina = tipo => aula.tipo === 'Prática' ? tipo === 'Casa_Apostila' || tipo === 'Casa_Apostila_Prof' || tipo.startsWith('Casa_Metodo_')
+        : aula.tipo === 'Teoria' ? ['Casa_Teoria', 'Casa_Teoria_Prof', 'Casa_Apostila_Teoria', 'Casa_Apostila_Teoria_Prof'].includes(tipo)
+        : tipo === (aula.tipo === 'Solfejo' ? 'Casa_MSA' : 'Casa_Canto');
+      const itens = registros.filter(r => r.Tipo === tipoAnalise || casasDaDisciplina(String(r.Tipo || '')));
+      return itens.length ? '<section class="saved-records"><h4>Registro já salvo nesta aula</h4>' + itens.map(r => {
+        const casa = String(r.Tipo).startsWith('Casa_');
+        const material = casa ? String(r.Tipo).replace(/^Casa_Metodo_|^Casa_/, '').replace(/_Prof$/, '').replaceAll('_', ' ') : '';
+        const diffs = Array.isArray(r.Dificuldades) ? r.Dificuldades : [];
+        return '<article><strong>' + escapeHtml(r.Aluna) + '</strong><span>' + (casa ? '🏠 Lição de casa — ' + escapeHtml(material) + ': ' + escapeHtml(r.Licao_Casa || '—') : escapeHtml(r.Licao_Atual || '—')) + '</span>' +
+          (r.Status ? '<small>Situação: ' + escapeHtml(r.Status) + '</small>' : '') +
+          (diffs.length ? '<small>⚠ ' + escapeHtml(diffs.join(' · ')) + '</small>' : '') +
+          (r.Observacao ? '<small>📝 ' + escapeHtml(r.Observacao) + '</small>' : '') + '</article>';
+      }).join('') + '</section>' : '';
+    };
+    const registrosVisiveis = '<div data-resumo-salvo>' + resumoSalvo(registrosSalvos) + '</div>';
     const casaSalva = (tipos) => registrosSalvos.find((registro) => aula.alunas.includes(registro.Aluna) && tipos.includes(String(registro.Tipo || ""))) || {};
     const casaTeoriaSalva = casaSalva(["Casa_Teoria", "Casa_Teoria_Prof", "Casa_Apostila_Teoria_Prof", "Casa_Apostila_Teoria"]);
     const casaGenericaTipo = aula.tipo === "Solfejo" ? "Casa_MSA" : aula.tipo === "Solfejo Melódico" ? "Casa_Canto" : "";
@@ -284,6 +310,7 @@ async function renderMinhasAulas(content) {
       atualizarSelecionadas();
     }
     if (aula.tipo === "Prática") {
+      $("#registro-observacao-pratica").value = String(primeiroRegistro.Observacao || '').split('\nCorreção da lição:')[0];
       const areaMateriais = $("#materiais-pratica");
       const materiaisRegistrados = analisesSalvas.map((registro) => {
         const partes = String(registro.Licao_Atual || "").split(":");
@@ -483,7 +510,14 @@ async function renderMinhasAulas(content) {
           }
           await window.GemData.salvarRegistroAula({ dataIso: $("#agenda-data").value, instrutora: state.name, tipo: aula.tipo, alunas: alunasParaSalvar, material, conteudo, registrosPorAluna, casaTipo, licaoCasa, observacaoCasa: $("#registro-obs-casa")?.value.trim() || "", limparCasas });
         }
-        $("#registro-retorno").innerHTML = `<div class="action-ok">Registro salvo para ${alunasParaSalvar.length === 1 ? "a aluna" : "as alunas"} desta aula.</div>`;
+        try {
+          registrosSalvos = await window.GemData.registrosDaAula({ dataIso: $("#agenda-data").value, instrutora: state.name, alunas: aula.alunas });
+          areaRegistro.querySelector('[data-resumo-salvo]').innerHTML = resumoSalvo(registrosSalvos);
+          $("#registro-retorno").innerHTML = '<div class="action-ok">Registro salvo. Confira os materiais, correções e lições de casa em “Registro já salvo nesta aula”.</div>';
+        } catch (erro) {
+          $("#registro-retorno").innerHTML = `<div class="action-error">O salvamento foi concluído, mas não foi possível atualizar o resumo. ${escapeHtml(mensagemErro(erro))} Reabra a aula para conferir.</div>`;
+        }
+        botao.disabled = false;
       } catch (erro) { $("#registro-retorno").innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; botao.disabled = false; }
     });
     areaRegistro.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1702,7 +1736,7 @@ async function renderAnalitico(content, opcoes = {}) {
         const estudos = estudoDoPeriodo(nome);
         const { dias, diasPeriodo, percentual } = resumoEstudoPeriodo(estudos, $("#analise-inicio").value, $("#analise-fim").value);
         const rosto = percentual >= 70 ? "😊" : percentual >= 40 ? "😐" : "😢";
-        return `${dias ? rosto : '—'} ${percentual}%<br><small>${dias} de ${diasPeriodo} dias do período</small>${!dias ? '<br><small>Sem estudo registrado</small>' : ''}`;
+        return `${dias ? rosto : '—'} ${percentual}%<br><small>${dias} de ${diasPeriodo} dias</small>${!dias ? '<br><small>Sem estudo registrado</small>' : ''}`;
       };
       destino.innerHTML = `<h3>🏆 Quadro de desempenho</h3><p class="hint">A medalha usa a porcentagem de aulas sem dificuldades registradas no período escolhido. A última coluna mostra os dias com estudo registrado pela aluna em relação a todos os dias do período, incluindo início e fim. Vários horários no mesmo dia contam uma vez. Dias sem registro não comprovam ausência de estudo.</p><div class="table-wrap"><table class="scale-table performance-table"><thead><tr><th>Aluna</th>${disciplinas.map((disciplina) => `<th>${escapeHtml(disciplina)}</th>`).join("")}<th>Estudo em casa</th></tr></thead><tbody>${dados.alunas.filter((aluna) => aluna.ativo !== false).map((aluna) => `<tr><th>${escapeHtml(aluna.nome)}</th>${disciplinas.map((disciplina) => { const resultado = classificacao(periodo.filter((registro) => registro.Aluna === aluna.nome && disciplinaAnalise(registro.Tipo) === disciplina)); return `<td>${resultado.icone} ${resultado.nome}${resultado.nota !== null ? `<br><small>${resultado.nota}%</small>` : ""}</td>`; }).join("")}<td>${celulaEstudo(aluna.nome)}</td></tr>`).join("")}</tbody></table></div>`;
       return;
