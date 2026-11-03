@@ -1636,6 +1636,20 @@ async function renderCorrecoesLicoes(content) {
   $("#criar-licao-secretaria").addEventListener("click", async () => { const feedback = $("#correcao-feedback"), licao = $("#nova-licao-conteudo").value.trim(); if (!licao) { feedback.innerHTML = `<div class="action-error">Informe a lição ou página.</div>`; return; } try { await window.GemData.criarCorrecaoLicao({ aluna: $("#correcao-aluna").value, tipo: $("#nova-licao-tipo").value, licao, status: $("#nova-licao-status").value, observacao: $("#nova-licao-obs").value.trim(), secretaria: $("#correcao-secretaria").value, data: dataBr($("#correcao-data").value) }); feedback.innerHTML = `<div class="action-ok">Atividade registrada para correção.</div>`; } catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; } });
 }
 
+function resumoEstudoPeriodo(estudos, inicio, fim) {
+  const dataIso = valor => {
+    const texto = String(valor || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return texto.slice(0, 10);
+    const partes = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    return partes ? `${partes[3]}-${partes[2].padStart(2, '0')}-${partes[1].padStart(2, '0')}` : '';
+  };
+  const diasPeriodo = Math.floor((Date.parse(fim) - Date.parse(inicio)) / 86400000) + 1;
+  if (!Number.isFinite(diasPeriodo) || diasPeriodo <= 0) throw new Error('Informe a data inicial e a final, com o início anterior ou igual ao fim.');
+  const dias = new Set(estudos.filter(item => Array.isArray(item.horarios) && item.horarios.some(h => String(h || '').trim()))
+    .map(item => dataIso(item.data || item.Data)).filter(data => data && data >= inicio && data <= fim)).size;
+  return { dias, diasPeriodo, percentual: Math.round(dias / diasPeriodo * 100) };
+}
+
 async function renderAnalitico(content, opcoes = {}) {
   const titulo = opcoes.titulo || "Analítico e desempenho", descricao = opcoes.descricao || "Indicadores calculados somente a partir dos registros, chamadas, lições e notas já existentes no GEM.";
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO PEDAGÓGICO</p><h2>${escapeHtml(titulo)}</h2><p>${escapeHtml(descricao)}</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-analise="prontuario">Prontuário individual</button><button class="tab-action" data-analise="quadro">Quadro de desempenho</button><button class="tab-action" data-analise="boletim">Boletim</button></div><div class="analytics-filters"><label>Período<select id="analise-periodo"><option value="30">Mensal</option><option value="60" selected>Bimestral</option><option value="180">Semestral</option><option value="tudo">Tudo</option><option value="personalizado">Personalizado</option></select></label><label>De<input id="analise-inicio" type="date"></label><label>Até<input id="analise-fim" type="date"></label><label id="analise-aluna-wrap">Aluna<select id="analise-aluna"></select></label><button id="atualizar-analise" class="primary-action" type="button">Atualizar</button></div><div id="analise-conteudo"><div class="empty">Carregando indicadores...</div></div></section>`;
@@ -1686,21 +1700,16 @@ async function renderAnalitico(content, opcoes = {}) {
       });
       const celulaEstudo = (nome) => {
         const estudos = estudoDoPeriodo(nome);
-        if (!estudos.length) return "— sem registro";
-        const dias = estudos.filter((item) => Array.isArray(item.horarios) && item.horarios.length).length;
-        const percentual = Math.round(dias / estudos.length * 100);
+        const { dias, diasPeriodo, percentual } = resumoEstudoPeriodo(estudos, $("#analise-inicio").value, $("#analise-fim").value);
         const rosto = percentual >= 70 ? "😊" : percentual >= 40 ? "😐" : "😢";
-        return `${rosto} ${percentual}%<br><small>${dias}/${estudos.length} dias</small>`;
+        return `${dias ? rosto : '—'} ${percentual}%<br><small>${dias} de ${diasPeriodo} dias do período</small>${!dias ? '<br><small>Sem estudo registrado</small>' : ''}`;
       };
-      destino.innerHTML = `<h3>🏆 Quadro de desempenho</h3><p class="hint">A medalha usa a porcentagem de aulas sem dificuldades registradas no período escolhido. A última coluna mostra o estudo em casa informado pela própria aluna.</p><div class="table-wrap"><table class="scale-table performance-table"><thead><tr><th>Aluna</th>${disciplinas.map((disciplina) => `<th>${escapeHtml(disciplina)}</th>`).join("")}<th>Estudo em casa</th></tr></thead><tbody>${dados.alunas.filter((aluna) => aluna.ativo !== false).map((aluna) => `<tr><th>${escapeHtml(aluna.nome)}</th>${disciplinas.map((disciplina) => { const resultado = classificacao(periodo.filter((registro) => registro.Aluna === aluna.nome && disciplinaAnalise(registro.Tipo) === disciplina)); return `<td>${resultado.icone} ${resultado.nome}${resultado.nota !== null ? `<br><small>${resultado.nota}%</small>` : ""}</td>`; }).join("")}<td>${celulaEstudo(aluna.nome)}</td></tr>`).join("")}</tbody></table></div>`;
+      destino.innerHTML = `<h3>🏆 Quadro de desempenho</h3><p class="hint">A medalha usa a porcentagem de aulas sem dificuldades registradas no período escolhido. A última coluna mostra os dias com estudo registrado pela aluna em relação a todos os dias do período, incluindo início e fim. Vários horários no mesmo dia contam uma vez. Dias sem registro não comprovam ausência de estudo.</p><div class="table-wrap"><table class="scale-table performance-table"><thead><tr><th>Aluna</th>${disciplinas.map((disciplina) => `<th>${escapeHtml(disciplina)}</th>`).join("")}<th>Estudo em casa</th></tr></thead><tbody>${dados.alunas.filter((aluna) => aluna.ativo !== false).map((aluna) => `<tr><th>${escapeHtml(aluna.nome)}</th>${disciplinas.map((disciplina) => { const resultado = classificacao(periodo.filter((registro) => registro.Aluna === aluna.nome && disciplinaAnalise(registro.Tipo) === disciplina)); return `<td>${resultado.icone} ${resultado.nome}${resultado.nota !== null ? `<br><small>${resultado.nota}%</small>` : ""}</td>`; }).join("")}<td>${celulaEstudo(aluna.nome)}</td></tr>`).join("")}</tbody></table></div>`;
       return;
     }
     const aluna = $("#analise-aluna").value, registros = periodo.filter((registro) => registro.Aluna === aluna), chamadas = registros.filter((registro) => registro.Tipo === "Chamada"), aulas = registros.filter(ehRegistroPedagogico), casas = registros.filter((registro) => String(registro.Tipo || "").startsWith("Casa_"));
     const estudos = dados.estudos.filter((estudo) => { const data = dataRegistro(estudo.data || estudo.Data); return estudo.aluna === aluna && data && data >= $("#analise-inicio").value && data <= $("#analise-fim").value; });
-    const diasEstudados = estudos.filter((estudo) => Array.isArray(estudo.horarios) && estudo.horarios.length).length;
-    const inicioPeriodo = new Date(`${$("#analise-inicio").value}T12:00:00`), fimPeriodo = new Date(`${$("#analise-fim").value}T12:00:00`);
-    const diasDoPeriodo = Math.max(1, Math.round((fimPeriodo - inicioPeriodo) / 86400000) + 1);
-    const constanciaEstudo = Math.round(diasEstudados / diasDoPeriodo * 100);
+    const { dias: diasEstudados, diasPeriodo: diasDoPeriodo, percentual: constanciaEstudo } = resumoEstudoPeriodo(estudos, $("#analise-inicio").value, $("#analise-fim").value);
     if (aba === "boletim") { const notas = dados.notas.filter((nota) => nota.aluna === aluna); destino.innerHTML = `<h3>🎼 Boletim — ${escapeHtml(aluna)}</h3>${notas.length ? `<div class="table-wrap"><table class="scale-table"><thead><tr><th>Avaliação</th><th>Disciplina</th><th>Nota</th></tr></thead><tbody>${notas.map((nota) => { const avaliacao = dados.avaliacoes.find((item) => String(item.id) === String(nota.avaliacao_id)); return `<tr><td>${escapeHtml(avaliacao?.titulo || "Avaliação")}</td><td>${escapeHtml(nota.disciplina || "—")}</td><td>${escapeHtml(nota.nota ?? "—")}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">Ainda não há notas lançadas para esta aluna.</div>`}`; return; }
     const presentes = chamadas.filter((item) => !["Ausente", "Justificada"].includes(item.Status)).length, faltas = chamadas.filter((item) => item.Status === "Ausente").length, justificadas = chamadas.filter((item) => item.Status === "Justificada").length, aproveitamento = classificacao(aulas).nota || 0;
     const listaDificuldades = [...new Set(aulas.flatMap((registro) => dificuldades(registro.Dificuldades)).filter((item) => !/não apresentou dificuldade/i.test(item)))]; const pendentes = casas.filter((registro) => !/resolvido|realizada|sem pendência/i.test(String(registro.Status || "")));
@@ -1779,6 +1788,12 @@ async function renderAnalitico(content, opcoes = {}) {
     });
   };
   const renderComPdf = () => {
+    try {
+      resumoEstudoPeriodo([], $("#analise-inicio").value, $("#analise-fim").value);
+    } catch (erro) {
+      $("#analise-conteudo").innerHTML = `<div class="action-error" role="alert">${escapeHtml(mensagemErro(erro))}</div>`;
+      return;
+    }
     render();
     const destino = $('#analise-conteudo');
     const abaAplicada = aba, inicioAplicado = $('#analise-inicio').value, fimAplicado = $('#analise-fim').value;
