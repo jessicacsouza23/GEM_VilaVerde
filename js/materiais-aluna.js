@@ -1,8 +1,23 @@
 (function () {
   const esc = s => String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function nomeMaterial(valor) {
+    const nome = String(valor || '').trim();
+    const chave = nome.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ');
+    return /^meu piano e divertido(?:\s+1)?$/.test(chave) ? 'Meu piano é divertido 1' : nome;
+  }
+  function normalizarRegistro(r) {
+    const registro = {...r};
+    if (registro.Tipo === 'Material_Prática') registro.Licao_Atual = nomeMaterial(registro.Licao_Atual);
+    if (registro.Tipo === 'Analise_Prática') {
+      const texto = String(registro.Licao_Atual || ''), pos = texto.indexOf(':');
+      if (pos >= 0) registro.Licao_Atual = nomeMaterial(texto.slice(0,pos)) + texto.slice(pos);
+    }
+    if (String(registro.Tipo || '').startsWith('Casa_Metodo_')) registro.Tipo = 'Casa_Metodo_' + nomeMaterial(registro.Tipo.slice(12));
+    return registro;
+  }
   function catalogo(historico) {
     const itens = new Map();
-    for (const r of [...historico].sort((a,b) => Number(a.id) - Number(b.id))) {
+    for (const r of historico.map(normalizarRegistro).sort((a,b) => Number(a.id) - Number(b.id))) {
       const nome = r.Tipo === 'Material_Prática' ? r.Licao_Atual : r.Tipo === 'Analise_Prática' ? String(r.Licao_Atual || '').split(':')[0].trim() : String(r.Tipo || '').startsWith('Casa_Metodo_') ? r.Tipo.slice(12) : ['Casa_Apostila','Casa_Apostila_Prof'].includes(r.Tipo) ? 'Apostila' : '';
       if (!nome) continue;
       if (!itens.has(nome)) itens.set(nome, {nome, concluido:false});
@@ -15,11 +30,12 @@
     const casas = area.querySelector('#licoes-casa-pratica');
     const adicionarBotao = area.querySelector('#adicionar-material-pratica');
     const existentes = [...container.querySelectorAll('.practice-material-card')];
+    opcoes = [...new Set(opcoes.map(nomeMaterial))];
     const registros = catalogo(historico);
     const grupos = new Map();
     const topo = document.createElement('section');
     topo.className = 'materials-picker';
-    topo.innerHTML = '<h4>Materiais da aluna</h4><p>Marque os materiais trabalhados hoje. Abra um por vez para registrar. Desmarcar preserva o histórico e as tarefas anteriores.</p><div data-escolhas></div><div class="material-add"><label>Adicionar material<select data-novo><option value="">Escolha na biblioteca</option>' + opcoes.map(m => '<option>' + esc(m) + '</option>').join('') + '</select></label><button type="button" class="secondary-action" data-incluir>＋ Adicionar material</button></div><p data-feedback role="status"></p><details data-concluidos><summary>Métodos concluídos</summary><div></div></details>';
+    topo.innerHTML = '<h4>Materiais da aluna</h4><p>Escolha um material por vez e salve o registro dele. Ao trocar, o preenchimento fica guardado enquanto esta tela estiver aberta. Os registros já salvos são preservados.</p><div data-escolhas></div><div class="material-add"><label>Adicionar material<select data-novo><option value="">Escolha na biblioteca</option>' + opcoes.map(m => '<option>' + esc(m) + '</option>').join('') + '</select></label><button type="button" class="secondary-action" data-incluir>＋ Adicionar material</button></div><p data-feedback role="status"></p><details data-concluidos><summary>Métodos concluídos</summary><div></div></details>';
     container.before(topo);
     adicionarBotao.hidden = true;
     casas.hidden = true;
@@ -35,7 +51,7 @@
     async function incluir(nome, selecionado, estado = {}) {
       if (grupos.has(nome)) {const g=grupos.get(nome);g.check.checked=true;g.check.dispatchEvent(new Event('change'));return g;}
       const label=document.createElement('label');label.className='material-choice';
-      const check=document.createElement('input');check.type='checkbox';check.checked=selecionado;
+      const check=document.createElement('input');check.type='radio';check.name='material-em-edicao';check.checked=selecionado;
       label.append(check,document.createTextNode(nome));topo.querySelector('[data-escolhas]').append(label);
       const bloco=document.createElement('details');bloco.className='material-workspace';bloco.dataset.material=nome;
       bloco.innerHTML='<summary><strong>'+esc(nome)+'</strong><span data-resumo></span></summary><div data-aula></div><section class="material-homework"><h4>Para a próxima aula</h4><p>Deixe vazio para não passar nova lição deste material.</p><div data-tarefas></div><button type="button" class="secondary-action" data-mais-casa>＋ Outra lição de casa</button></section><button type="button" class="secondary-action" data-estado></button>';
@@ -49,7 +65,7 @@
       if(!rows.length){const host=document.createElement('div');host.innerHTML=linhaCasa({material:nome});rows=[host.firstElementChild];}
       rows.forEach(anexar);
       bloco.querySelector('[data-mais-casa]').onclick=()=>{const host=document.createElement('div');host.innerHTML=linhaCasa({material:nome});anexar(host.firstElementChild);};
-      const atualizar=()=>{bloco.querySelectorAll('.practice-material-card,[data-casa-item]').forEach(el=>el.dataset.ignorarMaterial=check.checked?'false':'true');bloco.hidden=!check.checked;resumo(g);if(check.checked)abrir(g);};
+      const atualizar=()=>{for(const outro of grupos.values()){outro.bloco.querySelectorAll('.practice-material-card,[data-casa-item]').forEach(el=>el.dataset.ignorarMaterial=outro.check.checked?'false':'true');outro.bloco.hidden=!outro.check.checked;resumo(outro);}if(check.checked)abrir(g);};
       check.onchange=atualizar;bloco.addEventListener('input',()=>resumo(g));bloco.addEventListener('change',()=>resumo(g));
       bloco.addEventListener('toggle',()=>{if(bloco.open)for(const outro of grupos.values())if(outro!==g)outro.bloco.open=false;});
       const estadoBotao=bloco.querySelector('[data-estado]');
@@ -81,7 +97,7 @@
       try{await salvarEstado(nome,false);const g=await incluir(nome,true);g.estado.concluido=false;g.label.hidden=false;atualizarConcluidos();feedback.textContent=nome+' adicionado aos materiais da aluna.';}
       catch(e){feedback.textContent=e.message;}finally{botao.disabled=false;}
     };
-    area.querySelector('#salvar-registro-aula').textContent='Salvar todos os registros da aula';
+    area.querySelector('#salvar-registro-aula').textContent='Salvar registro deste material';
     area.querySelector('#salvar-registro-aula').addEventListener('click', event => {
       const selecionados=[...grupos.values()].filter(g=>g.check.checked);
       if(!selecionados.length){feedback.textContent='Marque pelo menos um material trabalhado hoje.';event.stopImmediatePropagation();return;}
@@ -97,5 +113,5 @@
       }
     }, true);
   }
-  window.GemMateriais={catalogo,montar};
+  window.GemMateriais={catalogo,montar,nomeMaterial,normalizarRegistro};
 })();

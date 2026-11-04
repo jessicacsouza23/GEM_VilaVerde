@@ -188,6 +188,12 @@ async function renderMinhasAulas(content) {
       try { historicoPratica = await window.GemData.contextoPratica({ alunas: aula.alunas, dataIso: $("#agenda-data").value }); }
       catch (erro) { console.warn("Histórico anterior de Prática não pôde ser carregado", erro); }
     }
+    if (aula.tipo === 'Prática') {
+      registrosSalvos = registrosSalvos.map(window.GemMateriais.normalizarRegistro);
+      historicoPratica = historicoPratica.map(window.GemMateriais.normalizarRegistro);
+      licoesPendentes = licoesPendentes.map(window.GemMateriais.normalizarRegistro);
+      bibliotecaMetodos = bibliotecaMetodos.map(m => m.categoria === 'Prática' ? {...m, nome:window.GemMateriais.nomeMaterial(m.nome)} : m);
+    }
     const tipoAnalise = `Analise_${aula.tipo}`;
     const analisesSalvas = registrosSalvos.filter((registro) => registro.Tipo === tipoAnalise);
     const porAluna = Object.fromEntries(analisesSalvas.map((registro) => [registro.Aluna, registro]));

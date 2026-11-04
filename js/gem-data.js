@@ -1012,6 +1012,8 @@
   // Analise_Prática, exatamente como ocorre no app.py, para não misturar
   // páginas, dificuldades e exercícios de livros diferentes.
   async function salvarRegistrosPratica({ dataIso, instrutora, aluna, materiais, licoesCasa = [], observacao = "", preservarOutrosMateriais = false }) {
+    const nomeCanonico = valor => /^meu piano e divertido(?:\s+1)?$/.test(String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase().replace(/\s+/g,' ')) ? 'Meu piano é divertido 1' : String(valor || '').trim();
+    const conteudoCanonico = valor => {const partes=String(valor || '').split(':');return nomeCanonico(partes.shift()) + ':' + partes.join(':');};
     // Valide todos os cartões antes de consultar ou alterar registros existentes.
     for (const [indice, item] of (materiais || []).entries()) {
       if (!String(item?.material || '').trim()) throw new Error(`Selecione o método ou a Apostila no material ${indice + 1}. Se não for usá-lo, remova esse cartão.`);
@@ -1039,9 +1041,9 @@
     const materiaisAtuais = new Set(lista.map((item) => String(item.material).trim()));
     const licoesAtuais = new Set(lista.map((item) => `${String(item.material).trim()}: ${String(item.conteudo).trim()}`));
     for (const registro of (registrosDoDia || [])) {
-      const materialAnterior = String(registro.Licao_Atual || "").split(":", 1)[0].trim();
+      const materialAnterior = nomeCanonico(String(registro.Licao_Atual || "").split(":", 1)[0]);
       if (preservarOutrosMateriais && !materiaisAtuais.has(materialAnterior)) continue;
-      if (!materialAnterior || licoesAtuais.has(String(registro.Licao_Atual || "").trim())) continue;
+      if (!materialAnterior || licoesAtuais.has(conteudoCanonico(registro.Licao_Atual).trim())) continue;
       const apagarAnalise = await banco.from("historico_geral").delete().eq("id", registro.id);
       if (apagarAnalise.error) throw new Error(`Não foi possível remover o material ${materialAnterior}.`, { cause: apagarAnalise.error });
       if (materiaisAtuais.has(materialAnterior)) continue;
@@ -1071,7 +1073,7 @@
       const { data: anteriores, error: erroAnteriores } = await banco.from("historico_geral").select("id,Licao_Atual,Observacao")
         .eq("Aluna", aluna).eq("Data", data).eq("Tipo", tipoAnalise).eq("Instrutora", instrutora).order("id", { ascending: false });
       if (erroAnteriores) throw new Error("Não foi possível conferir o registro de Prática já salvo.", { cause: erroAnteriores });
-      const existente = (anteriores || []).find((registro) => String(registro.Licao_Atual || "").trim() === `${material}: ${conteudo}`);
+      const existente = (anteriores || []).find((registro) => conteudoCanonico(registro.Licao_Atual).trim() === `${material}: ${conteudo}`);
       const correcaoAnterior = String(existente?.Observacao || '').split('\nCorreção da lição:')[1];
       const correcaoAtual = item.resultadoLicao
         ? `${item.resultadoLicao} — ${String(item.licaoPendenteTexto || conteudo).trim()}${item.observacaoCorrecao ? ' — ' + String(item.observacaoCorrecao).trim() : ''}`
@@ -1166,7 +1168,7 @@
     const { data: casasAnteriores, error: erroCasasAnteriores } = await banco.from("historico_geral").select("id,Tipo")
       .eq("Aluna", aluna).eq("Data", data).eq("Instrutora", instrutora);
     if (erroCasasAnteriores) throw new Error("O registro foi salvo, mas não foi possível preparar as lições de casa.", { cause: erroCasasAnteriores });
-    const casasDaPratica = (casasAnteriores || []).filter((item) => (item.Tipo === "Casa_Apostila" || String(item.Tipo || "").startsWith("Casa_Metodo_")) && (!preservarOutrosMateriais || materiaisAtuais.has(item.Tipo === 'Casa_Apostila' ? 'Apostila' : item.Tipo.slice(12))));
+    const casasDaPratica = (casasAnteriores || []).filter((item) => (item.Tipo === "Casa_Apostila" || String(item.Tipo || "").startsWith("Casa_Metodo_")) && (!preservarOutrosMateriais || materiaisAtuais.has(nomeCanonico(item.Tipo === 'Casa_Apostila' ? 'Apostila' : item.Tipo.slice(12)))));
     for (const casaAnterior of casasDaPratica) {
       const apagarCasa = await banco.from("historico_geral").delete().eq("id", casaAnterior.id);
       if (apagarCasa.error) throw new Error("O registro foi salvo, mas não foi possível atualizar as lições de casa.", { cause: apagarCasa.error });
@@ -1488,9 +1490,9 @@
     const banco = await obterCliente();
     if (concluido) {
       const tipos = material === 'Apostila' ? ['Casa_Apostila', 'Casa_Apostila_Prof'] : [`Casa_Metodo_${material}`];
-      const consulta = await banco.from('historico_geral').select('Status').eq('Aluna', aluna).in('Tipo', tipos);
+      const consulta = await banco.from('historico_geral').select('Tipo,Status').eq('Aluna', aluna);
       if (consulta.error) throw new Error('Não foi possível conferir as tarefas pendentes.', {cause:consulta.error});
-      if ((consulta.data || []).some(r => !['Resolvido','Realizada','Realizada - sem pendência','Realizadas - sem pendência'].includes(r.Status))) throw new Error('Este material tem lições pendentes. Confira e salve as correções antes de concluir o método.');
+      if ((consulta.data || []).some(r => (tipos.includes(r.Tipo) || (String(r.Tipo || '').startsWith('Casa_Metodo_') && window.GemMateriais.nomeMaterial(r.Tipo.slice(12)) === material)) && !['Resolvido','Realizada','Realizada - sem pendência','Realizadas - sem pendência'].includes(r.Status))) throw new Error('Este material tem lições pendentes. Confira e salve as correções antes de concluir o método.');
     }
     const retorno = await banco.from('historico_geral').insert({Aluna:aluna, Data:dataBr(dataIso), Instrutora:instrutora, Tipo:'Material_Prática', Licao_Atual:material, Licao_Casa:'', Status:concluido?'Concluído':'Em andamento', Dificuldades:[], Observacao:concluido?'Método concluído pela professora.':'Método adicionado ou reativado pela professora.'}).select('id');
     if (retorno.error || !retorno.data?.length) throw new Error('Não foi possível confirmar a alteração do material.', {cause:retorno.error});
