@@ -1905,6 +1905,7 @@ async function baixarImagemRodizio(mural, data) {
 function ligarGerador(base, modelo, preparacao, fixasSalvas = []) {
   const manual = $("#rotacao-manual"), opcoes = $("#rotacao-opcoes"), turma = $("#turma-rotacao"), previa = $("#previa-rotacao"), saidas = $("#professoras-saida"), detalhesSaidas = $("#saidas-detalhes");
   const atualizarPrevia = () => {
+    $("#gerar-feedback").innerHTML = "";
     if (!manual.checked) { previa.innerHTML = ""; return; }
     const valor = turma.value;
     // Compatível com a regra do app.py: nesta opção, a turma anterior à
@@ -1914,9 +1915,24 @@ function ligarGerador(base, modelo, preparacao, fixasSalvas = []) {
     const comecaTeoria = individual
       ? preparacao.turmas[(preparacao.turmas.indexOf(valor) - 1 + preparacao.turmas.length) % preparacao.turmas.length]
       : valor;
-    const posicoes = [...Object.keys(preparacao.coletivas), "Prática + Solfejo"], teoria = posicoes.findIndex((item) => window.RodizioEngine.nomeArea(item) === "Teoria");
-    const ordem = [posicoes[teoria], ...posicoes.filter((item) => item !== posicoes[teoria] && item !== "Prática + Solfejo"), "Prática + Solfejo"];
-    previa.innerHTML = `<p class="hint">Para isso, <strong>${escapeHtml(comecaTeoria)}</strong> começa em Teoria.</p><table class="mini-table"><thead><tr><th>Bloco</th>${preparacao.turmas.map((item) => `<th>${escapeHtml(item)}</th>`).join("")}</tr></thead><tbody>${preparacao.blocos.map((bloco, indice) => `<tr><td>${escapeHtml(window.RodizioEngine.horario(bloco, indice))}</td>${preparacao.turmas.map((turmaNome, indiceTurma) => `<td>${escapeHtml(ordem[(indiceTurma - preparacao.turmas.indexOf(comecaTeoria) + indice + ordem.length * 3) % ordem.length])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    const posicoes = [...Object.keys(preparacao.coletivas), "__individual__"];
+    const teoria = posicoes.findIndex(item => window.RodizioEngine.nomeArea(item) === "Teoria");
+    const ordem = teoria >= 0 ? [posicoes[teoria], ...posicoes.filter(item => item !== posicoes[teoria] && item !== "__individual__"), "__individual__"] : posicoes;
+    const rotulo = item => item === "__individual__" ? (preparacao.componentes || []).join(" + ") || "Aulas individuais" : item;
+    previa.innerHTML = '<p class="hint">Edite a atividade de cada turma em cada bloco. Ao escolher uma atividade ocupada, as duas turmas trocam de posição naquele bloco. Cada turma deve passar por todas as atividades.</p><div class="table-wrap"><table class="mini-table"><thead><tr><th>Bloco</th>' + preparacao.turmas.map(t => '<th>' + escapeHtml(t) + '</th>').join('') + '</tr></thead><tbody>' + preparacao.blocos.map((bloco, b) => '<tr><td>' + escapeHtml(window.RodizioEngine.horario(bloco,b)) + '</td>' + preparacao.turmas.map((t, i) => {
+      const inicial = ordem[(i - preparacao.turmas.indexOf(comecaTeoria) + ordem.length * 3) % ordem.length];
+      const valor = posicoes[(posicoes.indexOf(inicial) + b) % posicoes.length];
+      return '<td><select data-rotacao-turma="' + escapeHtml(t) + '" data-rotacao-bloco="' + b + '" aria-label="' + escapeHtml(t + ' — ' + window.RodizioEngine.horario(bloco,b)) + '">' + posicoes.map(p => '<option value="' + escapeHtml(p) + '"' + (p === valor ? ' selected' : '') + '>' + escapeHtml(rotulo(p)) + '</option>').join('') + '</select></td>';
+    }).join('') + '</tr>').join('') + '</tbody></table></div>';
+    previa.querySelectorAll('[data-rotacao-turma]').forEach(campo => {
+      campo.dataset.anterior = campo.value;
+      campo.addEventListener('change', () => {
+        const outro = [...previa.querySelectorAll('[data-rotacao-turma]')].find(c => c !== campo && c.dataset.rotacaoBloco === campo.dataset.rotacaoBloco && c.value === campo.value);
+        if (outro) {outro.value = campo.dataset.anterior; outro.dataset.anterior = outro.value;}
+        campo.dataset.anterior = campo.value;
+        $('#gerar-feedback').innerHTML = '<p class="hint">Rotação alterada. Gere novamente para conferir a nova distribuição.</p>';
+      });
+    });
   };
   const atualizarSaidas = () => { const selecionadas = [...saidas.selectedOptions].map((item) => item.value); detalhesSaidas.innerHTML = selecionadas.map((prof) => `<label>Último bloco disponível — ${escapeHtml(prof)}<select data-saida="${escapeHtml(prof)}">${preparacao.blocos.slice(0, -1).map((bloco, i) => `<option ${i === preparacao.blocos.length - 2 ? "selected" : ""} value="${escapeHtml(window.RodizioEngine.horario(bloco, i))}">${escapeHtml(window.RodizioEngine.horario(bloco, i))}</option>`).join("")}</select></label>`).join(""); };
   manual.addEventListener("change", () => { opcoes.classList.toggle("hidden", !manual.checked); atualizarPrevia(); });
@@ -1937,7 +1953,8 @@ function ligarGerador(base, modelo, preparacao, fixasSalvas = []) {
         turmaTeoria = preparacao.turmas[(preparacao.turmas.indexOf(turmaTeoria) - 1 + preparacao.turmas.length) % preparacao.turmas.length];
       }
     }
-    const resultado = window.RodizioEngine.gerar({ modelo, data: base.data, turmasReais: base.turmas, professoras: base.professoras, folgas: base.folga?.professoras || [], saidas: saidasMap, fixas, coletivas, turmaInicioTeoria: turmaTeoria, usarFixas: Boolean($("#usar-fixas")?.checked), escalasAnteriores: base.escalasAnteriores });
+    const rotacaoTurmas = manual.checked ? Object.fromEntries(preparacao.turmas.map(t => [t, preparacao.blocos.map((_, b) => [...previa.querySelectorAll('[data-rotacao-turma]')].find(c => c.dataset.rotacaoTurma === t && Number(c.dataset.rotacaoBloco) === b)?.value)])) : null;
+    const resultado = window.RodizioEngine.gerar({ modelo, data: base.data, turmasReais: base.turmas, professoras: base.professoras, folgas: base.folga?.professoras || [], saidas: saidasMap, fixas, coletivas, turmaInicioTeoria: turmaTeoria, rotacaoTurmas, usarFixas: Boolean($("#usar-fixas")?.checked), escalasAnteriores: base.escalasAnteriores });
     if (resultado.erros.length) { feedback.innerHTML = `<div class="action-error"><strong>O rodízio não foi salvo.</strong><br>${resultado.erros.map(escapeHtml).join("<br>")}</div>`; return; }
     window.RodizioEngine.preservarAtividadesComplementares(resultado.escala, base.escala);
     feedback.innerHTML = `${muralRodizio(resultado.escala, base.data)}<button id="confirmar-geracao" class="primary-action wide-action" type="button">Confirmar e salvar rodízio</button>`;

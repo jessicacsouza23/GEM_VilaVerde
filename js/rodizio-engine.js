@@ -158,7 +158,7 @@
     return { porAluna: memoria, alunasPorProfessora, salasPorProfessora };
   }
 
-  function gerar({ modelo, data, turmasReais, professoras, folgas = [], saidas = {}, fixas = {}, coletivas = {}, turmaInicioTeoria = null, usarFixas = false, escalasAnteriores = [] }) {
+  function gerar({ modelo, data, turmasReais, professoras, folgas = [], saidas = {}, fixas = {}, coletivas = {}, turmaInicioTeoria = null, rotacaoTurmas = null, usarFixas = false, escalasAnteriores = [] }) {
     const preparado = prepararModelo(modelo, turmasReais);
     const { config, blocos, individuais, coletivas: salasColetivas, componentes, turmas } = preparado;
     const erros = [];
@@ -191,6 +191,22 @@
     const mesmaProf = config.mesma_professora_nos_componentes !== false;
     const regras = config.regras_rodizio || {};
     const posicoes = [...atividadesColetivas, "__individual__"];
+    if (rotacaoTurmas) {
+      blocos.forEach((bloco, indice) => {
+        const usadas = new Set();
+        for (const turma of turmas) {
+          const atividade = rotacaoTurmas[turma]?.[indice];
+          if (!posicoes.includes(atividade)) erros.push(`Escolha uma atividade válida para ${turma} no ${horario(bloco, indice)}.`);
+          else if (usadas.has(atividade)) erros.push(`Duas turmas ocupam ${atividade === '__individual__' ? 'as aulas individuais' : atividade} no ${horario(bloco, indice)}. Ajuste a rotação.`);
+          usadas.add(atividade);
+        }
+      });
+      for (const turma of turmas) {
+        const faltantes = posicoes.filter(p => !(rotacaoTurmas[turma] || []).includes(p));
+        if (faltantes.length) erros.push(`${turma} ficou sem ${faltantes.map(p => p === '__individual__' ? 'aulas individuais' : p).join(', ')}. Ajuste os blocos da rotação.`);
+      }
+      if (erros.length) return { escala: null, erros };
+    }
     const indiceTeoria = posicoes.findIndex((item) => limpar(item) === "TEORIA");
     const inicioManual = {};
     if (turmaInicioTeoria && turmas.includes(turmaInicioTeoria) && indiceTeoria >= 0) {
@@ -210,7 +226,7 @@
     // Mantemos a sequência padrão como primeira opção e só remanejamos se ela
     // criar conflito; a rotação manual continua sendo respeitada literalmente.
     let planoAutomatico = null;
-    if (!turmaInicioTeoria && usarFixas && turmas.length === posicoes.length && turmas.length <= 6) {
+    if (!rotacaoTurmas && !turmaInicioTeoria && usarFixas && turmas.length === posicoes.length && turmas.length <= 6) {
       const permutar = (itens) => itens.length < 2 ? [itens] : itens.flatMap((item, indice) => permutar([...itens.slice(0, indice), ...itens.slice(indice + 1)]).map((restante) => [item, ...restante]));
       const indisponivelNoBloco = (professora, indiceBloco) => estaDeFolga(professora)
         || (saidas[professora] && horarios.indexOf(saidas[professora]) < indiceBloco);
@@ -247,7 +263,7 @@
         const inicial = inicioManual[turma];
         const indiceInicial = planoAutomatico ? planoAutomatico.ordemTurmas.indexOf(turma) : indiceTurma;
         const passo = planoAutomatico ? planoAutomatico.direcao : 1;
-        const posicao = inicial ? posicoes[(posicoes.indexOf(inicial) + indiceBloco) % posicoes.length] : posicoes[(indiceInicial + passo * indiceBloco + posicoes.length * 10) % posicoes.length];
+        const posicao = rotacaoTurmas ? rotacaoTurmas[turma][indiceBloco] : inicial ? posicoes[(posicoes.indexOf(inicial) + indiceBloco) % posicoes.length] : posicoes[(indiceInicial + passo * indiceBloco + posicoes.length * 10) % posicoes.length];
         return { turma, posicao };
       }).sort((a, b) => Number(a.posicao === "__individual__") - Number(b.posicao === "__individual__"));
       // A professora fixa é reservada para a aluna antes da escolha das
