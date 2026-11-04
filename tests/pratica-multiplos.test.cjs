@@ -37,4 +37,8 @@ test('vários materiais, correção e todas as tarefas persistem por aluna e dis
   materiais[0].resultadoLicao='';
   await ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais,licoesCasa});
   assert.match(tabelas.historico_geral.find(r=>r.Tipo==='Analise_Prática'&&r.Licao_Atual.startsWith('Apostila:')).Observacao,/Correção da lição: Resolvido/);
+  await ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais:[materiais[0]],licoesCasa:[licoesCasa[0]],preservarOutrosMateriais:true});
+  assert.equal(tabelas.historico_geral.filter(r=>r.Tipo==='Analise_Prática').length,3);
+  assert.equal(tabelas.historico_geral.filter(r=>r.Tipo==='Casa_Metodo_Volume 1').length,2);
+  assert.equal(tabelas.exercicios_registro.filter(r=>r.material==='Volume 1').length,2);
 });

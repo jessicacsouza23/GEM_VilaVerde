@@ -232,7 +232,7 @@ async function renderMinhasAulas(content) {
       const casasDaDisciplina = tipo => aula.tipo === 'Prática' ? tipo === 'Casa_Apostila' || tipo === 'Casa_Apostila_Prof' || tipo.startsWith('Casa_Metodo_')
         : aula.tipo === 'Teoria' ? ['Casa_Teoria', 'Casa_Teoria_Prof', 'Casa_Apostila_Teoria', 'Casa_Apostila_Teoria_Prof'].includes(tipo)
         : tipo === (aula.tipo === 'Solfejo' ? 'Casa_MSA' : 'Casa_Canto');
-      const itens = registros.filter(r => r.Tipo === tipoAnalise || casasDaDisciplina(String(r.Tipo || '')));
+      const itens = registros.filter(r => r.Tipo === tipoAnalise || (aula.tipo === 'Prática' && r.Tipo === 'Material_Prática') || casasDaDisciplina(String(r.Tipo || '')));
       return itens.length ? '<section class="saved-records"><h4>Registro já salvo nesta aula</h4>' + itens.map(r => {
         const casa = String(r.Tipo).startsWith('Casa_');
         const material = casa ? String(r.Tipo).replace(/^Casa_Metodo_|^Casa_/, '').replace(/_Prof$/, '').replaceAll('_', ' ') : '';
@@ -339,7 +339,7 @@ async function renderMinhasAulas(content) {
       const linhasDificuldadesPratica = (marcadas = []) => dificuldadesPorAula.Prática.map((dificuldade) => `<label><input type="checkbox" data-dificuldade-pratica value="${escapeHtml(dificuldade)}" ${marcadas.includes(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("");
       // A correção com os quatro resultados é exclusiva da Apostila. Os
       // métodos mantêm as dificuldades e o resultado pedagógico próprios.
-      const dificuldadesDoMaterial = (nomeMaterial, marcadas = []) => !nomeMaterial || nomeMaterial === "Apostila" ? "" : `<p class="field-caption">Dificuldades observadas na lição de casa e no material trabalhado:</p><div class="difficulty-checks">${linhasDificuldadesPratica(marcadas)}</div>`;
+      const dificuldadesDoMaterial = (nomeMaterial, marcadas = []) => !nomeMaterial ? "" : `<p class="field-caption">Dificuldades observadas na lição de casa e no material trabalhado:</p><div class="difficulty-checks">${linhasDificuldadesPratica(marcadas)}</div>`;
       const novaLinhaExercicio = (exercicio = {}) => `<div class="exercise-row"><label>Lição/exercício trabalhado<input data-exercicio-nome value="${escapeHtml(exercicio.exercicio || "")}" placeholder="Ex.: Estudo 21, exercício 3"></label><div class="difficulty-checks compact">${dificuldadesPorAula.Prática.map((dificuldade) => `<label><input type="checkbox" data-exercicio-dificuldade value="${escapeHtml(dificuldade)}" ${(exercicio.dificuldades || []).includes(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("")}</div><button class="icon-action remover-exercicio" type="button" title="Remover lição/exercício">×</button></div>`;
       const conectarExercicios = (cartao) => {
         cartao.querySelector("[data-adicionar-exercicio]").addEventListener("click", () => {
@@ -425,7 +425,14 @@ async function renderMinhasAulas(content) {
       };
       for (const registro of (materiaisRegistrados.length ? materiaisRegistrados : [{ material: materialSalvo || "", conteudo: conteudoSalvo, dificuldades: dificuldadesSalvas }])) await adicionarMaterial(registro);
       montarLicoesCasa();
-      $("#adicionar-material-pratica").addEventListener("click", () => adicionarMaterial());
+      try {
+        const dadosMateriais = await window.GemData.dadosAluna(aula.alunas[0]);
+        await window.GemMateriais.montar({area:areaRegistro, opcoes:opcoesPratica, historico:dadosMateriais.historico, adicionar:adicionarMaterial, linhaCasa:linhaLicaoCasa, conectarCasas:conectarLicoesCasa, salvarEstado:(material,concluido)=>window.GemData.estadoMaterial({aluna:aula.alunas[0],material,concluido,instrutora:state.name,dataIso:$('#agenda-data').value})});
+      } catch (erro) {
+        $('#registro-retorno').innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))} Reabra a aula para carregar os materiais com segurança.</div>`;
+        $('#salvar-registro-aula').disabled = true;
+        return;
+      }
     } else if (aula.tipo === "Teoria") {
       const atualizarLicaoTeoria = () => {
         const folha = areaRegistro.querySelector('input[name="tipo-casa-teoria"]:checked').value === "folha";
@@ -478,8 +485,8 @@ async function renderMinhasAulas(content) {
       botao.disabled = true;
       try {
         if (aula.tipo === "Prática") {
-          const licoesCasa = [...areaRegistro.querySelectorAll("[data-casa-item]")].map((linha) => ({ material: linha.querySelector("[data-casa-material]")?.value || "", licaoCasa: linha.querySelector("[data-casa-conteudo]")?.value.trim() || "", observacao: linha.querySelector("[data-casa-observacao]")?.value.trim() || "" }));
-          const materiais = [...areaRegistro.querySelectorAll(".practice-material-card")].map((cartao) => {
+          const licoesCasa = [...areaRegistro.querySelectorAll("[data-casa-item]")].filter(linha => linha.dataset.ignorarMaterial !== 'true').map((linha) => ({ material: linha.querySelector("[data-casa-material]")?.value || "", licaoCasa: linha.querySelector("[data-casa-conteudo]")?.value.trim() || "", observacao: linha.querySelector("[data-casa-observacao]")?.value.trim() || "" }));
+          const materiais = [...areaRegistro.querySelectorAll(".practice-material-card")].filter(c => c.dataset.ignorarMaterial !== 'true').map((cartao) => {
             const correcao = cartao.querySelector("[data-pratica-correcao]");
             const resultado = cartao.querySelector("[data-pratica-resultado]");
             return {
@@ -496,7 +503,7 @@ async function renderMinhasAulas(content) {
           });
           const licoesRepetidas = materiais.map((item) => `${item.material}|${item.conteudo}`).filter((chave, indice, lista) => lista.indexOf(chave) !== indice);
           if (licoesRepetidas.length) throw new Error("Cada registro deve ter uma lição diferente. Use outro conteúdo ou remova o duplicado.");
-          await window.GemData.salvarRegistrosPratica({ dataIso: $("#agenda-data").value, instrutora: state.name, aluna: aula.alunas[0], materiais, licoesCasa, observacao: $("#registro-observacao-pratica").value.trim() });
+          await window.GemData.salvarRegistrosPratica({ dataIso: $("#agenda-data").value, instrutora: state.name, aluna: aula.alunas[0], materiais, licoesCasa, preservarOutrosMateriais: true, observacao: $("#registro-observacao-pratica").value.trim() });
         } else {
           let casaTipo = $("#registro-casa-tipo")?.value || "", licaoCasa = $("#registro-casa")?.value || "";
           if (aula.tipo === "Solfejo") casaTipo = "MSA";
@@ -1750,6 +1757,8 @@ async function renderAnalitico(content, opcoes = {}) {
     const dificuldadesGrafico = [...new Set(listaDificuldades)].map((dificuldade) => ({ rotulo: dificuldade, valor: aulas.reduce((total, aula) => total + dificuldades(aula.Dificuldades).filter((item) => item === dificuldade).length, 0), cor: "#a76486" })).sort((a, b) => b.valor - a.valor).slice(0, 8);
     destino.innerHTML = `<section class="analytics-summary"><h3>👤 Prontuário — ${escapeHtml(aluna)}</h3><div class="grid"><div class="metric"><strong>${chamadas.length ? Math.round((presentes + justificadas * .5) / chamadas.length * 100) : 0}%</strong><span>Frequência ponderada</span></div><div class="metric"><strong>${faltas} / ${justificadas}</strong><span>Faltas / justificadas</span></div><div class="metric"><strong>${aproveitamento}%</strong><span>Aproveitamento nas aulas</span></div><div class="metric"><strong>${pendentes.length}</strong><span>Lições pendentes</span></div><div class="metric"><strong>${constanciaEstudo}%</strong><span>Constância de estudo</span></div></div><div class="analytics-columns"><section><h4>⚠ Dificuldades registradas</h4>${listaDificuldades.length ? `<ul>${listaDificuldades.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "<p>Sem dificuldades registradas no período.</p>"}</section><section><h4>📚 Lições de casa</h4>${casas.length ? casas.map((item) => `<p class="homework-line"><strong>${escapeHtml(item.Tipo.replace("Casa_", ""))}:</strong> ${escapeHtml(item.Licao_Casa || "—")} <small>${escapeHtml(item.Status || "Pendente")}</small></p>`).join("") : "<p>Nenhuma lição registrada no período.</p>"}</section><section><h4>✅ Estudo em casa</h4>${estudos.length ? `<p><strong>${diasEstudados}</strong> dia(s) com estudo registrado em ${estudos.length} lançamento(s).</p>${estudos.slice(0, 10).map((item) => `<p class="homework-line"><strong>${escapeHtml(item.data || item.Data || "—")}:</strong> ${escapeHtml((item.horarios || []).join(" · ") || "sem horário informado")}</p>`).join("")}` : "<p>Não há estudo informado no período.</p>"}</section></div><section class="feedback-panel"><h4>👩‍🏫 Feedback das professoras e Secretaria</h4>${aulas.length ? aulas.map((item) => `<article><strong>${escapeHtml(disciplinaAnalise(item.Tipo) || String(item.Tipo).replace("Analise_", ""))} — ${escapeHtml(item.Data || "")}</strong>${item.Instrutora ? ` · ${escapeHtml(item.Instrutora)}` : ""}<p>${escapeHtml(item.Licao_Atual || "Sem conteúdo informado")}</p>${item.Observacao ? `<p class="report-note">📝 ${escapeHtml(item.Observacao)}</p>` : ""}</article>`).join("") : "<p>Nenhuma aula registrada no período.</p>"}</section></section>`;
     const caixaDificuldades = destino.querySelector(".analytics-columns > section:first-child");
+    const eventosMateriais = registros.filter(r => r.Tipo === 'Material_Prática');
+    if (eventosMateriais.length) destino.insertAdjacentHTML('beforeend', '<section class="saved-records"><h4>Materiais: início, conclusão e retomada</h4>' + eventosMateriais.map(r => '<article><strong>' + escapeHtml(r.Licao_Atual) + '</strong><span>' + escapeHtml(r.Status) + ' · ' + escapeHtml(r.Data) + ' · ' + escapeHtml(r.Instrutora) + '</span></article>').join('') + '</section>');
     if (caixaDificuldades) caixaDificuldades.innerHTML = `<h4>⚠ Dificuldades registradas</h4>${graficoBarras("Ocorrências no período", dificuldadesGrafico)}`;
     destino.querySelector(".analytics-summary > .grid")?.insertAdjacentHTML("afterend", `<section class="analytics-charts">${graficoAssiduidade(chamadas)}${graficoBarras("Status de frequência", [{ rotulo: "Presenças", valor: presentes, cor: "#3a9d6d" }, { rotulo: "Faltas", valor: faltas, cor: "#d65b70" }, { rotulo: "Justificadas", valor: justificadas, cor: "#d6a33a" }])}</section>`);
     const objetivoAtual = (dados.objetivos || []).find((item) => item.aluna === aluna) || {};
