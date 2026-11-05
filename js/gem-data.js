@@ -517,19 +517,13 @@
     if (fim < inicio) throw new Error("A data final não pode ser anterior à data inicial.");
     const banco = await obterCliente();
     const existentes = await dadosCoordenacoesProfessoras();
-    // Uma professora coordenadora por vez. Ao trocar a responsável, o período
-    // anterior termina no dia anterior ao início do novo período, sem apagar
-    // o histórico de quem já coordenou.
-    const diaAnterior = new Date(`${inicio}T12:00:00`);
-    diaAnterior.setDate(diaAnterior.getDate() - 1);
-    const fimAnterior = diaAnterior.toISOString().slice(0, 10);
-    const sobrepostas = existentes.filter((item) => item.inicio <= fim && item.fim >= inicio);
-    for (const item of sobrepostas) {
-      const { error } = await banco.from("coordenacoes_professoras").update({ fim: fimAnterior }).eq("id", item.id);
-      if (error) throw new Error("Não foi possível encerrar a coordenação anterior.", { cause: error });
-    }
-    const { error } = await banco.from("coordenacoes_professoras").insert({ professora: String(professora).trim(), inicio, fim, periodo: String(periodo || "Coordenação").trim() || "Coordenação" });
+    // Coordenações simultâneas são independentes; adicionar não encerra as demais.
+    const duplicada = existentes.some(item => normalizar(item.professora) === normalizar(professora) && item.inicio <= fim && item.fim >= inicio);
+    if (duplicada) throw new Error("Esta professora já possui uma coordenação neste período. Confira as datas ou escolha outra professora.");
+    const { data, error } = await banco.from("coordenacoes_professoras").insert({ professora: String(professora).trim(), inicio, fim, periodo: String(periodo || "Coordenação").trim() || "Coordenação" }).select("*");
     if (error) throw new Error("Não foi possível definir a professora coordenadora.", { cause: error });
+    if (!data?.length) throw new Error("O banco não confirmou a nova coordenadora. Recarregue a lista antes de tentar novamente.");
+    return data[0];
   }
 
   async function professoraEhCoordenadora(nome, dataIso = new Date().toISOString().slice(0, 10)) {
