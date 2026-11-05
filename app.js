@@ -1877,6 +1877,14 @@ async function renderAnalitico(content, opcoes = {}) {
     const abaAplicada = aba, inicioAplicado = $('#analise-inicio').value, fimAplicado = $('#analise-fim').value;
     const alunaAplicada = $('#analise-aluna').value;
     const nomes = abaAplicada === 'quadro' ? dados.alunas.filter(a=>a.ativo !== false).map(a=>a.nome) : [alunaAplicada];
+    if (abaAplicada !== 'boletim') {
+      const alertas = window.AlertasLicoes.calcular(dados.historico, {inicio:inicioAplicado, fim:fimAplicado, alunas:nomes});
+      const dataAlerta = data => data.split('-').reverse().join('/');
+      destino.insertAdjacentHTML('beforeend', '<section class="feedback-panel"><h3>⚠ Lições repetidas — revisar</h3><p class="hint">Mesma lição em 3 ou mais sábados com presença confirmada e registro do material, sem conclusão registrada. Faltas, justificativas e dias sem registro não somam. A contagem pode começar antes do período; são exibidas sequências com registro no período escolhido. Confirme se a repetição foi planejada.</p>' + (alertas.length ? ['Prática','Teoria','Solfejo','Solfejo Melódico'].map(disciplina => {
+        const itens = alertas.filter(a => a.disciplina === disciplina);
+        return itens.length ? '<h4>' + escapeHtml(disciplina) + '</h4>' + itens.map(a => '<article class="report-record"><strong>' + escapeHtml(a.aluna) + '</strong><p><strong>' + escapeHtml(a.material) + '</strong> · ' + escapeHtml(a.licao) + '</p><p>' + a.sabados + ' sábados com presença · Desde ' + dataAlerta(a.inicio) + ' · Último registro: ' + dataAlerta(a.ultima) + '</p><small>Datas: ' + a.datas.map(dataAlerta).join(' · ') + '</small></article>').join('') : '';
+      }).join('') : '<p>Nenhuma lição atingiu o critério neste período.</p>') + '</section>');
+    }
     const registrosPdf = dados.historico.filter(r=>nomes.includes(r.Aluna) && dataRegistro(r.Data)>=inicioAplicado && dataRegistro(r.Data)<=fimAplicado);
     const filtrosPdf = `${{prontuario:'Prontuário individual',quadro:'Quadro de desempenho',boletim:'Boletim'}[abaAplicada]} | ${abaAplicada==='quadro'?'Todas as alunas ativas':alunaAplicada}\nPeríodo aplicado: ${inicioAplicado} a ${fimAplicado}${abaAplicada==='boletim'?'\nO boletim atual exibe todas as notas da aluna, sem recorte por data.':''}`;
     destino.insertAdjacentHTML('beforeend', '<section class="feedback-panel" data-exportacao><p>Baixe as informações e os gráficos desta aba com os filtros aplicados. Ao final será incluída uma síntese pedagógica automática para revisão da equipe.</p><button id="baixar-analitico-pdf" class="primary-action" type="button">Baixar relatório analítico em PDF</button><div id="analitico-pdf-retorno" role="status"></div></section>');
