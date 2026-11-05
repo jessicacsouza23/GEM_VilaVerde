@@ -1,5 +1,5 @@
-const CACHE = "gem-vila-verde-v53";
-const FILES = ["./", "./index.html", "./styles.css", "./js/materiais-aluna.js?v=20261103-unico", "./app.js?v=20261104-rotacao", "./js/analitico-pdf.js?v=20261023", "./js/relatorio-contexto.js?v=20261014-ausencias", "./js/relatorio-pdf.js?v=20261014-alunas", "./manifest.webmanifest", "./icon.svg", "./js/gem-data.js?v=20261103-material-unico", "./js/rodizio-engine.js?v=20261104-rotacao", "./js/pwa-identity.js", "./js/busca-ativa.js?v=20261008-4"];
+const CACHE = "gem-vila-verde-v54";
+const FILES = ["./", "./index.html", "./styles.css", "./js/materiais-aluna.js?v=20261103-unico", "./app.js?v=20261104-quadro-imagem", "./js/analitico-pdf.js?v=20261023", "./js/relatorio-contexto.js?v=20261014-ausencias", "./js/relatorio-pdf.js?v=20261014-alunas", "./manifest.webmanifest", "./icon.svg", "./js/gem-data.js?v=20261103-material-unico", "./js/rodizio-engine.js?v=20261104-rotacao", "./js/pwa-identity.js", "./js/busca-ativa.js?v=20261008-4"];
 self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting())));
 self.addEventListener("activate", (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("gem-vila-verde-") && key !== CACHE).map((key) => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", (event) => {

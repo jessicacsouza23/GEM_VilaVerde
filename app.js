@@ -1752,6 +1752,18 @@ async function renderAnalitico(content, opcoes = {}) {
         return `${dias ? rosto : '—'} ${percentual}%<br><small>${dias} de ${diasPeriodo} dias</small>${!dias ? '<br><small>Sem estudo registrado</small>' : ''}`;
       };
       destino.innerHTML = `<h3>🏆 Quadro de desempenho</h3><p class="hint">A medalha usa a porcentagem de aulas sem dificuldades registradas no período escolhido. A última coluna mostra os dias com estudo registrado pela aluna em relação a todos os dias do período, incluindo início e fim. Vários horários no mesmo dia contam uma vez. Dias sem registro não comprovam ausência de estudo.</p><div class="table-wrap"><table class="scale-table performance-table"><thead><tr><th>Aluna</th>${disciplinas.map((disciplina) => `<th>${escapeHtml(disciplina)}</th>`).join("")}<th>Estudo em casa</th></tr></thead><tbody>${dados.alunas.filter((aluna) => aluna.ativo !== false).map((aluna) => `<tr><th>${escapeHtml(aluna.nome)}</th>${disciplinas.map((disciplina) => { const resultado = classificacao(periodo.filter((registro) => registro.Aluna === aluna.nome && disciplinaAnalise(registro.Tipo) === disciplina)); return `<td>${resultado.icone} ${resultado.nome}${resultado.nota !== null ? `<br><small>${resultado.nota}%</small>` : ""}</td>`; }).join("")}<td>${celulaEstudo(aluna.nome)}</td></tr>`).join("")}</tbody></table></div>`;
+      const inicioQuadro = $('#analise-inicio').value, fimQuadro = $('#analise-fim').value;
+      destino.insertAdjacentHTML('beforeend', '<div class="scale-actions"><button id="baixar-imagem-quadro" class="secondary-action" type="button">📷 Baixar imagem do quadro</button><span id="imagem-quadro-feedback" role="status"></span></div>');
+      const tabelaQuadro = destino.querySelector('.performance-table');
+      $('#baixar-imagem-quadro').onclick = async () => {
+        const botao = $('#baixar-imagem-quadro'), feedback = $('#imagem-quadro-feedback');
+        botao.disabled = true; feedback.textContent = 'Preparando imagem…';
+        try {
+          await baixarImagemDesempenho(tabelaQuadro, {inicio:inicioQuadro, fim:fimQuadro, gem:state.gem});
+          feedback.textContent = 'Imagem pronta. Download iniciado.';
+        } catch (erro) { feedback.textContent = mensagemErro(erro); }
+        finally { botao.disabled = false; }
+      };
       return;
     }
     const aluna = $("#analise-aluna").value, registros = periodo.filter((registro) => registro.Aluna === aluna), chamadas = registros.filter((registro) => registro.Tipo === "Chamada"), aulas = registros.filter(ehRegistroPedagogico), casas = registros.filter((registro) => String(registro.Tipo || "").startsWith("Casa_"));
@@ -1876,6 +1888,39 @@ async function renderAnalitico(content, opcoes = {}) {
 
 function rodizioSalvoMarkup(base) {
   return `<section class="section-title"><div><h2>Rodízio salvo</h2><p>Este é o retrato da data. Use “Corrigir” somente se houve erro de lançamento; a versão anterior ficará registrada.</p></div><div class="scale-actions"><button id="ampliar-rodizio" class="secondary-action" type="button">Ampliar</button><button id="baixar-rodizio" class="primary-action" type="button">Baixar imagem</button><button id="editar-rodizio" class="secondary-action" type="button">Corrigir rodízio</button></div></section>${muralRodizio(base.escala, base.data)}<div id="edicao-rodizio"></div>`;
+}
+
+async function baixarImagemDesempenho(tabela, {inicio, fim, gem}) {
+  if (!window.html2canvas) throw new Error('A ferramenta de imagem ainda está carregando. Aguarde alguns segundos e tente novamente.');
+  if (!tabela) throw new Error('Atualize o quadro de desempenho antes de baixar a imagem.');
+  const area = document.createElement('section');
+  area.style.cssText = 'position:fixed;left:-20000px;top:0;width:1320px;box-sizing:border-box;padding:32px;background:#fff;color:#24354b;';
+  area.innerHTML = `<h2>🏆 Quadro de desempenho — ${escapeHtml(gem || 'GEM Musical')}</h2><p>Período: ${escapeHtml(inicio.split('-').reverse().join('/'))} a ${escapeHtml(fim.split('-').reverse().join('/'))}</p>`;
+  const copia = tabela.cloneNode(true);
+  copia.style.cssText = 'width:100%;min-width:0;table-layout:fixed;';
+  copia.querySelectorAll('th,td').forEach(c => { c.style.whiteSpace = 'normal'; c.style.overflowWrap = 'anywhere'; c.style.position = 'static'; });
+  area.append(copia);
+  const legenda = document.createElement('p');
+  legenda.textContent = 'Medalhas: aulas sem dificuldades registradas. Estudo em casa: dias com estudo informado pela aluna / dias do período. Ausência de registro não comprova ausência de estudo.';
+  area.append(legenda);
+  document.body.append(area);
+  let url;
+  try {
+    if (document.fonts?.ready) await document.fonts.ready;
+    const altura = area.scrollHeight;
+    const escala = Math.min(2, 16000 / altura);
+    if (escala < 0.5) throw new Error('O quadro é muito grande para uma única imagem. Use o relatório em PDF para incluir todas as alunas.');
+    const canvas = await window.html2canvas(area, {scale:escala,backgroundColor:'#ffffff',width:1320,height:altura,windowWidth:1400,windowHeight:altura,scrollX:0,scrollY:0});
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('Não foi possível preparar a imagem. Tente novamente ou baixe o relatório em PDF.');
+    url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = `Quadro_de_desempenho_${inicio}_a_${fim}.png`;
+    document.body.append(link); link.click(); link.remove();
+  } finally {
+    area.remove();
+    if (url) setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
 }
 
 async function baixarImagemRodizio(mural, data) {
