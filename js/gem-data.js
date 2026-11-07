@@ -466,7 +466,11 @@
       return resultado;
     };
     const [alunas, professoras, secretarias, secretariasCentralizadas] = await Promise.all([
-      consultar("alunas", "nome,turma,login,ativo,foto_path", ["turma", "nome"]),
+      (async () => {
+        const resultado = await consultar("alunas", "nome,turma,login,ativo,foto_path,comum,data_inicio", ["turma", "nome"]);
+        if (["42703", "PGRST204"].includes(resultado.error?.code) && /comum|data_inicio/i.test(resultado.error.message || '')) return consultar("alunas", "nome,turma,login,ativo,foto_path", ["turma", "nome"]);
+        return resultado;
+      })(),
       consultar("professoras", "nome,login,ativo,foto_path", ["nome"]),
       consultar("secretarias", "nome,ativo", ["nome"]),
       plataforma ? plataforma.rpc("listar_secretarias_gem_publicas", { p_slug: contextoGem.slug }) : Promise.resolve({ data: [] })
@@ -539,10 +543,23 @@
   }
 
   async function salvarPessoa(tipo, dados, id, nomeAtual = "") {
+    if (tipo === 'aluna') {
+      dados = {...dados};
+      if ('comum' in dados) dados.comum = String(dados.comum || '').trim() || null;
+      if ('data_inicio' in dados) {
+        dados.data_inicio = String(dados.data_inicio || '').trim() || null;
+        if (dados.data_inicio) {
+          const data = new Date(dados.data_inicio + 'T12:00:00Z');
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(dados.data_inicio) || !Number.isFinite(data.getTime()) || data.toISOString().slice(0,10) !== dados.data_inicio) throw new Error('Informe uma data de início válida ou deixe o campo vazio.');
+        }
+      }
+    }
     const banco = await obterCliente(); const tabela = ({ aluna: "alunas", professora: "professoras", secretaria: "secretarias" })[tipo];
     if (!tabela) throw new Error("Tipo de pessoa inválido.");
     const consulta = id ? banco.from(tabela).update(dados).eq("id", id) : nomeAtual ? banco.from(tabela).update(dados).eq("nome", nomeAtual) : banco.from(tabela).insert(dados);
-    const { error } = await consulta; if (error) throw new Error(error.message || "Não foi possível salvar.");
+    const { error } = await consulta;
+    if (error && tipo === 'aluna' && ['42703','PGRST204'].includes(error.code) && /comum|data_inicio/i.test(error.message || '')) throw new Error('Não foi possível salvar. Execute a migration 014_alunas_comum_data_inicio.sql no Supabase deste GEM para habilitar Comum e Data de início.');
+    if (error) throw new Error(error.message || "Não foi possível salvar.");
   }
 
   async function enviarFotoPessoa(tipo, arquivo) {
