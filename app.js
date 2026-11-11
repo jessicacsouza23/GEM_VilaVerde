@@ -2059,9 +2059,22 @@ async function abrirEdicaoRodizio(base, modelo) {
       if (d.responsavel && !responsaveis.some(r => r.nome === d.responsavel && r.papel === d.responsavel_papel)) responsaveis.push({ nome: d.responsavel, papel: d.responsavel_papel, rotulo: `${d.responsavel} (responsável salva)` });
     });
     const horarios = [...new Set(base.escala.flatMap(linha => Object.keys(linha).filter(chave => !['Aluna', '_detalhes'].includes(chave))))];
-    destino.innerHTML = `<section class="panel edit-scale"><h3>Corrigir rodízio</h3><p>Os detalhes pedagógicos e as turmas são preservados.</p><div class="table-wrap"><table class="scale-table"><thead><tr><th>Aluna</th>${horarios.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${base.escala.map((linha, i) => `<tr><th>${escapeHtml(linha.Aluna)}</th>${horarios.map(h => `<td>${linha._detalhes?.[h]?.atividade_secretaria ? 'Editar no quadro de atividades abaixo' : `<input data-escala="${i}" data-hora="${escapeHtml(h)}" value="${escapeHtml(linha[h] || '')}">`}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+    const camposExtra = (extra, i) => {
+      const d = extra.detalhe;
+      return '<div data-extra="' + i + '"><label>Atividade<input data-extra-atividade value="' + escapeHtml(d.tipo) + '"></label><label>Sala<input data-extra-sala value="' + escapeHtml(d.sala || 'Local a definir') + '"></label><label>Responsável<select data-extra-responsavel>' + responsaveis.map((r,j) => '<option value="' + j + '" ' + (r.nome === (d.responsavel || '') && r.papel === d.responsavel_papel ? 'selected' : '') + '>' + escapeHtml(r.rotulo) + '</option>').join('') + '</select></label></div>';
+    };
+    destino.innerHTML = `<section class="panel edit-scale"><h3>Corrigir rodízio</h3><p>Edite sala e professora na tabela (Sala | Professora). Nos atendimentos complementares, escolha também a atividade. A substituição vale apenas para este sábado; o vínculo fixo da aluna é preservado.</p><div class="table-wrap"><table class="scale-table"><thead><tr><th>Aluna</th>${horarios.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${base.escala.map((linha, i) => `<tr><th>${escapeHtml(linha.Aluna)}</th>${horarios.map(h => `<td>${linha._detalhes?.[h]?.atividade_secretaria ? camposExtra(extras.find(e => e.indice === i && e.hora === h), extras.findIndex(e => e.indice === i && e.hora === h)) : `<input data-escala="${i}" data-hora="${escapeHtml(h)}" value="${escapeHtml(linha[h] || '')}">`}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
       ${extras.length ? `<h3>Atividades complementares — fora das turmas</h3><p>Você pode encaminhar para uma Secretaria ou professora, inclusive para atendimento compartilhado com outra aluna. Confira sala, horário e disponibilidade antes de salvar. A turma de origem não será alterada.</p>${extras.map((extra, i) => `<article class="compact-panel" data-extra="${i}"><h4>${escapeHtml(extra.aluna)} · ${escapeHtml(extra.hora)}</h4><div class="form-grid"><label>Nome da atividade<input data-extra-atividade value="${escapeHtml(extra.detalhe.tipo)}"></label><label>Sala<input data-extra-sala value="${escapeHtml(extra.detalhe.sala || 'Local a definir')}"></label><label>Responsável<select data-extra-responsavel>${responsaveis.map((r, j) => `<option value="${j}" ${r.nome === (extra.detalhe.responsavel || '') && r.papel === extra.detalhe.responsavel_papel ? 'selected' : ''}>${escapeHtml(r.rotulo)}</option>`).join('')}</select></label></div></article>`).join('')}` : ''}
       <label>Motivo da correção<input id="motivo-edicao" placeholder="Ex.: atividade encaminhada para atendimento compartilhado"></label><button id="salvar-edicao" class="primary-action" type="button">Salvar correção</button><div id="edicao-retorno" role="status"></div></section>`;
+    const sincronizarExtra = event => {
+      const campo = event.target, editor = campo.closest('[data-extra]');
+      if (!editor) return;
+      const atributo = ['data-extra-atividade', 'data-extra-sala', 'data-extra-responsavel'].find(a => campo.hasAttribute(a));
+      if (!atributo) return;
+      destino.querySelectorAll('[data-extra="' + editor.dataset.extra + '"] [' + atributo + ']').forEach(outro => { outro.value = campo.value; });
+    };
+    destino.oninput = sincronizarExtra;
+    destino.onchange = sincronizarExtra;
     $('#salvar-edicao').onclick = async () => {
       const botao = $('#salvar-edicao'); botao.disabled = true;
       try {
@@ -2074,6 +2087,7 @@ async function abrirEdicaoRodizio(base, modelo) {
         });
         await window.GemData.salvarEscala($('#rodizio-data').value, corrigida, modelo?.id || base.modeloEscala, $('#motivo-edicao').value);
         await renderRodizio($('#page-content'));
+        $('#edicao-rodizio').innerHTML = '<div class="action-ok" role="status">Correção do rodízio salva com sucesso.</div>';
       } catch (error) { $('#edicao-retorno').innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
       finally { botao.disabled = false; }
     };

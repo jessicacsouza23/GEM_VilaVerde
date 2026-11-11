@@ -52,3 +52,17 @@ test('agenda encaminha somente à professora escolhida, permitindo atendimento c
   assert.equal(agenda.length, 2);
   assert.deepEqual(Array.from(agenda, a=>a.alunas[0]), ['Aluna 0','Regular']);
 });
+
+test('folga da professora fixa permite substituta apenas naquele sábado', () => {
+  const fixas = {'aluna 0':'Ana'};
+  const r = engine.gerar({...entrada(1), usarFixas:true, fixas, folgas:['Ana']});
+  assert.equal(r.erros.length, 0, r.erros.join('\n'));
+  const hora = Object.keys(r.escala[0]._detalhes)[0];
+  assert.match(r.escala[0][hora], /Bia/);
+  assert.equal(fixas['aluna 0'], 'Ana');
+  const seguinte = engine.gerar({...entrada(1), usarFixas:true, fixas});
+  assert.match(seguinte.escala[0][hora], /Ana/);
+  const semEquipe = engine.gerar({...entrada(1), usarFixas:true, fixas, folgas:['Ana','Bia']});
+  assert.equal(semEquipe.erros.length, 0);
+  assert.equal(extras(semEquipe.escala).length, 1);
+});

@@ -177,6 +177,8 @@
     // façam uma professora de folga voltar para a escala.
     const folgasNormalizadas = new Set((Array.isArray(folgas) ? folgas : []).map(limpar));
     const estaDeFolga = (professora) => folgasNormalizadas.has(limpar(professora));
+    // Suspende o vínculo nesta geração sem alterar o cadastro permanente.
+    fixas = Object.fromEntries(Object.entries(fixas).filter(([, professora]) => !estaDeFolga(professora)));
     const disponiveis = professoras.filter((professora) => !estaDeFolga(professora));
     const todasAlunas = turmas.flatMap((turma) => turmasReais[turma] || []);
     const alunasDaRoda = todasAlunas.filter((aluna) => !(usarFixas && fixas[String(aluna).trim().toLowerCase()]));
