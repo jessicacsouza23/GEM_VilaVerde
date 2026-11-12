@@ -1,5 +1,5 @@
-const CACHE = "gem-vila-verde-v61";
-const FILES = ["./", "./index.html", "./styles.css", "./js/alertas-licoes.js?v=20261105", "./js/materiais-aluna.js?v=20261103-unico", "./app.js?v=20261111-rodizio-edicao", "./js/analitico-pdf.js?v=20261023", "./js/relatorio-contexto.js?v=20261014-ausencias", "./js/relatorio-pdf.js?v=20261014-alunas", "./manifest.webmanifest", "./icon.svg", "./js/gem-data.js?v=20261107-cadastro-alunas", "./js/rodizio-engine.js?v=20261111-rodizio-edicao", "./js/pwa-identity.js", "./js/busca-ativa.js?v=20261008-4"];
+const CACHE = "gem-vila-verde-v62";
+const FILES = ["./", "./index.html", "./styles.css", "./js/alertas-licoes.js?v=20261105", "./js/materiais-aluna.js?v=20261103-unico", "./app.js?v=20261111-rodizio-sequencia", "./js/analitico-pdf.js?v=20261023", "./js/relatorio-contexto.js?v=20261014-ausencias", "./js/relatorio-pdf.js?v=20261014-alunas", "./manifest.webmanifest", "./icon.svg", "./js/gem-data.js?v=20261107-cadastro-alunas", "./js/rodizio-engine.js?v=20261111-rodizio-edicao", "./js/pwa-identity.js", "./js/busca-ativa.js?v=20261008-4"];
 self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting())));
 self.addEventListener("activate", (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("gem-vila-verde-") && key !== CACHE).map((key) => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", (event) => {

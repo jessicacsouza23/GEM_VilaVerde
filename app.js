@@ -1009,20 +1009,20 @@ function muralRodizio(escala, data) {
   const cores = ["#dbeafe", "#dcfce7", "#fef9c3", "#fee2e2", "#f3e8ff", "#ccfbf1", "#e0f2fe", "#ffedd5", "#e0e7ff"];
   const colunas = horarios.map((horario) => {
     const grupos = new Map();
-    escala.forEach((linha) => { if (linha._detalhes?.[horario]?.atividade_secretaria) return; const valor = String(linha[horario] || ""); if (valor) (grupos.get(valor) || grupos.set(valor, []).get(valor)).push(linha); });
+    escala.forEach((linha) => { if (linha._detalhes?.[horario]?.atividade_secretaria && linha._detalhes[horario].responsavel_papel !== 'Professora') return; const valor = String(linha[horario] || ""); if (valor) (grupos.get(valor) || grupos.set(valor, []).get(valor)).push(linha); });
     const cards = [...grupos.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([valor, linhas], indice) => {
       const detalhe = linhas[0]._detalhes?.[horario] || {};
       const sala = valor.split("|")[0].trim();
       const professora = valor.split("|").slice(1).join("|").trim();
       const turma = detalhe.turma || "";
-      const coletiva = !detalhe.individual && (/SALA 8|SALA 9/i.test(sala) || linhas.length > 1);
+      const coletiva = !linhas.some(linha => linha._detalhes?.[horario]?.individual || (linha._detalhes?.[horario]?.atividade_secretaria && linha._detalhes[horario].responsavel_papel === 'Professora')) && (/SALA 8|SALA 9/i.test(sala) || linhas.length > 1);
       const titulo = coletiva && /SALA 9/i.test(sala) ? `${sala} | ${professora} (Solfejo Melódico)` : coletiva && /SALA 8/i.test(sala) ? `${sala} | ${professora} (Teoria)` : `${sala} | ${professora}`;
       const texto = coletiva ? turma : linhas.map((linha) => linha.Aluna).join(" + ");
       return `<article class="mural-card" style="background:${cores[Math.min(indice, cores.length - 1)]}"><strong>${escapeHtml(titulo)}</strong><span>${escapeHtml(texto)}</span></article>`;
     }).join("");
     return `<section class="mural-column"><h3>${escapeHtml(horario)}</h3>${cards}</section>`;
   }).join("");
-  const extras = escala.flatMap(linha => Object.entries(linha._detalhes || {}).filter(([, d]) => d.atividade_secretaria).map(([hora, d]) => `<article class="mural-card"><strong>${escapeHtml(linha.Aluna)}</strong><span>${escapeHtml(hora)}</span><span>${escapeHtml(d.tipo)}</span><span>${escapeHtml(d.sala || 'Local a definir')} · ${escapeHtml(d.responsavel || 'Secretarias — responsável a definir')}</span></article>`)).join('');
+  const extras = escala.flatMap(linha => Object.entries(linha._detalhes || {}).filter(([, d]) => d.atividade_secretaria && d.responsavel_papel !== 'Professora').map(([hora, d]) => `<article class="mural-card"><strong>${escapeHtml(linha.Aluna)}</strong><span>${escapeHtml(hora)}</span><span>${escapeHtml(d.tipo)}</span><span>${escapeHtml(d.sala || 'Local a definir')} · ${escapeHtml(d.responsavel || 'Secretarias — responsável a definir')}</span></article>`)).join('');
   return `<div class="mural-scroll"><section class="mural-print" id="mural-rodizio"><header><h2>Rodízio Geral das aulas - ${escapeHtml(state.gem || "GEM Vila Verde")}</h2><p>Data: ${escapeHtml(data)}</p><div class="mural-horarios-gerais"><span>Horário do café: 08:00h até 08:30h</span><span>Oração: 08:35h até 08:45h</span></div></header><div class="mural-columns">${colunas}</div>${extras ? `<section><h3>Atividades complementares — fora das turmas</h3><div class="mural-columns">${extras}</div></section>` : ''}</section></div>`;
 }
 
