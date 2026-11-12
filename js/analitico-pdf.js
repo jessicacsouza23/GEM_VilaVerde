@@ -6,6 +6,7 @@
     function visitar(no) {
       if (no.nodeType === 3) { if (no.textContent.trim()) blocos.push({texto:no.textContent.trim()}); return; }
       if (no.nodeType !== 1 || no.matches('button, script, style, .hidden, .action-error, [data-exportacao], #pergunta-analitico-ia') || no.hidden) return;
+      if (no.matches('[data-relatorio-aluna]')) { blocos.push({novaAluna:true}); for(const filho of no.childNodes) visitar(filho); return; }
       if (no.matches('.ai-feedback')) {
         const resposta = no.querySelector('.ai-answer');
         if (resposta) blocos.push({titulo:'Análise pedagógica com IA', texto:resposta.innerText});
@@ -82,6 +83,7 @@
     }
     escrever('Relatório analítico',true,17); escrever(gem || 'GEM Musical',true,12); escrever(filtros); y+=4;
     for(const b of blocos) {
+      if(b.novaAluna) {pagina();continue;}
       if(b.titulo) {reservar(20);escrever(b.titulo,true,12);}
       if(b.texto) escrever(b.texto);
       if(b.barras) {

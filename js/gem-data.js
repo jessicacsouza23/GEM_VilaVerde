@@ -739,13 +739,13 @@
     const [historico, alunas, avaliacoes, notas, estudos, objetivos] = await Promise.all([
       lerTodos(() => banco.from("historico_geral").select("*").order("id", { ascending: false })),
       lerTodos(() => banco.from("alunas").select("*").order("nome")),
-      banco.from("avaliacoes").select("*").order("data_avaliacao", { ascending: false }),
-      banco.from("avaliacao_notas").select("*"),
+      lerTodos(() => banco.from("avaliacoes").select("*").order("id")),
+      lerTodos(() => banco.from("avaliacao_notas").select("*").order("id")),
       consultarEstudos().then(data=>({data})),
       banco.from("objetivos_pedagogicos").select("*")
     ]);
     if (historico.error || alunas.error) throw new Error(`Não foi possível carregar o analítico: ${(historico.error || alunas.error).message || "verifique as permissões."}`);
-    return { historico: historico.data || [], alunas: alunas.data || [], avaliacoes: avaliacoes.data || [], notas: notas.data || [], estudos: estudos.error ? [] : estudos.data || [], objetivos: objetivos.error ? [] : objetivos.data || [] };
+    return { erroBoletim: (avaliacoes.error || notas.error)?.message || ((avaliacoes.error || notas.error) ? "Falha ao consultar notas" : ""), historico: historico.data || [], alunas: alunas.data || [], avaliacoes: avaliacoes.data || [], notas: notas.data || [], estudos: estudos.error ? [] : estudos.data || [], objetivos: objetivos.error ? [] : objetivos.data || [] };
   }
 
   async function dadosExportacaoRelatorio() {

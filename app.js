@@ -1716,11 +1716,12 @@ function resumoEstudoPeriodo(estudos, inicio, fim) {
 
 async function renderAnalitico(content, opcoes = {}) {
   const titulo = opcoes.titulo || "Analítico e desempenho", descricao = opcoes.descricao || "Indicadores calculados somente a partir dos registros, chamadas, lições e notas já existentes no GEM.";
-  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO PEDAGÓGICO</p><h2>${escapeHtml(titulo)}</h2><p>${escapeHtml(descricao)}</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-analise="prontuario">Prontuário individual</button><button class="tab-action" data-analise="quadro">Quadro de desempenho</button><button class="tab-action" data-analise="boletim">Boletim</button></div><div class="analytics-filters"><label>Período<select id="analise-periodo"><option value="30">Mensal</option><option value="60" selected>Bimestral</option><option value="180">Semestral</option><option value="tudo">Tudo</option><option value="personalizado">Personalizado</option></select></label><label>De<input id="analise-inicio" type="date"></label><label>Até<input id="analise-fim" type="date"></label><label id="analise-aluna-wrap">Aluna<select id="analise-aluna"></select></label><button id="atualizar-analise" class="primary-action" type="button">Atualizar</button></div><div id="analise-conteudo"><div class="empty">Carregando indicadores...</div></div></section>`;
+  content.innerHTML = `<section class="intro-card"><p class="eyebrow">ACOMPANHAMENTO PEDAGÓGICO</p><h2>${escapeHtml(titulo)}</h2><p>${escapeHtml(descricao)}</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-analise="prontuario">Prontuário individual</button><button class="tab-action" data-analise="quadro">Quadro de desempenho</button><button class="tab-action" data-analise="boletim">Boletim</button><button class="tab-action" data-analise="geral">Relatório geral</button></div><div class="analytics-filters"><label>Período<select id="analise-periodo"><option value="30">Mensal</option><option value="60" selected>Bimestral</option><option value="180">Semestral</option><option value="tudo">Tudo</option><option value="personalizado">Personalizado</option></select></label><label>De<input id="analise-inicio" type="date"></label><label>Até<input id="analise-fim" type="date"></label><label id="analise-turma-wrap" class="hidden">Turma<select id="analise-turma"><option value="">Todas as turmas</option></select></label><label id="analise-aluna-wrap">Aluna<select id="analise-aluna"></select></label><button id="atualizar-analise" class="primary-action" type="button">Atualizar</button></div><div id="analise-conteudo"><div class="empty">Carregando indicadores...</div></div></section>`;
   const dados = await window.GemData.dadosAnalitico();
   const hoje = new Date(), inicio = new Date(); inicio.setDate(hoje.getDate() - 60);
   $("#analise-inicio").value = inicio.toISOString().slice(0, 10); $("#analise-fim").value = hoje.toISOString().slice(0, 10);
   $("#analise-aluna").innerHTML = dados.alunas.map((aluna) => `<option value="${escapeHtml(aluna.nome)}">${escapeHtml(aluna.nome)}</option>`).join("");
+  $('#analise-turma').innerHTML += [...new Set(dados.alunas.filter(a=>a.ativo!==false).map(a=>a.turma).filter(Boolean))].sort().map(t=>'<option value="'+escapeHtml(t)+'">'+escapeHtml(t)+'</option>').join('');
   let aba = "prontuario";
   const dataRegistro = (valor) => { const texto = String(valor || "").trim(); if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return texto.slice(0, 10); const [dia, mes, ano] = texto.split("/"); return ano ? `${ano}-${mes}-${dia}` : ""; };
   const disciplinaAnalise = (tipo) => { const texto = String(tipo || "").replace(/^Analise_/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase(); return texto === "CANTO" || texto === "SOLFEJO MELODICO" ? "Solfejo Melódico" : texto === "PRATICA" ? "Prática" : texto === "TEORIA" ? "Teoria" : texto === "SOLFEJO" ? "Solfejo" : ""; };
@@ -1763,6 +1764,14 @@ async function renderAnalitico(content, opcoes = {}) {
   const render = () => {
     const destino = $("#analise-conteudo"), periodo = dados.historico.filter(dentroPeriodo);
     $("#analise-aluna-wrap").classList.toggle("hidden", aba !== "prontuario" && aba !== "boletim");
+    $('#analise-turma-wrap').classList.toggle('hidden', aba !== 'geral');
+    if (aba === 'geral') {
+      if (dados.erroBoletim) { destino.innerHTML = '<div class="action-error">Não foi possível carregar o boletim: '+escapeHtml(dados.erroBoletim)+'. Atualize a página para tentar novamente.</div>'; return; }
+      const inicio=$('#analise-inicio').value, fim=$('#analise-fim').value;
+      const itens=window.RelatorioGeral.construir(dados,{inicio,fim,turma:$('#analise-turma').value});
+      destino.innerHTML=window.RelatorioGeral.html(itens,{escapeHtml,classificacao,disciplinaAnalise,dificuldades,inicio,fim});
+      return;
+    }
     if (aba === "quadro") {
       const disciplinas = ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"];
       const estudoDoPeriodo = (nome) => dados.estudos.filter((estudo) => {
@@ -1883,7 +1892,8 @@ async function renderAnalitico(content, opcoes = {}) {
     const destino = $('#analise-conteudo');
     const abaAplicada = aba, inicioAplicado = $('#analise-inicio').value, fimAplicado = $('#analise-fim').value;
     const alunaAplicada = $('#analise-aluna').value;
-    const nomes = abaAplicada === 'quadro' ? dados.alunas.filter(a=>a.ativo !== false).map(a=>a.nome) : [alunaAplicada];
+    const nomes = ['quadro','geral'].includes(abaAplicada) ? dados.alunas.filter(a=>a.ativo !== false && (abaAplicada !== 'geral' || !$('#analise-turma').value || a.turma === $('#analise-turma').value)).map(a=>a.nome) : [alunaAplicada];
+    if (abaAplicada === 'geral' && (dados.erroBoletim || !nomes.length)) return;
     if (abaAplicada !== 'boletim') {
       const alertas = window.AlertasLicoes.calcular(dados.historico, {inicio:inicioAplicado, fim:fimAplicado, alunas:nomes});
       const dataAlerta = data => data.split('-').reverse().join('/');
@@ -1893,13 +1903,13 @@ async function renderAnalitico(content, opcoes = {}) {
       }).join('') : '<p>Nenhuma lição atingiu o critério neste período.</p>') + '</section>');
     }
     const registrosPdf = dados.historico.filter(r=>nomes.includes(r.Aluna) && dataRegistro(r.Data)>=inicioAplicado && dataRegistro(r.Data)<=fimAplicado);
-    const filtrosPdf = `${{prontuario:'Prontuário individual',quadro:'Quadro de desempenho',boletim:'Boletim'}[abaAplicada]} | ${abaAplicada==='quadro'?'Todas as alunas ativas':alunaAplicada}\nPeríodo aplicado: ${inicioAplicado} a ${fimAplicado}${abaAplicada==='boletim'?'\nO boletim atual exibe todas as notas da aluna, sem recorte por data.':''}`;
+    const filtrosPdf = `${{prontuario:'Prontuário individual',quadro:'Quadro de desempenho',boletim:'Boletim',geral:'Relatório geral'}[abaAplicada]} | ${abaAplicada==='geral'?($('#analise-turma').value||'Todas as turmas'):abaAplicada==='quadro'?'Todas as alunas ativas':alunaAplicada}\nPeríodo aplicado: ${inicioAplicado} a ${fimAplicado}${abaAplicada==='boletim'?'\nO boletim atual exibe todas as notas da aluna, sem recorte por data.':''}`;
     destino.insertAdjacentHTML('beforeend', '<section class="feedback-panel" data-exportacao><p>Baixe as informações e os gráficos desta aba com os filtros aplicados. Ao final será incluída uma síntese pedagógica automática para revisão da equipe.</p><button id="baixar-analitico-pdf" class="primary-action" type="button">Baixar relatório analítico em PDF</button><div id="analitico-pdf-retorno" role="status"></div></section>');
     $('#baixar-analitico-pdf').onclick = () => {
       const botao = $('#baixar-analitico-pdf');botao.disabled=true;
       try {
         if(!window.jspdf?.jsPDF || !window.AnaliticoPDF) throw new Error('A ferramenta de PDF ainda não carregou. Tente novamente.');
-        const pdf = window.AnaliticoPDF.gerar({gem:state.gem,filtros:filtrosPdf,blocos:window.AnaliticoPDF.capturar(destino),conclusao:window.AnaliticoPDF.conclusao(registrosPdf,abaAplicada)},window.jspdf.jsPDF);
+        const pdf = window.AnaliticoPDF.gerar({gem:state.gem,filtros:filtrosPdf,blocos:window.AnaliticoPDF.capturar(destino),conclusao:window.AnaliticoPDF.conclusao(registrosPdf,abaAplicada==='geral'?'quadro':abaAplicada)},window.jspdf.jsPDF);
         pdf.save(`Analitico_${abaAplicada}_${inicioAplicado}_${fimAplicado}.pdf`);
         $('#analitico-pdf-retorno').textContent='PDF gerado com os filtros aplicados na tela.';
       } catch(erro) {$('#analitico-pdf-retorno').textContent=erro.message;}
