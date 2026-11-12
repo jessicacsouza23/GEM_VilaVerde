@@ -43,6 +43,7 @@
         for(const filho of no.childNodes) if(filho !== no.querySelector('strong')) visitar(filho);
         return;
       }
+      if (no.matches('.general-student .student-report-heading h3')) { blocos.push({nomeAluna:no.innerText}); return; }
       if (no.matches('h1,h2,h3,h4')) { blocos.push({titulo:no.innerText}); return; }
       if (no.matches('.metric,.evolution-list article,.comparison-list article')) { blocos.push({texto:[...no.children].map(c=>c.innerText).join(' | ')}); return; }
       if (no.matches('p,li,.homework-line')) { blocos.push({texto:no.innerText}); return; }
@@ -84,6 +85,15 @@
     escrever('Relatório analítico',true,17); escrever(gem || 'GEM Musical',true,12); escrever(filtros); y+=4;
     for(const b of blocos) {
       if(b.novaAluna) {pagina();continue;}
+      if(b.nomeAluna) {
+        fonte(true,20);
+        const linhas=pdf.splitTextToSize(limpar(b.nomeAluna),168);
+        reservar(linhas.length*9+18);
+        pdf.setFillColor(40,118,189);pdf.rect(16,y,178,2,'F');y+=2;
+        pdf.setFillColor(238,246,255);pdf.rect(16,y,178,linhas.length*9+10,'F');y+=9;
+        for(const linha of linhas) {fonte(true,20);pdf.setTextColor(23,78,133);pdf.text(linha,21,y);y+=9;}
+        y+=7;
+      }
       if(b.titulo) {reservar(20);escrever(b.titulo,true,12);}
       if(b.texto) escrever(b.texto);
       if(b.barras) {

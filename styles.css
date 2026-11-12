@@ -151,7 +151,8 @@ nav { display:grid; gap:5px; }
 .material-workspace[hidden],.material-choice[hidden],#adicionar-material-pratica[hidden],#licoes-casa-pratica[hidden] {display:none!important}
 @media(max-width:600px){.material-add{display:block}.material-add button{width:100%;margin-top:12px}.material-workspace > div,.material-workspace > section{padding:10px}.material-choice{width:100%}}
 
-.general-student { margin:24px 0; padding:22px; border-top:5px solid #ec456d; }
-.general-student .student-report-heading h3 { font-size:1.4rem; }
+.general-student { margin:24px 0; padding:22px; border-top:7px solid #2876bd; }
+.general-student .student-report-heading { padding:16px; background:#eef6ff; border-radius:10px; width:100%; box-sizing:border-box; }
+.general-student .student-report-heading h3 { font-size:1.75rem; line-height:1.25; font-weight:800; color:#174e85; overflow-wrap:anywhere; }
 .general-student > h4 { margin-top:24px; border-bottom:1px solid #d9e0ee; padding-bottom:8px; }
 .general-student p { overflow-wrap:anywhere; white-space:pre-line; }
