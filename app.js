@@ -1770,6 +1770,8 @@ async function renderAnalitico(content, opcoes = {}) {
       const inicio=$('#analise-inicio').value, fim=$('#analise-fim').value;
       const itens=window.RelatorioGeral.construir(dados,{inicio,fim,turma:$('#analise-turma').value});
       destino.innerHTML=window.RelatorioGeral.html(itens,{escapeHtml,classificacao,disciplinaAnalise,dificuldades,inicio,fim});
+      destino.querySelector('[data-expandir-alunas]')?.addEventListener('click',()=>destino.querySelectorAll('[data-relatorio-aluna]').forEach(el=>el.open=true));
+      destino.querySelector('[data-recolher-alunas]')?.addEventListener('click',()=>destino.querySelectorAll('[data-relatorio-aluna]').forEach(el=>el.open=false));
       return;
     }
     if (aba === "quadro") {

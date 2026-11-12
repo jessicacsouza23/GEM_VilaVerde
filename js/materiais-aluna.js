@@ -97,18 +97,33 @@
       try{await salvarEstado(nome,false);const g=await incluir(nome,true);g.estado.concluido=false;g.label.hidden=false;atualizarConcluidos();feedback.textContent=nome+' adicionado aos materiais da aluna.';}
       catch(e){feedback.textContent=e.message;}finally{botao.disabled=false;}
     };
+    function avisarValidacao(mensagem, campo) {
+      feedback.textContent=mensagem;
+      const retorno=area.querySelector('#registro-retorno');
+      if(retorno) retorno.innerHTML='<div class="action-error" role="alert">'+esc(mensagem)+'</div>';
+      if(campo){
+        let aviso=campo.parentElement.querySelector('[data-erro-conteudo]');
+        if(!aviso){aviso=document.createElement('small');aviso.dataset.erroConteudo='true';aviso.className='action-error';aviso.setAttribute('role','alert');campo.after(aviso);}
+        aviso.textContent=mensagem;campo.setAttribute('aria-invalid','true');campo.focus();
+      }
+    }
+    area.addEventListener('input',event=>{
+      if(!event.target.matches('[data-pratica-conteudo]'))return;
+      event.target.removeAttribute('aria-invalid');
+      event.target.parentElement.querySelector('[data-erro-conteudo]')?.remove();
+    });
     area.querySelector('#salvar-registro-aula').textContent='Salvar registro deste material';
     area.querySelector('#salvar-registro-aula').addEventListener('click', event => {
       const selecionados=[...grupos.values()].filter(g=>g.check.checked);
-      if(!selecionados.length){feedback.textContent='Marque pelo menos um material trabalhado hoje.';event.stopImmediatePropagation();return;}
+      if(!selecionados.length){avisarValidacao('Selecione o material que deseja salvar.');event.stopImmediatePropagation();return;}
       for(const g of selecionados){
         const vazio=[...g.bloco.querySelectorAll('[data-pratica-conteudo]')].find(c=>!c.value.trim());
-        if(vazio){abrir(g);feedback.textContent=g.nome+': informe o conteúdo trabalhado hoje.';vazio.focus();vazio.reportValidity();event.stopImmediatePropagation();return;}
+        if(vazio){abrir(g);avisarValidacao(g.nome+': este registro ainda não foi salvo. Informe o conteúdo trabalhado hoje'+(g.nome==='Apostila'?' com página e lições. Ex.: página 18, lições 1 e 2.':'.')+' Os outros materiais já salvos permanecem registrados.',vazio);event.stopImmediatePropagation();return;}
         if(g.nome==='Apostila')for(const campo of g.bloco.querySelectorAll('[data-pratica-conteudo]')){
           const texto=campo.value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
           const pagina=/\b(?:paginas?|pags?|p)\.?\s*[:\-]?\s*[1-9]\d*\b/.test(texto);
           const licao=/\b(?:licao|licoes|exercicio|exercicios|atividades?)\s*[:\-]?\s*\S+/.test(texto);
-          if(!pagina||!licao){abrir(g);feedback.textContent='Apostila: informe '+(!pagina?'a página':'as lições ou exercícios')+'. Ex.: página 18, lições 1 e 2.';campo.focus();event.stopImmediatePropagation();return;}
+          if(!pagina||!licao){abrir(g);avisarValidacao('Apostila: este registro ainda não foi salvo. Informe '+(!pagina&&!licao?'a página e as lições ou exercícios':!pagina?'a página':'as lições ou exercícios')+' no campo de conteúdo trabalhado hoje. Ex.: página 18, lições 1 e 2. Preencher apenas a lição para casa não completa esse campo. Os outros materiais já salvos permanecem registrados.',campo);event.stopImmediatePropagation();return;}
         }
       }
     }, true);

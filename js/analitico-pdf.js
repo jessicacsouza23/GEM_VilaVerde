@@ -49,7 +49,9 @@
       if (no.matches('p,li,.homework-line')) { blocos.push({texto:no.innerText}); return; }
       for (const filho of no.childNodes) visitar(filho);
     }
-    visitar(elemento);
+    const recolhidas=[...elemento.querySelectorAll('details[data-relatorio-aluna]:not([open])')];
+    try { recolhidas.forEach(el=>el.open=true); visitar(elemento); }
+    finally { recolhidas.forEach(el=>el.open=false); }
     return blocos;
   }
   function conclusao(registros, aba) {

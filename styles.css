@@ -156,3 +156,9 @@ nav { display:grid; gap:5px; }
 .general-student .student-report-heading h3 { font-size:1.75rem; line-height:1.25; font-weight:800; color:#174e85; overflow-wrap:anywhere; }
 .general-student > h4 { margin-top:24px; border-bottom:1px solid #d9e0ee; padding-bottom:8px; }
 .general-student p { overflow-wrap:anywhere; white-space:pre-line; }
+
+.general-student > summary { cursor:pointer; }
+.general-student > summary:focus-visible { outline:3px solid #2876bd; outline-offset:4px; }
+.general-toggle { color:#174e85; font-size:.85rem; font-weight:600; }
+.general-toggle::before { content:"＋ "; }
+.general-student[open] .general-toggle::before { content:"− "; }
