@@ -24,8 +24,9 @@
           if(papel==='Professora' && ((d.atividade_secretaria&&d.responsavel_papel!=='Professora')||normal(responsavel)!==normal(nome)))continue;
           const horario=tempos[disciplina]||calculados[disciplina]||bloco;
           const turma=String(d.turma||'Turma não informada');
-          const chave=[bloco,disciplina,sala,responsavel,horario,turma].join('|');
-          if(!grupos.has(chave))grupos.set(chave,{numero:indice+1,bloco,horario,disciplina,sala,responsavel,turma,papelResponsavel:d.atividade_secretaria?d.responsavel_papel:'Professora',alunas:[]});
+          const individual=d.atividade_secretaria ? true : typeof d.individual==='boolean' ? d.individual : /pratica.*solfejo|solfejo.*pratica/.test(normal(tipo)) || normal(tipo)==='pratica';
+          const chave=[bloco,disciplina,sala,responsavel,horario,turma,individual].join('|');
+          if(!grupos.has(chave))grupos.set(chave,{numero:indice+1,bloco,horario,disciplina,sala,responsavel,turma,individual,papelResponsavel:d.atividade_secretaria?d.responsavel_papel:'Professora',alunas:[]});
           const item=grupos.get(chave);if(!item.alunas.includes(linha.Aluna))item.alunas.push(linha.Aluna);
         }
       });
