@@ -621,6 +621,55 @@ function formularioDocumento(prefixo, pessoas) {
   return { markup, destino, vincular: () => { $(`#${prefixo}-destino`).addEventListener("change", destino); destino(); }, dados: () => { const modo = $(`#${prefixo}-destino`).value; return { arquivo: $(`#${prefixo}-arquivo`).files[0], titulo: $(`#${prefixo}-titulo`).value.trim(), disciplina: $(`#${prefixo}-disciplina`).value, data: $(`#${prefixo}-data`).value, turma: modo === "turma" ? $(`#${prefixo}-turma`)?.value || "" : "", aluna: modo === "aluna" ? $(`#${prefixo}-aluna`)?.value || "" : "", observacao: $(`#${prefixo}-observacao`).value.trim(), visivel: modo !== "interno" }; } };
 }
 
+function mostrarPastasDocumentos(lista, documentos, {excluir=false, recarregar}={}) {
+  const dataIso=v=>{const t=String(v||'');if(/^\d{4}-\d{2}-\d{2}/.test(t))return t.slice(0,10);const m=t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);return m?m[3]+'-'+m[2]+'-'+m[1]:'';};
+  const normal=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const disciplinas=[...new Set(['Prática','Teoria','Solfejo','Solfejo Melódico',...documentos.map(d=>d.disciplina||'Sem disciplina')])];
+  lista.innerHTML=disciplinas.map((disciplina,i)=>'<details class="document-folder" data-pasta="'+i+'"><summary>📁 '+escapeHtml(disciplina)+' <span class="badge">'+documentos.filter(d=>(d.disciplina||'Sem disciplina')===disciplina).length+'</span></summary><div class="document-folder-body"><div class="analytics-filters"><label>Buscar<input type="search" data-busca placeholder="Título, aluna, turma ou autora"></label><label>De<input type="date" data-inicio></label><label>Até<input type="date" data-fim></label><label>Destino<select data-destino><option value="">Todos</option><option value="interno">Uso interno</option><option value="turma">Turma</option><option value="aluna">Aluna</option></select></label><label>Organizar por<select data-ordem><option value="recentes">Data: mais recentes</option><option value="antigos">Data: mais antigos</option><option value="titulo">Título: A–Z</option></select></label><button type="button" class="secondary-action" data-limpar>Limpar filtros</button></div><div data-documentos role="region" aria-label="Documentos de '+escapeHtml(disciplina)+'"></div><p data-feedback role="status"></p></div></details>').join('');
+  lista.querySelectorAll('[data-pasta]').forEach(pasta=>{
+    const itens=documentos.filter(d=>(d.disciplina||'Sem disciplina')===disciplinas[Number(pasta.dataset.pasta)]).slice().sort((a,b)=>dataIso(b.data_correcao).localeCompare(dataIso(a.data_correcao))||Number(b.id)-Number(a.id));
+    const resultado=pasta.querySelector('[data-documentos]');
+    const render=()=>{
+      const busca=normal(pasta.querySelector('[data-busca]').value),inicio=pasta.querySelector('[data-inicio]').value,fim=pasta.querySelector('[data-fim]').value,destino=pasta.querySelector('[data-destino]').value;
+      if(inicio&&fim&&inicio>fim){resultado.innerHTML='<p class="action-error">A data inicial deve ser anterior ou igual à final.</p>';return;}
+      const filtrados=itens.filter(d=>{
+        const data=dataIso(d.data_correcao),tipo=!d.visivel_alunas?'interno':d.aluna?'aluna':d.turma?'turma':'geral';
+        return (!busca||normal([d.titulo,d.aluna,d.turma,d.professora,d.observacao].join(' ')).includes(busca))&&(!inicio||(data&&data>=inicio))&&(!fim||(data&&data<=fim))&&(!destino||destino===tipo);
+      });
+      const ordem=pasta.querySelector('[data-ordem]').value;
+      filtrados.sort((a,b)=>{
+        const titulo=String(a.titulo||'').localeCompare(String(b.titulo||''),'pt-BR',{sensitivity:'base',numeric:true});
+        if(ordem==='titulo')return titulo;
+        const da=dataIso(a.data_correcao),db=dataIso(b.data_correcao);
+        if(!da||!db)return da?-1:db?1:titulo;
+        return (ordem==='antigos'?da.localeCompare(db):db.localeCompare(da))||titulo;
+      });
+      resultado.innerHTML='<p class="hint">'+filtrados.length+' de '+itens.length+' documento(s)</p>'+(filtrados.length?filtrados.map(d=>{
+        const data=dataIso(d.data_correcao),destino=!d.visivel_alunas?'Uso interno':d.aluna?'Aluna: '+d.aluna:d.turma?'Turma: '+d.turma:'Disponível para alunas';
+        return '<article class="person-row"><div><strong>'+escapeHtml(d.titulo)+'</strong><p><strong>Data do documento: '+(data?data.split('-').reverse().join('/'):'Não informada')+'</strong></p><p>'+escapeHtml(destino)+' · Enviado por '+escapeHtml(d.professora||'Secretaria')+'</p>'+(d.observacao?'<p>'+escapeHtml(d.observacao)+'</p>':'')+'</div><div class="person-actions"><button type="button" class="secondary-action" data-abrir="'+escapeHtml(d.id)+'">Abrir</button>'+(excluir?'<button type="button" class="secondary-action danger-action" data-excluir="'+escapeHtml(d.id)+'">Excluir</button>':'')+'</div></article>';
+      }).join(''):'<p class="empty">Nenhum documento encontrado nesta pasta com os filtros escolhidos.</p>');
+    };
+    pasta.querySelectorAll('input,select').forEach(c=>c.addEventListener('input',render));
+    pasta.querySelector('[data-limpar]').onclick=()=>{pasta.querySelectorAll('input,select:not([data-ordem])').forEach(c=>c.value='');render();};
+    resultado.onclick=async event=>{
+      const botao=event.target.closest('button');if(!botao)return;
+      const id=botao.dataset.abrir??botao.dataset.excluir,doc=itens.find(d=>String(d.id)===id);if(!doc)return;
+      const feedback=pasta.querySelector('[data-feedback]');
+      if(botao.hasAttribute('data-excluir')){
+        if(!excluir||!confirm('Excluir o documento “'+doc.titulo+'”?'))return;
+        botao.disabled=true;
+        try{await window.GemData.removerDocumento(doc);await recarregar();lista.insertAdjacentHTML('afterbegin','<p class="action-ok" role="status">Documento excluído.</p>');}
+        catch(erro){feedback.textContent=mensagemErro(erro);botao.disabled=false;}
+      }else{
+        botao.disabled=true;feedback.textContent='Abrindo documento...';
+        try{window.open(await window.GemData.urlDocumento(doc.arquivo_path),'_blank','noopener');feedback.textContent='Documento pronto para consulta.';}
+        catch(erro){feedback.textContent=mensagemErro(erro);}finally{botao.disabled=false;}
+      }
+    };
+    render();
+  });
+}
+
 async function renderEnvioDocumentosProfessora(content) {
   const pessoas = await window.GemData.dadosPessoas();
   const form = formularioDocumento("doc-prof", pessoas);
@@ -631,9 +680,7 @@ async function renderEnvioDocumentosProfessora(content) {
     try {
       const documentos = await window.GemData.dadosDocumentos();
       const meus = documentos.filter((documento) => documento.professora === state.name);
-      lista.innerHTML = meus.length ? meus.map((documento) => `<article class="method-row"><div><strong>${escapeHtml(documento.titulo)}</strong><span>${escapeHtml(documento.disciplina || "—")} · ${documento.aluna ? `Aluna: ${escapeHtml(documento.aluna)}` : documento.turma ? `Turma: ${escapeHtml(documento.turma)}` : "Sem destino específico"}</span></div><div class="person-actions"><button class="secondary-action" type="button" data-doc-prof="${escapeHtml(documento.arquivo_path)}">Abrir</button><button class="secondary-action danger-action" type="button" data-excluir-doc-prof="${escapeHtml(documento.id)}">Excluir</button></div></article>`).join("") : `<div class="empty">Você ainda não enviou documentos.</div>`;
-      lista.querySelectorAll("[data-doc-prof]").forEach((botao) => botao.addEventListener("click", async () => { try { window.open(await window.GemData.urlDocumento(botao.dataset.docProf), "_blank", "noopener"); } catch (erro) { alert(mensagemErro(erro)); } }));
-      lista.querySelectorAll("[data-excluir-doc-prof]").forEach((botao) => botao.addEventListener("click", async () => { const documento = meus.find((item) => String(item.id) === String(botao.dataset.excluirDocProf)); if (!documento || !confirm(`Excluir o documento “${documento.titulo}”?`)) return; botao.disabled = true; try { await window.GemData.removerDocumento(documento); await carregar(); } catch (erro) { alert(mensagemErro(erro)); botao.disabled = false; } }));
+      mostrarPastasDocumentos(lista, meus, {excluir:true,recarregar:carregar});
     } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
   };
   $("#doc-prof-enviar").addEventListener("click", async () => {
@@ -653,8 +700,7 @@ async function renderDocumentosAluna(content) {
     const [documentos, pessoas] = await Promise.all([window.GemData.dadosDocumentos(), window.GemData.dadosPessoas()]);
     const turma = pessoas.alunas.find((aluna) => aluna.nome === state.name)?.turma;
     const disponiveis = documentos.filter((documento) => documento.visivel_alunas && (!documento.aluna || documento.aluna === state.name) && (!documento.turma || documento.turma === turma));
-    lista.innerHTML = disponiveis.length ? disponiveis.map((documento) => `<article class="method-row"><div><strong>${escapeHtml(documento.titulo)}</strong><span>${escapeHtml(documento.disciplina || "Material")} · Enviado por ${escapeHtml(documento.professora || "Secretaria")}</span>${documento.observacao ? `<span>${escapeHtml(documento.observacao)}</span>` : ""}</div><button class="secondary-action" type="button" data-doc-aluna="${escapeHtml(documento.arquivo_path)}">Abrir</button></article>`).join("") : `<div class="empty">Nenhum documento disponível para você ainda.</div>`;
-    lista.querySelectorAll("[data-doc-aluna]").forEach((botao) => botao.addEventListener("click", async () => { try { window.open(await window.GemData.urlDocumento(botao.dataset.docAluna), "_blank", "noopener"); } catch (erro) { alert(mensagemErro(erro)); } }));
+    mostrarPastasDocumentos(lista, disponiveis);
   } catch (erro) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; }
 }
 
@@ -1424,7 +1470,7 @@ async function renderDocumentos(content) {
   const form = formularioDocumento("doc", pessoas);
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">ARQUIVOS</p><h2>Documentos</h2><p>Envie materiais para uso interno, uma turma ou uma aluna. A visibilidade é definida pelo destino, como no sistema Streamlit.</p></section><section class="panel">${form.markup}<div id="doc-feedback"></div></section><section class="panel"><h2>Documentos enviados</h2><div id="lista-docs"><div class="empty">Carregando documentos...</div></div></section>`;
   form.vincular();
-  const carregar = async () => { const lista = $("#lista-docs"); try { const docs = await window.GemData.dadosDocumentos(); lista.innerHTML = docs.length ? docs.map((doc) => `<article class="person-row"><div><strong>${escapeHtml(doc.titulo)}</strong><span>${escapeHtml(doc.disciplina || "—")} · ${doc.aluna ? `Aluna: ${escapeHtml(doc.aluna)}` : doc.turma ? `Turma: ${escapeHtml(doc.turma)}` : "Uso interno"}</span></div><span class="badge">${doc.visivel_alunas ? "Disponível" : "Interno"}</span><div class="person-actions"><button data-documento="${escapeHtml(doc.arquivo_path)}" class="secondary-action" type="button">Abrir</button><button data-excluir-documento="${escapeHtml(doc.id)}" class="secondary-action danger-action" type="button">Excluir</button></div></article>`).join("") : `<div class="empty">Nenhum documento enviado ainda.</div>`; lista.querySelectorAll("[data-documento]").forEach((botao) => botao.addEventListener("click", async () => { try { window.open(await window.GemData.urlDocumento(botao.dataset.documento), "_blank", "noopener"); } catch (error) { alert(mensagemErro(error)); } })); lista.querySelectorAll("[data-excluir-documento]").forEach((botao) => botao.addEventListener("click", async () => { const documento = docs.find((item) => String(item.id) === String(botao.dataset.excluirDocumento)); if (!documento || !confirm(`Excluir o documento “${documento.titulo}”?`)) return; botao.disabled = true; try { await window.GemData.removerDocumento(documento); await carregar(); } catch (erro) { alert(mensagemErro(erro)); botao.disabled = false; } })); } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; } };
+  const carregar = async () => { const lista = $("#lista-docs"); try { const docs = await window.GemData.dadosDocumentos(); mostrarPastasDocumentos(lista, docs, {excluir:true,recarregar:carregar}); } catch (error) { lista.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; } };
   $("#doc-enviar").addEventListener("click", async () => { const feedback = $("#doc-feedback"), dados = form.dados(); if (dados.visivel && !dados.turma && !dados.aluna) { feedback.innerHTML = `<div class="action-error">Escolha a turma ou a aluna que receberá o documento.</div>`; return; } try { await window.GemData.enviarDocumento(dados); feedback.innerHTML = `<div class="action-ok">Documento enviado.</div>`; await carregar(); } catch (error) { feedback.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; } }); await carregar();
 }
 

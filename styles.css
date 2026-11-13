@@ -167,3 +167,9 @@ nav { display:grid; gap:5px; }
 .upcoming-lessons > article { margin:0; border-top:4px solid #2876bd; }
 .upcoming-component + .upcoming-component { border-top:1px solid #d9e0ee; padding-top:12px; margin-top:12px; }
 .upcoming-component p { overflow-wrap:anywhere; }
+
+.document-folder { border:1px solid #d9e0ee; border-radius:14px; margin:12px 0; overflow:hidden; }
+.document-folder > summary { cursor:pointer; padding:18px; background:#eef6ff; color:#174e85; font-weight:800; font-size:1.05rem; }
+.document-folder > summary:focus-visible { outline:3px solid #2876bd; outline-offset:-3px; }
+.document-folder-body { padding:16px; }
+.document-folder .person-row p { margin:6px 0; overflow-wrap:anywhere; }
