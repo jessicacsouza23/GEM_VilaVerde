@@ -16,7 +16,8 @@
         const valor=String(linha[bloco]||'');if(!valor)return;
         const d=linha._detalhes?.[bloco]||{},sala=d.sala||valor.split('|')[0].trim();
         const tipo=d.tipo||'Disciplina não informada';
-        const componentes=d.atividade_secretaria?[tipo]:d.componentes?.length?d.componentes:/pratica.*solfejo|solfejo.*pratica/.test(normal(tipo))?['Solfejo','Prática']:[tipo];
+        const praticaEditada=d.atividade_secretaria && d.responsavel_papel==='Professora' && /^(pratica|pratica\s*\+\s*solfejo|solfejo\s*\+\s*pratica)$/.test(normal(tipo));
+        const componentes=praticaEditada?['Solfejo','Prática']:d.atividade_secretaria?[tipo]:d.componentes?.length?d.componentes:/pratica.*solfejo|solfejo.*pratica/.test(normal(tipo))?['Solfejo','Prática']:[tipo];
         const tempos=d.horarios_componentes||{};
         const calculados=window.RodizioEngine?.horariosComponentes?.(bloco,componentes,atividades)||{};
         for(const disciplina of componentes){

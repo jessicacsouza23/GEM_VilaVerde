@@ -891,7 +891,7 @@
       return linha;
     });
     let atividades=[];
-    if(filtrada.some(l=>Object.values(l._detalhes).some(d=>(d.componentes?.length>1||/Prática.*Solfejo|Solfejo.*Prática/i.test(d.tipo))&&!Object.keys(d.horarios_componentes||{}).length))){
+    if(filtrada.some(l=>Object.values(l._detalhes).some(d=>(d.componentes?.length>1||(d.atividade_secretaria&&d.responsavel_papel==='Professora'&&normalizar(d.tipo)==='PRATICA')||/PRATICA.*SOLFEJO|SOLFEJO.*PRATICA/.test(normalizar(d.tipo)))&&!Object.keys(d.horarios_componentes||{}).length))){
       const modelos=await dadosLogistica();
       const modelo=calendario.modelo_logistica_id?modelos.find(m=>m.id===calendario.modelo_logistica_id):modeloParaData(modelos,dataIso);
       atividades=modelo?.configuracao?.atividades||[];
@@ -921,7 +921,7 @@
     // consulta o modelo vinculado (ou vigente na data), sem minutos fixos.
     let atividadesModelo = [];
     const precisaModelo = escala.some((linha) => Object.values(linha._detalhes || {}).some((detalhe) =>
-      (detalhe.componentes?.length > 1 || /PRATICA.*SOLFEJO|SOLFEJO.*PRATICA/.test(normalizar(detalhe.tipo)))
+      (detalhe.componentes?.length > 1 || (detalhe.atividade_secretaria && detalhe.responsavel_papel === 'Professora' && normalizar(detalhe.tipo) === 'PRATICA') || /PRATICA.*SOLFEJO|SOLFEJO.*PRATICA/.test(normalizar(detalhe.tipo)))
       && !Object.keys(detalhe.horarios_componentes || {}).length
     ));
     if (precisaModelo) {
@@ -944,8 +944,11 @@
         const extra = detalhes[horario];
         if (extra?.atividade_secretaria) {
           if (extra.responsavel_papel === 'Professora' && extra.responsavel && normalizar(extra.responsavel) === nomeNormalizado) {
-            aulas.push({ horario, tipo: extra.tipo, local: extra.sala || conteudo.split('|')[0].trim(), individual: true,
-              alunas: [linha.Aluna], fotos: { [linha.Aluna]: fotoPorAluna[linha.Aluna] || null }, turma: 'Atendimento complementar', atividade_secretaria: true });
+            const pratica = /^(PRATICA|PRATICA\s*\+\s*SOLFEJO|SOLFEJO\s*\+\s*PRATICA)$/.test(normalizar(extra.tipo));
+            const componentes = pratica ? ['Solfejo','Prática'] : [extra.tipo];
+            const horarios = window.RodizioEngine?.horariosComponentes?.(horario, componentes, atividadesModelo) || {};
+            for (const tipo of componentes) aulas.push({ horario: extra.horarios_componentes?.[tipo] || horarios[tipo] || horario, tipo, local: extra.sala || conteudo.split('|')[0].trim(), individual: true,
+              alunas: [linha.Aluna], fotos: { [linha.Aluna]: fotoPorAluna[linha.Aluna] || null }, turma: extra.turma || turmaPorAluna[linha.Aluna] || '', atividade_secretaria: true });
           }
           continue;
         }

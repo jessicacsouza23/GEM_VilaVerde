@@ -66,3 +66,23 @@ test('folga da professora fixa permite substituta apenas naquele sábado', () =>
   assert.equal(semEquipe.erros.length, 0);
   assert.equal(extras(semEquipe.escala).length, 1);
 });
+
+
+test('prática editada já salva libera dois registros com horários próprios', async () => {
+  const source=fs.readFileSync(require.resolve('../js/gem-data.js'),'utf8');
+  const start=source.indexOf('  async function agendaProfessora('),end=source.indexOf('  async function salvarRegistroAula(',start);
+  for(const tipo of ['Prática','Solfejo + Pratica']) {
+    const horario='10:30 - 11:15 (Aula 3)';
+    const escala=[{Aluna:'Emilly',[horario]:'SALA 4 | Patrícia',_detalhes:{[horario]:{atividade_secretaria:true,tipo,responsavel_papel:'Professora',responsavel:'Patrícia',sala:'SALA 4',turma:'Turma 1'}}}];
+    const atividades=[{Atividade:'Solfejo',Formato:'Individual','Duração (min)':15},{Atividade:'Prática',Formato:'Individual','Duração (min)':30}];
+    const sandbox={window:{RodizioEngine:engine},normalizar:s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase(),dataBr:s=>s,tipoDaAula:(_,d)=>d.tipo,
+      dadosLogistica:async()=>[{id:1,configuracao:{atividades}}],modeloParaData:ms=>ms[0],
+      obterCliente:async()=>({from:table=>({select:()=>table==='calendario'?{eq:()=>({maybeSingle:async()=>({data:{escala,modelo_logistica_id:1}})})}:Promise.resolve({data:[]})})})};
+    vm.createContext(sandbox);vm.runInContext(source.slice(start,end),sandbox);
+    const agenda=await sandbox.agendaProfessora('Patrícia','2026-11-14');
+    assert.deepEqual(Array.from(agenda,a=>a.tipo),['Solfejo','Prática']);
+    assert.match(agenda[0].horario,/10:30.*10:45/);assert.match(agenda[1].horario,/10:45.*11:15/);
+    assert.ok(agenda.every(a=>a.individual&&a.alunas[0]==='Emilly'));
+    assert.equal((await sandbox.agendaProfessora('Outra','2026-11-14')).length,0);
+  }
+});
