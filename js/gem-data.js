@@ -882,12 +882,12 @@
     if(error)throw new Error('Não foi possível carregar o rodízio do próximo sábado.',{cause:error});
     const escala=calendario?.escala||[];
     if(!escala.length)return {escala:[],atividades:[]};
-    const pessoas=await banco.from('alunas').select('nome,ativo');
+    const pessoas=await banco.from('alunas').select('nome,ativo,turma');
     if(pessoas.error)throw new Error('Não foi possível conferir as alunas do rodízio.',{cause:pessoas.error});
     const inativas=new Set((pessoas.data||[]).filter(a=>a.ativo===false).map(a=>a.nome));
     const filtrada=escala.filter(l=>!inativas.has(l.Aluna)).map(l=>{
       const linha={...l,_detalhes:{...l._detalhes}};
-      for(const h of Object.keys(l).filter(k=>!['Aluna','_detalhes'].includes(k)))linha._detalhes[h]={...l._detalhes?.[h],tipo:tipoDaAula(l[h],l._detalhes?.[h])};
+      for(const h of Object.keys(l).filter(k=>!['Aluna','_detalhes'].includes(k)))linha._detalhes[h]={...l._detalhes?.[h],tipo:tipoDaAula(l[h],l._detalhes?.[h]),turma:l._detalhes?.[h]?.turma||(pessoas.data||[]).find(a=>a.nome===l.Aluna)?.turma||''};
       return linha;
     });
     let atividades=[];

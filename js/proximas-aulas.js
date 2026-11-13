@@ -23,8 +23,9 @@
           const responsavel=d.atividade_secretaria?(d.responsavel||'Secretarias — a definir'):(d.professoras_componentes?.[disciplina]||valor.split('|').slice(1).join('|').trim()||'A definir');
           if(papel==='Professora' && ((d.atividade_secretaria&&d.responsavel_papel!=='Professora')||normal(responsavel)!==normal(nome)))continue;
           const horario=tempos[disciplina]||calculados[disciplina]||bloco;
-          const chave=[bloco,disciplina,sala,responsavel,horario].join('|');
-          if(!grupos.has(chave))grupos.set(chave,{numero:indice+1,bloco,horario,disciplina,sala,responsavel,papelResponsavel:d.atividade_secretaria?d.responsavel_papel:'Professora',alunas:[]});
+          const turma=String(d.turma||'Turma não informada');
+          const chave=[bloco,disciplina,sala,responsavel,horario,turma].join('|');
+          if(!grupos.has(chave))grupos.set(chave,{numero:indice+1,bloco,horario,disciplina,sala,responsavel,turma,papelResponsavel:d.atividade_secretaria?d.responsavel_papel:'Professora',alunas:[]});
           const item=grupos.get(chave);if(!item.alunas.includes(linha.Aluna))item.alunas.push(linha.Aluna);
         }
       });
