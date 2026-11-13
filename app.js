@@ -749,8 +749,30 @@ async function renderMensagens(content) {
   document.querySelectorAll("[data-msg-tab]").forEach((botao) => botao.onclick = () => { document.querySelectorAll("[data-msg-tab]").forEach((item) => item.classList.toggle("active", item === botao)); if (botao.dataset.msgTab === "mural") mostrarMural(); else if (botao.dataset.msgTab === "professoras") mostrarProfessoras(); else mostrarDireta(); });
 }
 
+function mostrarProximasAulas(destino) {
+  const nome=state.name, papel=state.role;
+  let dataExibida='', pedido=0;
+  const carregar=async()=>{
+    const data=window.ProximasAulas.sabado(), atual=++pedido;
+    dataExibida=data;
+    destino.innerHTML='<h2>Suas aulas de sábado — '+escapeHtml(data.split('-').reverse().join('/'))+'</h2><p role="status">Carregando rodízio...</p>';
+    try {
+      const dados=await window.GemData.rodizioProximoSabado(data);
+      if(!destino.isConnected||atual!==pedido)return;
+      const aulas=window.ProximasAulas.aulas(dados.escala,{nome,papel,atividades:dados.atividades});
+      const blocos=[...new Set(aulas.map(a=>a.numero))];
+      destino.innerHTML='<div class="section-title"><h2>Suas aulas de sábado — '+escapeHtml(data.split('-').reverse().join('/'))+'</h2><button type="button" class="secondary-action" data-atualizar-agenda>Atualizar rodízio</button></div><p class="hint">Programação do rodízio salvo para este sábado. Confira possíveis alterações antes da aula.</p>'+(aulas.length?'<div class="upcoming-lessons">'+blocos.map(n=>'<article class="report-record"><h3>'+n+'ª aula</h3>'+aulas.filter(a=>a.numero===n).map(a=>'<section class="upcoming-component"><h4>'+escapeHtml(a.disciplina)+'</h4><p><strong>Horário:</strong> '+escapeHtml(a.horario.replace(/\s*\((?:Bloco|Aula)\s*\d+\)/gi,''))+'</p><p><strong>Sala:</strong> '+escapeHtml(a.sala)+'</p>'+ (papel==='Aluna'?'<p><strong>'+escapeHtml(a.papelResponsavel==='Secretaria'?'Responsável':'Professora')+':</strong> '+escapeHtml(a.responsavel)+'</p>':'<p><strong>Alunas:</strong> '+a.alunas.map(escapeHtml).join(' · ')+'</p>')+'</section>').join('')+'</article>').join('')+'</div>':'<p class="empty">'+(dados.escala.length?'Você ainda não tem aulas atribuídas no rodízio deste sábado.':'O rodízio deste sábado ainda não foi disponibilizado.')+'</p>');
+    } catch(erro){if(destino.isConnected&&atual===pedido)destino.innerHTML='<h2>Suas aulas de sábado — '+escapeHtml(data.split('-').reverse().join('/'))+'</h2><div class="action-error" role="alert">'+escapeHtml(mensagemErro(erro))+'</div><button type="button" class="secondary-action" data-atualizar-agenda>Tentar novamente</button>';}
+    destino.querySelector('[data-atualizar-agenda]')?.addEventListener('click',carregar);
+  };
+  carregar();
+  const timer=setInterval(()=>{if(!destino.isConnected){clearInterval(timer);return;}if(window.ProximasAulas.sabado()!==dataExibida)carregar();},60000);
+}
+
 async function renderMinhasLicoes(content) {
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">MINHAS LIÇÕES</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Seu controle de lições e estudo em casa fica salvo no mesmo histórico usado pela professora e pela Coordenação.</p></section><section id="aluna-indicadores" class="grid"><div class="metric"><strong>—</strong><span>Carregando indicadores</span></div></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-aluna-aba="licoes">📚 Minhas lições de casa</button><button class="tab-action" data-aluna-aba="historico">🗂️ Histórico</button><button class="tab-action" data-aluna-aba="estudo">✅ Controle de estudo diário</button></div><div id="aluna-conteudo"><div class="empty">Carregando...</div></div></section>`;
+  content.querySelector('#aluna-indicadores').insertAdjacentHTML('afterend','<section class="panel" id="aluna-proximas-aulas"></section>');
+  mostrarProximasAulas(content.querySelector('#aluna-proximas-aulas'));
   const destino = $("#aluna-conteudo"), indicadores = $("#aluna-indicadores");
   let dadosAluna = { historico: [], feitas: [] }, estudos = [], erroEstudo = "", aba = "licoes", horariosEditando = [];
   const dataIso = (valor) => { const texto = String(valor || ""); if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return texto.slice(0, 10); const [dia, mes, ano] = texto.split("/"); return ano ? `${ano}-${mes}-${dia}` : ""; };
@@ -1154,6 +1176,8 @@ async function renderVisaoGeralProfessora(content) {
   const agora = new Date();
   const hoje = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">VISÃO GERAL DA PROFESSORA</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Acompanhe os destaques e os estudos das alunas do ${escapeHtml(state.gem)}.</p><button id="resumo-minhas-aulas" class="primary-action" type="button">Ver minhas aulas</button></section><section class="panel"><div class="agenda-date"><div><label for="professora-resumo-data">Data de referência</label><input id="professora-resumo-data" type="date" value="${hoje}"></div><button id="professora-resumo-atualizar" class="secondary-action" type="button">Atualizar resumo</button></div><div id="professora-resumo" aria-live="polite"></div></section>`;
+  content.querySelector('.intro-card').insertAdjacentHTML('afterend','<section class="panel" id="professora-proximas-aulas"></section>');
+  mostrarProximasAulas(content.querySelector('#professora-proximas-aulas'));
   const data = content.querySelector("#professora-resumo-data");
   const destino = content.querySelector("#professora-resumo");
   let pedido = 0;

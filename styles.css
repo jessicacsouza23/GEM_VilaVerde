@@ -162,3 +162,8 @@ nav { display:grid; gap:5px; }
 .general-toggle { color:#174e85; font-size:.85rem; font-weight:600; }
 .general-toggle::before { content:"＋ "; }
 .general-student[open] .general-toggle::before { content:"− "; }
+
+.upcoming-lessons { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr)); gap:12px; }
+.upcoming-lessons > article { margin:0; border-top:4px solid #2876bd; }
+.upcoming-component + .upcoming-component { border-top:1px solid #d9e0ee; padding-top:12px; margin-top:12px; }
+.upcoming-component p { overflow-wrap:anywhere; }

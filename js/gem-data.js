@@ -876,6 +876,29 @@
     return "Prática";
   }
 
+  async function rodizioProximoSabado(dataIso) {
+    const banco=await obterCliente();
+    const {data:calendario,error}=await banco.from('calendario').select('id, escala, modelo_logistica_id').eq('id',dataBr(dataIso)).maybeSingle();
+    if(error)throw new Error('Não foi possível carregar o rodízio do próximo sábado.',{cause:error});
+    const escala=calendario?.escala||[];
+    if(!escala.length)return {escala:[],atividades:[]};
+    const pessoas=await banco.from('alunas').select('nome,ativo');
+    if(pessoas.error)throw new Error('Não foi possível conferir as alunas do rodízio.',{cause:pessoas.error});
+    const inativas=new Set((pessoas.data||[]).filter(a=>a.ativo===false).map(a=>a.nome));
+    const filtrada=escala.filter(l=>!inativas.has(l.Aluna)).map(l=>{
+      const linha={...l,_detalhes:{...l._detalhes}};
+      for(const h of Object.keys(l).filter(k=>!['Aluna','_detalhes'].includes(k)))linha._detalhes[h]={...l._detalhes?.[h],tipo:tipoDaAula(l[h],l._detalhes?.[h])};
+      return linha;
+    });
+    let atividades=[];
+    if(filtrada.some(l=>Object.values(l._detalhes).some(d=>(d.componentes?.length>1||/Prática.*Solfejo|Solfejo.*Prática/i.test(d.tipo))&&!Object.keys(d.horarios_componentes||{}).length))){
+      const modelos=await dadosLogistica();
+      const modelo=calendario.modelo_logistica_id?modelos.find(m=>m.id===calendario.modelo_logistica_id):modeloParaData(modelos,dataIso);
+      atividades=modelo?.configuracao?.atividades||[];
+    }
+    return {escala:filtrada,atividades};
+  }
+
   async function agendaProfessora(professora, dataIso) {
     const banco = await obterCliente();
     const data = dataBr(dataIso);
@@ -1494,6 +1517,7 @@
 
   window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosExportacaoRelatorio, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, removerModeloLogistica, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, alterarStatusGem, removerGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, excluirEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
   window.GemData.dadosResumoProfessora = dadosResumoProfessora;
+  window.GemData.rodizioProximoSabado = rodizioProximoSabado;
   window.GemData.dadosBuscaAtiva = dadosBuscaAtiva;
   window.GemData.perfilAluna = perfilAluna;
   window.GemData.estadoMaterial = async ({aluna, material, concluido, instrutora, dataIso}) => {
