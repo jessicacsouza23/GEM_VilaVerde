@@ -817,7 +817,7 @@ function mostrarProximasAulas(destino) {
 
 async function renderMinhasLicoes(content) {
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">MINHAS LIÇÕES</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Seu controle de lições e estudo em casa fica salvo no mesmo histórico usado pela professora e pela Coordenação.</p></section><section id="aluna-indicadores" class="grid"><div class="metric"><strong>—</strong><span>Carregando indicadores</span></div></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-aluna-aba="licoes">📚 Minhas lições de casa</button><button class="tab-action" data-aluna-aba="historico">🗂️ Histórico</button><button class="tab-action" data-aluna-aba="estudo">✅ Controle de estudo diário</button></div><div id="aluna-conteudo"><div class="empty">Carregando...</div></div></section>`;
-  content.querySelector('#aluna-indicadores').insertAdjacentHTML('afterend','<section class="panel" id="aluna-proximas-aulas"></section>');
+  content.querySelector('#aluna-indicadores').insertAdjacentHTML('beforebegin','<section class="panel" id="aluna-proximas-aulas"></section>');
   mostrarProximasAulas(content.querySelector('#aluna-proximas-aulas'));
   const destino = $("#aluna-conteudo"), indicadores = $("#aluna-indicadores");
   let dadosAluna = { historico: [], feitas: [] }, estudos = [], erroEstudo = "", aba = "licoes", horariosEditando = [];
