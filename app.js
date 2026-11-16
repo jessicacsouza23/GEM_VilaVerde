@@ -1802,6 +1802,7 @@ async function renderAnalitico(content, opcoes = {}) {
   // como "sem registros" só porque não recebeu o prefixo Analise_.
   const ehRegistroPedagogico = (registro) => Boolean(disciplinaAnalise(registro.Tipo)) && !String(registro.Tipo || "").startsWith("Casa_");
   const classificacao = (registros) => {
+    registros = registros.filter(r => !r.importacao_chave || dificuldades(r.Dificuldades).length);
     if (!registros.length) return { icone: "🥉", nome: "Sem registros", nota: null, evolucao: false };
     const limpos = registros.filter(registro => !dificuldades(registro.Dificuldades).some(item => !/não apresentou dificuldade/i.test(item)));
     const nota = Math.round(limpos.length / registros.length * 100);
@@ -2282,6 +2283,8 @@ async function renderMasterVisao(content) {
 
 async function renderAjustes(content) {
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">ADMINISTRAÇÃO DO HISTÓRICO</p><h2>Ajustes</h2><p>Use esta área somente para corrigir registros antigos. O rodízio e o histórico das outras alunas não são alterados automaticamente.</p></section><section class="panel"><h3>🧹 Registros órfãos do rodízio</h3><p class="hint">São linhas antigas sem Tipo, criadas por uma versão anterior do rodízio. Primeiro confira a quantidade; a exclusão pede confirmação.</p><button id="contar-orfaos" class="secondary-action" type="button">Verificar registros órfãos</button><div id="orfaos-retorno"></div></section><section class="panel"><h3>📝 Ajustar registro por aluna</h3><p class="hint">Escolha uma aluna, confira os dados e exclua somente o registro selecionado.</p><label>Aluna<select id="ajuste-aluna"></select></label><div id="ajuste-registros" class="lesson-list"><div class="empty">Carregando registros...</div></div></section><section class="panel"><h3>🔎 Auditar rodízios salvos</h3><p class="hint">Confere as escalas reais já salvas: professora ou sala duplicada no mesmo horário, professora fixa e repetição imediata de professora para a aluna.</p><button id="auditar-rodizio" class="secondary-action" type="button">Rodar auditoria</button><div id="auditoria-rodizio"></div></section>`;
+  if(state.role==='Secretaria'){content.insertAdjacentHTML('afterbegin','<section class="panel" id="importacao-antiga"></section>');await window.ImportacaoTela.montar(content.querySelector('#importacao-antiga'));}
+
   const seletor = $("#ajuste-aluna"), lista = $("#ajuste-registros"), retornoOrfaos = $("#orfaos-retorno");
   lista.insertAdjacentHTML('beforebegin', `<div class="analytics-filters"><label for="ajuste-data">Data da aula <small>(opcional)</small><input id="ajuste-data" type="date"></label><button id="ajuste-todas-datas" class="secondary-action" type="button">Todos os dias</button></div><p id="ajuste-resumo" class="hint" aria-live="polite"></p>`);
   const filtroData = $('#ajuste-data');

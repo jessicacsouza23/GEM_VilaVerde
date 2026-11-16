@@ -723,6 +723,34 @@
     return { alunas, historico, estudos };
   }
 
+  async function dadosImportacaoHistorico() {
+    const banco=await obterCliente();
+    const estrutura=await banco.from('historico_geral').select('importacao_chave').limit(1);
+    if(estrutura.error)throw new Error('Não foi possível preparar a importação. Confira as permissões e execute 016_importacao_historico.sql no Supabase deste GEM.',{cause:estrutura.error});
+    const pessoas=await dadosPessoas();const historico=[];
+    for(let inicio=0;;inicio+=500){
+      const r=await banco.from('historico_geral').select('Aluna,Data,Tipo,importacao_chave').order('id').range(inicio,inicio+499);
+      if(r.error)throw new Error('Não foi possível conferir os registros existentes.',{cause:r.error});
+      historico.push(...(r.data||[]));if((r.data||[]).length<500)break;
+    }
+    return {alunas:pessoas.alunas,historico};
+  }
+  async function importarHistoricoAntigo(itens,mapeamento) {
+    const sessao=await restaurarSessao();
+    if(sessao?.role!=='Secretaria')throw new Error('A importação está disponível somente para a Secretaria. Entre novamente.');
+    const base=await dadosImportacaoHistorico();
+    const nomes=new Set(base.alunas.map(a=>a.nome));
+    if(Object.values(mapeamento).some(n=>n&&!nomes.has(n)))throw new Error('Uma aluna não está mais no cadastro. Recarregue a prévia.');
+    const preparados=window.ImportacaoHistorico.preparar(itens,mapeamento,base.historico);
+    if(preparados.some(p=>p.erro))throw new Error('O histórico mudou ou há pendências. Atualize a prévia antes de importar.');
+    if(!preparados.length)throw new Error('Selecione ao menos um registro válido.');
+    const banco=await obterCliente();
+    const r=await banco.from('historico_geral').insert(preparados.map(p=>p.registro),{count:'exact'});
+    if(r.error)throw new Error('A importação não foi confirmada. Recarregue a prévia para conferir antes de tentar novamente.',{cause:r.error});
+    if(r.count!==preparados.length)throw new Error('O banco não confirmou a quantidade importada. Recarregue a prévia antes de tentar novamente.');
+    return r.count;
+  }
+
   async function dadosAnalitico() {
     const banco = await obterCliente();
     // Consulta a base do GEM atual, sem restringir à professora logada.
@@ -1520,6 +1548,8 @@
 
   window.GemData = { carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosExportacaoRelatorio, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, removerModeloLogistica, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, alterarStatusGem, removerGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, excluirEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
   window.GemData.dadosResumoProfessora = dadosResumoProfessora;
+  window.GemData.dadosImportacaoHistorico = dadosImportacaoHistorico;
+  window.GemData.importarHistoricoAntigo = importarHistoricoAntigo;
   window.GemData.rodizioProximoSabado = rodizioProximoSabado;
   window.GemData.dadosBuscaAtiva = dadosBuscaAtiva;
   window.GemData.perfilAluna = perfilAluna;

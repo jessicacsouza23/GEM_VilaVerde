@@ -17,7 +17,7 @@
   }
   function catalogo(historico) {
     const itens = new Map();
-    for (const r of historico.map(normalizarRegistro).sort((a,b) => Number(a.id) - Number(b.id))) {
+    for (const r of historico.filter(r=>!r.importacao_chave).map(normalizarRegistro).sort((a,b) => Number(a.id) - Number(b.id))) {
       const nome = r.Tipo === 'Material_Prática' ? r.Licao_Atual : r.Tipo === 'Analise_Prática' ? String(r.Licao_Atual || '').split(':')[0].trim() : String(r.Tipo || '').startsWith('Casa_Metodo_') ? r.Tipo.slice(12) : ['Casa_Apostila','Casa_Apostila_Prof'].includes(r.Tipo) ? 'Apostila' : '';
       if (!nome) continue;
       if (!itens.has(nome)) itens.set(nome, {nome, concluido:false});
