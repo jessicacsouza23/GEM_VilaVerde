@@ -20,7 +20,7 @@ async function montar(destino){
    }catch(e){feedback.textContent=e.message;}finally{ocupado=false;q('[data-ler]').disabled=false;}
  };
  function desenhar(){
-  const r=q('[data-revisao]');r.innerHTML='<details open><summary>1. Vincular nomes da planilha às alunas cadastradas</summary><p>Nomes diferentes precisam ser escolhidos manualmente. Alunas inativas também podem receber histórico antigo.</p><div data-vinculos></div></details><h4>2. Conferir registros</h4><p>Desmarque os registros que não deseja importar. Datas fora de sábado são sinalizadas para conferência. Campos vazios são preservados, sem presumir que não houve dificuldades.</p><div data-resumo></div><div class="table-wrap"><table class="scale-table"><thead><tr><th>Importar</th><th>Origem / aluna</th><th>Data da aula</th><th>Registro completo</th><th>Conferência</th></tr></thead><tbody data-linhas></tbody></table></div><div class="scale-actions"><button type="button" data-anterior>Anterior</button><span data-pagina></span><button type="button" data-proxima>Próxima</button></div><label class="checkbox-line"><input type="checkbox" data-confirmar>Revisei os registros selecionados e os vínculos das alunas.</label><button type="button" class="primary-action" data-salvar>Importar selecionados válidos</button>';
+  const r=q('[data-revisao]');r.innerHTML='<details open><summary>1. Vincular nomes da planilha às alunas cadastradas</summary><p>Nomes diferentes precisam ser escolhidos manualmente. Alunas inativas também podem receber histórico antigo.</p><div data-vinculos></div></details><h4>2. Conferir registros</h4><p>Desmarque os registros que não deseja importar. Datas fora de sábado são sinalizadas para conferência. Campos vazios são preservados, sem presumir que não houve dificuldades.</p><div data-resumo></div><div class="table-wrap"><table class="scale-table"><thead><tr><th>Importar</th><th>Origem / aluna</th><th>Data da aula</th><th>Registro completo</th><th>Conferência</th></tr></thead><tbody data-linhas></tbody></table></div><div class="scale-actions"><button type="button" data-anterior>Anterior</button><span data-pagina></span><button type="button" data-proxima>Próxima</button></div><label class="checkbox-line"><input type="checkbox" data-confirmar>Revisei os registros selecionados e os vínculos das alunas.</label><button type="button" class="primary-action" data-salvar>Importar selecionados válidos</button><div data-resultado-importacao role="status" tabindex="-1"></div>';
   const nomes=Object.keys(mapeamento);q('[data-vinculos]').innerHTML=nomes.map((nome,i)=>'<label>'+esc(nome||'Nome ausente na planilha')+'<select data-vinculo="'+i+'"><option value="">Escolha a aluna</option>'+base.alunas.map(a=>'<option value="'+esc(a.nome)+'" '+(a.nome===mapeamento[nome]?'selected':'')+'>'+esc(a.nome)+(a.ativo===false?' (inativa)':'')+'</option>').join('')+'</select></label>').join('');
   r.querySelectorAll('[data-vinculo]').forEach(el=>el.onchange=()=>{mapeamento[nomes[Number(el.dataset.vinculo)]]=el.value;atualizar();});
   q('[data-anterior]').onclick=()=>{pagina--;atualizar();};q('[data-proxima]').onclick=()=>{pagina++;atualizar();};
@@ -29,9 +29,19 @@ async function montar(destino){
    if(!q('[data-confirmar]').checked){feedback.textContent='Marque a confirmação após revisar a prévia.';return;}
    const validos=api.preparar(itens,mapeamento,base.historico).filter(p=>!p.erro&&!p.item.excluir).map(p=>p.item);
    if(!validos.length){feedback.textContent='Não há registros válidos selecionados.';return;}
+   const resultado=q('[data-resultado-importacao]');
+   resultado.className='';resultado.textContent='Importando registros. Aguarde a confirmação...';
    ocupado=true;destino.querySelectorAll('button,input,select').forEach(c=>c.disabled=true);
-   try{const n=await window.GemData.importarHistoricoAntigo(validos,mapeamento);feedback.textContent=n+' registros importados com sucesso. Eles já estão disponíveis no histórico e relatórios.';base=await window.GemData.dadosImportacaoHistorico();}
-   catch(e){feedback.textContent=e.message;}
+   try{
+     const n=await window.GemData.importarHistoricoAntigo(validos,mapeamento);
+     const mensagem='✓ Importação concluída! '+n+' registro(s) importado(s) com sucesso. Os dados já estão disponíveis no histórico e nos relatórios.';
+     resultado.className='action-ok';resultado.textContent=mensagem;feedback.textContent=mensagem;
+     base.historico.push(...api.preparar(validos,mapeamento,[]).map(p=>p.registro));
+     try{base=await window.GemData.dadosImportacaoHistorico();}
+     catch(e){resultado.textContent+=' Não foi possível atualizar a prévia. Recarregue a página para conferir; a importação já foi concluída.';}
+     resultado.focus();resultado.scrollIntoView({behavior:'smooth',block:'center'});
+   }
+   catch(e){feedback.textContent=e.message;resultado.className='action-error';resultado.textContent=e.message;resultado.focus();resultado.scrollIntoView({behavior:'smooth',block:'center'});}
    finally{ocupado=false;destino.querySelectorAll('button,input,select').forEach(c=>c.disabled=false);atualizar();}
   };
   atualizar();
