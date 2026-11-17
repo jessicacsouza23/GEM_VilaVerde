@@ -27,7 +27,7 @@ function ambiente(falhar = false) {
       return query;
     }
   }) };
-  vm.createContext(ctx); vm.runInContext(funcao, ctx);
+  vm.createContext(ctx); vm.runInContext(fonte.slice(fonte.indexOf("  function consolidarChamadas("),fonte.indexOf("  async function lerHistoricoCompleto(")) + funcao, ctx);
   return { carregar: ctx.dadosVisaoGeral, consultasHistorico };
 }
 test('relatório exclui desativada de escala, registros, totais e busca de pendências', async () => {
