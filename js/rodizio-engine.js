@@ -228,21 +228,22 @@
     // Mantemos a sequência padrão como primeira opção e só remanejamos se ela
     // criar conflito; a rotação manual continua sendo respeitada literalmente.
     let planoAutomatico = null;
-    if (!rotacaoTurmas && !turmaInicioTeoria && usarFixas && turmas.length === posicoes.length && turmas.length <= 6) {
+    if (!rotacaoTurmas && !turmaInicioTeoria && turmas.length === posicoes.length && turmas.length <= 6) {
       const permutar = (itens) => itens.length < 2 ? [itens] : itens.flatMap((item, indice) => permutar([...itens.slice(0, indice), ...itens.slice(indice + 1)]).map((restante) => [item, ...restante]));
       const indisponivelNoBloco = (professora, indiceBloco) => estaDeFolga(professora)
         || (saidas[professora] && horarios.indexOf(saidas[professora]) < indiceBloco);
       const respeitaFixas = (ordemTurmas, direcao) => blocos.every((_, indiceBloco) => {
         const posicaoDaTurma = (turma) => (ordemTurmas.indexOf(turma) + direcao * indiceBloco + posicoes.length * 10) % posicoes.length;
         const turmaIndividual = turmas.find((turma) => posicoes[posicaoDaTurma(turma)] === "__individual__");
-        const reservadas = new Set((turmasReais[turmaIndividual] || []).map((aluna) => fixas[String(aluna).trim().toLowerCase()]).filter(Boolean));
+        const reservadas = new Set((usarFixas ? (turmasReais[turmaIndividual] || []) : []).map((aluna) => fixas[String(aluna).trim().toLowerCase()]).filter(Boolean));
         const coletivasNoBloco = [];
         for (const turma of turmas) {
           const posicao = posicoes[posicaoDaTurma(turma)];
           if (posicao === "__individual__") continue;
           const professora = coletivas?.[posicao]?.[turma];
           if (professora) {
-            if (indisponivelNoBloco(professora, indiceBloco)) continue;
+            const habilitadasDaArea = habilitadas[posicao] || (posicao === "Solfejo Melódico" ? habilitadas.Canto : null) || disponiveis;
+            if (!disponiveis.includes(professora) || !habilitadasDaArea.includes(professora) || indisponivelNoBloco(professora, indiceBloco)) return false;
             if (reservadas.has(professora)) return false;
             coletivasNoBloco.push(professora);
           }
@@ -257,7 +258,7 @@
         }
         if (planoAutomatico) break;
       }
-      if (!planoAutomatico) return { escala: null, erros: ["Não existe combinação de horários que respeite simultaneamente as professoras fixas, as aulas coletivas, as folgas e as saídas antecipadas. Ajuste uma dessas informações."] };
+      if (!planoAutomatico && usarFixas) return { escala: null, erros: ["Não existe combinação de horários que respeite simultaneamente as professoras fixas, as aulas coletivas, as folgas e as saídas antecipadas. Ajuste uma dessas informações."] };
     }
     blocos.forEach((bloco, indiceBloco) => {
       const hora = horarios[indiceBloco];

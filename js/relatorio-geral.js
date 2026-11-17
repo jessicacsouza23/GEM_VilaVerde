@@ -13,9 +13,9 @@
       registros.filter(r=>r.Tipo==='Chamada').forEach(r=>chamadas.set(data(r.Data),r));
       const frequencia={presentes:0,faltas:0,justificadas:0,desconhecidas:0};
       for(const r of chamadas.values()) {const status=normal(r.Status);if(status==='presente')frequencia.presentes++;else if(['ausente','falta'].includes(status))frequencia.faltas++;else if(['justificada','falta justificada'].includes(status))frequencia.justificadas++;else frequencia.desconhecidas++;}
-      const estudos=(dados.estudos||[]).filter(e=>e.aluna===aluna.nome && noPeriodo(data(e.data||e.Data)));
+      const estudos=(dados.estudos||[]).filter(e=>e.aluna===aluna.nome && noPeriodo(data(e.data||e.Data))).sort((a,b)=>data(a.data||a.Data).localeCompare(data(b.data||b.Data)));
       const diasEstudo=new Set(estudos.filter(e=>Array.isArray(e.horarios)&&e.horarios.some(h=>String(h||'').trim())).map(e=>data(e.data||e.Data))).size;
-      const notas=(dados.notas||[]).filter(n=>n.aluna===aluna.nome).map(n=>({...n,avaliacao:(dados.avaliacoes||[]).find(a=>String(a.id)===String(n.avaliacao_id))}));
+      const notas=(dados.notas||[]).filter(n=>n.aluna===aluna.nome).map(n=>({...n,avaliacao:(dados.avaliacoes||[]).find(a=>String(a.id)===String(n.avaliacao_id))})).sort((a,b)=>data(a.avaliacao?.data_avaliacao).localeCompare(data(b.avaliacao?.data_avaliacao)));
       const metodos=[]; const inicios=new Map();
       historico.filter(r=>String(r.Tipo||'').startsWith('Material_') && data(r.Data)<=fim).forEach(r=>{
         const chave=r.Tipo+'|'+normal(r.Licao_Atual), status=normal(r.Status);

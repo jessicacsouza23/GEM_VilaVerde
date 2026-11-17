@@ -19,3 +19,14 @@ test('matriz inválida não gera escala: conflitos, campos faltantes e atividade
   const e=entrada();alterar(e);const r=engine.gerar(e);assert.equal(r.escala,null);assert.ok(r.erros.length);
  }
 });
+
+test('automático antecipa teoria da turma quando a professora sai antes, sem exigir fixas',()=>{
+ const e=entrada();delete e.rotacaoTurmas;
+ e.professoras.push('Dora');e.modelo.configuracao.professoras_habilitadas.Teoria.push('Dora');
+ e.coletivas={Teoria:{T1:'Dora',T2:'Dora',T3:'Clara'}};
+ e.saidas={Clara:engine.horario(e.modelo.configuracao.blocos[0],0)};
+ const r=engine.gerar(e);assert.equal(r.erros.length,0,r.erros.join('\n'));
+ const linha=r.escala.find(l=>l.Aluna==='C');
+ const primeiro=engine.horario(e.modelo.configuracao.blocos[0],0);
+ assert.equal(linha._detalhes[primeiro].tipo,'Teoria');assert.match(linha[primeiro],/Clara/);
+});

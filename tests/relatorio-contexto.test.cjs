@@ -28,7 +28,7 @@ test('pendências excluem resolvidas e futuras, mantendo apostilas antigas e úl
     registro(7, '17/10/2026', 'Casa_Apostila'), registro(8, '26/09/2026', 'Casa_MSA'), registro(9, '03/10/2026', 'Casa_MSA', 'Resolvido'),
     registro(10, '26/09/2026', 'Casa_Canto'), registro(11, '03/10/2026', 'Casa_Canto')];
   const r = calcular(historico, 'Ana', '10/10/2026', 'Ausente');
-  assert.deepEqual(Array.from(r.pendentes, i => i.id), [2, 3, 4, 5, 11]);
+  assert.deepEqual(Array.from(r.pendentes, i => i.id), [4, 5, 2, 3, 11]);
   assert.equal(r.ultimaAula.length, 0);
 });
 test('datas atravessam meses e anos sem comparação textual em formato brasileiro', () => {

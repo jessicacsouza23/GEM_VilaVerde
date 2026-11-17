@@ -7,3 +7,11 @@ test('filtra turma, alunas ativas e notas pela data da avaliação; nota zero pe
 test('conta chamada mais recente por dia e dias únicos de estudo',()=>{const a=api.construir(dados(),filtros)[0];assert.equal(a.frequencia.justificadas,1);assert.equal(a.frequencia.faltas,0);assert.equal(a.frequencia.presentes,1);assert.equal(a.diasEstudo,1);assert.equal(a.diasPeriodo,10);assert.equal(a.estudos.length,2);});
 test('duração usa início anterior ao recorte e não inventa início ausente',()=>{const a=api.construir(dados(),filtros)[0];assert.equal(a.metodos[0].dias,40);assert.equal(a.metodos[1].dias,null);assert.throws(()=>api.construir(dados(),{inicio:'2026-12-01',fim:'2026-11-01'}));});
 test('HTML inclui todas as observações sem executar conteúdo e separa alunas',()=>{const d=dados();d.historico.push({Aluna:'Ana',Data:'09/11/2026',Tipo:'Analise_Solfejo',Observacao:'<script>teste</script>',Dificuldades:['Não apresentou dificuldades']});const itens=api.construir(d,filtros);const html=api.html(itens,{...filtros,escapeHtml:s=>String(s).replaceAll('<','&lt;').replaceAll('>','&gt;'),classificacao:()=>({nome:'Ouro',icone:'',nota:100}),disciplinaAnalise:t=>t==='Analise_Solfejo'?'Solfejo':'',dificuldades:d=>d||[]});assert.ok(!html.includes('<script>'));assert.ok(html.includes('&lt;script&gt;'));assert.equal((html.match(/data-relatorio-aluna/g)||[]).length,2);assert.ok(html.includes('Evoluções registradas'));});
+
+test('datas crescentes em registros, estudos e boletim, incluindo mudança de ano',()=>{
+ const d=dados();d.estudos=[{aluna:'Ana',data:'2026-11-07'},{aluna:'Ana',data:'31/12/2025'}];
+ const r=api.construir(d,{inicio:'2025-01-01',fim:'2026-12-31'})[0];
+ assert.equal(r.estudos[0].data,'31/12/2025');
+ assert.equal(r.notas[0].avaliacao_id,2);
+ assert.equal(r.registros[0].Data,'01/10/2026');
+});

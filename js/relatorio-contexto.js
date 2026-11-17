@@ -28,7 +28,8 @@
       if (item.Tipo === 'Casa_Canto') return item === canto;
       return true;
     });
-    return { ultimaAula, pendentes };
+    const ordem = (a,b) => dataIso(a.Data).localeCompare(dataIso(b.Data)) || Number(a.id||0)-Number(b.id||0);
+    return { ultimaAula: ultimaAula.sort(ordem), pendentes: pendentes.sort(ordem) };
   }
   window.RelatorioContexto = { paraAluna };
 })();
