@@ -15,6 +15,27 @@
     return historico.filter(r=>r.Tipo!=='Chamada' || porDia.get(JSON.stringify([r.Aluna||'',data(r.Data)]))===r)
       .map(r=>r.Tipo==='Chamada'?{...r,Data:data(r.Data).split('-').reverse().join('/'),Status:status(r.Status)}:r);
   }
+  function completarFaltasAntigas(historico, alunas) {
+    const iso=v=>{const s=String(v||'').trim(),m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);return m?m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'):/^\d{4}-\d{2}-\d{2}/.test(s)?s.slice(0,10):'';};
+    const base=consolidarChamadas(historico.filter(r=>!r.falta_inferida));
+    const datas=[...new Set(base.filter(r=>r.Tipo==='Chamada'&&r.importacao_chave).map(r=>iso(r.Data)).filter(d=>d>='2025-01-01'))];
+    const existentes=new Set(base.filter(r=>r.Tipo==='Chamada').map(r=>JSON.stringify([r.Aluna,iso(r.Data)])));
+    const primeiro=new Map();
+    for(const r of base){const tipo=String(r.Tipo||'').replace(/^Analise_/,'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();const d=iso(r.Data);if(['pratica','teoria','solfejo','solfejo melodico','canto'].includes(tipo)&&d&&(!primeiro.has(r.Aluna)||d<primeiro.get(r.Aluna)))primeiro.set(r.Aluna,d);}
+    const inferidas=[];
+    for(const a of alunas){const cadastro=iso(a.data_inicio),inicio=cadastro||primeiro.get(a.nome);if(!inicio)continue;
+      for(const d of datas)if(d>=inicio&&!existentes.has(JSON.stringify([a.nome,d]))){
+        inferidas.push({Aluna:a.nome,Data:d.split('-').reverse().join('/'),Tipo:'Chamada',Status:'Ausente',falta_inferida:true,
+          Observacao:'Falta inferida da chamada antiga: nome ausente das listas de presentes e justificadas. Referência: '+(cadastro?'data de início cadastrada':'primeiro registro de aula (provisório)')+' — '+inicio.split('-').reverse().join('/')+'.'});
+      }
+    }
+    return [...base,...inferidas];
+  }
+  async function frequenciaAntiga(banco) {
+    const ler=async(tabela,colunas,ordem)=>{const itens=[];for(let i=0;;i+=500){const r=await banco.from(tabela).select(colunas).order(ordem).range(i,i+499);if(r.error)throw new Error('Não foi possível conferir a frequência histórica. Atualize para tentar novamente.',{cause:r.error});itens.push(...(r.data||[]));if((r.data||[]).length<500)return itens;}};
+    const [historico,alunas]=await Promise.all([ler('historico_geral','id,Aluna,Data,Tipo,Status,importacao_chave','id'),ler('alunas','nome,data_inicio','nome')]);
+    return completarFaltasAntigas(historico,alunas).filter(r=>r.falta_inferida);
+  }
   async function lerHistoricoCompleto(banco, aluna) {
     const itens=[];
     for(let inicio=0;;inicio+=500){
@@ -430,7 +451,7 @@
     const banco = await obterCliente(); const data = dataBr(dataIso);
     const [calendario, historico, estudos] = await Promise.all([
       banco.from("calendario").select("escala").eq("id", data).maybeSingle(),
-      banco.from("historico_geral").select("id,Data,Aluna,Tipo,Status,Observacao,Licao_Atual,Licao_Casa,Dificuldades,Instrutora,Secretaria").eq("Data", data).order("id", { ascending: true }),
+      banco.from("historico_geral").select("*").eq("Data", data).order("id", { ascending: true }),
       consultarEstudos({datas:[data]}).then(data=>({data}))
     ]);
     if (calendario.error || historico.error) throw new Error("Não foi possível carregar a visão geral desta data.");
@@ -445,8 +466,10 @@
     }
     const incluir = nome => !desativadas.has(normalizar(nome));
     const escala = (calendario.data?.escala || []).filter(item => incluir(item.Aluna));
-    const registros = consolidarChamadas(historico.data || []).filter(item => incluir(item.Aluna));
-    const alunas = [...new Set(escala.map((linha) => linha.Aluna).filter(Boolean))];
+    const chamadaAntiga = (historico.data || []).some(r=>r.Tipo==='Chamada'&&r.importacao_chave);
+    const inferidas = chamadaAntiga ? (await frequenciaAntiga(banco)).filter(r=>r.Data===data) : [];
+    const registros = consolidarChamadas([...(historico.data || []),...inferidas]).filter(item => incluir(item.Aluna));
+    const alunas = [...new Set([...escala.map((linha) => linha.Aluna),...(chamadaAntiga ? registros.filter(r=>r.Tipo==='Chamada').map(r=>r.Aluna) : [])].filter(Boolean))];
     const chamadas = registros.filter((item) => item.Tipo === "Chamada");
     const ausentes = chamadas.filter((item) => ["Ausente", "Justificada"].includes(item.Status));
     const analises = registros.filter((item) => String(item.Tipo || "").startsWith("Analise_"));
@@ -713,7 +736,8 @@
       ]);
       historico.push(...lote[0]); estudos.push(...lote[1]); calendarios.push(...lote[2]);
     }
-    return { alunas, historico: consolidarChamadas(historico), estudos, calendarios };
+    const inferidas=(await frequenciaAntiga(banco)).filter(r=>dias.includes(r.Data.split('/').reverse().join('-')));
+    return { alunas, historico: consolidarChamadas([...historico,...inferidas]), estudos, calendarios };
   }
 
   async function dadosResumoProfessora(dataIso) {
@@ -742,7 +766,8 @@
       lerPaginas(() => banco.from("historico_geral").select("id,Data,Aluna,Tipo,Status,Dificuldades").in("Data", datas).order("id")),
       consultarEstudos({datas:datas.filter(d=>d.includes('/'))})
     ]);
-    return { alunas, historico: consolidarChamadas(historico), estudos };
+    const inferidas=(await frequenciaAntiga(banco)).filter(r=>datas.includes(r.Data));
+    return { alunas, historico: consolidarChamadas([...historico,...inferidas]), estudos };
   }
 
   async function dadosImportacaoHistorico() {
@@ -795,7 +820,7 @@
       banco.from("objetivos_pedagogicos").select("*")
     ]);
     if (historico.error || alunas.error) throw new Error(`Não foi possível carregar o analítico: ${(historico.error || alunas.error).message || "verifique as permissões."}`);
-    return { erroBoletim: (avaliacoes.error || notas.error)?.message || ((avaliacoes.error || notas.error) ? "Falha ao consultar notas" : ""), historico: consolidarChamadas(historico.data || []), alunas: alunas.data || [], avaliacoes: avaliacoes.data || [], notas: notas.data || [], estudos: estudos.error ? [] : estudos.data || [], objetivos: objetivos.error ? [] : objetivos.data || [] };
+    return { erroBoletim: (avaliacoes.error || notas.error)?.message || ((avaliacoes.error || notas.error) ? "Falha ao consultar notas" : ""), historico: completarFaltasAntigas(historico.data || [], alunas.data || []), alunas: alunas.data || [], avaliacoes: avaliacoes.data || [], notas: notas.data || [], estudos: estudos.error ? [] : estudos.data || [], objetivos: objetivos.error ? [] : objetivos.data || [] };
   }
 
   async function dadosExportacaoRelatorio() {
@@ -1372,7 +1397,7 @@
       banco.from("licoes_feitas_alunas").select("*").eq("aluna", aluna)
     ]);
     if (erroHist) throw new Error("Não foi possível carregar o histórico da aluna.", { cause: erroHist });
-    return { historico: consolidarChamadas(historico || []), feitas: feitas || [] };
+    return { historico: consolidarChamadas([...(historico || []),...(await frequenciaAntiga(banco)).filter(r=>r.Aluna===aluna)]), feitas: feitas || [] };
   }
 
   async function estudosServidor(parametros) {
@@ -1568,7 +1593,7 @@
     return { data, total: salvos, justificadas: registros.filter(r=>r.status === 'Justificada').length, ausentes: registros.filter(r=>r.status === 'Ausente').length };
   }
 
-  window.GemData = { consolidarChamadas, carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosExportacaoRelatorio, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, removerModeloLogistica, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, alterarStatusGem, removerGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, excluirEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { completarFaltasAntigas, consolidarChamadas, carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosExportacaoRelatorio, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, removerModeloLogistica, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, alterarStatusGem, removerGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, excluirEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
   window.GemData.dadosResumoProfessora = dadosResumoProfessora;
   window.GemData.dadosImportacaoHistorico = dadosImportacaoHistorico;
   window.GemData.importarHistoricoAntigo = importarHistoricoAntigo;
