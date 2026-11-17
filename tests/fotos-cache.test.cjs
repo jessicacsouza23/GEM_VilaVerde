@@ -1,0 +1,5 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const source=fs.readFileSync(require.resolve('../js/gem-data.js'),'utf8');
+function ambiente(){const ctx={CACHE_URL_ASSINADA:'teste:',localStorage:{getItem:()=>JSON.stringify({url:'https://antigo.invalid/foto',expiraEm:Date.now()+999999}),setItem(){}},Date};vm.createContext(ctx);vm.runInContext(source.slice(source.indexOf('  async function urlAssinadaEmCache('),source.indexOf('  async function obterCliente(')),ctx);return ctx;}
+test('foto R2 ignora URL antiga em cache e mantém proxy privado',async()=>{const c=ambiente();assert.equal(await c.urlAssinadaEmCache({},'fotos_alunas','r2:fotos_alunas/teste.png'),'/api/r2-file?key=r2%3Afotos_alunas%2Fteste.png');});
+test('falha de autorização do Storage não é ocultada',async()=>{const c=ambiente();c.localStorage.getItem=()=>null;await assert.rejects(c.urlAssinadaEmCache({storage:{from:()=>({createSignedUrl:async()=>({error:{message:'Acesso negado'}})})}},'fotos_alunas','teste.png'),/Acesso negado/);});

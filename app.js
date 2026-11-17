@@ -935,11 +935,12 @@ async function renderChamada(content) {
     try {
       const dataCarregada = $("#chamada-data").value;
       lista.innerHTML = '<div class="empty">Carregando chamada...</div>';
-      const { alunas, chamadas, fotos } = await window.GemData.dadosChamada(dataCarregada);
+      const { alunas, chamadas, fotos, errosFotos = [] } = await window.GemData.dadosChamada(dataCarregada);
       if ($("#chamada-data").value !== dataCarregada) { lista.innerHTML = '<div class="empty">A data mudou. Clique em Carregar.</div>'; return; }
       if (!alunas.length) { lista.innerHTML = `<div class="empty">Não há rodízio salvo nesta data.</div>`; return; }
       const porAluna = Object.fromEntries(chamadas.map((item) => [item.Aluna, item]));
       lista.innerHTML = `<div class="attendance-list">${alunas.map((aluna) => { const chamada = porAluna[aluna] || { Status: "Presente", Observacao: "" }; const foto = fotos[aluna] ? `<button class="photo-zoom attendance-photo" type="button" data-foto-zoom="${escapeHtml(fotos[aluna])}" data-foto-titulo="${escapeHtml(aluna)}" title="Ampliar foto de ${escapeHtml(aluna)}"><img src="${escapeHtml(fotos[aluna])}" alt="Foto de ${escapeHtml(aluna)}"></button>` : `<span>${escapeHtml(aluna.slice(0, 1))}</span>`; return `<article class="attendance-row"><div class="attendance-student">${foto}<strong>${escapeHtml(aluna)}</strong></div><div class="attendance-checks"><label><input type="checkbox" data-presente="${escapeHtml(aluna)}" ${chamada.Status === "Presente" ? "checked" : ""}> Presente</label><label><input type="checkbox" data-ausente="${escapeHtml(aluna)}" ${chamada.Status === "Ausente" ? "checked" : ""}> Ausente</label><label><input type="checkbox" data-justificada="${escapeHtml(aluna)}" ${chamada.Status === "Justificada" ? "checked" : ""}> Falta justificada</label></div><input class="${chamada.Status === "Justificada" ? "" : "hidden"}" data-motivo="${escapeHtml(aluna)}" value="${escapeHtml(chamada.Observacao || "")}" placeholder="Motivo da falta justificada"></article>`; }).join("")}</div><button id="salvar-chamada" class="primary-action full-action" type="button">Salvar chamada</button><div id="chamada-retorno"></div>`;
+      if(errosFotos.length) lista.insertAdjacentHTML("afterbegin", `<p class="action-error">${escapeHtml(errosFotos.join(" · "))}</p>`);
       lista.querySelectorAll("input[data-presente],input[data-ausente],input[data-justificada]").forEach((campo) => campo.addEventListener("change", (evento) => {
         const linha = evento.target.closest(".attendance-row");
         $("#chamada-retorno").textContent = 'Alterações ainda não salvas. Clique em Salvar chamada.';
@@ -1428,7 +1429,7 @@ async function renderVisaoGeral(content) {
 
 async function renderPessoas(content) {
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">CADASTROS</p><h2>Turmas e pessoas</h2><p>Alunas desativadas deixam de entrar apenas em rodízios novos; os rodízios, chamadas e registros anteriores continuam visíveis.</p></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-pessoas="aluna">Alunas e turmas</button><button class="tab-action" data-pessoas="professora">Professoras</button><button class="tab-action" data-pessoas="secretaria">Secretarias</button></div><div id="pessoas-conteudo"><div class="empty">Carregando pessoas...</div></div></section>`;
-  const [dados, fotos] = await Promise.all([window.GemData.dadosPessoas(), window.GemData.fotosPessoas().catch(() => ({ aluna: {}, professora: {} }))]); const destino = $("#pessoas-conteudo");
+  const [dados, fotos] = await Promise.all([window.GemData.dadosPessoas(), window.GemData.fotosPessoas().catch(erro => ({ aluna: {}, professora: {}, erros: [erro.message] }))]); const destino = $("#pessoas-conteudo");
   let coordenacoes = [], erroCoordenacoes = "";
   try { coordenacoes = await window.GemData.dadosCoordenacoesProfessoras(); }
   catch (erro) { erroCoordenacoes = erro.message || "Não foi possível carregar as coordenações."; }
@@ -1439,6 +1440,7 @@ async function renderPessoas(content) {
     const lista = tipo === "aluna" ? dados.alunas : tipo === "professora" ? dados.professoras : dados.secretarias;
     const titulo = tipo === "aluna" ? "Adicionar aluna" : tipo === "professora" ? "Adicionar professora" : "Adicionar secretaria";
     destino.innerHTML = `<div class="person-add"><h3>${titulo}</h3><div class="form-grid"><input id="pessoa-nome" placeholder="Nome completo">${tipo === "aluna" ? '<input id="pessoa-turma" placeholder="Turma"><label>Comum<input id="pessoa-comum" placeholder="Ex.: Vila Verde"></label><label>Data de início<input id="pessoa-data-inicio" type="date"></label>' : ""}${tipo !== "secretaria" ? '<input id="pessoa-login" placeholder="Login"><input id="pessoa-senha" type="password" autocomplete="new-password" placeholder="Senha inicial (mínimo 6 caracteres)"><label>Foto de perfil (opcional)<input id="pessoa-foto" type="file" accept="image/jpeg,image/png,image/webp"></label>' : ""}<button id="adicionar-pessoa" class="primary-action" type="button">Adicionar</button></div><div id="pessoa-feedback" aria-live="polite"></div></div><div class="person-list">${lista.length ? lista.map((pessoa, indice) => { const foto = fotos[tipo]?.[pessoa.nome]; const retrato = tipo !== "secretaria" ? (foto ? `<button class="person-photo photo-zoom" type="button" data-foto-zoom="${escapeHtml(foto)}" data-foto-titulo="${escapeHtml(pessoa.nome)}" title="Ampliar foto de ${escapeHtml(pessoa.nome)}"><img src="${escapeHtml(foto)}" alt="Foto de ${escapeHtml(pessoa.nome)}"></button>` : `<span class="person-photo initials">${escapeHtml(pessoa.nome.slice(0, 1))}</span>`) : ""; return `<article class="person-row person-card"><div class="person-identity">${retrato}<div><strong>${escapeHtml(pessoa.nome)}</strong><span>${tipo === "aluna" ? escapeHtml(pessoa.turma || "Sem turma") : pessoa.login ? `Login: ${escapeHtml(pessoa.login)}` : ""}</span></div></div><span class="badge ${pessoa.ativo === false ? "inactive" : ""}">${pessoa.ativo === false ? "Desativada" : "Ativa"}</span><div class="person-actions"><button data-editar="${indice}" class="secondary-action" type="button">Editar</button><button data-toggle="${indice}" class="secondary-action" type="button">${pessoa.ativo === false ? "Reativar" : "Desativar"}</button></div><div class="person-editor hidden" data-editor="${indice}"><label>Nome<input data-campo="nome" value="${escapeHtml(pessoa.nome)}"></label>${tipo === "aluna" ? `<label>Turma<input data-campo="turma" value="${escapeHtml(pessoa.turma || "")}"></label><label>Comum<input data-campo="comum" value="${escapeHtml(pessoa.comum || "")}" placeholder="Ex.: Vila Verde"></label><label>Data de início<input data-campo="data_inicio" type="date" value="${escapeHtml(pessoa.data_inicio || "")}"></label>` : ""}${tipo !== "secretaria" ? `<label>Login<input data-campo="login" value="${escapeHtml(pessoa.login || "")}"></label><label>Nova senha <small>(deixe vazia para manter a atual)</small><input data-campo="senha" type="password" autocomplete="new-password" placeholder="Nova senha"></label><label>Trocar foto <small>(JPG, PNG ou WEBP, até 5 MB)</small><input data-campo="foto" type="file" accept="image/jpeg,image/png,image/webp"></label>` : ""}<button data-salvar="${indice}" class="primary-action" type="button">Salvar alterações</button></div></article>`; }).join("") : "<div class=\"empty\">Nenhum cadastro ainda.</div>"}</div>`;
+    if(fotos.erros?.length) destino.insertAdjacentHTML("afterbegin", `<p class="action-error">${escapeHtml(fotos.erros.join(" · "))}</p>`);
     if (tipo === "professora") {
       const professorasAtivas = lista.filter((pessoa) => pessoa.ativo !== false);
       const coordenacaoAtual = coordenacoes.filter((item) => item.inicio <= hoje && item.fim >= hoje);
@@ -2757,3 +2759,20 @@ window.GemData?.carregarIdentidade().then((identidade) => {
   try { await abrirConta(conta); }
   catch (erro) { console.warn("Não foi possível restaurar a sessão do GEM.", erro); }
 })();
+
+// Falhas de imagem ocorrem depois da renderização e devem ser visíveis.
+document.addEventListener('error', async evento => {
+  const img=evento.target;
+  if(img?.tagName!=='IMG'||!img.closest('.photo-zoom')||img.dataset.erroFoto)return;
+  img.dataset.erroFoto='1';
+  const card=img.closest('.person-card, .attendance-row, .agenda-card')||img.parentElement;
+  const aviso=document.createElement('small');aviso.className='action-error';aviso.setAttribute('role','status');
+  aviso.textContent='Não foi possível carregar a foto.';card.appendChild(aviso);
+  try {
+    const url=new URL(img.src,location.href);
+    if(url.origin!==location.origin||url.pathname!=='/api/r2-file')return;
+    const resposta=await fetch(url.href,{credentials:'same-origin',cache:'no-store'});
+    if(!resposta.ok){const dados=await resposta.json().catch(()=>({}));aviso.textContent=dados.error||'Não foi possível carregar a foto. Código: '+resposta.status;}
+    else {url.searchParams.set('recarregar',Date.now());img.addEventListener('load',()=>aviso.remove(),{once:true});img.src=url.href;}
+  }catch(_){aviso.textContent='Não foi possível carregar a foto. Confira a conexão e atualize a página.';}
+},true);

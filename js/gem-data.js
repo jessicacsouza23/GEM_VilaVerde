@@ -52,7 +52,7 @@
   let r2Habilitado = null;
   const tabelasPessoasSemId = new Set();
   // v2 invalida somente URLs antigas do R2 que eram assinadas diretamente.
-  const CACHE_URL_ASSINADA = "gem-url-assinada-v2:";
+  const CACHE_URL_ASSINADA = "gem-url-assinada-v3:";
 
   function slugSolicitado() {
     const valor = new URLSearchParams(window.location.search).get("gem");
@@ -118,6 +118,7 @@
   // minutos no mesmo aparelho para reduzir a saída do Supabase.
   async function urlAssinadaEmCache(banco, bucket, caminho, segundos = 3600) {
     if (!caminho) return null;
+    if (String(caminho).startsWith("r2:")) return "/api/r2-file?key="+encodeURIComponent(caminho);
     const chave = `${CACHE_URL_ASSINADA}${bucket}:${caminho}`;
     try {
       const salvo = JSON.parse(localStorage.getItem(chave) || "null");
@@ -131,6 +132,7 @@
       url = `/api/r2-file?key=${encodeURIComponent(caminho)}`;
     } else {
       const resposta = await banco.storage.from(bucket).createSignedUrl(caminho, segundos);
+      if (resposta.error) throw new Error("Não foi possível autorizar a foto: " + (resposta.error.message || "verifique as permissões."));
       url = resposta.data?.signedUrl || null;
     }
     if (url) {
@@ -535,19 +537,21 @@
       banco.from("alunas").select("nome, foto_path").not("foto_path", "is", null),
       banco.from("professoras").select("nome, foto_path").not("foto_path", "is", null)
     ]);
+    const erros = [];
+    if(alunas.error || professoras.error) erros.push("Não foi possível consultar as fotos: "+((alunas.error || professoras.error).message || "verifique as permissões."));
     const carregar = async (registros, bucket) => {
       const resultado = {};
       await Promise.all((registros || []).map(async (pessoa) => {
         try {
           const url = await urlAssinadaEmCache(banco, bucket, pessoa.foto_path);
           if (url) resultado[pessoa.nome] = url;
-        } catch (_) { /* Uma foto indisponível não impede o cadastro de abrir. */ }
+        } catch (erro) { erros.push(pessoa.nome+": "+erro.message); }
       }));
       return resultado;
     };
     return {
       aluna: alunas.error ? {} : await carregar(alunas.data, "fotos_alunas"),
-      professora: professoras.error ? {} : await carregar(professoras.data, "fotos_professoras")
+      professora: professoras.error ? {} : await carregar(professoras.data, "fotos_professoras"), erros
     };
   }
 
@@ -1560,14 +1564,15 @@
     if (calendario.error || historico.error) throw new Error("Não foi possível carregar a chamada desta data.");
     const alunas = [...new Set((calendario.data?.escala || []).map((linha) => linha.Aluna).filter(Boolean))].sort();
     const perfis = alunas.length ? await banco.from("alunas").select("nome,foto_path").in("nome", alunas) : { data: [] };
-    const fotos = {};
+    const fotos = {}, errosFotos = [];
+    if(perfis.error) errosFotos.push("Não foi possível consultar as fotos: "+(perfis.error.message || "verifique as permissões."));
     await Promise.all((perfis.data || []).filter((perfil) => perfil.foto_path).map(async (perfil) => {
       try {
         const url = await urlAssinadaEmCache(banco, "fotos_alunas", perfil.foto_path);
         if (url) fotos[perfil.nome] = url;
-      } catch (_) { /* foto indisponível não bloqueia a chamada */ }
+      } catch (erro) { errosFotos.push(perfil.nome+": "+erro.message); }
     }));
-    return { alunas, chamadas: historico.data || [], fotos };
+    return { alunas, chamadas: historico.data || [], fotos, errosFotos };
   }
 
   async function salvarChamada(dataIso, registros) {
