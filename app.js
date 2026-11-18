@@ -1273,10 +1273,24 @@ function destaquesGemMarkup(ativas, analitico, dataReferencia) {
     const inicio = referenciaMs - ((dias - 1) * 86400000), pontos = new Map(ativas.map((aluna) => [aluna.nome, 0]));
     historicoGeral.forEach((item) => {
       if (dataEmMs(item.Data) < inicio || dataEmMs(item.Data) > referenciaMs || !pontos.has(item.Aluna)) return;
-      if (item.Tipo === "Chamada") pontos.set(item.Aluna, pontos.get(item.Aluna) + (item.Status === "Presente" ? 3 : -2));
-      if (String(item.Tipo || "").startsWith("Analise_")) { const dificuldades = Array.isArray(item.Dificuldades) ? item.Dificuldades.filter((dificuldade) => dificuldade && !/não apresentou dificuldade/i.test(dificuldade)) : []; pontos.set(item.Aluna, pontos.get(item.Aluna) + (dificuldades.length ? 1 : 2)); }
+      if (item.Tipo === "Chamada") pontos.set(item.Aluna, pontos.get(item.Aluna) + (item.Status === "Presente" ? 3 : item.Status === "Justificada" ? -1 : item.Status === "Ausente" ? -2 : 0));
+      if (String(item.Tipo || "").startsWith("Analise_")) {
+        let dificuldades = item.Dificuldades;
+        if (typeof dificuldades === 'string') { try { dificuldades = JSON.parse(dificuldades); } catch (_) { dificuldades = dificuldades.split(/[,;]+/); } }
+        dificuldades = (Array.isArray(dificuldades) ? dificuldades : []).map(d=>String(d||'').trim()).filter(d=>d&&!/^(null|nan|\[\])$/i.test(d));
+        const semDificuldade = d => /^nao apresentou dificuldades?$/i.test(d.normalize('NFD').replace(/[\u0300-\u036f]/g,''));
+        const temDificuldade = dificuldades.some(d=>!semDificuldade(d));
+        const pontuacao = temDificuldade ? -1 : dificuldades.some(semDificuldade) ? 3 : 1;
+        pontos.set(item.Aluna, pontos.get(item.Aluna) + pontuacao);
+      }
     });
-    (analitico.estudos || []).forEach((estudo) => { const dataEstudo = dataEmMs(estudo.data); if (dataEstudo >= inicio && dataEstudo <= referenciaMs && pontos.has(estudo.aluna) && (estudo.horarios || []).length) pontos.set(estudo.aluna, pontos.get(estudo.aluna) + 2); });
+    const diasPontuados = new Set();
+    (analitico.estudos || []).forEach(estudo => {
+      const dataEstudo = dataEmMs(estudo.data || estudo.Data), chave=JSON.stringify([estudo.aluna,dataEstudo]);
+      if (dataEstudo >= inicio && dataEstudo <= referenciaMs && pontos.has(estudo.aluna) && (estudo.horarios || []).some(h=>String(h||'').trim()) && !diasPontuados.has(chave)) {
+        diasPontuados.add(chave); pontos.set(estudo.aluna,pontos.get(estudo.aluna)+4);
+      }
+    });
     const ordenado = [...pontos.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
     return ordenado[0]?.[1] > 0 ? ordenado[0] : null;
   };
@@ -1286,18 +1300,18 @@ function destaquesGemMarkup(ativas, analitico, dataReferencia) {
   // marcado. Assim uma aluna não sobe artificialmente no quadro por
   // selecionar manhã, tarde e noite no mesmo dia.
   const inicioEstudo = referenciaMs - (29 * 86400000);
-  const estudoPorAluna = new Map(ativas.map((aluna) => [aluna.nome, 0]));
-  (analitico.estudos || []).forEach((estudo) => {
-    const quando = dataEmMs(estudo.data);
-    if (quando >= inicioEstudo && quando <= referenciaMs && estudoPorAluna.has(estudo.aluna) && (estudo.horarios || []).length) {
-      estudoPorAluna.set(estudo.aluna, estudoPorAluna.get(estudo.aluna) + 1);
+  const estudoPorAluna = new Map(ativas.map(aluna => [aluna.nome, new Set()]));
+  (analitico.estudos || []).forEach(estudo => {
+    const quando = dataEmMs(estudo.data || estudo.Data);
+    if (quando >= inicioEstudo && quando <= referenciaMs && estudoPorAluna.has(estudo.aluna) && (estudo.horarios || []).some(h => String(h || '').trim())) {
+      estudoPorAluna.get(estudo.aluna).add(quando);
     }
   });
-  const rankingEstudo = [...estudoPorAluna.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
-  const maiorEstudo = rankingEstudo[0] || null;
-  const menorEstudo = rankingEstudo.length ? rankingEstudo[rankingEstudo.length - 1] : null;
-  const cardEstudo = (titulo, item, vazio) => `<article class="gem-highlight"><span>${titulo}</span><strong>${item ? escapeHtml(item[0]) : "Ainda sem dados"}</strong><small>${item ? `${item[1]} dia(s) de estudo nos últimos 30 dias` : vazio}</small></article>`;
-  return `<section class="gem-highlights"><div><h3>🌟 Destaques de desempenho</h3><p>Calculados pelo quadro de desempenho: presença, estudo diário e registros pedagógicos.</p></div><div class="gem-highlight-grid">${cardDestaque("Destaque da semana", destaqueSemana)}${cardDestaque("Destaque do mês", destaqueMes)}</div></section><section class="gem-highlights"><div><h3>📚 Estudo em casa</h3><p>Ranking de dias estudados nos 30 dias anteriores à data de referência.</p></div><div class="gem-highlight-grid">${cardEstudo("Quem mais estudou", maiorEstudo, "Aparecerá quando houver estudo registrado.")}${cardEstudo("Quem menos estudou", menorEstudo, "Aparecerá quando houver alunas ativas.")}</div></section>`;
+  const rankingEstudo = [...estudoPorAluna.entries()].map(([nome,dias])=>[nome,dias.size]).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'pt-BR'));
+  const maiorEstudo = rankingEstudo.filter(item=>item[1]===rankingEstudo[0][1]);
+  const menorEstudo = rankingEstudo.filter(item=>item[1]===rankingEstudo[rankingEstudo.length-1][1]);
+  const cardEstudo = (titulo, itens, vazio) => '<article class="gem-highlight"><span>'+titulo+'</span><strong>'+(itens.length?itens.map(item=>escapeHtml(item[0])).join('<br>'):'Ainda sem dados')+'</strong><small>'+(itens.length?(itens[0][1]===0?'Nenhum dia de estudo registrado nos últimos 30 dias':itens[0][1]+' dia(s) de estudo nos últimos 30 dias')+(itens.length>1?' · Mesma quantidade para todas':''):vazio)+'</small></article>';
+  return `<section class="gem-highlights"><div><h3>🌟 Destaques de desempenho</h3><p>Pontuação nos últimos 7 e 30 dias: presença +3; falta −2; falta justificada −1; dia de estudo +4; registro com “Não apresentou dificuldades” +3; registro com dificuldades −1; avaliação em branco +1.</p></div><div class="gem-highlight-grid">${cardDestaque("Destaque da semana", destaqueSemana)}${cardDestaque("Destaque do mês", destaqueMes)}</div></section><section class="gem-highlights"><div><h3>📚 Estudo em casa</h3><p>Dias distintos com estudo registrado nos últimos 30 dias, incluindo a data de referência. Alunas empatadas aparecem juntas. Dias sem registro não comprovam que a aluna não estudou.</p></div><div class="gem-highlight-grid">${cardEstudo("Quem mais estudou", maiorEstudo, "Aparecerá quando houver estudo registrado.")}${cardEstudo("Quem menos estudou", menorEstudo, "Aparecerá quando houver alunas ativas.")}</div></section>`;
 }
 
 function conferenciaRegistrosMarkup(dados) {
