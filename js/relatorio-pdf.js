@@ -22,7 +22,7 @@
     .replace(/[\u2010-\u2015]/g, '-').replace(/\u00a0/g, ' ')
     .replace(/[\p{Extended_Pictographic}\uFE0F\u200D\u2713\u2705]/gu, '').trim();
 
-  function gerar({ gem, data, resumo, alunas }, JsPDF) {
+  function gerar({ gem, data, resumo, alunas, alertas }, JsPDF) {
     const pdf = new JsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
     const margem = 16, largura = 178, limite = 278, passo = 5;
     let y = 16;
@@ -64,6 +64,17 @@
     const reservar = (altura) => { if (y + altura > limite) novaPagina(); };
     cabecalho();
     escrever(resumo);
+    if (Array.isArray(alertas)) {
+      escrever('⚠ Lições repetidas — revisar',true,12);
+      escrever('Mesma lição em 3 ou mais sábados com presença, sem conclusão registrada. Confirme se a repetição foi planejada.');
+      if(!alertas.length) escrever('Nenhuma lição atingiu o critério para este relatório.');
+      for(const alerta of alertas) {
+        escrever(alerta.aluna+' · '+alerta.disciplina,true);
+        escrever(alerta.material+' · '+alerta.licao);
+        escrever(alerta.sabados+' sábados com presença · Desde '+alerta.inicio.split('-').reverse().join('/')+' · Último registro: '+alerta.ultima.split('-').reverse().join('/'));
+      }
+    }
+
     if (!alunas.length) escrever('Não há escala salva para esta data.');
     for (const aluna of alunas) {
       estilo(true, 15);

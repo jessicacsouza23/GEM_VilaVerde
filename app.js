@@ -1668,7 +1668,9 @@ async function renderRelatorios(content) {
             }))
           };
         });
-        return window.RelatorioPDF.gerar({ gem: state.gem, data: dados.data,
+        const baseAlertas = await window.GemData.dadosAnalitico();
+        const alertas = window.AlertasLicoes.calcular(baseAlertas.historico, {inicio:'2025-01-01',fim:dados.data.split('/').reverse().join('-'),alunas:alunas.map(a=>a.nome)});
+        return window.RelatorioPDF.gerar({ gem: state.gem, data: dados.data, alertas,
           resumo: alvo.querySelector('.report-header p').textContent, alunas }, window.jspdf.jsPDF);
       };
       $("#baixar-relatorio-pdf").addEventListener("click", async () => {
@@ -1990,7 +1992,7 @@ async function renderAnalitico(content, opcoes = {}) {
     if (abaAplicada !== 'boletim') {
       const alertas = window.AlertasLicoes.calcular(dados.historico, {inicio:inicioAplicado, fim:fimAplicado, alunas:nomes});
       const dataAlerta = data => data.split('-').reverse().join('/');
-      destino.insertAdjacentHTML('beforeend', '<section class="feedback-panel"><h3>⚠ Lições repetidas — revisar</h3><p class="hint">Mesma lição em 3 ou mais sábados com presença confirmada e registro do material, sem conclusão registrada. Faltas, justificativas e dias sem registro não somam. A contagem pode começar antes do período; são exibidas sequências com registro no período escolhido. Confirme se a repetição foi planejada.</p>' + (alertas.length ? ['Prática','Teoria','Solfejo','Solfejo Melódico'].map(disciplina => {
+      destino.insertAdjacentHTML('beforeend', '<section class="feedback-panel" data-alertas-licoes><h3>⚠ Lições repetidas — revisar</h3><p class="hint">Mesma lição em 3 ou mais sábados com presença confirmada e registro do material, sem conclusão registrada. Faltas, justificativas e dias sem registro não somam. A contagem pode começar antes do período; são exibidas sequências com registro no período escolhido. Confirme se a repetição foi planejada.</p>' + (alertas.length ? ['Prática','Teoria','Solfejo','Solfejo Melódico'].map(disciplina => {
         const itens = alertas.filter(a => a.disciplina === disciplina);
         return itens.length ? '<h4>' + escapeHtml(disciplina) + '</h4>' + itens.map(a => '<article class="report-record"><strong>' + escapeHtml(a.aluna) + '</strong><p><strong>' + escapeHtml(a.material) + '</strong> · ' + escapeHtml(a.licao) + '</p><p>' + a.sabados + ' sábados com presença · Desde ' + dataAlerta(a.inicio) + ' · Último registro: ' + dataAlerta(a.ultima) + '</p><small>Datas: ' + a.datas.map(dataAlerta).join(' · ') + '</small></article>').join('') : '';
       }).join('') : '<p>Nenhuma lição atingiu o critério neste período.</p>') + '</section>');
@@ -2002,7 +2004,10 @@ async function renderAnalitico(content, opcoes = {}) {
       const botao = $('#baixar-analitico-pdf');botao.disabled=true;
       try {
         if(!window.jspdf?.jsPDF || !window.AnaliticoPDF) throw new Error('A ferramenta de PDF ainda não carregou. Tente novamente.');
-        const pdf = window.AnaliticoPDF.gerar({gem:state.gem,filtros:filtrosPdf,blocos:window.AnaliticoPDF.capturar(destino),conclusao:window.AnaliticoPDF.conclusao(registrosPdf,abaAplicada==='geral'?'quadro':abaAplicada)},window.jspdf.jsPDF);
+        const copia = destino.cloneNode(true);
+        if(abaAplicada==='geral') copia.querySelector('[data-alertas-licoes]')?.remove();
+        const alertasPdf = abaAplicada==='geral' ? window.AlertasLicoes.calcular(dados.historico,{inicio:inicioAplicado,fim:fimAplicado,alunas:nomes}) : undefined;
+        const pdf = window.AnaliticoPDF.gerar({gem:state.gem,filtros:filtrosPdf,alertas:alertasPdf,blocos:window.AnaliticoPDF.capturar(abaAplicada==='geral'?copia:destino),conclusao:window.AnaliticoPDF.conclusao(registrosPdf,abaAplicada==='geral'?'quadro':abaAplicada)},window.jspdf.jsPDF);
         pdf.save(`Analitico_${abaAplicada}_${inicioAplicado}_${fimAplicado}.pdf`);
         $('#analitico-pdf-retorno').textContent='PDF gerado com os filtros aplicados na tela.';
       } catch(erro) {$('#analitico-pdf-retorno').textContent=erro.message;}

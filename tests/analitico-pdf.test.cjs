@@ -26,3 +26,8 @@ test('conclusão não inventa progresso, separa disciplinas e não transforma au
  assert.match(resultado,/incluindo justificadas/);assert.match(resultado,/resumo é coletivo/);
  assert.match(api.conclusao([],'boletim'),/Isoladamente/);
 });
+
+test('alertas começam na primeira página antes das alunas',()=>{
+ const pdf=api.gerar({gem:'GEM',filtros:'Todas',alertas:[{aluna:'Ana',disciplina:'Prática',material:'Método',licao:'Lição 4',inicio:'2026-10-03',ultima:'2026-10-17',sabados:3}],blocos:[{novaAluna:true},{nomeAluna:'Ana'}],conclusao:'Fim'},PDF);
+ assert.ok(pdf.pages[0].some(l=>l.s.includes('Lições repetidas')));assert.ok(pdf.pages[0].some(l=>l.s.includes('Lição 4')));assert.ok(pdf.pages[0].some(l=>l.s.includes('03/10/2026')));
+});

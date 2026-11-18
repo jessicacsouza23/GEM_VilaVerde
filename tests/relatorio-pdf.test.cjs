@@ -64,3 +64,8 @@ test('emojis do relatório são imagens com espaço reservado ao lado do texto',
   assert.equal(registros.length, emojis.length);
   assert.ok(registros.every(l => l.x === 22));
 });
+
+test('diário mostra alertas na primeira página',()=>{
+ const pdf=ctx.window.RelatorioPDF.gerar({gem:'GEM',data:'17/10/2026',resumo:'Resumo',alunas:[],alertas:[{aluna:'Ana',disciplina:'Prática',material:'Método',licao:'Lição 4',inicio:'2026-10-03',ultima:'2026-10-17',sabados:3}]},PDF);
+ assert.ok(pdf.paginas[0].some(l=>l.value.includes('Lições repetidas')));assert.ok(pdf.paginas[0].some(l=>l.value.includes('Lição 4')));
+});

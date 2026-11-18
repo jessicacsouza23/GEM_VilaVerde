@@ -73,7 +73,7 @@
     const diasPerdidos = new Set(faltas.map(r=>`${r.Aluna}|${r.Data}`)).size;
     return `Foram considerados ${aulas.length} registros pedagógicos no recorte selecionado. ${destaques.length ? `Os pontos mais registrados foram: ${destaques.map(([d,n])=>`${d} (${n} ocorrência(s))`).join('; ')}. Sugere-se retomar esses conteúdos com exercícios graduais e verificar a resposta nas próximas aulas.` : 'Não foram identificadas dificuldades explícitas nesses registros. Isso não comprova domínio completo; sugere-se consolidar os conteúdos e observar a continuidade.'}${diasPerdidos ? ` Há ${diasPerdidos} registro(s) de falta por aluna/data, incluindo justificadas; convém conferir os conteúdos perdidos e organizar a retomada.` : ''} ${aba === 'quadro' ? 'Este resumo é coletivo e não deve ser aplicado indistintamente a cada aluna.' : 'O planejamento deve considerar o contexto da aluna e os objetivos combinados.'} Esta síntese é automática, não é diagnóstico nem análise de IA, e deve ser revisada pela equipe pedagógica.`;
   }
-  function gerar({gem, filtros, blocos, conclusao:final}, JsPDF) {
+  function gerar({gem, filtros, blocos, conclusao:final, alertas}, JsPDF) {
     const pdf = new JsPDF({unit:'mm',format:'a4',compress:true});
     let y = 20;
     const fonte = (bold=false,size=10) => {pdf.setFont('helvetica',bold?'bold':'normal');pdf.setFontSize(size);pdf.setTextColor(35,45,60);};
@@ -85,6 +85,17 @@
       y+=2;
     }
     escrever('Relatório analítico',true,17); escrever(gem || 'GEM Musical',true,12); escrever(filtros); y+=4;
+    if (Array.isArray(alertas)) {
+      escrever('⚠ Lições repetidas — revisar',true,12);
+      escrever('Mesma lição em 3 ou mais sábados com presença, sem conclusão registrada. Confirme se a repetição foi planejada.');
+      if(!alertas.length) escrever('Nenhuma lição atingiu o critério para este relatório.');
+      for(const alerta of alertas) {
+        escrever(alerta.aluna+' · '+alerta.disciplina,true);
+        escrever(alerta.material+' · '+alerta.licao);
+        escrever(alerta.sabados+' sábados com presença · Desde '+alerta.inicio.split('-').reverse().join('/')+' · Último registro: '+alerta.ultima.split('-').reverse().join('/'));
+      }
+    }
+
     for(const b of blocos) {
       if(b.novaAluna) {pagina();continue;}
       if(b.nomeAluna) {
