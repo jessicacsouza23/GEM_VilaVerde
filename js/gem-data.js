@@ -1078,7 +1078,7 @@
         Licao_Atual: material ? `${material}: ${conteudo}` : conteudo,
         Dificuldades: dificuldadesDaAluna,
         Observacao: registroIndividual.observacao ?? observacao ?? "",
-        Status: temDificuldade ? "Realizada - com dificuldades" : "Realizada - sem pendência"
+        Status: item.somenteCorrecao ? item.resultadoLicao : temDificuldade ? "Realizada - com dificuldades" : "Realizada - sem pendência"
       };
       // Em uma mesma aula a professora pode registrar mais de um material.
       // Só atualizamos o cartão que corresponde ao mesmo material, como no app.py.
@@ -1130,11 +1130,18 @@
   async function salvarRegistrosPratica({ dataIso, instrutora, aluna, materiais, licoesCasa = [], observacao = "", preservarOutrosMateriais = false }) {
     const nomeCanonico = valor => /^meu piano e divertido(?:\s+1)?$/.test(String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase().replace(/\s+/g,' ')) ? 'Meu piano é divertido 1' : String(valor || '').trim();
     const conteudoCanonico = valor => {const partes=String(valor || '').split(':');return nomeCanonico(partes.shift()) + ':' + partes.join(':');};
+    materiais=(materiais||[]).map(item=>{
+      if(String(item.material).trim().toLowerCase()==='apostila' && item.licaoPendenteTexto && (item.licaoPendenteId || item.correcaoApostilaAutomatica)) {
+        if(!['Resolvido','Resolvido com pendências','Não resolvido','Não trouxe a apostila/atividade'].includes(item.resultadoLicao)) throw new Error('Selecione o Resultado da correção da Apostila. O conteúdo para a próxima aula é opcional.');
+        return {...item,conteudo:String(item.licaoPendenteTexto).trim(),dificuldades:[],exercicios:[],somenteCorrecao:true};
+      }
+      return item;
+    });
     // Valide todos os cartões antes de consultar ou alterar registros existentes.
     for (const [indice, item] of (materiais || []).entries()) {
       if (!String(item?.material || '').trim()) throw new Error(`Selecione o método ou a Apostila no material ${indice + 1}. Se não for usá-lo, remova esse cartão.`);
       if (!String(item?.conteudo || '').trim() && String(item.material).trim().toLowerCase() !== 'apostila') throw new Error(`Informe a lição ou o conteúdo trabalhado em ${item.material}. Se não for usá-lo, remova esse cartão.`);
-      if (String(item?.material || "").trim().toLowerCase() !== "apostila") continue;
+      if (String(item?.material || "").trim().toLowerCase() !== "apostila" || item.somenteCorrecao) continue;
       const conteudo = String(item.conteudo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
       if (!/\b(?:paginas?|pags?|p)\.?\s*[:\-]?\s*[1-9]\d*\b/.test(conteudo)) {
         throw new Error("Informe a página da Apostila de Prática. Ex.: página 18, lições 1 e 2.");
@@ -1258,7 +1265,7 @@
       // Mantém os exercícios separados para consulta futura, mas as suas
       // dificuldades também estão agregadas acima — o Analítico lê o registro
       // principal, como no Streamlit.
-      if (!exerciciosLimpos.has(material)) {
+      if (!item.somenteCorrecao && !exerciciosLimpos.has(material)) {
         const apagar = await banco.from("exercicios_registro").delete()
           .eq("aluna", aluna).eq("data", data).eq("disciplina", "Prática").eq("material", material);
         if (apagar.error && apagar.error.code !== "42P01") throw new Error(`Não foi possível atualizar os exercícios de ${material}.`);
@@ -1286,6 +1293,8 @@
     if (erroCasasAnteriores) throw new Error("O registro foi salvo, mas não foi possível preparar as lições de casa.", { cause: erroCasasAnteriores });
     const casasDaPratica = (casasAnteriores || []).filter((item) => (item.Tipo === "Casa_Apostila" || String(item.Tipo || "").startsWith("Casa_Metodo_")) && (!preservarOutrosMateriais || materiaisAtuais.has(nomeCanonico(item.Tipo === 'Casa_Apostila' ? 'Apostila' : item.Tipo.slice(12)))));
     for (const casaAnterior of casasDaPratica) {
+      if(casaAnterior.Tipo==='Casa_Apostila' && lista.some(item=>item.somenteCorrecao) && !(licoesCasa||[]).some(c=>c.material==='Apostila'&&String(c.licaoCasa||'').trim())) continue;
+      if(lista.some(item=>item.somenteCorrecao && String(item.licaoPendenteId)===String(casaAnterior.id))) continue;
       const apagarCasa = await banco.from("historico_geral").delete().eq("id", casaAnterior.id);
       if (apagarCasa.error) throw new Error("O registro foi salvo, mas não foi possível atualizar as lições de casa.", { cause: apagarCasa.error });
     }

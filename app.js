@@ -337,7 +337,7 @@ async function renderMinhasAulas(content) {
         .filter((item) => aula.alunas.includes(item.Aluna) && (item.Tipo === "Casa_Apostila" || String(item.Tipo || "").startsWith("Casa_Metodo_")))
         .map((item) => ({ material: item.Tipo === "Casa_Apostila" ? "Apostila" : String(item.Tipo).replace(/^Casa_Metodo_/, ""), licaoCasa: item.Licao_Casa || "", observacao: item.Observacao || "" }))
         .filter((item) => opcoesPratica.includes(item.material));
-      const linhaLicaoCasa = (registro = {}) => `<div class="practice-homework-row" data-casa-item><label>Material da lição<select data-casa-material>${opcoesPratica.map((material) => `<option value="${escapeHtml(material)}" ${material === (registro.material || "Apostila") ? "selected" : ""}>${escapeHtml(material)}</option>`).join("")}</select></label><label>Lição para a próxima aula<input data-casa-conteudo value="${escapeHtml(registro.licaoCasa || "")}" placeholder="Ex.: página 20, exercícios 1 e 2"></label><button class="icon-action" data-remover-casa type="button" title="Remover esta lição">×</button><label class="practice-homework-note">Observação da lição (opcional)<textarea data-casa-observacao placeholder="Ex.: fazer devagar com metrônomo.">${escapeHtml(registro.observacao || "")}</textarea></label></div>`;
+      const linhaLicaoCasa = (registro = {}) => `<div class="practice-homework-row" data-casa-item><label>Material da lição<select data-casa-material>${opcoesPratica.map((material) => `<option value="${escapeHtml(material)}" ${material === (registro.material || "Apostila") ? "selected" : ""}>${escapeHtml(material)}</option>`).join("")}</select></label><label>Conteúdo para a próxima aula (opcional — pode preencher depois)<input data-casa-conteudo value="${escapeHtml(registro.licaoCasa || "")}" placeholder="Ex.: página 20, exercícios 1 e 2"></label><button class="icon-action" data-remover-casa type="button" title="Remover esta lição">×</button><label class="practice-homework-note">Observação da lição (opcional)<textarea data-casa-observacao placeholder="Ex.: fazer devagar com metrônomo.">${escapeHtml(registro.observacao || "")}</textarea></label></div>`;
       const conectarLicoesCasa = (areaCasa) => {
         areaCasa.querySelectorAll("[data-remover-casa]").forEach((botao) => { if (!botao.dataset.conectado) { botao.dataset.conectado = "1"; botao.addEventListener("click", () => { const linhas = areaCasa.querySelectorAll("[data-casa-item]"); if (linhas.length > 1) botao.closest("[data-casa-item]").remove(); else botao.closest("[data-casa-item]").querySelector("[data-casa-conteudo]").value = ""; }); } });
       };
@@ -352,7 +352,7 @@ async function renderMinhasAulas(content) {
       const linhasDificuldadesPratica = (marcadas = []) => dificuldadesPorAula.Prática.map((dificuldade) => `<label><input type="checkbox" data-dificuldade-pratica value="${escapeHtml(dificuldade)}" ${marcadas.includes(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("");
       // A correção com os quatro resultados é exclusiva da Apostila. Os
       // métodos mantêm as dificuldades e o resultado pedagógico próprios.
-      const dificuldadesDoMaterial = (nomeMaterial, marcadas = []) => !nomeMaterial ? "" : `<p class="field-caption">Dificuldades observadas na lição de casa e no material trabalhado:</p><div class="difficulty-checks">${linhasDificuldadesPratica(marcadas)}</div>`;
+      const dificuldadesDoMaterial = (nomeMaterial, marcadas = []) => !nomeMaterial || nomeMaterial === "Apostila" ? "" : `<p class="field-caption">Dificuldades observadas na lição de casa e no material trabalhado:</p><div class="difficulty-checks">${linhasDificuldadesPratica(marcadas)}</div>`;
       const novaLinhaExercicio = (exercicio = {}) => `<div class="exercise-row"><label>Lição/exercício trabalhado<input data-exercicio-nome value="${escapeHtml(exercicio.exercicio || "")}" placeholder="Ex.: Estudo 21, exercício 3"></label><div class="difficulty-checks compact">${dificuldadesPorAula.Prática.map((dificuldade) => `<label><input type="checkbox" data-exercicio-dificuldade value="${escapeHtml(dificuldade)}" ${(exercicio.dificuldades || []).includes(dificuldade) ? "checked" : ""}> ${escapeHtml(dificuldade)}</label>`).join("")}</div><button class="icon-action remover-exercicio" type="button" title="Remover lição/exercício">×</button></div>`;
       const conectarExercicios = (cartao) => {
         cartao.querySelector("[data-adicionar-exercicio]").addEventListener("click", () => {
@@ -415,7 +415,10 @@ async function renderMinhasAulas(content) {
         const orientarConteudoPratica = () => {
           const apostila = cartao.querySelector('[data-pratica-material]').value === 'Apostila';
           const campo = cartao.querySelector('[data-pratica-conteudo]');
-          campo.required = apostila;
+          const corrigindo = apostila && Boolean(cartao.querySelector('[data-pratica-correcao]')?.dataset.licaoPendente);
+          campo.required = apostila && !corrigindo;
+          campo.parentElement.hidden = corrigindo;
+          if(corrigindo) campo.value=cartao.querySelector('[data-pratica-correcao]').dataset.licaoPendente;
           campo.parentElement.firstChild.textContent = apostila
             ? 'Página e lições trabalhadas hoje (obrigatórias)'
             : 'Conteúdo trabalhado hoje — página/lição';
@@ -433,6 +436,7 @@ async function renderMinhasAulas(content) {
           cartao.querySelector("[data-pratica-resumo-area]").innerHTML = resumoUltimaAula(cartao.querySelector("[data-pratica-material]").value);
           cartao.querySelector("[data-pratica-dificuldades-area]").innerHTML = dificuldadesDoMaterial(cartao.querySelector("[data-pratica-material]").value, dificuldadesMarcadas);
           conectarCorrecaoPratica(cartao);
+          orientarConteudoPratica();
         };
         cartao.querySelector("[data-pratica-material]").addEventListener("change", atualizarMaterialPratica);
       };

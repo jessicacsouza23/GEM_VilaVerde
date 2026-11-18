@@ -35,12 +35,19 @@ test('vários materiais, correção e todas as tarefas persistem por aluna e dis
   assert.equal(tabelas.historico_geral.filter(r=>r.Data==='31/10/2026'&&r.Tipo.startsWith('Casa_')).length,3);
   assert.ok(tabelas.historico_geral.every(r=>r.Aluna==='A'));
   materiais[0].resultadoLicao='';
+  await assert.rejects(ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais,licoesCasa}),/Resultado da correção/);
+  materiais[0].resultadoLicao='Resolvido';
   await ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais,licoesCasa});
   assert.match(tabelas.historico_geral.find(r=>r.Tipo==='Analise_Prática'&&r.Licao_Atual.startsWith('Apostila:')).Observacao,/Correção da lição: Resolvido/);
   await ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais:[materiais[0]],licoesCasa:[licoesCasa[0]],preservarOutrosMateriais:true});
   assert.equal(tabelas.historico_geral.filter(r=>r.Tipo==='Analise_Prática').length,3);
   assert.equal(tabelas.historico_geral.filter(r=>r.Tipo==='Casa_Metodo_Volume 1').length,2);
   assert.equal(tabelas.exercicios_registro.filter(r=>r.material==='Volume 1').length,2);
+  // A correção de uma lição antiga não precisa de nova tarefa nem de página redigitada.
+  await ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais:[{...materiais[0],conteudo:''}],licoesCasa:[],preservarOutrosMateriais:true});
+  assert.equal(tabelas.historico_geral[0].Status,'Resolvido');
+  assert.ok(tabelas.historico_geral.some(r=>r.Tipo==='Casa_Apostila'&&r.Licao_Casa==='página 20, lição 1'));
+  assert.equal(tabelas.historico_geral.filter(r=>r.Tipo==='Analise_Prática').length,3);
   tabelas.historico_geral.push({id:200,Aluna:'A',Data:'31/10/2026',Instrutora:'Professora',Tipo:'Analise_Prática',Licao_Atual:'Meu Piano é Divertido: lição 1'}, {id:201,Aluna:'A',Data:'31/10/2026',Instrutora:'Professora',Tipo:'Casa_Metodo_Meu Piano é Divertido',Licao_Casa:'lição 2',Status:'Pendente'});
   await ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais:[{material:'Meu piano é divertido 1',conteudo:'lição 1'}],licoesCasa:[{material:'Meu piano é divertido 1',licaoCasa:'lição 3'}],preservarOutrosMateriais:true});
   assert.equal(tabelas.historico_geral.find(r=>r.id===200).Licao_Atual,'Meu piano é divertido 1: lição 1');

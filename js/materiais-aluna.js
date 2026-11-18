@@ -117,6 +117,13 @@
       const selecionados=[...grupos.values()].filter(g=>g.check.checked);
       if(!selecionados.length){avisarValidacao('Selecione o material que deseja salvar.');event.stopImmediatePropagation();return;}
       for(const g of selecionados){
+        if(g.nome==='Apostila'){
+          const cartoes=[...g.bloco.querySelectorAll('.practice-material-card')];
+          const correcoes=cartoes.filter(c=>c.querySelector('[data-pratica-correcao]')?.dataset.licaoPendente);
+          const semResultado=correcoes.find(c=>!c.querySelector('[data-pratica-resultado] input:checked'));
+          if(semResultado){abrir(g);avisarValidacao('Selecione o Resultado da correção da Apostila. O conteúdo para a próxima aula é opcional.',semResultado.querySelector('[data-pratica-resultado] input'));event.stopImmediatePropagation();return;}
+          if(cartoes.length&&correcoes.length===cartoes.length)continue;
+        }
         const vazio=[...g.bloco.querySelectorAll('[data-pratica-conteudo]')].find(c=>!c.value.trim());
         if(vazio){abrir(g);avisarValidacao(g.nome+': este registro ainda não foi salvo. Informe o conteúdo trabalhado hoje'+(g.nome==='Apostila'?' com página e lições. Ex.: página 18, lições 1 e 2.':'.')+' Os outros materiais já salvos permanecem registrados.',vazio);event.stopImmediatePropagation();return;}
         if(g.nome==='Apostila')for(const campo of g.bloco.querySelectorAll('[data-pratica-conteudo]')){
