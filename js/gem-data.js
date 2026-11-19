@@ -1078,7 +1078,7 @@
         Licao_Atual: material ? `${material}: ${conteudo}` : conteudo,
         Dificuldades: dificuldadesDaAluna,
         Observacao: registroIndividual.observacao ?? observacao ?? "",
-        Status: item.somenteCorrecao ? item.resultadoLicao : temDificuldade ? "Realizada - com dificuldades" : "Realizada - sem pendência"
+        Status: temDificuldade ? "Realizada - com dificuldades" : "Realizada - sem pendência"
       };
       // Em uma mesma aula a professora pode registrar mais de um material.
       // Só atualizamos o cartão que corresponde ao mesmo material, como no app.py.
@@ -1206,7 +1206,7 @@
         Licao_Atual: `${material}: ${conteudo}`,
         Dificuldades: dificuldadesDoMaterial,
         Observacao: String(observacao || "").trim() + (correcaoAtual ? '\nCorreção da lição: ' + correcaoAtual.trim() : ''),
-        Status: temDificuldade ? "Realizada - com dificuldades" : "Realizada - sem pendência"
+        Status: item.somenteCorrecao ? item.resultadoLicao : temDificuldade ? "Realizada - com dificuldades" : "Realizada - sem pendência"
       };
       const salvar = existente
         ? await banco.from("historico_geral").update(registro).eq("id", existente.id)
