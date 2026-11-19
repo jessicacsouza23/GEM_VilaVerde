@@ -2,6 +2,17 @@
   const normal=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
   const iso=v=>{const s=String(v||'').trim(),m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);return m?m[3]+'-'+m[2]+'-'+m[1]:s.slice(0,10);};
   const disciplinas=['Teoria','Solfejo','Prática','Solfejo Melódico'];
+  // Os registros antigos usavam MSA para Solfejo e Canto para Solfejo
+  // Melódico. As equivalências são intencionalmente fechadas: nunca usamos
+  // "começa com Solfejo", pois isso juntaria duas disciplinas distintas.
+  function disciplinaDoRegistro(tipo){
+    const nome=normal(tipo).replace(/^analise[\s_-]*/, '');
+    if(['pratica'].includes(nome))return 'Prática';
+    if(['teoria'].includes(nome))return 'Teoria';
+    if(['solfejo','msa','solfejo individual','solfejo em grupo'].includes(nome))return 'Solfejo';
+    if(['canto','solfejo melodico','solfejo melodico individual'].includes(nome))return 'Solfejo Melódico';
+    return null;
+  }
   function calcular(alunas,historico,referencia,inicioEscolhido){
     const fim=iso(referencia),dia=new Date(fim+'T12:00:00Z');
     if(!/^\d{4}-\d{2}-\d{2}$/.test(fim)||!Number.isFinite(dia.getTime())||dia.toISOString().slice(0,10)!==fim)throw new Error('Informe uma data final válida.');
@@ -13,8 +24,7 @@
     const resultados=new Map();
     for(const r of historico){
       const d=iso(r.Data),aluna=porNome.get(r.Aluna);if(!aluna||d<inicio||d>fim)continue;
-      const tipo=normal(String(r.Tipo||'').replace(/^Analise_/,''));
-      const disciplina=disciplinas.find(x=>normal(x)===tipo)||(tipo==='canto'?'Solfejo Melódico':null);if(!disciplina)continue;
+      const disciplina=disciplinaDoRegistro(r.Tipo);if(!disciplina)continue;
       let ds=r.Dificuldades;if(typeof ds==='string'){try{ds=JSON.parse(ds);}catch(_){ds=ds.split(/[,;]+/);}}
       ds=(Array.isArray(ds)?ds:[]).map(normal).filter(d=>d&&!/^(null|nan|\[\])$/.test(d));
       const positivo=ds.length>0&&ds.every(d=>/^nao apresentou dificuldades?$/.test(d));
@@ -45,5 +55,5 @@
       finally{campos.forEach(c=>c.disabled=false);}
     };
   }
-  window.GraficoTurmas={calcular,html,conectar};
+  window.GraficoTurmas={calcular,html,conectar,disciplinaDoRegistro};
 })();
