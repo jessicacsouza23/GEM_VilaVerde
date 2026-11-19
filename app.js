@@ -1639,12 +1639,12 @@ async function renderRelatorios(content) {
   const autorizar=async()=>state.role==='Secretaria'||(state.role==='Professora'&&state.coordenadora&&await window.GemData.professoraEhCoordenadora(state.name,new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo'}).format(new Date())));
   if(!await autorizar()){content.innerHTML='<div class="action-error">Relatório disponível para Secretaria e professoras coordenadoras em período ativo.</div>';return;}
   const secretaria=state.role==='Secretaria';
-  content.innerHTML='<section class="panel"><div class="person-tabs" role="tablist">'+(secretaria?'<button class="tab-action active" role="tab" data-relatorio-aba="diario" aria-selected="true">Relatório diário</button>':'')+'<button class="tab-action '+(secretaria?'':'active')+'" role="tab" data-relatorio-aba="reuniao" aria-selected="'+(!secretaria)+'">Reunião pedagógica</button></div></section><div data-relatorio-painel role="tabpanel"></div>';
+  content.innerHTML='<section class="panel"><div class="person-tabs" role="tablist">'+(secretaria?'<button class="tab-action active" role="tab" data-relatorio-aba="diario" aria-selected="true">Relatório diário</button>':'')+'<button class="tab-action '+(secretaria?'':'active')+'" role="tab" data-relatorio-aba="reuniao" aria-selected="'+(!secretaria)+'">Apresentação das alunas</button><button class="tab-action" role="tab" data-relatorio-aba="resumo" aria-selected="false">Resumo de acompanhamento</button></div></section><div data-relatorio-painel role="tabpanel"></div>';
   const host=content.querySelector('[data-relatorio-painel]');
   const mostrar=async aba=>{
     content.querySelectorAll('[data-relatorio-aba]').forEach(b=>{const ativo=b.dataset.relatorioAba===aba;b.classList.toggle('active',ativo);b.setAttribute('aria-selected',String(ativo));b.disabled=true;});
     host.innerHTML='<div class="empty">Carregando relatório…</div>';
-    try{if(aba==='diario'&&secretaria)await renderRelatoriosDiario(host);else await window.ReuniaoPedagogica.montar(host,{gem:state.gem,carregar:()=>window.GemData.dadosAnalitico(),autorizar,esc:escapeHtml});}
+    try{if(aba==='diario'&&secretaria)await renderRelatoriosDiario(host);else if(aba==='resumo')await window.ReuniaoPedagogica.montarResumo(host,{gem:state.gem,carregar:()=>window.GemData.dadosAnalitico(),autorizar,esc:escapeHtml});else await window.ReuniaoPedagogica.montar(host,{gem:state.gem,carregar:()=>window.GemData.dadosAnalitico(),autorizar,esc:escapeHtml});}
     catch(e){host.innerHTML='<div class="action-error">'+escapeHtml(mensagemErro(e))+'</div>';}
     finally{content.querySelectorAll('[data-relatorio-aba]').forEach(b=>b.disabled=false);}
   };
