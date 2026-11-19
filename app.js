@@ -251,8 +251,8 @@ async function renderMinhasAulas(content) {
         const material = casa ? String(r.Tipo).replace(/^Casa_Metodo_|^Casa_/, '').replace(/_Prof$/, '').replaceAll('_', ' ') : '';
         const diffs = Array.isArray(r.Dificuldades) ? r.Dificuldades : [];
         return '<article><strong>' + escapeHtml(r.Aluna) + '</strong><span>' + (casa ? '🏠 Lição de casa — ' + escapeHtml(material) + ': ' + escapeHtml(r.Licao_Casa || '—') : escapeHtml(r.Licao_Atual || '—')) + '</span>' +
-          (r.Status ? '<small>Situação: ' + escapeHtml(r.Status) + '</small>' : '') +
-          (diffs.length ? '<small>⚠ ' + escapeHtml(diffs.join(' · ')) + '</small>' : '') +
+          (window.RelatorioGeral.situacao(r) ? '<small>Situação: ' + escapeHtml(window.RelatorioGeral.situacao(r)) + '</small>' : '') +
+          (window.RelatorioGeral.situacao(r)===(r.Status||'') && diffs.length ? '<small>⚠ ' + escapeHtml(diffs.join(' · ')) + '</small>' : '') +
           (r.Observacao ? '<small>📝 ' + escapeHtml(r.Observacao) + '</small>' : '') + '</article>';
       }).join('') + '</section>' : '';
     };
@@ -1638,8 +1638,8 @@ async function renderRelatorios(content) {
       const rotulo = (tipo) => ({ Chamada: "📍 Presença", Casa_MSA: "📚 Lição de casa — MSA", Casa_Apostila: "📚 Lição de casa — Apostila", Casa_Apostila_Prof: "📚 Lição de casa — Apostila de Prática", Casa_Teoria: "📚 Lição de casa — Folha Avulsa de Teoria", Casa_Teoria_Prof: "📚 Lição de casa — Folha Avulsa de Teoria", Casa_Apostila_Teoria_Prof: "📚 Lição de casa — Apostila de Teoria", Casa_Canto: "🎤 Lição de casa — Solfejo Melódico" }[tipo] || String(tipo || "Registro").replace(/^Analise_/, "📖 "));
       const mostrarDificuldades = (valor) => Array.isArray(valor) ? valor.filter(Boolean).join(" · ") : String(valor || "").replace(/^\[|\]$/g, "");
       const card = (item, contexto = '') => {
-        const tipo = String(item.Tipo || ""), casa = tipo.startsWith("Casa_"), presenca = tipo === "Chamada", conteudo = casa ? (item.Licao_Casa || item.Licao_Atual) : item.Licao_Atual, dificuldade = mostrarDificuldades(item.Dificuldades);
-        return `<article class="report-record ${casa ? "homework-record" : ""}"><h4>${escapeHtml(rotulo(tipo))}${contexto ? ` — ${escapeHtml(contexto)} · ${escapeHtml(item.Data)}` : ''}${item.Instrutora ? ` <small>— Professora: ${escapeHtml(item.Instrutora)}</small>` : ""}</h4>${presenca ? `<p><strong>Status:</strong> ${escapeHtml(item.Status || "Presente")}${item.Observacao ? ` · ${escapeHtml(item.Observacao)}` : ""}</p>` : ""}${conteudo ? `<p><strong>${casa ? "Lição deixada para casa" : contexto ? "Conteúdo da aula anterior" : "Conteúdo/atividade de hoje"}:</strong> ${escapeHtml(conteudo)}</p>` : ""}${dificuldade && dificuldade !== "Não apresentou dificuldades" ? `<p class="report-warning"><strong>⚠ Dificuldades:</strong> ${escapeHtml(dificuldade)}</p>` : dificuldade === "Não apresentou dificuldades" ? `<p class="report-ok">✓ Sem dificuldades registradas nesta aula.</p>` : ""}${item.Observacao && !presenca ? `<p class="report-note"><strong>📝 Observação da professora/Secretaria:</strong> ${escapeHtml(item.Observacao)}</p>` : ""}${item.Status && !presenca ? `<p class="report-status"><strong>Situação:</strong> ${escapeHtml(item.Status)}</p>` : ""}</article>`;
+        const tipo = String(item.Tipo || ""), casa = tipo.startsWith("Casa_"), presenca = tipo === "Chamada", conteudo = casa ? (item.Licao_Casa || item.Licao_Atual) : item.Licao_Atual, dificuldade = window.RelatorioGeral.situacao(item)===(item.Status||'') ? mostrarDificuldades(item.Dificuldades) : "";
+        return `<article class="report-record ${casa ? "homework-record" : ""}"><h4>${escapeHtml(rotulo(tipo))}${contexto ? ` — ${escapeHtml(contexto)} · ${escapeHtml(item.Data)}` : ''}${item.Instrutora ? ` <small>— Professora: ${escapeHtml(item.Instrutora)}</small>` : ""}</h4>${presenca ? `<p><strong>Status:</strong> ${escapeHtml(item.Status || "Presente")}${item.Observacao ? ` · ${escapeHtml(item.Observacao)}` : ""}</p>` : ""}${conteudo ? `<p><strong>${casa ? "Lição deixada para casa" : contexto ? "Conteúdo da aula anterior" : "Conteúdo/atividade de hoje"}:</strong> ${escapeHtml(conteudo)}</p>` : ""}${dificuldade && dificuldade !== "Não apresentou dificuldades" ? `<p class="report-warning"><strong>⚠ Dificuldades:</strong> ${escapeHtml(dificuldade)}</p>` : dificuldade === "Não apresentou dificuldades" ? `<p class="report-ok">✓ Sem dificuldades registradas nesta aula.</p>` : ""}${item.Observacao && !presenca ? `<p class="report-note"><strong>📝 Observação da professora/Secretaria:</strong> ${escapeHtml(item.Observacao)}</p>` : ""}${window.RelatorioGeral.situacao(item) && !presenca ? `<p class="report-status"><strong>Situação:</strong> ${escapeHtml(window.RelatorioGeral.situacao(item))}</p>` : ""}</article>`;
       };
       const corpo = porAluna.size ? [...porAluna.entries()].sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([aluna, registros]) => {
         const chamada = registros.filter((item) => item.Tipo === "Chamada").at(-1);
@@ -1726,7 +1726,7 @@ async function renderRelatorios(content) {
             const material = separador > 0 ? licao.slice(0, separador).trim() : "";
             const conteudo = separador > 0 ? licao.slice(separador + 1).trim() : licao;
             const data = normalizarData(registro.Data), [ano, mes, dia] = data.split("-").map(Number);
-            return [data ? new Date(ano, mes - 1, dia) : "", registro.Aluna || "", disciplina(registro.Tipo), material, conteudo, registro.Instrutora || "", textoDificuldades(registro.Dificuldades), registro.Observacao || "", registro.Status || ""];
+            return [data ? new Date(ano, mes - 1, dia) : "", registro.Aluna || "", disciplina(registro.Tipo), material, conteudo, registro.Instrutora || "", textoDificuldades(registro.Dificuldades), registro.Observacao || "", window.RelatorioGeral.situacao(registro)];
           });
           const cabecalhos = ["Data", "Aluna", "Disciplina", "Material", "Conteúdo trabalhado", "Professora", "Dificuldades observadas", "Observações", "Situação"];
           const planilha = XLSX.utils.aoa_to_sheet([cabecalhos, ...linhas], { cellDates: true });

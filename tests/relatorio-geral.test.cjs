@@ -15,3 +15,13 @@ test('datas crescentes em registros, estudos e boletim, incluindo mudança de an
  assert.equal(r.notas[0].avaliacao_id,2);
  assert.equal(r.registros[0].Data,'01/10/2026');
 });
+
+test('situação mostra avaliação de prática e solfejo, preservando apostila e chamadas',()=>{
+ for(const Tipo of ['Analise_Prática','Analise_Solfejo']){
+ assert.equal(api.situacao({Tipo,Dificuldades:['Dificuldade rítmica','Estuda sem metrônomo']}),'Dificuldade rítmica · Estuda sem metrônomo');
+ assert.equal(api.situacao({Tipo,Dificuldades:['Não apresentou dificuldades']}),'Não apresentou dificuldades');
+ assert.equal(api.situacao({Tipo,Dificuldades:[],Status:'Realizada - sem pendência'}),'Avaliação não informada');
+ }
+ assert.equal(api.situacao({Tipo:'Analise_Prática',Licao_Atual:'Apostila: página 3',Status:'Resolvido'}),'Resolvido');
+ assert.equal(api.situacao({Tipo:'Chamada',Status:'Justificada'}),'Justificada');
+});

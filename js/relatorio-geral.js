@@ -3,6 +3,14 @@
   const data = v => { const s=String(v||'').trim(); if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10); const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0') : ''; };
   const normal = v => String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
   const ordem = (a,b) => data(a.Data).localeCompare(data(b.Data)) || Number(a.id||0)-Number(b.id||0);
+  function situacao(registro) {
+    const tipo=normal(String(registro.Tipo||'').replace(/^Analise_/,''));
+    if(!['pratica','solfejo'].includes(tipo) || (tipo==='pratica' && /^apostila\s*:/i.test(registro.Licao_Atual||''))) return registro.Status||'';
+    let ds=registro.Dificuldades;
+    if(typeof ds==='string'){try{ds=JSON.parse(ds);}catch(_){ds=ds.split(/[,;]+/);}}
+    ds=(Array.isArray(ds)?ds:[]).map(d=>String(d||'').trim()).filter(d=>d&&!/^(null|nan|\[\])$/i.test(d));
+    return ds.join(' · ')||'Avaliação não informada';
+  }
   function construir(dados, {inicio,fim,turma=''}) {
     if(!inicio || !fim || !Number.isFinite(Date.parse(inicio)) || !Number.isFinite(Date.parse(fim)) || inicio>fim) throw new Error('Informe um período válido, com início anterior ou igual ao fim.');
     const noPeriodo = d => d && d>=inicio && d<=fim;
@@ -42,10 +50,10 @@
       const evolucao='<h4>Evoluções registradas</h4>'+(evolucoes.length?evolucoes.map(r=>p(br(r.Data)+' · '+disciplinaAnalise(r.Tipo)+' · '+(r.Licao_Atual||'Conteúdo não informado')+' · Não apresentou dificuldades · '+(r.Instrutora||'Autoria não informada'))).join(''):p('Sem marcação explícita de evolução no período.'));
       const metodos='<h4>Conclusão dos métodos</h4>'+(item.metodos.length?item.metodos.map(m=>p(m.disciplina+' · '+m.material+' · Concluído em '+br(m.fim)+(m.inicio?' · Início registrado: '+br(m.inicio)+' · '+m.dias+' dias corridos até concluir':' · Tempo de conclusão indisponível: início não registrado.'))).join(''):p('Nenhuma conclusão de método registrada neste período.'))+p('O tempo considera início e conclusão explícitos do método, mesmo quando o início foi anterior ao período. Trocar de lição ou de método não comprova conclusão.');
       const boletim='<h4>Boletim do período</h4>'+(item.notas.length?item.notas.map(n=>p(br(n.avaliacao.data_avaliacao)+' · '+(n.avaliacao.titulo||'Avaliação')+' · '+n.disciplina+' · Nota: '+(n.nota??'Não informada'))).join(''):p('Sem notas de avaliações datadas neste período.'))+(item.notasSemData?p(item.notasSemData+' nota(s) sem data de avaliação não incluída(s) no recorte.'): '');
-      const registrosHtml='<h4>Registros completos: conteúdos, dificuldades e lições de casa</h4>'+(registros.length?registros.map(r=>'<article class="report-record"><h4>'+e(br(r.Data)+' · '+(disciplinaAnalise(r.Tipo)||r.Tipo||'Registro'))+'</h4>'+p('Responsável: '+(r.Instrutora||r.Secretaria||'Não informada'))+(r.Licao_Atual?p('Material / conteúdo trabalhado: '+r.Licao_Atual):'')+(r.Licao_Casa?p('Lição de casa: '+r.Licao_Casa):'')+(r.Status?p('Situação: '+r.Status):'')+(dificuldades(r.Dificuldades).length?p('Dificuldades / avaliação: '+dificuldades(r.Dificuldades).join(' · ')):'')+(r.Observacao?'<p class="report-note">'+e(r.Observacao).replace(/\n/g,'<br>')+'</p>':'')+'</article>').join(''):p('Sem registros no período.'));
+      const registrosHtml='<h4>Registros completos: conteúdos, dificuldades e lições de casa</h4>'+(registros.length?registros.map(r=>'<article class="report-record"><h4>'+e(br(r.Data)+' · '+(disciplinaAnalise(r.Tipo)||r.Tipo||'Registro'))+'</h4>'+p('Responsável: '+(r.Instrutora||r.Secretaria||'Não informada'))+(r.Licao_Atual?p('Material / conteúdo trabalhado: '+r.Licao_Atual):'')+(r.Licao_Casa?p('Lição de casa: '+r.Licao_Casa):'')+(situacao(r)?p('Situação: '+situacao(r)):'')+(situacao(r)===(r.Status||'')&&dificuldades(r.Dificuldades).length?p('Dificuldades / avaliação: '+dificuldades(r.Dificuldades).join(' · ')):'')+(r.Observacao?'<p class="report-note">'+e(r.Observacao).replace(/\n/g,'<br>')+'</p>':'')+'</article>').join(''):p('Sem registros no período.'));
       const estudos='<h4>Estudos informados em casa</h4>'+p(item.diasEstudo+' de '+item.diasPeriodo+' dias · '+item.estudos.length+' lançamento(s). Vários horários no mesmo dia contam um dia de estudo.')+(item.estudos.map(s=>p(br(s.data||s.Data)+' · '+(Array.isArray(s.horarios)?s.horarios.join(' · '):'Horários não informados'))).join(''))+p('Dias sem registro não comprovam ausência de estudo.');
       return '<details class="student-report general-student" data-relatorio-aluna><summary class="student-report-heading"><h3>'+e(aluna.nome)+'</h3>'+p((aluna.turma||'Sem turma')+(aluna.comum?' · '+aluna.comum:''))+p(f.presentes+' presenças · '+f.faltas+' faltas · '+f.justificadas+' faltas justificadas')+(f.desconhecidas?p(f.desconhecidas+' chamada(s) com situação não reconhecida.'):'')+'<span class="general-toggle" data-exportacao>Ver ou recolher informações</span></summary>'+desempenho+estudos+boletim+evolucao+metodos+registrosHtml+'</details>';
     }).join('');
   }
-  window.RelatorioGeral={construir,html};
+  window.RelatorioGeral={situacao,construir,html};
 })();
