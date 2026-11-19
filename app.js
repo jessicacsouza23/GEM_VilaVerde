@@ -105,7 +105,7 @@ let installPrompt;
 
 function paginasDoPerfil() {
   const paginas = [...navByRole[state.role]];
-  if (state.role === "Professora" && state.coordenadora) paginas.push("Folgas");
+  if (state.role === "Professora" && state.coordenadora) paginas.push("Folgas", "Relatórios");
   return paginas;
 }
 
@@ -1243,7 +1243,8 @@ async function renderVisaoGeralProfessora(content) {
       const nomes = new Set(ativas.map((aluna) => aluna.nome));
       const chamadas = dados.historico.filter((item) => nomes.has(item.Aluna) && item.Tipo === "Chamada" && ["Presente", "Ausente", "Justificada"].includes(item.Status));
       const frequencia = chamadas.length ? `${Math.round(chamadas.filter((item) => item.Status === "Presente").length / chamadas.length * 100)}%` : "—";
-      destino.innerHTML = `<div class="grid"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas no GEM</span></div><div class="metric"><strong>${frequencia}</strong><span>Frequência nos últimos 30 dias</span></div></div>${destaquesGemMarkup(ativas, dados, referencia)}`;
+      destino.innerHTML = `<div class="grid"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas no GEM</span></div><div class="metric"><strong>${frequencia}</strong><span>Frequência nos últimos 30 dias</span></div></div>${destaquesGemMarkup(ativas, dados, referencia)}${window.GraficoTurmas.html(ativas,dados.historico,referencia,escapeHtml)}`;
+      window.GraficoTurmas.conectar(destino,()=>window.GemData.dadosAnalitico(),escapeHtml);
       if (state.coordenadora) {
         try {
           const conferencia = await window.GemData.dadosVisaoGeral(referencia);
@@ -1263,6 +1264,13 @@ async function renderVisaoGeralProfessora(content) {
   data.addEventListener("change", carregar);
   content.querySelector("#professora-resumo-atualizar").addEventListener("click", carregar);
   await carregar();
+}
+
+function quadroMedalhasMarkup(resultados,disciplinas,inicio,fim,gem) {
+  const tipos=['Ouro','Prata','Bronze'],icones={Ouro:'🥇',Prata:'🥈',Bronze:'🥉'},total={Ouro:0,Prata:0,Bronze:0};
+  const categorias=disciplinas.map(d=>{const contagem={Ouro:0,Prata:0,Bronze:0};for(const r of resultados)if(tipos.includes(r[d])){contagem[r[d]]++;total[r[d]]++;}return {disciplina:d,contagem};});
+  const br=d=>d.split('-').reverse().join('/');
+  return '<section class="medal-summary"><header><h3>🏆 Quadro de medalhas — '+escapeHtml(gem||'GEM Musical')+'</h3><p>Período: '+br(inicio)+' a '+br(fim)+'</p></header><div class="medal-summary-body"><section class="medal-totals"><h4>Medalhas no período</h4><div>'+tipos.map(t=>'<p><span>'+icones[t]+' '+t+'</span><strong>'+total[t]+'</strong></p>').join('')+'</div></section><section class="medal-categories"><h4>Desempenho por categoria</h4><div>'+categorias.map(c=>'<article><h5>'+escapeHtml(c.disciplina)+'</h5>'+tipos.map(t=>'<p>'+icones[t]+' '+c.contagem[t]+' '+t+'</p>').join('')+'</article>').join('')+'</div></section></div><p class="hint">Uma medalha por aluna e disciplina, conforme o quadro abaixo. “Sem registros” não entra na contagem.</p></section>';
 }
 
 function destaquesGemMarkup(ativas, analitico, dataReferencia) {
@@ -1435,7 +1443,8 @@ async function renderVisaoGeral(content) {
       const historicoGeral = analitico.historico || [];
       const chamadasGerais = historicoGeral.filter((item) => item.Tipo === "Chamada" && ["Presente", "Ausente", "Justificada"].includes(item.Status));
       const frequencia = chamadasGerais.length ? Math.round((chamadasGerais.filter((item) => item.Status === "Presente").length / chamadasGerais.length) * 100) : null;
-      destino.innerHTML = `<div class="grid gem-summary"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas</span></div><div class="metric"><strong>${frequencia === null ? "—" : `${frequencia}%`}</strong><span>Frequência geral</span></div><div class="metric"><strong>${quantidadeSalas || "—"}</strong><span>Salas ativas</span></div><div class="metric"><strong>${professorasAtivas.length}</strong><span>Professoras ativas</span></div><div class="metric"><strong>${disciplinas.length}</strong><span>Disciplinas oferecidas</span></div></div><section class="gem-summary-details"><div><h3>🎼 Disciplinas do GEM</h3><p>${disciplinas.length ? escapeHtml(disciplinas.join(" · ")) : "Defina as disciplinas no modelo de rodízio."}</p></div><div><h3>📅 Referência</h3><p>${dados.alunas.length ? `${dados.alunas.length} aluna(s) no rodízio de hoje · ${presentes} presente(s)` : "Sem rodízio salvo nesta data."}</p></div></section>${conferenciaRegistros}${destaquesGemMarkup(ativas, analitico, dataReferencia)}`;
+      destino.innerHTML = `<div class="grid gem-summary"><div class="metric"><strong>${ativas.length}</strong><span>Alunas ativas</span></div><div class="metric"><strong>${frequencia === null ? "—" : `${frequencia}%`}</strong><span>Frequência geral</span></div><div class="metric"><strong>${quantidadeSalas || "—"}</strong><span>Salas ativas</span></div><div class="metric"><strong>${professorasAtivas.length}</strong><span>Professoras ativas</span></div><div class="metric"><strong>${disciplinas.length}</strong><span>Disciplinas oferecidas</span></div></div><section class="gem-summary-details"><div><h3>🎼 Disciplinas do GEM</h3><p>${disciplinas.length ? escapeHtml(disciplinas.join(" · ")) : "Defina as disciplinas no modelo de rodízio."}</p></div><div><h3>📅 Referência</h3><p>${dados.alunas.length ? `${dados.alunas.length} aluna(s) no rodízio de hoje · ${presentes} presente(s)` : "Sem rodízio salvo nesta data."}</p></div></section>${conferenciaRegistros}${destaquesGemMarkup(ativas, analitico, dataReferencia)}${window.GraficoTurmas.html(ativas,analitico.historico,dataReferencia,escapeHtml)}`;
+      window.GraficoTurmas.conectar(destino,async()=>analitico,escapeHtml);
       const faltasDoDia = resumoFaltasVisaoGeral(dados.registros, dados.data);
       destino.querySelector('.gem-summary').insertAdjacentHTML('beforeend', `<div class="metric"><strong>${faltasDoDia.total}</strong><span>Faltas do dia · ${escapeHtml(dados.data)}</span><div><small>${faltasDoDia.ausentes} falta(s) sem justificativa</small></div><div><small>${faltasDoDia.justificadas} falta(s) justificada(s)</small></div></div>`);
     } catch (error) { destino.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
@@ -1627,6 +1636,23 @@ async function renderLogistica(content) {
 }
 
 async function renderRelatorios(content) {
+  const autorizar=async()=>state.role==='Secretaria'||(state.role==='Professora'&&state.coordenadora&&await window.GemData.professoraEhCoordenadora(state.name,new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo'}).format(new Date())));
+  if(!await autorizar()){content.innerHTML='<div class="action-error">Relatório disponível para Secretaria e professoras coordenadoras em período ativo.</div>';return;}
+  const secretaria=state.role==='Secretaria';
+  content.innerHTML='<section class="panel"><div class="person-tabs" role="tablist">'+(secretaria?'<button class="tab-action active" role="tab" data-relatorio-aba="diario" aria-selected="true">Relatório diário</button>':'')+'<button class="tab-action '+(secretaria?'':'active')+'" role="tab" data-relatorio-aba="reuniao" aria-selected="'+(!secretaria)+'">Reunião pedagógica</button></div></section><div data-relatorio-painel role="tabpanel"></div>';
+  const host=content.querySelector('[data-relatorio-painel]');
+  const mostrar=async aba=>{
+    content.querySelectorAll('[data-relatorio-aba]').forEach(b=>{const ativo=b.dataset.relatorioAba===aba;b.classList.toggle('active',ativo);b.setAttribute('aria-selected',String(ativo));b.disabled=true;});
+    host.innerHTML='<div class="empty">Carregando relatório…</div>';
+    try{if(aba==='diario'&&secretaria)await renderRelatoriosDiario(host);else await window.ReuniaoPedagogica.montar(host,{gem:state.gem,carregar:()=>window.GemData.dadosAnalitico(),autorizar,esc:escapeHtml});}
+    catch(e){host.innerHTML='<div class="action-error">'+escapeHtml(mensagemErro(e))+'</div>';}
+    finally{content.querySelectorAll('[data-relatorio-aba]').forEach(b=>b.disabled=false);}
+  };
+  content.querySelectorAll('[data-relatorio-aba]').forEach(b=>b.onclick=()=>mostrar(b.dataset.relatorioAba));
+  await mostrar(secretaria?'diario':'reuniao');
+}
+
+async function renderRelatoriosDiario(content) {
   const hoje = new Date().toISOString().slice(0, 10);
   content.innerHTML = `<section class="intro-card report-intro"><p class="eyebrow">RELATÓRIOS</p><h2>Relatório diário</h2><p>Escolha uma data para visualizar e compartilhar o relatório.</p></section><section class="panel"><div class="agenda-date"><div><label for="relatorio-data">Data</label><input id="relatorio-data" type="date" value="${hoje}"></div><button id="gerar-relatorio" class="primary-action" type="button">Gerar relatório</button></div><div id="relatorio-conteudo"></div></section><section class="panel report-export-panel"><div class="section-title"><div><h2>Exportar conteúdos para Excel</h2><p>Baixe somente os conteúdos de aula já lançados, sem fotos, senhas ou dados de chamada.</p></div></div><div class="analytics-filters"><label>Relatório<select id="excel-escopo"><option value="geral">Geral do GEM</option><option value="aluna">Por aluna</option></select></label><label id="excel-aluna-wrap" class="hidden">Aluna<select id="excel-aluna"></select></label><label>De <small>(opcional)</small><input id="excel-inicio" type="date"></label><label>Até <small>(opcional)</small><input id="excel-fim" type="date"></label><button id="baixar-relatorio-excel" class="primary-action" type="button">Baixar Excel</button></div><p id="excel-resumo" class="hint">Carregando conteúdos disponíveis…</p></section>`;
   const carregar = async () => {
@@ -1869,6 +1895,8 @@ async function renderAnalitico(content, opcoes = {}) {
     }
     if (aba === "quadro") {
       const disciplinas = ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"];
+      const medalhasPeriodo = dados.alunas.filter(a=>a.ativo!==false).map(aluna=>Object.fromEntries(disciplinas.map(d=>[d,classificacao(periodo.filter(r=>r.Aluna===aluna.nome&&disciplinaAnalise(r.Tipo)===d)).nome])));
+      const resumoMedalhas = quadroMedalhasMarkup(medalhasPeriodo,disciplinas,$('#analise-inicio').value,$('#analise-fim').value,state.gem);
       const estudoDoPeriodo = (nome) => dados.estudos.filter((estudo) => {
         const data = dataRegistro(estudo.data || estudo.Data);
         return estudo.aluna === nome && data && data >= $("#analise-inicio").value && data <= $("#analise-fim").value;
@@ -1879,7 +1907,7 @@ async function renderAnalitico(content, opcoes = {}) {
         const rosto = percentual >= 70 ? "😊" : percentual >= 40 ? "😐" : "😢";
         return `${dias ? rosto : '—'} ${percentual}%<br><small>${dias} de ${diasPeriodo} dias</small>${!dias ? '<br><small>Sem estudo registrado</small>' : ''}`;
       };
-      destino.innerHTML = `<h3>🏆 Quadro de desempenho</h3><p class="hint">A medalha mantém os critérios atuais de aulas sem dificuldades registradas. “Evolução registrada” destaca quando a professora marcou “Não apresentou dificuldades” no período. A última coluna mostra os dias com estudo registrado pela aluna em relação a todos os dias do período, incluindo início e fim. Vários horários no mesmo dia contam uma vez. Dias sem registro não comprovam ausência de estudo.</p><div class="table-wrap"><table class="scale-table performance-table"><thead><tr><th>Aluna</th>${disciplinas.map((disciplina) => `<th>${escapeHtml(disciplina)}</th>`).join("")}<th>Estudo em casa</th></tr></thead><tbody>${dados.alunas.filter((aluna) => aluna.ativo !== false).map((aluna) => `<tr><th>${escapeHtml(aluna.nome)}</th>${disciplinas.map((disciplina) => { const resultado = classificacao(periodo.filter((registro) => registro.Aluna === aluna.nome && disciplinaAnalise(registro.Tipo) === disciplina)); return `<td>${resultado.icone} ${resultado.nome}${resultado.nota > 0 ? `<br><small>${resultado.nota}%</small>` : resultado.nome === "Bronze" ? "<br><small>Em desenvolvimento</small>" : ""}${resultado.evolucao ? "<br><small>🌱 Evolução registrada</small>" : ""}</td>`; }).join("")}<td>${celulaEstudo(aluna.nome)}</td></tr>`).join("")}</tbody></table></div>`;
+      destino.innerHTML = `${resumoMedalhas}<h3>🏆 Quadro de desempenho</h3><p class="hint">A medalha mantém os critérios atuais de aulas sem dificuldades registradas. “Evolução registrada” destaca quando a professora marcou “Não apresentou dificuldades” no período. A última coluna mostra os dias com estudo registrado pela aluna em relação a todos os dias do período, incluindo início e fim. Vários horários no mesmo dia contam uma vez. Dias sem registro não comprovam ausência de estudo.</p><div class="table-wrap"><table class="scale-table performance-table"><thead><tr><th>Aluna</th>${disciplinas.map((disciplina) => `<th>${escapeHtml(disciplina)}</th>`).join("")}<th>Estudo em casa</th></tr></thead><tbody>${dados.alunas.filter((aluna) => aluna.ativo !== false).map((aluna) => `<tr><th>${escapeHtml(aluna.nome)}</th>${disciplinas.map((disciplina) => { const resultado = classificacao(periodo.filter((registro) => registro.Aluna === aluna.nome && disciplinaAnalise(registro.Tipo) === disciplina)); return `<td>${resultado.icone} ${resultado.nome}${resultado.nota > 0 ? `<br><small>${resultado.nota}%</small>` : resultado.nome === "Bronze" ? "<br><small>Em desenvolvimento</small>" : ""}${resultado.evolucao ? "<br><small>🌱 Evolução registrada</small>" : ""}</td>`; }).join("")}<td>${celulaEstudo(aluna.nome)}</td></tr>`).join("")}</tbody></table></div>`;
       const inicioQuadro = $('#analise-inicio').value, fimQuadro = $('#analise-fim').value;
       destino.insertAdjacentHTML('beforeend', '<div class="scale-actions"><button id="baixar-imagem-quadro" class="secondary-action" type="button">📷 Baixar imagem do quadro</button><span id="imagem-quadro-feedback" role="status"></span></div>');
       const tabelaQuadro = destino.querySelector('.performance-table');
@@ -2569,7 +2597,7 @@ async function renderPage() {
     try { await renderPessoas(content); } catch (error) { content.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(error))}</div>`; }
     return;
   }
-  if (state.role === "Secretaria" && state.page === "Relatórios") {
+  if ((state.role === "Secretaria" || (state.role === "Professora" && state.coordenadora)) && state.page === "Relatórios") {
     await renderRelatorios(content);
     return;
   }

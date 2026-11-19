@@ -766,7 +766,7 @@
       }
     };
     const [alunas, historico, estudos] = await Promise.all([
-      lerPaginas(() => banco.from("alunas").select("nome,ativo").order("nome")),
+      lerPaginas(() => banco.from("alunas").select("nome,turma,ativo").order("nome")),
       lerPaginas(() => banco.from("historico_geral").select("id,Data,Aluna,Tipo,Status,Dificuldades").in("Data", datas).order("id")),
       consultarEstudos({datas:datas.filter(d=>d.includes('/'))})
     ]);
