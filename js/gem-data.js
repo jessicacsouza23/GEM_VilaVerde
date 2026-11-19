@@ -1205,7 +1205,7 @@
         Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoAnalise,
         Licao_Atual: `${material}: ${conteudo}`,
         Dificuldades: dificuldadesDoMaterial,
-        Observacao: String(observacao || "").trim() + (correcaoAtual ? '\nCorreção da lição: ' + correcaoAtual.trim() : ''),
+        Observacao: String(item.observacao ?? observacao ?? "").trim() + (correcaoAtual ? '\nCorreção da lição: ' + correcaoAtual.trim() : ''),
         Status: item.somenteCorrecao ? item.resultadoLicao : temDificuldade ? "Realizada - com dificuldades" : "Realizada - sem pendência"
       };
       const salvar = existente

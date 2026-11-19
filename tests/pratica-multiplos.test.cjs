@@ -21,13 +21,16 @@ test('vários materiais, correção e todas as tarefas persistem por aluna e dis
   const src=fs.readFileSync(require.resolve('../js/gem-data.js'),'utf8');
   const ctx={obterCliente:async()=>banco,dataBr:()=> '31/10/2026'};
   vm.createContext(ctx);vm.runInContext(src.slice(src.indexOf('  async function salvarRegistrosPratica('),src.indexOf('  async function exerciciosDaAula(')),ctx);
-  const materiais=[{material:'Apostila',conteudo:'página 18, lição 1',licaoPendenteId:1,licaoPendenteTexto:'página 18, lição 1',resultadoLicao:'Resolvido',observacaoCorrecao:'Fez corretamente'},
-    {material:'Volume 1',conteudo:'lição 2',exercicios:[{exercicio:'2',dificuldades:['Ritmo']}]},
+  const materiais=[{material:'Apostila',observacao:'Observação somente da apostila',conteudo:'página 18, lição 1',licaoPendenteId:1,licaoPendenteTexto:'página 18, lição 1',resultadoLicao:'Resolvido',observacaoCorrecao:'Fez corretamente'},
+    {material:'Volume 1',observacao:'Observação somente da lição 2',conteudo:'lição 2',exercicios:[{exercicio:'2',dificuldades:['Ritmo']}]},
     {material:'Volume 1',conteudo:'lição 3',exercicios:[{exercicio:'3',dificuldades:[]}]}];
   const licoesCasa=[{material:'Apostila',licaoCasa:'página 20, lição 1'},{material:'Volume 1',licaoCasa:'lição 4'},{material:'Volume 1',licaoCasa:'lição 5'}];
   await ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais,licoesCasa});
   const analises=tabelas.historico_geral.filter(r=>r.Tipo==='Analise_Prática');
   assert.equal(analises.length,3);
+  assert.match(analises[0].Observacao,/Observação somente da apostila/);
+  assert.equal(analises[1].Observacao,'Observação somente da lição 2');
+  assert.equal(analises[2].Observacao,'');
   assert.match(analises[0].Observacao,/Correção da lição: Resolvido/);
   assert.match(analises[0].Observacao,/Fez corretamente/);
   assert.equal(tabelas.historico_geral[0].Status,'Resolvido');
