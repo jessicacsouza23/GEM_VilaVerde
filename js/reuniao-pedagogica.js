@@ -80,13 +80,11 @@
         });continua=true;}while(filas.some(f=>f.length));
       }
       const melhor=[...turma.desempenho].filter(d=>d.percentual!==null).sort((a,b)=>b.percentual-a.percentual)[0];
-      paragrafos(turma.nome.toUpperCase()+' | LEITURA PEDAGÓGICA',['PONTO FORTE: '+(melhor&&melhor.percentual>0?melhor.disciplina+' com '+percentual(melhor.percentual)+' de registros positivos em média.':'Sem evidência positiva suficiente no período.'),'PRINCIPAL ALERTA: '+(turma.dificuldades.slice(0,3).map(d=>d.nome+' ('+d.quantidade+')').join('; ')||'Sem dificuldades marcadas.'),'PRÓXIMO PASSO - COORDENAÇÃO: '+(notas.turmas?.[turma.nome]||'A definir durante a reunião.')]);
+      paragrafos(turma.nome.toUpperCase()+' | LEITURA PEDAGÓGICA',['PONTO FORTE: '+(melhor&&melhor.percentual>0?melhor.disciplina+' com '+percentual(melhor.percentual)+' de registros positivos em média.':'Sem evidência positiva suficiente no período.'),'PRINCIPAL ALERTA: '+(turma.dificuldades.slice(0,3).map(d=>d.nome+' ('+d.quantidade+')').join('; ')||'Sem dificuldades marcadas.')]);
     }
     paragrafos('LIÇÕES REPETIDAS - REVISAR',m.alertas.length?m.alertas.map(a=>a.aluna+' | '+a.disciplina+' | '+a.material+': '+a.licao+' | '+a.sabados+' sábados com presença, desde '+br(a.inicio)):['Nenhuma lição atingiu o critério no período.']);
-    paragrafos('PRIORIDADES PARA O PRÓXIMO CICLO',[notas.prioridades||'Definir objetivos por turma a partir das dificuldades e pendências apresentadas.']);
     const notasProvas=m.alunas.flatMap(a=>a.notas.map(n=>[a.aluna.nome,br(n.avaliacao.data_avaliacao),n.disciplina,(n.avaliacao.titulo||'Avaliação')+' | Nota: '+n.nota]));
     tabela('AVALIAÇÕES DO PERÍODO',['Aluna','Data','Disciplina','Avaliação / Nota'],notasProvas.length?notasProvas:[['Sem notas datadas no período','','','']]);
-    paragrafos('ENCAMINHAMENTOS DA REUNIÃO',[notas.encaminhamentos||'A registrar pela coordenação.']);
     return pdf;
   }
   async function montar(destino,{gem,carregar,autorizar,esc}){
@@ -117,7 +115,7 @@
         const modelo=construir(dados,filtros);lerNotas();
         if(!modelo.alunas.length)throw new Error('Nenhuma aluna ativa encontrada nesse filtro.');
         const editor=destino.querySelector('[data-reuniao-editor]');
-        editor.innerHTML='<h3>Conclusões da coordenação</h3><p class="hint">Estes textos entram no PDF. Ficam nesta tela enquanto ela estiver aberta; não são gravados no cadastro das alunas.</p>'+modelo.turmas.map(t=>'<label>Próximo passo — '+esc(t.nome)+'<textarea data-reuniao-nota-turma="'+esc(t.nome)+'" placeholder="Objetivos e ações combinados">'+esc(rascunho.turmas[t.nome]||'')+'</textarea></label>').join('')+'<label>Prioridades para o próximo ciclo<textarea data-reuniao-prioridades>'+esc(rascunho.prioridades)+'</textarea></label><label>Encaminhamentos e observações da reunião<textarea data-reuniao-encaminhamentos>'+esc(rascunho.encaminhamentos)+'</textarea></label><label class="checkbox-line"><input type="checkbox" data-reuniao-fotos checked> Incluir fotos de perfil disponíveis</label><button type="button" class="primary-action" data-reuniao-pdf>Baixar PDF da reunião</button><p data-reuniao-download role="status"></p>';
+        editor.innerHTML='<h3>Exportar apresentação</h3><p class="hint">Esta apresentação contém somente os dados e as sínteses pedagógicas das alunas. As conclusões e encaminhamentos ficam no Resumo de acompanhamento.</p><label class="checkbox-line"><input type="checkbox" data-reuniao-fotos checked> Incluir fotos de perfil disponíveis</label><button type="button" class="primary-action" data-reuniao-pdf>Baixar PDF da apresentação</button><p data-reuniao-download role="status"></p>';
         destino.querySelector('[data-reuniao-previa]').innerHTML=preview(modelo,esc);
         retorno.textContent='Relatório gerado: '+br(modelo.inicio)+' a '+br(modelo.fim)+'. Revise os dados e as conclusões antes de baixar.';
         editor.querySelector('[data-reuniao-pdf]').onclick=async()=>{
