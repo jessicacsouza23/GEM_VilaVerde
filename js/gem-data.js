@@ -1154,6 +1154,8 @@
     const data = dataBr(dataIso);
     const lista = (materiais || []).filter((item) => String(item?.material || "").trim() && String(item?.conteudo || "").trim());
     if (!aluna || !lista.length) throw new Error("Informe ao menos um método/apostila e a página ou lição trabalhada.");
+    const materiaisRepetidos = lista.map(item => nomeCanonico(item.material).toLocaleLowerCase('pt-BR')).filter((nome, indice, nomes) => nomes.indexOf(nome) !== indice);
+    if (materiaisRepetidos.length) throw new Error("O mesmo método ou Apostila só pode ser registrado uma vez nesta aula. Para passar duas ou mais lições, use “Acrescentar outra lição” na área de lições de casa.");
 
     // O cartão de um material pode ser removido ao corrigir um registro já
     // salvo. Espelhamos o editor do Streamlit: o método removido deixa de
@@ -1285,9 +1287,9 @@
 
     }
 
-    // Cada linha é uma lição independente. Assim a professora pode passar
-    // várias páginas de Apostila, vários métodos ou repetir um mesmo método
-    // sem que a última entrada apague as anteriores.
+    // Cada linha de casa é independente. Assim a professora pode passar
+    // várias lições do mesmo método ou da Apostila sem duplicar o material
+    // trabalhado no registro da aula.
     const { data: casasAnteriores, error: erroCasasAnteriores } = await banco.from("historico_geral").select("id,Tipo")
       .eq("Aluna", aluna).eq("Data", data).eq("Instrutora", instrutora);
     if (erroCasasAnteriores) throw new Error("O registro foi salvo, mas não foi possível preparar as lições de casa.", { cause: erroCasasAnteriores });
@@ -1323,7 +1325,7 @@
   async function registrosDaAula({ dataIso, instrutora, alunas }) {
     const banco = await obterCliente();
     const data = dataBr(dataIso);
-    const { data: registros, error } = await banco.from("historico_geral").select("*")
+    const { data: registros, error } = await banco.from("historico_geral").select("id,Aluna,Data,Tipo,Licao_Atual,Licao_Casa,Dificuldades,Observacao,Status,Instrutora")
       .eq("Data", data).eq("Instrutora", instrutora).in("Aluna", alunas || []).order("id", { ascending: true });
     if (error) throw new Error("Não foi possível carregar os registros já salvos desta aula.", { cause: error });
     return (registros || []).filter((registro) => registro.Tipo === "Material_Prática" || String(registro.Tipo || "").startsWith("Analise_") || String(registro.Tipo || "").startsWith("Casa_"));
@@ -1332,7 +1334,7 @@
   async function contextoPratica({ aluna, alunas, dataIso }) {
     const banco = await obterCliente();
     const dataAtual = dataBr(dataIso);
-    const { data, error } = await banco.from("historico_geral").select("id,Aluna,Data,Tipo,Licao_Atual,Licao_Casa,Dificuldades,Observacao,Status")
+    const { data, error } = await banco.from("historico_geral").select("id,Aluna,Data,Tipo,Licao_Atual,Licao_Casa,Dificuldades,Observacao,Status,Instrutora")
       .in("Aluna", alunas || [aluna]).order("id", { ascending: false });
     if (error) throw new Error("Não foi possível carregar o histórico de Prática da aluna.", { cause: error });
     const paraTempo = (valor) => {
@@ -1349,7 +1351,7 @@
     // apresentada entra no próprio registro pedagógico da próxima aula.
     if (normalizar(tipoAula).includes("SOLFEJO")) return [];
     const banco = await obterCliente();
-    const { data, error } = await banco.from("historico_geral").select("*").in("Aluna", alunas || []).order("id", { ascending: false });
+    const { data, error } = await banco.from("historico_geral").select("id,Aluna,Data,Tipo,Licao_Atual,Licao_Casa,Dificuldades,Observacao,Status,Instrutora").in("Aluna", alunas || []).order("id", { ascending: false });
     if (error) throw new Error("Não foi possível carregar as lições pendentes.", { cause: error });
     const tiposPermitidos = tipoAula === "Teoria" ? ["Casa_Teoria_Prof", "Casa_Apostila_Teoria_Prof", "Casa_Apostila_Teoria"]
       : tipoAula === "Prática" ? []

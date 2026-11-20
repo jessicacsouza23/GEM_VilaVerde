@@ -23,7 +23,7 @@ test('vários materiais, correção e todas as tarefas persistem por aluna e dis
   vm.createContext(ctx);vm.runInContext(src.slice(src.indexOf('  async function salvarRegistrosPratica('),src.indexOf('  async function exerciciosDaAula(')),ctx);
   const materiais=[{material:'Apostila',observacao:'Observação somente da apostila',conteudo:'página 18, lição 1',licaoPendenteId:1,licaoPendenteTexto:'página 18, lição 1',resultadoLicao:'Resolvido',observacaoCorrecao:'Fez corretamente'},
     {material:'Volume 1',observacao:'Observação somente da lição 2',conteudo:'lição 2',exercicios:[{exercicio:'2',dificuldades:['Ritmo']}]},
-    {material:'Volume 1',conteudo:'lição 3',exercicios:[{exercicio:'3',dificuldades:[]}]}];
+    {material:'Volume 2',conteudo:'lição 3',exercicios:[{exercicio:'3',dificuldades:[]}]}];
   const licoesCasa=[{material:'Apostila',licaoCasa:'página 20, lição 1'},{material:'Volume 1',licaoCasa:'lição 4'},{material:'Volume 1',licaoCasa:'lição 5'}];
   await ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais,licoesCasa});
   const analises=tabelas.historico_geral.filter(r=>r.Tipo==='Analise_Prática');
@@ -37,6 +37,7 @@ test('vários materiais, correção e todas as tarefas persistem por aluna e dis
   assert.equal(tabelas.exercicios_registro.length,2);
   assert.equal(tabelas.historico_geral.filter(r=>r.Data==='31/10/2026'&&r.Tipo.startsWith('Casa_')).length,3);
   assert.ok(tabelas.historico_geral.every(r=>r.Aluna==='A'));
+  await assert.rejects(ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais:[{material:'Volume 1',conteudo:'lição 6'},{material:'Volume 1',conteudo:'lição 7'}]}),/mesmo método ou Apostila só pode ser registrado uma vez/);
   materiais[0].resultadoLicao='';
   await assert.rejects(ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais,licoesCasa}),/Resultado da correção/);
   materiais[0].resultadoLicao='Resolvido';
@@ -45,7 +46,8 @@ test('vários materiais, correção e todas as tarefas persistem por aluna e dis
   await ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais:[materiais[0]],licoesCasa:[licoesCasa[0]],preservarOutrosMateriais:true});
   assert.equal(tabelas.historico_geral.filter(r=>r.Tipo==='Analise_Prática').length,3);
   assert.equal(tabelas.historico_geral.filter(r=>r.Tipo==='Casa_Metodo_Volume 1').length,2);
-  assert.equal(tabelas.exercicios_registro.filter(r=>r.material==='Volume 1').length,2);
+  assert.equal(tabelas.exercicios_registro.filter(r=>r.material==='Volume 1').length,1);
+  assert.equal(tabelas.exercicios_registro.filter(r=>r.material==='Volume 2').length,1);
   // A correção de uma lição antiga não precisa de nova tarefa nem de página redigitada.
   await ctx.salvarRegistrosPratica({dataIso:'2026-10-31',aluna:'A',instrutora:'Professora',materiais:[{...materiais[0],conteudo:''}],licoesCasa:[],preservarOutrosMateriais:true});
   assert.equal(tabelas.historico_geral[0].Status,'Resolvido');
