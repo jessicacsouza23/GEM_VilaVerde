@@ -12,3 +12,14 @@ test('materiais concluídos não são reativados por análise e podem ser retoma
  const itens=ctx.window.GemMateriais.catalogo(h);assert.equal(itens.length,2);assert.equal(itens[0].concluido,true);assert.equal(itens[1].nome,'Meu piano é divertido 1');
  h.push({id:5,Tipo:'Material_Prática',Licao_Atual:'Volume 1',Status:'Em andamento'});assert.equal(ctx.window.GemMateriais.catalogo(h)[0].concluido,false);
 });
+test('lições, exercícios e observações antigas sem material não viram opções de método',()=>{
+ const h=[
+  {id:1,Tipo:'Analise_Prática',Licao_Atual:'Exercício 5 e 6'},
+  {id:2,Tipo:'Analise_Prática',Licao_Atual:'17'},
+  {id:3,Tipo:'Analise_Prática',Licao_Atual:'Páginas 10 e 11 corrigidas'},
+  {id:4,Tipo:'Analise_Prática',Licao_Atual:'Volume 1: exercícios 5 e 6'},
+  {id:5,Tipo:'Casa_Metodo_Meu Piano é Divertido 1'}
+ ];
+ const nomes=Array.from(ctx.window.GemMateriais.catalogo(h),item=>item.nome);
+ assert.deepEqual(nomes,['Volume 1','Meu piano é divertido 1']);
+});

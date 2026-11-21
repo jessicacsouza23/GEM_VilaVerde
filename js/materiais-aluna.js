@@ -18,7 +18,13 @@
   function catalogo(historico) {
     const itens = new Map();
     for (const r of historico.filter(r=>!r.importacao_chave).map(normalizarRegistro).sort((a,b) => Number(a.id) - Number(b.id))) {
-      const nome = r.Tipo === 'Material_Prática' ? r.Licao_Atual : r.Tipo === 'Analise_Prática' ? String(r.Licao_Atual || '').split(':')[0].trim() : String(r.Tipo || '').startsWith('Casa_Metodo_') ? r.Tipo.slice(12) : ['Casa_Apostila','Casa_Apostila_Prof'].includes(r.Tipo) ? 'Apostila' : '';
+      // Registros antigos de Prática às vezes traziam somente “Exercício 5”,
+      // “17” ou uma observação em Licao_Atual. Sem o separador “Material:
+      // conteúdo”, isso não identifica um método e jamais pode virar opção
+      // na escolha de materiais.
+      const analise = String(r.Licao_Atual || '');
+      const posicao = analise.indexOf(':');
+      const nome = r.Tipo === 'Material_Prática' ? r.Licao_Atual : r.Tipo === 'Analise_Prática' && posicao > 0 ? analise.slice(0,posicao).trim() : String(r.Tipo || '').startsWith('Casa_Metodo_') ? r.Tipo.slice(12) : ['Casa_Apostila','Casa_Apostila_Prof'].includes(r.Tipo) ? 'Apostila' : '';
       if (!nome) continue;
       if (!itens.has(nome)) itens.set(nome, {nome, concluido:false});
       if (r.Tipo === 'Material_Prática') itens.set(nome, {nome, concluido:r.Status === 'Concluído', data:r.Data, professora:r.Instrutora});

@@ -246,7 +246,11 @@ async function renderMinhasAulas(content) {
       ? `<div id="registro-compartilhado" class="student-records shared-record"><p class="field-caption">${tituloDificuldadesTurma}</p>${dificuldades}<label>${tituloObservacaoTurma}<textarea id="registro-observacao-compartilhada" placeholder="Observação sobre a aula da turma">${escapeHtml(primeiroRegistro.Observacao || "")}</textarea></label></div><div id="registro-por-aluna" class="student-records hidden"></div>`
       : `<div class="student-records"><section class="student-record"><h4>${escapeHtml(aula.alunas[0])}</h4><p class="field-caption">Dificuldades observadas:</p>${dificuldades}<label>Observações pedagógicas:<textarea data-observacao-aluna="${escapeHtml(aula.alunas[0])}" placeholder="Observações sobre a aula">${escapeHtml(primeiroRegistro.Observacao || "")}</textarea></label></section></div>`;
     const opcoesLicaoGenerica = `<option value="">Não deixar lição</option>`;
-    const opcoesPratica = [...new Set(["Apostila", ...bibliotecaMetodos.filter((metodo) => metodo.categoria === "Prática").map((metodo) => metodo.nome), ...analisesSalvas.map(r => String(r.Licao_Atual || '').split(':')[0].trim()).filter(Boolean), ...registrosSalvos.filter(r => String(r.Tipo || '').startsWith('Casa_Metodo_')).map(r => r.Tipo.replace('Casa_Metodo_', ''))])];
+    const materiaisDeAnalisesSalvas = analisesSalvas.map((registro) => {
+      const texto = String(registro.Licao_Atual || ''), separador = texto.indexOf(':');
+      return separador > 0 ? texto.slice(0, separador).trim() : '';
+    }).filter(Boolean);
+    const opcoesPratica = [...new Set(["Apostila", ...bibliotecaMetodos.filter((metodo) => metodo.categoria === "Prática").map((metodo) => metodo.nome), ...materiaisDeAnalisesSalvas, ...registrosSalvos.filter(r => String(r.Tipo || '').startsWith('Casa_Metodo_')).map(r => r.Tipo.replace('Casa_Metodo_', ''))])];
     const campoMaterial = aula.tipo === "Prática" ? `<select id="registro-material"><option value="">Selecione o método/apostila</option>${opcoesPratica.map((material) => `<option ${material === materialSalvo ? "selected" : ""}>${escapeHtml(material)}</option>`).join("")}</select><small class="field-help">Cadastre novos métodos em Configurar Métodos.</small>` : `<input id="registro-material" value="${escapeHtml(materialSalvo)}" placeholder="Ex.: MSA, Apostila, Folha Extra">`;
     const resumoSalvo = (registros) => {
       const casasDaDisciplina = tipo => aula.tipo === 'Prática' ? tipo === 'Casa_Apostila' || tipo === 'Casa_Apostila_Prof' || tipo.startsWith('Casa_Metodo_')
