@@ -18,13 +18,10 @@
   function catalogo(historico) {
     const itens = new Map();
     for (const r of historico.filter(r=>!r.importacao_chave).map(normalizarRegistro).sort((a,b) => Number(a.id) - Number(b.id))) {
-      // Registros antigos de Prática às vezes traziam somente “Exercício 5”,
-      // “17” ou uma observação em Licao_Atual. Sem o separador “Material:
-      // conteúdo”, isso não identifica um método e jamais pode virar opção
-      // na escolha de materiais.
-      const analise = String(r.Licao_Atual || '');
-      const posicao = analise.indexOf(':');
-      const nome = r.Tipo === 'Material_Prática' ? r.Licao_Atual : r.Tipo === 'Analise_Prática' && posicao > 0 ? analise.slice(0,posicao).trim() : String(r.Tipo || '').startsWith('Casa_Metodo_') ? r.Tipo.slice(12) : ['Casa_Apostila','Casa_Apostila_Prof'].includes(r.Tipo) ? 'Apostila' : '';
+      // Esta é a fonte oficial do vínculo “aluna usa este material”. Análises
+      // e lições de casa registram conteúdo pedagógico, não materiais: dados
+      // antigos como “Revisão” ou “Exercício 5” nunca podem virar botões.
+      const nome = r.Tipo === 'Material_Prática' ? r.Licao_Atual : '';
       if (!nome) continue;
       if (!itens.has(nome)) itens.set(nome, {nome, concluido:false});
       if (r.Tipo === 'Material_Prática') itens.set(nome, {nome, concluido:r.Status === 'Concluído', data:r.Data, professora:r.Instrutora});
@@ -60,7 +57,7 @@
       const check=document.createElement('input');check.type='radio';check.name='material-em-edicao';check.checked=selecionado;
       label.append(check,document.createTextNode(nome));topo.querySelector('[data-escolhas]').append(label);
       const bloco=document.createElement('details');bloco.className='material-workspace';bloco.dataset.material=nome;
-      bloco.innerHTML='<summary><strong>'+esc(nome)+'</strong><span data-resumo></span></summary><div data-aula></div><section class="material-homework"><h4>Para a próxima aula</h4><p>Deixe vazio para não passar nova lição deste material.</p><div data-tarefas></div><button type="button" class="secondary-action" data-mais-casa>＋ Outra lição de casa</button></section><button type="button" class="secondary-action" data-estado></button>';
+      bloco.innerHTML='<summary><strong>'+esc(nome)+'</strong><span data-resumo></span></summary><div data-aula></div><section class="material-homework"><h4>Para a próxima aula</h4><p>Deixe vazio para não passar nova lição deste material.</p><div data-tarefas></div><button type="button" class="secondary-action" data-mais-casa>＋ Adicionar outra lição para casa</button></section><button type="button" class="secondary-action" data-estado></button>';
       container.append(bloco);
       const g={nome,check,label,bloco,resumo:bloco.querySelector('[data-resumo]'),estado};grupos.set(nome,g);
       let cards=existentes.filter(c=>c.querySelector('[data-pratica-material]').value===nome);
@@ -130,9 +127,9 @@
           if(semResultado){abrir(g);avisarValidacao('Selecione o Resultado da correção da Apostila. O conteúdo para a próxima aula é opcional.',semResultado.querySelector('[data-pratica-resultado] input'));event.stopImmediatePropagation();return;}
           if(cartoes.length&&correcoes.length===cartoes.length)continue;
         }
-        const vazio=[...g.bloco.querySelectorAll('[data-pratica-conteudo]')].find(c=>!c.value.trim());
-        if(vazio){abrir(g);avisarValidacao(g.nome+': este registro ainda não foi salvo. Informe o conteúdo trabalhado hoje'+(g.nome==='Apostila'?' com página e lições. Ex.: página 18, lições 1 e 2.':'.')+' Os outros materiais já salvos permanecem registrados.',vazio);event.stopImmediatePropagation();return;}
-        if(g.nome==='Apostila')for(const campo of g.bloco.querySelectorAll('[data-pratica-conteudo]')){
+        const conteudos=[...g.bloco.querySelectorAll('[data-pratica-conteudo]')].filter(c=>c.value.trim());
+        if(!conteudos.length){const campo=g.bloco.querySelector('[data-pratica-conteudo]');abrir(g);avisarValidacao(g.nome+': este registro ainda não foi salvo. Informe o conteúdo trabalhado hoje'+(g.nome==='Apostila'?' com página e lições. Ex.: página 18, lições 1 e 2.':'.')+' Os outros materiais já salvos permanecem registrados.',campo);event.stopImmediatePropagation();return;}
+        if(g.nome==='Apostila')for(const campo of conteudos){
           const texto=campo.value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
           const pagina=/\b(?:paginas?|pags?|p)\.?\s*[:\-]?\s*[1-9]\d*\b/.test(texto);
           const licao=/\b(?:licao|licoes|exercicio|exercicios|atividades?)\s*[:\-]?\s*\S+/.test(texto);

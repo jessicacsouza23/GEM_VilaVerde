@@ -1200,14 +1200,16 @@
       if (erroAnteriores) throw new Error("Não foi possível conferir o registro de Prática já salvo.", { cause: erroAnteriores });
       const existente = (anteriores || []).find((registro) => conteudoCanonico(registro.Licao_Atual).trim() === `${material}: ${conteudo}`);
       const correcaoAnterior = String(existente?.Observacao || '').split('\nCorreção da lição:')[1];
+      const observacaoDoRegistro = String(item.observacao ?? observacao ?? "").trim();
+      const notaDaCorrecao = String(item.observacaoCorrecao || "").trim();
       const correcaoAtual = item.resultadoLicao
-        ? `${item.resultadoLicao} — ${String(item.licaoPendenteTexto || conteudo).trim()}${item.observacaoCorrecao ? ' — ' + String(item.observacaoCorrecao).trim() : ''}`
+        ? `${item.resultadoLicao} — ${String(item.licaoPendenteTexto || conteudo).trim()}${notaDaCorrecao && notaDaCorrecao !== observacaoDoRegistro ? ' — ' + notaDaCorrecao : ''}`
         : correcaoAnterior;
       const registro = {
         Aluna: aluna, Data: data, Instrutora: instrutora, Tipo: tipoAnalise,
         Licao_Atual: `${material}: ${conteudo}`,
         Dificuldades: dificuldadesDoMaterial,
-        Observacao: String(item.observacao ?? observacao ?? "").trim() + (correcaoAtual ? '\nCorreção da lição: ' + correcaoAtual.trim() : ''),
+        Observacao: observacaoDoRegistro + (correcaoAtual ? '\nCorreção da lição: ' + correcaoAtual.trim() : ''),
         Status: item.somenteCorrecao ? item.resultadoLicao : temDificuldade ? "Realizada - com dificuldades" : "Realizada - sem pendência"
       };
       const salvar = existente
