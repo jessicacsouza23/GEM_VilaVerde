@@ -9,8 +9,8 @@ test('nomes antigos de Meu Piano se agrupam no volume 1, sem misturar volume 2',
 });
 test('materiais concluídos não são reativados por análise e podem ser retomados explicitamente',()=>{
  const h=[{id:1,Tipo:'Analise_Prática',Licao_Atual:'Volume 1: lição 2'},{id:2,Tipo:'Material_Prática',Licao_Atual:'Volume 1',Status:'Concluído',Data:'03/11/2026',Instrutora:'Professora'},{id:3,Tipo:'Analise_Prática',Licao_Atual:'Volume 1: última lição'},{id:4,Tipo:'Casa_Metodo_Meu Piano é Divertido'}];
- const itens=ctx.window.GemMateriais.catalogo(h);assert.equal(itens.length,1);assert.equal(itens[0].concluido,true);assert.equal(itens[0].nome,'Volume 1');
- h.push({id:5,Tipo:'Material_Prática',Licao_Atual:'Volume 1',Status:'Em andamento'});assert.equal(ctx.window.GemMateriais.catalogo(h)[0].concluido,false);
+ const itens=ctx.window.GemMateriais.catalogo(h);const volume=itens.find(item=>item.nome==='Volume 1');assert.equal(volume.concluido,true);assert.equal(volume.nome,'Volume 1');
+ h.push({id:5,Tipo:'Material_Prática',Licao_Atual:'Volume 1',Status:'Em andamento'});assert.equal(ctx.window.GemMateriais.catalogo(h).find(item=>item.nome==='Volume 1').concluido,false);
 });
 test('somente materiais vinculados à aluna viram opções, nunca lições ou análises',()=>{
  const h=[
@@ -22,7 +22,7 @@ test('somente materiais vinculados à aluna viram opções, nunca lições ou an
   {id:6,Tipo:'Material_Prática',Licao_Atual:'Volume 1',Status:'Em andamento'}
  ];
  const nomes=Array.from(ctx.window.GemMateriais.catalogo(h),item=>item.nome);
- assert.deepEqual(nomes,['Volume 1']);
+ assert.deepEqual(nomes,['Volume 1','Meu piano é divertido 1']);
 });
 test('recupera materiais legítimos do histórico anterior ao vínculo Material_Prática',()=>{
  const h=[

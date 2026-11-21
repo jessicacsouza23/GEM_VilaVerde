@@ -20,22 +20,28 @@
     const permitidos = new Set(materiaisPermitidos.map(nomeMaterial));
     const materialLegadoDaAnalise = (registro) => {
       if (registro.Tipo !== 'Analise_Prática') return '';
-      const texto = String(registro.Licao_Atual || ''), pos = texto.indexOf(':');
-      if (pos < 1) return '';
-      const nome = nomeMaterial(texto.slice(0, pos));
-      // Registros livres antigos às vezes usam texto antes de dois pontos.
-      // Só recuperamos o material se ele ainda existe na biblioteca atual.
-      return !permitidos.size || permitidos.has(nome) ? nome : '';
+      const texto = String(registro.Licao_Atual || '').trim();
+      const normal = valor => nomeMaterial(valor).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+      // Registros anteriores ao novo formulário podem conter apenas o nome
+      // do método, sem os dois pontos. Comparamos com a biblioteca para não
+      // tratar "Exercício 5" ou "Páginas 10 e 11" como material.
+      for (const material of permitidos) {
+        const chave = normal(material), atual = normal(texto);
+        if (atual === chave || atual.startsWith(chave + ':')) return material;
+      }
+      const pos = texto.indexOf(':');
+      return !permitidos.size && pos > 0 ? nomeMaterial(texto.slice(0, pos)) : '';
     };
     for (const r of historico.filter(r=>!r.importacao_chave).map(normalizarRegistro).sort((a,b) => Number(a.id) - Number(b.id))) {
       // Material_Prática é a fonte atual. Para não esconder as alunas que já
       // tinham histórico antes desse vínculo existir, também recuperamos o
-      // prefixo "Material: lição" das análises e Casa_Metodo_ — sempre que o
-      // material ainda estiver cadastrado na biblioteca.
+      // prefixo "Material: lição" das análises e Casa_Metodo_. Este último
+      // é sempre um vínculo explícito de material, inclusive em cadastros
+      // antigos que já não existem na biblioteca atual.
       const nomeCasa = String(r.Tipo || '').startsWith('Casa_Metodo_') ? nomeMaterial(String(r.Tipo).slice(12)) : '';
       const nome = r.Tipo === 'Material_Prática' ? r.Licao_Atual
         : materialLegadoDaAnalise(r)
-          || (nomeCasa && permitidos.has(nomeCasa) ? nomeCasa : '');
+          || nomeCasa;
       if (!nome) continue;
       if (!itens.has(nome)) itens.set(nome, {nome, concluido:false});
       if (r.Tipo === 'Material_Prática') itens.set(nome, {nome, concluido:r.Status === 'Concluído', data:r.Data, professora:r.Instrutora});
