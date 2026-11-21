@@ -24,3 +24,12 @@ test('somente materiais vinculados à aluna viram opções, nunca lições ou an
  const nomes=Array.from(ctx.window.GemMateriais.catalogo(h),item=>item.nome);
  assert.deepEqual(nomes,['Volume 1']);
 });
+test('recupera materiais legítimos do histórico anterior ao vínculo Material_Prática',()=>{
+ const h=[
+  {id:1,Tipo:'Analise_Prática',Licao_Atual:'Meu Piano é Divertido: lição 8'},
+  {id:2,Tipo:'Casa_Metodo_Volume 1',Licao_Casa:'lição 3'},
+  {id:3,Tipo:'Analise_Prática',Licao_Atual:'Páginas 10 e 11 corrigidas'}
+ ];
+ const nomes=Array.from(ctx.window.GemMateriais.catalogo(h,['Meu piano é divertido 1','Volume 1']),item=>item.nome);
+ assert.deepEqual(nomes,['Meu piano é divertido 1','Volume 1']);
+});

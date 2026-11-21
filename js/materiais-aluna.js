@@ -15,13 +15,27 @@
     if (String(registro.Tipo || '').startsWith('Casa_Metodo_')) registro.Tipo = 'Casa_Metodo_' + nomeMaterial(registro.Tipo.slice(12));
     return registro;
   }
-  function catalogo(historico) {
+  function catalogo(historico, materiaisPermitidos = []) {
     const itens = new Map();
+    const permitidos = new Set(materiaisPermitidos.map(nomeMaterial));
+    const materialLegadoDaAnalise = (registro) => {
+      if (registro.Tipo !== 'Analise_Prática') return '';
+      const texto = String(registro.Licao_Atual || ''), pos = texto.indexOf(':');
+      if (pos < 1) return '';
+      const nome = nomeMaterial(texto.slice(0, pos));
+      // Registros livres antigos às vezes usam texto antes de dois pontos.
+      // Só recuperamos o material se ele ainda existe na biblioteca atual.
+      return !permitidos.size || permitidos.has(nome) ? nome : '';
+    };
     for (const r of historico.filter(r=>!r.importacao_chave).map(normalizarRegistro).sort((a,b) => Number(a.id) - Number(b.id))) {
-      // Esta é a fonte oficial do vínculo “aluna usa este material”. Análises
-      // e lições de casa registram conteúdo pedagógico, não materiais: dados
-      // antigos como “Revisão” ou “Exercício 5” nunca podem virar botões.
-      const nome = r.Tipo === 'Material_Prática' ? r.Licao_Atual : '';
+      // Material_Prática é a fonte atual. Para não esconder as alunas que já
+      // tinham histórico antes desse vínculo existir, também recuperamos o
+      // prefixo "Material: lição" das análises e Casa_Metodo_ — sempre que o
+      // material ainda estiver cadastrado na biblioteca.
+      const nomeCasa = String(r.Tipo || '').startsWith('Casa_Metodo_') ? nomeMaterial(String(r.Tipo).slice(12)) : '';
+      const nome = r.Tipo === 'Material_Prática' ? r.Licao_Atual
+        : materialLegadoDaAnalise(r)
+          || (nomeCasa && permitidos.has(nomeCasa) ? nomeCasa : '');
       if (!nome) continue;
       if (!itens.has(nome)) itens.set(nome, {nome, concluido:false});
       if (r.Tipo === 'Material_Prática') itens.set(nome, {nome, concluido:r.Status === 'Concluído', data:r.Data, professora:r.Instrutora});
@@ -34,7 +48,7 @@
     const adicionarBotao = area.querySelector('#adicionar-material-pratica');
     const existentes = [...container.querySelectorAll('.practice-material-card')];
     opcoes = [...new Set(opcoes.map(nomeMaterial))];
-    const registros = catalogo(historico);
+    const registros = catalogo(historico, opcoes);
     const grupos = new Map();
     const topo = document.createElement('section');
     topo.className = 'materials-picker';
