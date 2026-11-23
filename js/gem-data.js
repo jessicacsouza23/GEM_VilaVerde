@@ -683,7 +683,13 @@
     if (!linhas.length) throw new Error("Escolha ao menos uma professora responsável.");
     if (linhas.some((item) => item.professora_2 === item.professora)) throw new Error("A segunda professora deve ser diferente da primeira.");
     const banco = await obterCliente(); const { error } = await banco.from("avaliacao_responsaveis").upsert(linhas, { onConflict: "avaliacao_id,aluna,disciplina" });
-    if (error) throw new Error("Não foi possível salvar as professoras responsáveis.", { cause: error });
+    if (error) {
+      const codigo = String(error.code || "");
+      if (["42703", "PGRST204", "42P10"].includes(codigo) || /professora_2|on conflict/i.test(String(error.message || ""))) {
+        throw new Error("Não foi possível salvar as professoras responsáveis porque este banco ainda não tem a estrutura do novo boletim. Execute a migration 017_boletins_liberacao_duas_professoras.sql no Supabase deste GEM e tente novamente.", { cause: error });
+      }
+      throw new Error("Não foi possível salvar as professoras responsáveis. Confira se você tem permissão para alterar avaliações e tente novamente.", { cause: error });
+    }
   }
 
   async function removerProva(avaliacaoId) {

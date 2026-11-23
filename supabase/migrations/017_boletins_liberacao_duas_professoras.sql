@@ -3,6 +3,27 @@
 alter table public.avaliacao_responsaveis
   add column if not exists professora_2 text;
 
+-- Alguns bancos antigos tinham uma validação de disciplina anterior ao
+-- Solfejo Melódico. Ela impede inclusive salvar as responsáveis da tela.
+-- Substituímos somente checks que validam a coluna disciplina nesta tabela.
+do $$
+declare regra record;
+begin
+  for regra in
+    select conname
+    from pg_constraint
+    where conrelid = 'public.avaliacao_responsaveis'::regclass
+      and contype = 'c'
+      and pg_get_constraintdef(oid) ilike '%disciplina%'
+  loop
+    execute format('alter table public.avaliacao_responsaveis drop constraint %I', regra.conname);
+  end loop;
+end $$;
+
+alter table public.avaliacao_responsaveis
+  add constraint avaliacao_responsaveis_disciplina_check
+  check (disciplina in ('Prática', 'Teoria', 'Solfejo', 'Solfejo Melódico'));
+
 alter table public.avaliacoes
   add column if not exists boletim_liberado boolean not null default false,
   add column if not exists boletim_liberado_em timestamptz,
