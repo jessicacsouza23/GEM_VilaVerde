@@ -876,8 +876,21 @@ function mostrarProximasAulas(destino) {
   const carregar=async()=>{
     const data=window.ProximasAulas.sabado(), atual=++pedido;
     dataExibida=data;
-    destino.innerHTML='<h2>Suas aulas de sábado — '+escapeHtml(data.split('-').reverse().join('/'))+'</h2><p role="status">Carregando rodízio...</p>';
+    destino.innerHTML='<h2>Suas aulas de sábado — '+escapeHtml(data.split('-').reverse().join('/'))+'</h2><p role="status">Verificando a programação...</p>';
     try {
+      const avaliacoes = papel === 'Professora'
+        ? await window.GemData.dadosProvas().then(({ avaliacoes, responsaveis }) => {
+          const minhas = new Set(responsaveis.filter((item) => item.professora === nome || item.professora_2 === nome).map((item) => String(item.avaliacao_id)));
+          return avaliacoes.filter((item) => minhas.has(String(item.id)) && String(item.data_avaliacao || '').slice(0, 10) === data);
+        })
+        : (await window.GemData.proximasAvaliacoes()).filter((item) => String(item.data_avaliacao || '').slice(0, 10) === data);
+      if(!destino.isConnected||atual!==pedido)return;
+      if (avaliacoes.length) {
+        const plural = avaliacoes.length > 1;
+        destino.innerHTML='<div class="section-title"><h2>Suas aulas de sábado — '+escapeHtml(data.split('-').reverse().join('/'))+'</h2><button type="button" class="secondary-action" data-atualizar-agenda>Atualizar</button></div><section class="evaluation-day" aria-live="polite"><p class="eyebrow">📋 DIA DE AVALIAÇÃO</p><h3>'+ (plural ? 'Avaliações agendadas para este sábado' : 'Avaliação agendada para este sábado') +'</h3><p>Não haverá programação de rodízio nesta data. '+(papel==='Professora' ? 'Abra a aba <strong>Provas</strong> para lançar as notas da avaliação.' : 'Confira com a Secretaria as orientações para a prova.')+'</p><ul>'+avaliacoes.map((item)=>'<li><strong>'+escapeHtml(item.titulo || 'Avaliação')+'</strong></li>').join('')+'</ul></section>';
+        destino.querySelector('[data-atualizar-agenda]')?.addEventListener('click',carregar);
+        return;
+      }
       const dados=await window.GemData.rodizioProximoSabado(data);
       if(!destino.isConnected||atual!==pedido)return;
       const aulas=window.ProximasAulas.aulas(dados.escala,{nome,papel,atividades:dados.atividades});
