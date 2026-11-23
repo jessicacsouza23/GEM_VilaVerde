@@ -1318,10 +1318,12 @@ async function renderVisaoGeralProfessora(content) {
   mostrarProximasAulas(content.querySelector('#professora-proximas-aulas'));
   content.querySelector('#professora-proximas-aulas').insertAdjacentHTML('afterend','<section id="professora-avaliacoes"></section>');
   const areaAvaliacoes = content.querySelector('#professora-avaliacoes');
-  window.GemData.dadosProvas().then(({ avaliacoes, responsaveis }) => {
+  window.GemData.dadosProvas().then(({ avaliacoes, responsaveis, notas }) => {
     const ids = new Set(responsaveis.filter((item) => item.professora === state.name || item.professora_2 === state.name).map((item) => String(item.avaliacao_id)));
     const proximas = avaliacoes.filter((avaliacao) => ids.has(String(avaliacao.id)) && String(avaliacao.data_avaliacao || "") >= hoje);
-    if (areaAvaliacoes.isConnected) areaAvaliacoes.innerHTML = avisoAvaliacoesMarkup(proximas, 'Estas avaliações foram atribuídas a você. No dia da prova, abra a aba Provas para lançar as notas.');
+    if (!areaAvaliacoes.isConnected) return;
+    areaAvaliacoes.innerHTML = `<section class="evaluation-notice"><div><h3>📝 Avaliações atribuídas</h3><p>Toque em uma avaliação para abrir a aba <strong>Provas</strong> e lançar as notas.</p></div>${proximas.length ? `<div class="evaluation-notice-list">${proximas.map((avaliacao) => { const total = notas.filter((nota) => String(nota.avaliacao_id) === String(avaliacao.id) && nota.professora === state.name).length; return `<button type="button" class="evaluation-entry" data-abrir-provas><strong>${escapeHtml(avaliacao.titulo || "Avaliação")}</strong><span>📅 ${escapeHtml(dataAvaliacaoVisivel(avaliacao.data_avaliacao))} · ${total} nota(s) lançada(s)</span></button>`; }).join("")}</div>` : `<p class="hint">Não há avaliações futuras atribuídas a você.</p>`}</section>`;
+    areaAvaliacoes.querySelectorAll('[data-abrir-provas]').forEach((botao) => botao.addEventListener('click', async () => { state.page = 'Provas'; renderNavigation(); await renderPage(); }));
   }).catch((erro) => { if (areaAvaliacoes.isConnected) areaAvaliacoes.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; });
   const data = content.querySelector("#professora-resumo-data");
   const destino = content.querySelector("#professora-resumo");
