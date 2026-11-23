@@ -160,6 +160,16 @@ function resumoFaltasVisaoGeral(historico, data) {
 
 function eResolvida(status) { return ["Resolvido", "Realizada", "Realizadas - sem pendência", "Realizada - sem pendência"].includes(status); }
 
+function dataAvaliacaoVisivel(data) {
+  const texto = String(data || "");
+  const partes = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return partes ? `${partes[3]}/${partes[2]}/${partes[1]}` : texto || "data a confirmar";
+}
+
+function avisoAvaliacoesMarkup(avaliacoes, texto = "Confira a data e se prepare com antecedência.") {
+  return `<section class="evaluation-notice"><div><h3>📝 Próximas avaliações</h3><p>${escapeHtml(texto)}</p></div>${avaliacoes.length ? `<div class="evaluation-notice-list">${avaliacoes.map((avaliacao) => `<article><strong>${escapeHtml(avaliacao.titulo || "Avaliação")}</strong><span>📅 ${escapeHtml(dataAvaliacaoVisivel(avaliacao.data_avaliacao))}</span></article>`).join("")}</div>` : `<p class="hint">Não há avaliações futuras agendadas.</p>`}</section>`;
+}
+
 async function renderMinhasAulas(content) {
   const hoje = new Date().toISOString().slice(0, 10);
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">REGISTRO DE AULA</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Sua agenda vem do rodízio salvo. Abra uma aula para registrar o conteúdo, as dificuldades e a lição de casa, como no sistema original.</p></section><div class="section-title"><h2>Minhas aulas</h2><p>As fotos das alunas e as turmas também seguem a escala real daquela data.</p></div><section class="panel"><div class="agenda-date"><div><label for="agenda-data">Data da aula</label><input id="agenda-data" type="date" value="${hoje}"></div></div><div id="agenda-lista" class="lesson-list"></div><div id="registro-aula"></div></section>`;
@@ -780,7 +790,7 @@ async function renderProvasProfessora(content) {
     const ordem = ["Prática", "Teoria", "Solfejo", "Solfejo Melódico"];
     const porDisciplina = new Map();
     minhas.forEach((responsavel, indice) => { const grupo = porDisciplina.get(responsavel.disciplina) || []; grupo.push({ responsavel, indice }); porDisciplina.set(responsavel.disciplina, grupo); });
-    lista.innerHTML = [...porDisciplina.entries()].sort(([a], [b]) => (ordem.indexOf(a) - ordem.indexOf(b)) || a.localeCompare(b, "pt-BR")).map(([disciplina, itens]) => `<details class="teacher-evaluation-group" open><summary><h3>${escapeHtml(disciplina)}</h3><span>${itens.length} nota(s) para lançar</span></summary><div class="teacher-evaluation-items">${itens.map(({responsavel, indice}) => { const prova = avaliacoes.find((item) => String(item.id) === String(responsavel.avaliacao_id)); const nota = notas.find((item) => String(item.avaliacao_id) === String(responsavel.avaliacao_id) && item.aluna === responsavel.aluna && item.disciplina === responsavel.disciplina && item.professora === state.name); return `<article class="evaluation-card"><div><strong>${escapeHtml(responsavel.aluna)}</strong><span>${escapeHtml(prova?.titulo || "Avaliação")} · ${escapeHtml(prova?.data_avaliacao || "Sem data")}</span></div><div class="evaluation-grade"><label>Nota (0 a 10)<input data-nota-avaliacao="${indice}" type="number" min="0" max="10" step="0.1" value="${nota?.nota ?? ""}" placeholder="0,0"></label><button data-salvar-nota="${indice}" class="primary-action" type="button">Salvar nota</button></div></article>`; }).join("")}</div></details>`).join("");
+    lista.innerHTML = [...porDisciplina.entries()].sort(([a], [b]) => (ordem.indexOf(a) - ordem.indexOf(b)) || a.localeCompare(b, "pt-BR")).map(([disciplina, itens]) => `<details class="teacher-evaluation-group" open><summary><h3>${escapeHtml(disciplina)}</h3><span>${itens.length} nota(s) para lançar</span></summary><div class="teacher-evaluation-items">${itens.map(({responsavel, indice}) => { const prova = avaliacoes.find((item) => String(item.id) === String(responsavel.avaliacao_id)); const nota = notas.find((item) => String(item.avaliacao_id) === String(responsavel.avaliacao_id) && item.aluna === responsavel.aluna && item.disciplina === responsavel.disciplina && item.professora === state.name); return `<article class="evaluation-card"><div><strong>${escapeHtml(responsavel.aluna)}</strong><span><b>Prova:</b> ${escapeHtml(prova?.titulo || "Avaliação")} · 📅 ${escapeHtml(dataAvaliacaoVisivel(prova?.data_avaliacao))}</span></div><div class="evaluation-grade"><label>Nota (0 a 10)<input data-nota-avaliacao="${indice}" type="number" min="0" max="10" step="0.1" value="${nota?.nota ?? ""}" placeholder="0,0"></label><button data-salvar-nota="${indice}" class="primary-action" type="button">Salvar nota</button></div></article>`; }).join("")}</div></details>`).join("");
     lista.querySelectorAll("[data-salvar-nota]").forEach((botao) => botao.addEventListener("click", async () => {
       const responsavel = minhas[Number(botao.dataset.salvarNota)], campo = lista.querySelector(`[data-nota-avaliacao="${botao.dataset.salvarNota}"]`);
       botao.disabled = true;
@@ -884,6 +894,11 @@ async function renderMinhasLicoes(content) {
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">MINHAS LIÇÕES</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Seu controle de lições e estudo em casa fica salvo no mesmo histórico usado pela professora e pela Coordenação.</p></section><section id="aluna-indicadores" class="grid"><div class="metric"><strong>—</strong><span>Carregando indicadores</span></div></section><section class="panel"><div class="person-tabs"><button class="tab-action active" data-aluna-aba="licoes">📚 Minhas lições de casa</button><button class="tab-action" data-aluna-aba="historico">🗂️ Histórico</button><button class="tab-action" data-aluna-aba="estudo">✅ Controle de estudo diário</button></div><div id="aluna-conteudo"><div class="empty">Carregando...</div></div></section>`;
   content.querySelector('#aluna-indicadores').insertAdjacentHTML('beforebegin','<section class="panel" id="aluna-proximas-aulas"></section>');
   mostrarProximasAulas(content.querySelector('#aluna-proximas-aulas'));
+  content.querySelector('#aluna-proximas-aulas').insertAdjacentHTML('afterend','<section id="aluna-avaliacoes"></section>');
+  const areaAvaliacoes = content.querySelector('#aluna-avaliacoes');
+  window.GemData.proximasAvaliacoes().then((avaliacoes) => {
+    if (areaAvaliacoes.isConnected) areaAvaliacoes.innerHTML = avisoAvaliacoesMarkup(avaliacoes, 'A Secretaria agendou estas avaliações. Organize seus estudos para cada data.');
+  }).catch((erro) => { if (areaAvaliacoes.isConnected) areaAvaliacoes.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; });
   const destino = $("#aluna-conteudo"), indicadores = $("#aluna-indicadores");
   let dadosAluna = { historico: [], feitas: [] }, estudos = [], erroEstudo = "", aba = "licoes", horariosEditando = [];
   const dataIso = (valor) => { const texto = String(valor || ""); if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return texto.slice(0, 10); const [dia, mes, ano] = texto.split("/"); return ano ? `${ano}-${mes}-${dia}` : ""; };
@@ -1288,6 +1303,13 @@ async function renderVisaoGeralProfessora(content) {
   content.innerHTML = `<section class="intro-card"><p class="eyebrow">VISÃO GERAL DA PROFESSORA</p><h2>Olá, ${escapeHtml(state.name)}.</h2><p>Acompanhe os destaques e os estudos das alunas do ${escapeHtml(state.gem)}.</p><button id="resumo-minhas-aulas" class="primary-action" type="button">Ver minhas aulas</button></section><section class="panel"><div class="agenda-date"><div><label for="professora-resumo-data">Data de referência</label><input id="professora-resumo-data" type="date" value="${hoje}"></div><button id="professora-resumo-atualizar" class="secondary-action" type="button">Atualizar resumo</button></div><div id="professora-resumo" aria-live="polite"></div></section>`;
   content.querySelector('.intro-card').insertAdjacentHTML('afterend','<section class="panel" id="professora-proximas-aulas"></section>');
   mostrarProximasAulas(content.querySelector('#professora-proximas-aulas'));
+  content.querySelector('#professora-proximas-aulas').insertAdjacentHTML('afterend','<section id="professora-avaliacoes"></section>');
+  const areaAvaliacoes = content.querySelector('#professora-avaliacoes');
+  window.GemData.dadosProvas().then(({ avaliacoes, responsaveis }) => {
+    const ids = new Set(responsaveis.filter((item) => item.professora === state.name || item.professora_2 === state.name).map((item) => String(item.avaliacao_id)));
+    const proximas = avaliacoes.filter((avaliacao) => ids.has(String(avaliacao.id)) && String(avaliacao.data_avaliacao || "") >= hoje);
+    if (areaAvaliacoes.isConnected) areaAvaliacoes.innerHTML = avisoAvaliacoesMarkup(proximas, 'Estas avaliações foram atribuídas a você. No dia da prova, abra a aba Provas para lançar as notas.');
+  }).catch((erro) => { if (areaAvaliacoes.isConnected) areaAvaliacoes.innerHTML = `<div class="action-error">${escapeHtml(mensagemErro(erro))}</div>`; });
   const data = content.querySelector("#professora-resumo-data");
   const destino = content.querySelector("#professora-resumo");
   let pedido = 0;

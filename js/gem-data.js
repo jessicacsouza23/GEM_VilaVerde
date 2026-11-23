@@ -702,12 +702,25 @@
     const registro = { avaliacao_id: avaliacaoId, aluna, disciplina, nota: Number(nota) };
     if (professora) registro.professora = professora;
     if (!registro.aluna || !registro.disciplina || !Number.isFinite(registro.nota)) throw new Error("Informe aluna, disciplina e nota.");
+    if (professora) {
+      const { data: avaliacao, error: erroAvaliacao } = await banco.from("avaliacoes").select("boletim_liberado").eq("id", avaliacaoId).maybeSingle();
+      if (erroAvaliacao) throw new Error("Não foi possível conferir se o boletim já foi liberado.", { cause: erroAvaliacao });
+      if (avaliacao?.boletim_liberado) throw new Error("Este boletim já foi liberado para as alunas. As notas não podem mais ser alteradas por professoras; peça à Secretaria para fazer qualquer correção.");
+    }
     let consulta = banco.from("avaliacao_notas").select("id").eq("avaliacao_id", avaliacaoId).eq("aluna", aluna).eq("disciplina", disciplina);
     if (professora) consulta = consulta.eq("professora", professora);
     else consulta = consulta.is("professora", null);
     const existente = await consulta.maybeSingle();
     const { error } = existente.data?.id ? await banco.from("avaliacao_notas").update(registro).eq("id", existente.data.id) : await banco.from("avaliacao_notas").insert(registro);
     if (error) throw new Error("Não foi possível salvar a nota.", { cause: error });
+  }
+
+  async function proximasAvaliacoes() {
+    const banco = await obterCliente();
+    const hoje = new Date().toISOString().slice(0, 10);
+    const { data, error } = await banco.from("avaliacoes").select("id,titulo,data_avaliacao").gte("data_avaliacao", hoje).order("data_avaliacao", { ascending: true });
+    if (error) throw new Error("Não foi possível carregar as próximas avaliações.", { cause: error });
+    return data || [];
   }
 
   async function liberarBoletimAvaliacao({ avaliacaoId, liberado, secretaria }) {
@@ -1633,7 +1646,7 @@
     return { data, total: salvos, justificadas: registros.filter(r=>r.status === 'Justificada').length, ausentes: registros.filter(r=>r.status === 'Ausente').length };
   }
 
-  window.GemData = { completarFaltasAntigas, consolidarChamadas, carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, liberarBoletimAvaliacao, dadosMensagens, enviarMensagem, dadosAnalitico, dadosExportacaoRelatorio, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, removerModeloLogistica, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, alterarStatusGem, removerGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, excluirEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
+  window.GemData = { completarFaltasAntigas, consolidarChamadas, carregarIdentidade, enviarLogoGem, perfilSecretaria, salvarPerfilSecretaria, perfilProfessora, atualizarMinhaFotoProfessora, dadosMetodos, criarMetodo, removerMetodo, dadosVisaoGeral, dadosPessoas, fotosPessoas, dadosCoordenacoesProfessoras, definirCoordenadoraProfessora, professoraEhCoordenadora, salvarPessoa, enviarFotoPessoa, dadosDocumentos, enviarDocumento, removerDocumento, urlDocumento, dadosProvas, criarProva, removerProva, salvarResponsaveisAvaliacao, salvarNotaAvaliacao, liberarBoletimAvaliacao, proximasAvaliacoes, dadosMensagens, enviarMensagem, dadosAnalitico, dadosExportacaoRelatorio, salvarObjetivoPedagogico, dadosCorrecoesLicoes, dadosAjustes, contarRegistrosOrfaos, limparRegistrosOrfaos, removerRegistroHistorico, dadosAuditoriaRodizio, atualizarCorrecaoLicao, criarCorrecaoLicao, dadosLogistica, salvarModeloLogistica, alterarStatusModelo, removerModeloLogistica, autenticar, encerrarSessao, iniciarSessaoR2, restaurarSessao, listarGems, criarGem, alterarStatusGem, removerGem, gemAtivo, dadosPlataformaMaster, dadosSecretariasGems, salvarSecretariaGem, agendaProfessora, salvarRegistroAula, salvarRegistrosPratica, exerciciosDaAula, registrosDaAula, contextoPratica, licoesPendentesProfessora, corrigirLicaoProfessora, dadosAluna, dadosEstudoAluna, salvarEstudoDiario, excluirEstudoDiario, marcarLicaoFeita, boletimAluna, dadosRodizio, dadosFolgas, salvarFolgas, modeloParaData, horarioDoBloco, dadosChamada, salvarChamada, salvarProfessorasFixas, salvarEscala, dataBr };
   window.GemData.dadosResumoProfessora = dadosResumoProfessora;
   window.GemData.dadosImportacaoHistorico = dadosImportacaoHistorico;
   window.GemData.importarHistoricoAntigo = importarHistoricoAntigo;
