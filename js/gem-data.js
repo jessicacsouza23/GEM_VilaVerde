@@ -697,9 +697,9 @@
     if (error) throw new Error("Não foi possível excluir a avaliação.", { cause: error });
   }
 
-  async function salvarNotaAvaliacao({ avaliacaoId, aluna, disciplina, nota, professora = null }) {
+  async function salvarNotaAvaliacao({ avaliacaoId, aluna, disciplina, nota, observacao = "", professora = null }) {
     const banco = await obterCliente();
-    const registro = { avaliacao_id: avaliacaoId, aluna, disciplina, nota: Number(nota) };
+    const registro = { avaliacao_id: avaliacaoId, aluna, disciplina, nota: Number(nota), observacao: String(observacao || "").trim() || null };
     if (professora) registro.professora = professora;
     if (!registro.aluna || !registro.disciplina || !Number.isFinite(registro.nota)) throw new Error("Informe aluna, disciplina e nota.");
     if (professora) {
@@ -1494,7 +1494,7 @@
     const banco = await obterCliente();
     const [{ data: avaliacoes, error: erroAvaliacoes }, { data: notas, error: erroNotas }, { data: historico, error: erroHistorico }] = await Promise.all([
       banco.from("avaliacoes").select("*").order("data_avaliacao", { ascending: false }),
-      banco.from("avaliacao_notas").select("*").eq("aluna", aluna),
+      banco.from("avaliacao_notas").select("avaliacao_id,aluna,disciplina,nota,professora").eq("aluna", aluna),
       lerHistoricoCompleto(banco, aluna)
     ]);
     if (erroAvaliacoes || erroNotas || erroHistorico) throw new Error("Não foi possível carregar o boletim.");
