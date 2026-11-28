@@ -9,6 +9,8 @@ function mensagemErro(erro) {
     return contexto + 'O banco recusou a operação por falta de permissão. Peça à Secretaria para verificar as permissões deste GEM.';
   if (/23505|duplicate key/i.test(codigo + ' ' + tecnico))
     return contexto + 'Já existe um cadastro ou registro com esses dados. Confira o que já foi salvo e edite o existente ou use dados diferentes.';
+  if (codigo === '23514' && /avaliacao_notas/i.test(tecnico))
+    return contexto + 'O banco ainda usa uma validação antiga para notas de avaliação. Execute a migration 019_validar_notas_avaliacoes.sql no Supabase deste GEM e tente novamente. Ela aceita notas de 0 a 10 e as disciplinas cadastradas.';
   if (/23502|23503|23514|22P02/.test(codigo))
     return contexto + 'O banco recusou um campo obrigatório, inválido ou um vínculo do registro. Confira os campos e a aluna, turma e material selecionados. Se estiverem corretos, peça à Secretaria para verificar o cadastro. Código: ' + codigo + '.';
   if (/42P01|42703|PGRST20[0245]/.test(codigo))
